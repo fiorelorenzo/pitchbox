@@ -6,7 +6,7 @@
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import * as Card from '$lib/components/ui/card';
   import { Input } from '$lib/components/ui/input';
-  import { Search, Inbox } from 'lucide-svelte';
+  import { Search, Inbox, MessageSquare } from 'lucide-svelte';
   import { relativeTime } from '$lib/utils/time';
   import { cn } from '$lib/utils';
 
@@ -182,13 +182,24 @@
               <span class="text-xs text-muted-foreground">
                 via u/{c.accountHandle} · {c.platformSlug}
               </span>
-              {#if c.draftId != null}
-                <span
-                  class="ml-auto text-[11px] text-muted-foreground/70 group-hover:text-muted-foreground"
+              <span
+                class="ml-auto inline-flex items-center gap-2 text-[11px] text-muted-foreground/70"
+              >
+                {#if c.draftId != null}
+                  <span class="group-hover:text-muted-foreground">Draft #{c.draftId}</span>
+                {/if}
+                <a
+                  href={`https://chat.reddit.com/user/${c.targetUser}`}
+                  target="_blank"
+                  rel="noopener"
+                  onclick={(e) => e.stopPropagation()}
+                  class="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-0.5 text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-foreground"
+                  title={`Open Reddit chat with u/${c.targetUser}`}
                 >
-                  Draft #{c.draftId}
-                </span>
-              {/if}
+                  <MessageSquare class="size-3" />
+                  Reply
+                </a>
+              </span>
             </div>
             {#if c.lastMessage}
               <p class="mt-1 text-sm leading-snug">

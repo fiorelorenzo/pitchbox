@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Clipboard, Check, Send, ExternalLink } from 'lucide-svelte';
+	import { Clipboard, Check, Send, ExternalLink, MessageSquare } from 'lucide-svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -265,9 +265,22 @@
 
 			{#if latestReply}
 				<div class="rounded-lg border-l-2 border-violet-400/60 bg-muted/40 p-3">
-					<p class="text-[10px] uppercase tracking-wide text-muted-foreground">
-						Reply from u/{latestReply.author}
-					</p>
+					<div class="flex items-start justify-between gap-3">
+						<p class="text-[10px] uppercase tracking-wide text-muted-foreground">
+							Reply from u/{latestReply.author}
+						</p>
+						<Button
+							href={`https://chat.reddit.com/user/${latestReply.author}`}
+							target="_blank"
+							rel="noopener"
+							variant="outline"
+							size="sm"
+							class="shrink-0"
+						>
+							<MessageSquare class="size-3.5" />
+							Reply on Reddit
+						</Button>
+					</div>
 					<p class="mt-1 whitespace-pre-wrap text-sm">{latestReply.body}</p>
 					<p class="mt-1 text-xs text-muted-foreground">
 						{new Date(latestReply.createdAt).toLocaleString()}
