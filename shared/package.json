@@ -24,7 +24,10 @@
     "drizzle-orm": "^0.45.2",
     "pg": "^8.13.0",
     "zod": "^3.23.0",
-    "dotenv": "^16.4.0"
+    "dotenv": "^16.4.0",
+    "playwright": "^1.48.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.10",
