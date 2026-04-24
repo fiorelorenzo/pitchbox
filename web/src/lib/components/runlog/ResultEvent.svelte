@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { CheckCircle2, XCircle } from 'lucide-svelte';
 	import { formatDuration } from '$lib/utils/time';
+	import Markdown from '$lib/components/Markdown.svelte';
 
 	let {
 		data,
@@ -55,10 +56,8 @@
 		{/if}
 	</div>
 
-	<!-- Body prose -->
+	<!-- Body prose (markdown) -->
 	{#if data.text}
-		<p class="text-sm whitespace-pre-wrap break-words leading-relaxed text-foreground/80 min-w-0">
-			{data.text}
-		</p>
+		<Markdown source={data.text} class="text-foreground/80 leading-relaxed" />
 	{/if}
 </div>

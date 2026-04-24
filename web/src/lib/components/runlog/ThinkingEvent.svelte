@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Brain } from 'lucide-svelte';
 	import { slide } from 'svelte/transition';
+	import Markdown from '$lib/components/Markdown.svelte';
 
 	let {
 		data,
@@ -32,9 +33,7 @@
 
 	{#if !collapsed}
 		<div transition:slide={{ duration: 160 }} class="mt-2 min-w-0">
-			<p class="text-xs italic text-muted-foreground/80 whitespace-pre-wrap break-words leading-relaxed">
-				{data.text}
-			</p>
+			<Markdown source={data.text} class="italic text-muted-foreground/80 text-xs" />
 		</div>
 	{/if}
 </div>

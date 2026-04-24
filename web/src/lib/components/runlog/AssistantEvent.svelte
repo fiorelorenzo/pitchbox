@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { slide } from 'svelte/transition';
+	import Markdown from '$lib/components/Markdown.svelte';
 
 	let { data }: { data: { text: string } } = $props();
 
@@ -13,13 +13,11 @@
 </script>
 
 <div class="mt-1 min-w-0">
-	<p class="text-sm whitespace-pre-wrap break-words leading-relaxed text-foreground/90 min-w-0">
-		{displayText}
-	</p>
+	<Markdown source={displayText} class="text-foreground/90 leading-relaxed" />
 	{#if isLong}
 		<button
 			onclick={() => (expanded = !expanded)}
-			class="mt-1 text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+			class="mt-1 text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline cursor-pointer"
 		>
 			{expanded ? 'Show less' : 'Show more'}
 		</button>

@@ -8,6 +8,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { relativeTime } from '$lib/utils/time';
+	import Markdown from '$lib/components/Markdown.svelte';
 
 	type DraftEvent = {
 		id: number;
@@ -200,18 +201,18 @@
 					</Tabs.List>
 					<Tabs.Content value="drafted" class="flex-1 min-h-0">
 						<ScrollArea class="h-full rounded border bg-muted/30 p-4">
-							<pre class="whitespace-pre-wrap text-sm font-sans">{draft.body}</pre>
+							<Markdown source={draft.body} />
 						</ScrollArea>
 					</Tabs.Content>
 					<Tabs.Content value="sent" class="flex-1 min-h-0">
 						<ScrollArea class="h-full rounded border bg-muted/30 p-4">
-							<pre class="whitespace-pre-wrap text-sm font-sans">{draft.sentContent}</pre>
+							<Markdown source={draft.sentContent ?? ''} />
 						</ScrollArea>
 					</Tabs.Content>
 				</Tabs.Root>
 			{:else}
 				<ScrollArea class="flex-1 rounded border bg-muted/30 p-4">
-					<pre class="whitespace-pre-wrap text-sm font-sans">{draft.body}</pre>
+					<Markdown source={draft.body} />
 				</ScrollArea>
 			{/if}
 			{#if draft.reasoning}
