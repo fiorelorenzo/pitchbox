@@ -24,7 +24,9 @@
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "dev": "npm run -w web dev",
-    "migrate:from-ai-game": "tsx scripts/migrate-from-ai-game.ts"
+    "migrate:from-ai-game": "tsx scripts/migrate-from-ai-game.ts",
+    "seed:embertold": "tsx scripts/seed-embertold.ts",
+    "reseed": "npm run -w @pitchbox/shared seed:core && npm run seed:embertold"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
