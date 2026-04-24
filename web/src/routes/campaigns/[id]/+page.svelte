@@ -55,6 +55,7 @@
 		success: 'default',
 		running: 'default',
 		failed: 'destructive',
+		cancelled: 'secondary',
 		queued: 'secondary',
 		error: 'destructive',
 	};
@@ -63,6 +64,7 @@
 		success: 'bg-green-500/15 text-green-700 border-green-200',
 		failed: 'bg-red-500/15 text-red-700 border-red-200',
 		error: 'bg-red-500/15 text-red-700 border-red-200',
+		cancelled: 'bg-amber-500/15 text-amber-700 border-amber-200',
 		running: 'bg-indigo-500/15 text-indigo-700 border-indigo-200',
 		queued: 'bg-muted text-muted-foreground border-border',
 	};
@@ -323,8 +325,8 @@
 						<!-- Inline expanded log row -->
 						{#if expanded}
 							<Table.Row class="hover:bg-transparent border-t-0">
-								<Table.Cell colspan={8} class="p-0 border-t border-border/50">
-									<div transition:slide={{ duration: 200 }} class="bg-muted/10 px-6 py-3">
+								<Table.Cell colspan={8} class="p-0 border-t border-border/50 max-w-0">
+									<div transition:slide={{ duration: 200 }} class="bg-muted/10 px-6 py-3 min-w-0 overflow-hidden">
 										<RunLog runId={run.id} />
 									</div>
 								</Table.Cell>

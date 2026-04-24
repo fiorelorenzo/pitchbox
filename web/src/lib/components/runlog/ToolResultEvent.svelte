@@ -104,8 +104,8 @@
 					{/if}
 				{/if}
 			{:else}
-				<div class="rounded bg-muted/60 border border-border/50 overflow-x-auto max-h-48">
-					<pre class="font-mono text-xs whitespace-pre p-2">{data.text}</pre>
+				<div class="min-w-0 max-w-full overflow-x-auto max-h-48 rounded border border-border/50 bg-muted/60">
+					<pre class="font-mono text-xs whitespace-pre p-2 min-w-0">{data.text}</pre>
 				</div>
 			{/if}
 		</div>

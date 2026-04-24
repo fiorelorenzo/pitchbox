@@ -163,8 +163,8 @@
 	{#if !collapsed}
 		<div transition:slide={{ duration: 160 }} class="mt-2 min-w-0">
 			{#if isBashTool}
-				<div class="rounded bg-muted/60 border border-border/50 overflow-x-auto">
-					<pre class="font-mono text-xs whitespace-pre p-2 text-foreground/90">{command}</pre>
+				<div class="min-w-0 max-w-full overflow-x-auto rounded bg-muted/60 border border-border/50">
+					<pre class="font-mono text-xs whitespace-pre p-2 text-foreground/90 min-w-0">{command}</pre>
 				</div>
 				{#if description}
 					<p class="text-xs text-muted-foreground/70 italic mt-1">{description}</p>
@@ -175,8 +175,8 @@
 						<dt class="text-muted-foreground/60 font-mono shrink-0 pt-0.5">{k}</dt>
 						<dd class="min-w-0 break-all">
 							{#if typeof v === 'string' && v.length > 60}
-								<div class="rounded bg-muted/60 border border-border/50 overflow-x-auto">
-									<pre class="font-mono text-[10px] whitespace-pre p-1.5">{v}</pre>
+								<div class="min-w-0 max-w-full overflow-x-auto rounded bg-muted/60 border border-border/50">
+									<pre class="font-mono text-[10px] whitespace-pre p-1.5 min-w-0">{v}</pre>
 								</div>
 							{:else}
 								<span class="font-mono text-foreground/80">{JSON.stringify(v)}</span>

@@ -60,6 +60,7 @@
 		success: 'default',
 		running: 'default',
 		failed: 'destructive',
+		cancelled: 'secondary',
 		queued: 'secondary',
 		error: 'destructive',
 	};
@@ -124,12 +125,14 @@
 		});
 
 		es.addEventListener('run:finished', async (e: MessageEvent) => {
-			const { runId: rid, exitCode, campaignId } = JSON.parse(e.data);
+			const { runId: rid, exitCode, campaignId, error } = JSON.parse(e.data);
 			if (campaignId) {
 				runningCampaignIds = new Set([...runningCampaignIds].filter((x) => x !== campaignId));
 			}
 			if (exitCode === 0) {
 				toast.success(`Run #${rid} finished`);
+			} else if (error === 'cancelled by user') {
+				toast.info(`Run #${rid} cancelled`);
 			} else {
 				toast.error(`Run #${rid} failed`);
 			}
@@ -364,8 +367,8 @@
 						<!-- Inline expanded log row -->
 						{#if expanded && runId != null}
 							<Table.Row class="hover:bg-transparent border-t-0">
-								<Table.Cell colspan={7} class="p-0 border-t border-border/50">
-									<div transition:slide={{ duration: 200 }} class="bg-muted/10 px-6 py-3">
+								<Table.Cell colspan={7} class="p-0 border-t border-border/50 max-w-0">
+									<div transition:slide={{ duration: 200 }} class="bg-muted/10 px-6 py-3 min-w-0 overflow-hidden">
 										<RunLog {runId} />
 									</div>
 								</Table.Cell>

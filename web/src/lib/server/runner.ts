@@ -106,6 +106,21 @@ export async function runCampaign(
 
   handle.result
     .then(async (res) => {
+      // If the run was already cancelled, don't overwrite the status.
+      const [current] = await db
+        .select({ status: schema.runs.status })
+        .from(schema.runs)
+        .where(eq(schema.runs.id, run.id));
+      if (current?.status === 'cancelled') {
+        emit('run:finished', {
+          runId: run.id,
+          campaignId,
+          exitCode: 1,
+          error: 'cancelled by user',
+        });
+        emit('drafts:changed', {});
+        return;
+      }
       await db
         .update(schema.runs)
         .set({
@@ -115,15 +130,30 @@ export async function runCampaign(
           tokensUsed: res.tokensUsed ?? null,
         })
         .where(eq(schema.runs.id, run.id));
-      emit('run:finished', { runId: run.id, exitCode: res.exitCode });
+      emit('run:finished', { runId: run.id, campaignId, exitCode: res.exitCode });
       emit('drafts:changed', {});
     })
     .catch(async (err) => {
+      // If the run was already cancelled, don't overwrite the status.
+      const [current] = await db
+        .select({ status: schema.runs.status })
+        .from(schema.runs)
+        .where(eq(schema.runs.id, run.id));
+      if (current?.status === 'cancelled') {
+        emit('run:finished', {
+          runId: run.id,
+          campaignId,
+          exitCode: 1,
+          error: 'cancelled by user',
+        });
+        emit('drafts:changed', {});
+        return;
+      }
       await db
         .update(schema.runs)
         .set({ status: 'failed', finishedAt: new Date(), error: String(err) })
         .where(eq(schema.runs.id, run.id));
-      emit('run:finished', { runId: run.id, exitCode: 1, error: String(err) });
+      emit('run:finished', { runId: run.id, campaignId, exitCode: 1, error: String(err) });
     })
     .finally(() => {
       runCancels.delete(run.id);
@@ -143,14 +173,25 @@ export async function cancelRun(runId: number): Promise<boolean> {
   cancel();
   runCancels.delete(runId);
 
-  // Mark the run as failed with a cancellation message.
+  // Mark the run as cancelled (distinct from failed).
   const db = getDb();
   await db
     .update(schema.runs)
-    .set({ status: 'failed', finishedAt: new Date(), error: 'cancelled by user' })
+    .set({ status: 'cancelled', finishedAt: new Date(), error: 'cancelled by user' })
     .where(eq(schema.runs.id, runId));
 
-  emit('run:finished', { runId, exitCode: 1, error: 'cancelled by user' });
+  // Look up the campaignId so the client can clear the running state.
+  const [r] = await db
+    .select({ campaignId: schema.runs.campaignId })
+    .from(schema.runs)
+    .where(eq(schema.runs.id, runId));
+
+  emit('run:finished', {
+    runId,
+    campaignId: r?.campaignId,
+    exitCode: 1,
+    error: 'cancelled by user',
+  });
 
   return true;
 }

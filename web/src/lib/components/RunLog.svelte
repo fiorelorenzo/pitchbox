@@ -33,7 +33,7 @@
 	// SSE
 	let es: EventSource | null = null;
 
-	type RunStatus = 'Idle' | 'Running' | 'Finished' | 'Failed';
+	type RunStatus = 'Idle' | 'Running' | 'Finished' | 'Failed' | 'Cancelled';
 	let status = $state<RunStatus>('Idle');
 
 	const STATUS_DOT: Record<RunStatus, string> = {
@@ -41,6 +41,7 @@
 		Running: 'bg-green-400 animate-pulse',
 		Finished: 'bg-emerald-500',
 		Failed: 'bg-destructive',
+		Cancelled: 'bg-amber-400',
 	};
 
 	async function appendEvents(newEvents: TimelineEvent[]) {
@@ -87,6 +88,7 @@
 				if (s === 'running') status = 'Running';
 				else if (s === 'success') status = 'Finished';
 				else if (s === 'failed' || s === 'error') status = 'Failed';
+				else if (s === 'cancelled') status = 'Cancelled';
 				// 'queued' and anything else stays 'Idle'
 			}
 
@@ -164,9 +166,15 @@
 		});
 
 		es.addEventListener('run:finished', async (e: MessageEvent) => {
-			const { runId: rid, exitCode } = JSON.parse(e.data);
+			const { runId: rid, exitCode, error } = JSON.parse(e.data);
 			if (runId === null || rid === runId) {
-				status = exitCode === 0 ? 'Finished' : 'Failed';
+				if (exitCode === 0) {
+					status = 'Finished';
+				} else if (error === 'cancelled by user') {
+					status = 'Cancelled';
+				} else {
+					status = 'Failed';
+				}
 				if (!hasResultEvent) {
 					await appendEvents([
 						{
@@ -187,7 +195,7 @@
 	onDestroy(() => es?.close());
 </script>
 
-<div class="flex flex-col gap-2 min-w-0">
+<div class="flex flex-col gap-2 min-w-0 overflow-hidden">
 	<!-- Status bar -->
 	<div class="flex items-center gap-2 text-xs text-muted-foreground px-1">
 		<span class="inline-block size-2 rounded-full shrink-0 {STATUS_DOT[status]}"></span>
