@@ -1,11 +1,20 @@
 /**
  * Central registry for domain-status badges.
  *
- * Every status that appears as a coloured pill in the UI is defined here so the
- * look stays identical everywhere it shows up. Tones are drawn from a small
- * palette — one hue per semantic meaning, not one per value — so the eye can
- * pick out "things that need action" (amber) from "things that went well"
- * (emerald) or "things that failed" (destructive) at a glance.
+ * Every status that appears as a coloured pill in the UI is defined here so
+ * the look stays identical everywhere it shows up. Tones follow a single
+ * semantic palette — hue maps to meaning, not to a specific value:
+ *
+ *   amber   — needs user attention        (pending_review, cancelled)
+ *   sky     — in progress, in flight      (approved, running, queued-in-progress)
+ *   emerald — delivered / completed ok    (sent, success, active)
+ *   violet  — positive outcome / reward   (replied)
+ *   rose    — rejected / failed           (rejected, failed)
+ *   slate   — idle, disabled              (queued, paused)
+ *   orange  — platform / category accent  (subreddit, reddit, post_comment)
+ *
+ * Pulsing is reserved for *transient* states (running). Always-on states like
+ * "active" or "sent" stay static so the UI doesn't throb.
  */
 
 type Tone =
@@ -55,13 +64,17 @@ export const PULSE_DOT_CLASS: Record<Tone, string> = {
 // Per-domain maps
 // ---------------------------------------------------------------------------
 
+// Kind badges classify content; they don't carry state, so keep hues subtle
+// enough not to compete with the state colours below.
 export const DRAFT_KIND: Record<string, BadgeStyle> = {
   dm: { label: 'DM', tone: 'sky' },
   post: { label: 'Post', tone: 'violet' },
-  post_comment: { label: 'Comment', tone: 'violet' },
-  comment_reply: { label: 'Reply', tone: 'neutral' },
+  post_comment: { label: 'Comment', tone: 'orange' },
+  comment_reply: { label: 'Reply', tone: 'slate' },
 };
 
+// The draft lifecycle: pending (amber) → approved (sky) → sent (emerald) ↗ replied (violet)
+// rejected (rose) branches off at any point.
 export const DRAFT_STATE: Record<string, BadgeStyle> = {
   pending_review: { label: 'Pending', tone: 'amber' },
   approved: { label: 'Approved', tone: 'sky' },
@@ -69,6 +82,8 @@ export const DRAFT_STATE: Record<string, BadgeStyle> = {
   rejected: { label: 'Rejected', tone: 'rose' },
 };
 
+// A run lifecycle mirrors draft state: queued/running → success (emerald) or
+// failed (rose). Cancelled is amber (user intervention, not an error).
 export const RUN_STATUS: Record<string, BadgeStyle> = {
   queued: { label: 'Queued', tone: 'slate' },
   running: { label: 'Running', tone: 'sky', pulse: true },
@@ -78,18 +93,33 @@ export const RUN_STATUS: Record<string, BadgeStyle> = {
 };
 
 export const CAMPAIGN_STATUS: Record<string, BadgeStyle> = {
-  active: { label: 'Active', tone: 'emerald', pulse: true },
+  active: { label: 'Active', tone: 'emerald' },
   paused: { label: 'Paused', tone: 'slate' },
+  safety_braked: { label: 'Safety brake', tone: 'rose' },
+};
+
+// Contact history per-row status — `replied` gets its own violet so it stands
+// out from merely "sent" (the ultimate goal, not just delivery).
+export const CONTACT_STATUS: Record<string, BadgeStyle> = {
+  replied: { label: 'Replied', tone: 'violet' },
+  no_reply: { label: 'No reply yet', tone: 'muted' },
+  unchecked: { label: 'Unchecked', tone: 'muted' },
 };
 
 export const BLOCKLIST_KIND: Record<string, BadgeStyle> = {
   subreddit: { label: 'Subreddit', tone: 'orange' },
   user: { label: 'User', tone: 'sky' },
-  keyword: { label: 'Keyword', tone: 'neutral' },
+  keyword: { label: 'Keyword', tone: 'slate' },
 };
 
 export const PLATFORM: Record<string, BadgeStyle> = {
   reddit: { label: 'Reddit', tone: 'orange' },
+};
+
+export const DAEMON_STATUS: Record<string, BadgeStyle> = {
+  online: { label: 'Online', tone: 'emerald' },
+  offline: { label: 'Offline', tone: 'slate' },
+  checking: { label: 'Checking…', tone: 'muted' },
 };
 
 export type BadgeDomain =
@@ -97,16 +127,20 @@ export type BadgeDomain =
   | 'draft-state'
   | 'run-status'
   | 'campaign-status'
+  | 'contact-status'
   | 'blocklist-kind'
-  | 'platform';
+  | 'platform'
+  | 'daemon-status';
 
 export const BADGE_DOMAIN: Record<BadgeDomain, Record<string, BadgeStyle>> = {
   'draft-kind': DRAFT_KIND,
   'draft-state': DRAFT_STATE,
   'run-status': RUN_STATUS,
   'campaign-status': CAMPAIGN_STATUS,
+  'contact-status': CONTACT_STATUS,
   'blocklist-kind': BLOCKLIST_KIND,
   platform: PLATFORM,
+  'daemon-status': DAEMON_STATUS,
 };
 
 /** Fallback for an unknown value — the raw string with neutral styling. */
