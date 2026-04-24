@@ -79,6 +79,7 @@ export const DRAFT_STATE: Record<string, BadgeStyle> = {
   pending_review: { label: 'Pending', tone: 'amber' },
   approved: { label: 'Approved', tone: 'sky' },
   sent: { label: 'Sent', tone: 'emerald' },
+  replied: { label: 'Replied', tone: 'violet' },
   rejected: { label: 'Rejected', tone: 'rose' },
 };
 
