@@ -117,12 +117,16 @@
 </nav>
 
 <!-- Page header -->
-<div class="flex items-start justify-between mb-6">
-	<div class="space-y-1">
-		<h1 class="text-2xl font-semibold">{data.campaign.name}</h1>
+<div class="flex items-start justify-between mb-6 gap-4">
+	<div class="space-y-1 min-w-0">
+		<h1 class="text-2xl font-semibold tracking-tight">{data.campaign.name}</h1>
+		<p class="text-sm text-muted-foreground">
+			Configuration, activity summary, and the full run history for this campaign. Click any past
+			run to inspect its stored log.
+		</p>
 		{#if data.project}
-			<p class="text-sm text-muted-foreground">
-				for project <span class="font-mono font-medium text-foreground">{data.project.slug}</span>
+			<p class="text-xs text-muted-foreground/80">
+				Project <span class="font-mono font-medium text-foreground">{data.project.slug}</span>
 				{#if data.platform}
 					&nbsp;·&nbsp;{data.platform.slug}
 				{/if}

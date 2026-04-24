@@ -13,6 +13,8 @@
 	import { relativeTime, formatDuration } from '$lib/utils/time';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { slide } from 'svelte/transition';
+	import PageHeader from '$lib/components/PageHeader.svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	let {
 		data,
@@ -167,6 +169,11 @@
 	</AlertDialog.Content>
 </AlertDialog.Root>
 
+<PageHeader
+	title="Campaigns"
+	description="Orchestrate outreach runs. Trigger a manual execution or inspect recent activity. The scheduler (daemon) will respect each campaign's status once it ships in M2."
+/>
+
 <Card.Root>
 	<Card.Content class="p-0">
 		<Table.Root>
@@ -222,9 +229,29 @@
 										Running
 									</Badge>
 								{:else}
-									<Badge variant={STATUS_VARIANT[c.status] ?? 'secondary'} class="text-xs">
-										{c.status}
-									</Badge>
+									<Tooltip.Provider delayDuration={200}>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<Badge variant={STATUS_VARIANT[c.status] ?? 'secondary'} class="text-xs">
+													{c.status}
+												</Badge>
+											</Tooltip.Trigger>
+											<Tooltip.Content class="max-w-xs">
+												{#if c.status === 'paused'}
+													The scheduler will skip this campaign. "Run now" still works manually.
+													Activate once the daemon (M2) is live.
+												{:else if c.status === 'active'}
+													The scheduler will execute this on its cron expression (when the daemon
+													is live in M2).
+												{:else if c.status === 'safety_braked'}
+													Auto-paused by the safety brake after repeated failures. Resume manually
+													once resolved.
+												{:else}
+													Current campaign status: {c.status}
+												{/if}
+											</Tooltip.Content>
+										</Tooltip.Root>
+									</Tooltip.Provider>
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-xs text-muted-foreground py-3">

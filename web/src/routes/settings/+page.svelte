@@ -2,16 +2,16 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Info } from 'lucide-svelte';
+	import PageHeader from '$lib/components/PageHeader.svelte';
 </script>
 
-<h1 class="text-2xl font-semibold mb-6">Settings</h1>
+<PageHeader
+	title="Settings"
+	description="Daemon status, agent runner configuration, and browser extension hookup. Most of this ships in later milestones (M2, M3)."
+/>
 
 <Card.Root class="max-w-2xl">
-	<Card.Header>
-		<Card.Title>Settings</Card.Title>
-		<Card.Description>Configure Pitchbox components and integrations</Card.Description>
-	</Card.Header>
-	<Card.Content class="flex flex-col gap-4">
+	<Card.Content class="flex flex-col gap-4 pt-6">
 		<Alert.Root>
 			<Info class="size-4" />
 			<Alert.Title>Daemon</Alert.Title>
