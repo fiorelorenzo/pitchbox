@@ -4,6 +4,9 @@ export type IncomingDm = {
   body: string;
   threadId: string;
   createdAt: string;
+  // Optional Matrix room id for Reddit Chat conversations. Lets the dashboard
+  // deep-link the "Reply on Reddit" button to the actual chat thread.
+  roomId?: string;
 };
 
 export type ContactRow = {
@@ -43,10 +46,15 @@ function norm(handle: string): string {
 export function matchIncomingDms(
   batch: IncomingDm[],
   contacts: ContactRow[],
-): { inserts: MessageInsert[]; updates: ReplyUpdate[] } {
+): {
+  inserts: MessageInsert[];
+  updates: ReplyUpdate[];
+  roomIdsByContact: Map<number, string>;
+} {
   const inserts: MessageInsert[] = [];
   const earliestReplyByContact = new Map<number, Date>();
   const seenPlatformMessage = new Set<string>();
+  const roomIdsByContact = new Map<number, string>();
 
   type IndexKey = string;
   const key = (account: string, target: string): IndexKey => `${norm(account)}::${norm(target)}`;
@@ -88,6 +96,10 @@ export function matchIncomingDms(
         earliestReplyByContact.set(contact.id, createdAt);
       }
     }
+
+    if (dm.roomId && !roomIdsByContact.has(contact.id)) {
+      roomIdsByContact.set(contact.id, dm.roomId);
+    }
   }
 
   const updates: ReplyUpdate[] = [];
@@ -95,5 +107,5 @@ export function matchIncomingDms(
     const c = contacts.find((x) => x.id === contactId)!;
     updates.push({ contactId, draftId: c.draftId, repliedAt });
   }
-  return { inserts, updates };
+  return { inserts, updates, roomIdsByContact };
 }

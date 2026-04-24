@@ -12,6 +12,7 @@ export const GET: RequestHandler = async ({ params }) => {
       body: schema.messages.body,
       author: schema.messages.author,
       createdAt: schema.messages.createdAtPlatform,
+      chatRoomId: schema.contactHistory.chatRoomId,
     })
     .from(schema.messages)
     .innerJoin(schema.contactHistory, eq(schema.messages.contactId, schema.contactHistory.id))

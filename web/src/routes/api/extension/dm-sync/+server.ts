@@ -48,7 +48,7 @@ export async function POST({ request }: { request: Request }) {
       repliedAt: c.repliedAt,
     }));
 
-  const { inserts, updates } = matchIncomingDms(body.items, fresh);
+  const { inserts, updates, roomIdsByContact } = matchIncomingDms(body.items, fresh);
   if (inserts.length === 0) return json({ ok: true, inserted: 0, replied: 0 });
 
   await db.transaction(async (tx) => {
@@ -73,6 +73,12 @@ export async function POST({ request }: { request: Request }) {
           details: { at: u.repliedAt.toISOString() },
         });
       }
+    }
+    for (const [contactId, roomId] of roomIdsByContact) {
+      await tx
+        .update(schema.contactHistory)
+        .set({ chatRoomId: roomId })
+        .where(eq(schema.contactHistory.id, contactId));
     }
   });
 

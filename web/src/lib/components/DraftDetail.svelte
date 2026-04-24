@@ -37,7 +37,18 @@
 
 	let { draft }: { draft: Draft | null } = $props();
 
-	type LatestReply = { body: string; author: string; createdAt: string | Date } | null;
+	type LatestReply = {
+		body: string;
+		author: string;
+		createdAt: string | Date;
+		chatRoomId?: string | null;
+	} | null;
+
+	function chatUrl(handle: string, roomId?: string | null): string {
+		return roomId
+			? `https://www.reddit.com/chat/room/${encodeURIComponent(roomId)}`
+			: `https://www.reddit.com/user/${handle}/`;
+	}
 
 	let approving = $state(false);
 	let rejecting = $state(false);
@@ -270,7 +281,7 @@
 							Reply from u/{latestReply.author}
 						</p>
 						<Button
-							href={`https://chat.reddit.com/user/${latestReply.author}`}
+							href={chatUrl(latestReply.author, latestReply.chatRoomId)}
 							target="_blank"
 							rel="noopener"
 							variant="outline"

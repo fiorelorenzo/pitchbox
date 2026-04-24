@@ -17,6 +17,7 @@
     platformSlug: string;
     lastContactedAt: string;
     repliedAt: string | null;
+    chatRoomId: string | null;
     draftId: number | null;
     draftKind: string | null;
     draftState: string | null;
@@ -48,6 +49,12 @@
 
   function initials(handle: string): string {
     return handle.slice(0, 2).toUpperCase();
+  }
+
+  function chatUrl(handle: string, roomId: string | null): string {
+    return roomId
+      ? `https://www.reddit.com/chat/room/${encodeURIComponent(roomId)}`
+      : `https://www.reddit.com/user/${handle}/`;
   }
 
   let counts = $derived({
@@ -200,12 +207,14 @@
                   <span class="group-hover:text-muted-foreground">Draft #{c.draftId}</span>
                 {/if}
                 <a
-                  href={`https://chat.reddit.com/user/${c.targetUser}`}
+                  href={chatUrl(c.targetUser, c.chatRoomId)}
                   target="_blank"
                   rel="noopener"
                   onclick={(e) => e.stopPropagation()}
                   class="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-0.5 text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-foreground"
-                  title={`Open Reddit chat with u/${c.targetUser}`}
+                  title={c.chatRoomId
+                    ? `Open Reddit chat with u/${c.targetUser}`
+                    : `Open u/${c.targetUser}'s profile (chat room not yet captured — click Sync now in the popup once)`}
                 >
                   <MessageSquare class="size-3" />
                   Reply

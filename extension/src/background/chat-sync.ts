@@ -107,6 +107,7 @@ export async function runChatSync(): Promise<SyncResult> {
     body: string;
     threadId: string;
     createdAt: string;
+    roomId: string;
   };
   const items: DmItem[] = [];
 
@@ -135,6 +136,7 @@ export async function runChatSync(): Promise<SyncResult> {
         body,
         threadId: eventId,
         createdAt: new Date(ts).toISOString(),
+        roomId,
       });
     }
   }

@@ -88,4 +88,15 @@ describe('matchIncomingDms', () => {
     expect(inserts).toHaveLength(1);
     expect(updates).toEqual([]);
   });
+
+  it('captures roomId per contact when present (Reddit Chat)', () => {
+    const withRoom = dm({ roomId: '!abc:reddit.com' });
+    const { roomIdsByContact } = matchIncomingDms([withRoom], [base]);
+    expect(roomIdsByContact.get(1)).toBe('!abc:reddit.com');
+  });
+
+  it('returns empty roomIdsByContact when items have no roomId (legacy PM)', () => {
+    const { roomIdsByContact } = matchIncomingDms([dm({})], [base]);
+    expect(roomIdsByContact.size).toBe(0);
+  });
 });

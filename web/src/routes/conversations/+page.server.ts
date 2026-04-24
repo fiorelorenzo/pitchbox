@@ -12,6 +12,7 @@ export async function load() {
       platformSlug: schema.platforms.slug,
       lastContactedAt: schema.contactHistory.lastContactedAt,
       repliedAt: schema.contactHistory.repliedAt,
+      chatRoomId: schema.contactHistory.chatRoomId,
       draftId: schema.contactHistory.draftId,
       draftKind: schema.drafts.kind,
       draftState: schema.drafts.state,

@@ -189,6 +189,7 @@ export const contactHistory = pgTable(
     draftId: integer('draft_id').references(() => drafts.id, { onDelete: 'set null' }),
     repliedAt: timestamp('replied_at', { withTimezone: true }),
     replyCheckedAt: timestamp('reply_checked_at', { withTimezone: true }),
+    chatRoomId: text('chat_room_id'),
   },
   (t) => ({
     byTarget: index('contact_history_target_idx').on(t.platformId, t.targetUser),
