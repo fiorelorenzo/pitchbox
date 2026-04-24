@@ -9,6 +9,7 @@
   import { Search, Inbox, MessageSquare } from 'lucide-svelte';
   import { relativeTime } from '$lib/utils/time';
   import { cn } from '$lib/utils';
+  import { replyUrl } from '$lib/utils/reply-url';
 
   type Convo = {
     contactId: number;
@@ -18,6 +19,8 @@
     lastContactedAt: string;
     repliedAt: string | null;
     chatRoomId: string | null;
+    subreddit: string | null;
+    platformContextUrl: string | null;
     draftId: number | null;
     draftKind: string | null;
     draftState: string | null;
@@ -51,10 +54,13 @@
     return handle.slice(0, 2).toUpperCase();
   }
 
-  function chatUrl(handle: string, roomId: string | null): string {
-    return roomId
-      ? `https://www.reddit.com/chat/room/${encodeURIComponent(roomId)}`
-      : `https://www.reddit.com/user/${handle}/`;
+  type KindFilter = 'all' | 'dm' | 'post_comment';
+  let kindFilter = $derived(($page.url.searchParams.get('kind') as KindFilter) ?? 'all');
+  function setKindFilter(next: KindFilter) {
+    const url = new URL($page.url);
+    if (next === 'all') url.searchParams.delete('kind');
+    else url.searchParams.set('kind', next);
+    goto(url, { replaceState: true, noScroll: true, keepFocus: true });
   }
 
   let counts = $derived({
@@ -67,6 +73,7 @@
     data.conversations.filter((c) => {
       if (filter === 'replied' && !c.repliedAt) return false;
       if (filter === 'awaiting' && c.repliedAt) return false;
+      if (kindFilter !== 'all' && c.draftKind !== kindFilter) return false;
       if (search.trim()) {
         const q = search.trim().toLowerCase();
         if (
@@ -140,6 +147,24 @@
   </div>
 </div>
 
+<div class="mb-4 flex flex-wrap items-center gap-2">
+  {#each [{ key: 'all', label: 'All kinds' }, { key: 'dm', label: 'DMs' }, { key: 'post_comment', label: 'Comments' }] as k (k.key)}
+    {@const active = kindFilter === k.key}
+    <button
+      type="button"
+      onclick={() => setKindFilter(k.key as KindFilter)}
+      class={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors',
+        active
+          ? 'border-primary/40 bg-primary/10 text-foreground'
+          : 'border-border/60 text-muted-foreground hover:bg-accent/40 hover:text-foreground',
+      )}
+    >
+      {k.label}
+    </button>
+  {/each}
+</div>
+
 <Card.Root size="sm">
   <Card.Content class="divide-y divide-border p-0">
     {#if data.conversations.length === 0}
@@ -198,7 +223,12 @@
                 <StatusBadge domain="draft-state" value="replied" />
               {/if}
               <span class="text-xs text-muted-foreground">
-                via u/{c.accountHandle} · {c.platformSlug}
+                via u/{c.accountHandle}
+                {#if c.draftKind === 'post_comment' && c.subreddit}
+                  · r/{c.subreddit}
+                {:else}
+                  · {c.platformSlug}
+                {/if}
               </span>
               <span
                 class="ml-auto inline-flex items-center gap-2 text-[11px] text-muted-foreground/70"
@@ -207,14 +237,21 @@
                   <span class="group-hover:text-muted-foreground">Draft #{c.draftId}</span>
                 {/if}
                 <a
-                  href={chatUrl(c.targetUser, c.chatRoomId)}
+                  href={replyUrl({
+                    draftKind: c.draftKind,
+                    targetUser: c.targetUser,
+                    chatRoomId: c.chatRoomId,
+                    platformContextUrl: c.platformContextUrl,
+                  })}
                   target="_blank"
                   rel="noopener"
                   onclick={(e) => e.stopPropagation()}
                   class="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-0.5 text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-foreground"
-                  title={c.chatRoomId
-                    ? `Open Reddit chat with u/${c.targetUser}`
-                    : `Open u/${c.targetUser}'s profile (chat room not yet captured — click Sync now in the popup once)`}
+                  title={c.draftKind === 'post_comment'
+                    ? `Open the comment thread on r/${c.subreddit ?? '?'}`
+                    : c.chatRoomId
+                      ? `Open Reddit chat with u/${c.targetUser}`
+                      : `Open u/${c.targetUser}'s profile`}
                 >
                   <MessageSquare class="size-3" />
                   Reply

@@ -11,6 +11,7 @@
 	import { relativeTime } from '$lib/utils/time';
 	import Markdown from '$lib/components/Markdown.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import { replyUrl } from '$lib/utils/reply-url';
 
 	type DraftEvent = {
 		id: number;
@@ -42,13 +43,9 @@
 		author: string;
 		createdAt: string | Date;
 		chatRoomId?: string | null;
+		platformContextUrl?: string | null;
+		draftKind?: string | null;
 	} | null;
-
-	function chatUrl(handle: string, roomId?: string | null): string {
-		return roomId
-			? `https://www.reddit.com/chat/room/${encodeURIComponent(roomId)}`
-			: `https://www.reddit.com/user/${handle}/`;
-	}
 
 	let approving = $state(false);
 	let rejecting = $state(false);
@@ -281,7 +278,12 @@
 							Reply from u/{latestReply.author}
 						</p>
 						<Button
-							href={chatUrl(latestReply.author, latestReply.chatRoomId)}
+							href={replyUrl({
+								draftKind: latestReply.draftKind ?? draft?.kind ?? null,
+								targetUser: latestReply.author,
+								chatRoomId: latestReply.chatRoomId ?? null,
+								platformContextUrl: latestReply.platformContextUrl ?? null,
+							})}
 							target="_blank"
 							rel="noopener"
 							variant="outline"

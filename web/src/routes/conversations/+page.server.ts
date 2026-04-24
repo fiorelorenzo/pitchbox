@@ -17,6 +17,8 @@ export async function load() {
       draftKind: schema.drafts.kind,
       draftState: schema.drafts.state,
       draftBody: schema.drafts.body,
+      subreddit: schema.drafts.subreddit,
+      platformContextUrl: schema.contactHistory.platformContextUrl,
     })
     .from(schema.contactHistory)
     .innerJoin(schema.platforms, eq(schema.contactHistory.platformId, schema.platforms.id))

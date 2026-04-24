@@ -13,9 +13,12 @@ export const GET: RequestHandler = async ({ params }) => {
       author: schema.messages.author,
       createdAt: schema.messages.createdAtPlatform,
       chatRoomId: schema.contactHistory.chatRoomId,
+      platformContextUrl: schema.contactHistory.platformContextUrl,
+      draftKind: schema.drafts.kind,
     })
     .from(schema.messages)
     .innerJoin(schema.contactHistory, eq(schema.messages.contactId, schema.contactHistory.id))
+    .leftJoin(schema.drafts, eq(schema.contactHistory.draftId, schema.drafts.id))
     .where(and(eq(schema.contactHistory.draftId, id), eq(schema.messages.isFromUs, false)))
     .orderBy(desc(schema.messages.createdAtPlatform))
     .limit(1);
