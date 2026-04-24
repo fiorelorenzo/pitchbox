@@ -1,0 +1,154 @@
+import { config } from 'dotenv';
+import { resolve } from 'node:path';
+import { getDb, getPool, schema } from '@pitchbox/shared/db';
+import { eq } from 'drizzle-orm';
+
+config({ path: resolve(import.meta.dirname ?? '.', '..', '.env') });
+
+/**
+ * Seed script for Lorenzo's Embertold project.
+ * Copy to seed-embertold.ts (gitignored) and customise values.
+ * Run: tsx scripts/seed-embertold.ts
+ */
+async function main() {
+  const db = getDb();
+  const [platform] = await db
+    .select()
+    .from(schema.platforms)
+    .where(eq(schema.platforms.slug, 'reddit'));
+  if (!platform) throw new Error('run seed:core first');
+
+  const [project] = await db
+    .insert(schema.projects)
+    .values({
+      slug: 'embertold',
+      name: 'Embertold',
+      description: 'Text-based RPG with an AI Game Master.',
+    })
+    .onConflictDoNothing()
+    .returning();
+
+  if (!project) {
+    console.log('embertold project already exists, skipping');
+    await getPool().end();
+    return;
+  }
+
+  // Product config
+  await db.insert(schema.projectConfigs).values([
+    {
+      projectId: project.id,
+      key: 'product.pitch',
+      value: { text: 'Embertold is a text RPG where the GM is an AI...' },
+    },
+    {
+      projectId: project.id,
+      key: 'product.url',
+      value: { url: 'https://embertold.com' },
+    },
+    {
+      projectId: project.id,
+      key: 'product.defaultAccountRole',
+      value: { role: 'personal' },
+    },
+    {
+      projectId: project.id,
+      key: 'offer',
+      value: {
+        name: 'Founding Player',
+        credits: 1000,
+        cta: "lorenzo btw, i'm the one making it",
+        composeSubject: 'founding player invite',
+      },
+    },
+    {
+      projectId: project.id,
+      key: 'voice.dm_rules',
+      value: {
+        hardBans: ['em-dash (—)', 'AI-tell vocabulary'],
+        dos: ['contractions', 'lowercase casual opener'],
+        disclosure: "lorenzo btw, i'm the one making it",
+        examples: [
+          {
+            bad: 'Hey Alex, saw your r/Forgotten_Realms post — natural fit.',
+            good: "hey alex, saw your post about narrative recaps. i've been building something adjacent.",
+          },
+        ],
+      },
+    },
+    {
+      projectId: project.id,
+      key: 'voice.post_rules',
+      value: {
+        hardBans: ['em-dash (—)', 'AI-tell vocabulary', 'Great post!', 'Hope this helps'],
+        dos: ['direct opening', 'proper capitalization', 'one concrete question at the end'],
+        lengthRange: [60, 150],
+      },
+    },
+    {
+      projectId: project.id,
+      key: 'product.selfPromoPolicy',
+      value: { default: 'never', exceptions: [] },
+    },
+    {
+      projectId: project.id,
+      key: 'topicAngles',
+      value: [
+        'solo rpg play',
+        'gm-less systems',
+        'ai game masters',
+        'forgotten realms lore',
+        'narrative campaign recaps',
+      ],
+    },
+  ]);
+
+  // Accounts
+  await db.insert(schema.accounts).values([
+    { projectId: project.id, platformId: platform.id, handle: 'embertold', role: 'brand' },
+    {
+      projectId: project.id,
+      platformId: platform.id,
+      handle: 'YOUR_PERSONAL_HANDLE',
+      role: 'personal',
+    },
+  ]);
+
+  // Campaign: Founding Players scout
+  await db.insert(schema.campaigns).values({
+    projectId: project.id,
+    platformId: platform.id,
+    name: 'Founding Players Scout',
+    skillSlug: 'reddit-scout',
+    config: {
+      subreddits: ['Solo_Roleplaying', 'Ironsworn', 'rpg', 'DMAcademy'],
+      queries: ['solo rpg', 'gm-less', 'ai dungeon master'],
+      perSubredditLimit: 15,
+      includeHotBrowse: true,
+    },
+    status: 'paused',
+  });
+
+  // Campaign: Embertold Commenter (value-adding comments on relevant posts)
+  await db.insert(schema.campaigns).values({
+    projectId: project.id,
+    platformId: platform.id,
+    name: 'Embertold Commenter',
+    skillSlug: 'reddit-commenter',
+    config: {
+      subreddits: ['Solo_Roleplaying', 'Ironsworn', 'rpg', 'DMAcademy', 'LitRPG'],
+      queries: ['gm-less', 'solo rpg advice', 'ai dungeon master'],
+      perSubredditLimit: 10,
+      includeHotBrowse: true,
+    },
+    status: 'paused',
+  });
+
+  console.log('seeded embertold project');
+  await getPool().end();
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
