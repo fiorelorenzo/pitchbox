@@ -80,4 +80,7 @@ Each campaign snapshots its runner at creation time; each run snapshots the runn
 
 ## License
 
-MIT
+**AGPL-3.0-or-later** for the open-source (self-hosted) edition — see
+[LICENSE](./LICENSE). A future **Pitchbox Cloud** edition will ship under a
+separate commercial licence. See [NOTICE.md](./NOTICE.md) for the full dual-
+licensing framework and the contributor terms.
