@@ -154,6 +154,7 @@
     {:else}
       {#each filtered as c (c.contactId)}
         {@const href = c.draftId != null ? `/inbox?state=all&focus=${c.draftId}` : null}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
           role={href ? 'button' : undefined}
           tabindex={href ? 0 : undefined}
