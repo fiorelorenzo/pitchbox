@@ -1,12 +1,18 @@
 import { ClaudeCodeRunner } from '@pitchbox/shared/agents/claude-code';
 import { getDb, schema } from './db.js';
 import { eq } from 'drizzle-orm';
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { emit } from './events.js';
 
-const PITCHBOX_ROOT = process.env.PITCHBOX_ROOT
-  ? resolve(process.env.PITCHBOX_ROOT)
-  : process.cwd();
+// Derive repo root from this module's location (web/src/lib/server/runner.ts → ../../../..).
+// Honour PITCHBOX_ROOT only when it's an absolute path; relative values like "." would
+// resolve against the dev server CWD (web/) and miss the playbooks/ directory.
+const DERIVED_ROOT = resolve(fileURLToPath(new URL('../../../..', import.meta.url)));
+const PITCHBOX_ROOT =
+  process.env.PITCHBOX_ROOT && isAbsolute(process.env.PITCHBOX_ROOT)
+    ? process.env.PITCHBOX_ROOT
+    : DERIVED_ROOT;
 
 export async function runCampaign(campaignId: number): Promise<{ runId: number }> {
   const db = getDb();
