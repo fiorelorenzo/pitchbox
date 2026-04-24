@@ -39,3 +39,7 @@ daemon/run/
 # Extension build artefacts
 extension/dist/
 extension/*.zip
+
+# Web workspace
+web/.svelte-kit/
+web/build/

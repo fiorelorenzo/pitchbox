@@ -1,0 +1,30 @@
+{
+  "name": "pitchbox",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["shared", "cli", "web", "daemon"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "tsc -b",
+    "migrate": "npm run -w shared migrate",
+    "migrate:generate": "npm run -w shared migrate:generate",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "dev": "npm run -w web dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5",
+    "prettier": "^3.8.3",
+    "eslint": "^10.2.1",
+    "@typescript-eslint/parser": "^8.59.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.0"
+  }
+}
