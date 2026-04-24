@@ -16,6 +16,7 @@
     "./agents/claude-code": "./src/agents/claude-code.ts",
     "./agents/registry": "./src/agents/registry.ts",
     "./crypto": "./src/crypto.ts",
+    "./dm-sync": "./src/dm-sync.ts",
     "./extension-token": "./src/extension-token.ts",
     "./runlog": "./src/runlog/index.ts",
     "./runlog/types": "./src/runlog/types.ts",
