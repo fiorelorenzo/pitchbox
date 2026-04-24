@@ -52,6 +52,8 @@ Reddit ships two parallel DM systems and the extension covers both:
 - **Legacy private messages** (`reddit.com/message/inbox`). The extension polls `inbox.json` every 10 min — works as long as you stay logged in to Reddit in the same Chrome profile.
 - **Reddit Chat** (Matrix-based, used for all DMs sent from new Reddit). The extension auto-captures the Matrix access token from `localStorage` of any open `reddit.com` tab, then talks to `matrix.redditspace.com` directly to fetch new messages. **Open at least one reddit.com tab** while logged in for this to work — closing all Reddit tabs stops the chat sync (the popup keeps the last token but it eventually expires).
 
+**Comment-reply tracking** is included: when someone replies to a comment you posted via Pitchbox, the same `Sync now` action picks it up. Make sure you submit your comments through the dashboard's Open post / extension flow so we can capture the comment id.
+
 Manually trigger a sync any time from the popup → **Sync now**. The popup reports `inserted: N new, M replied`.
 
 When a target user replies, you'll see:
@@ -107,6 +109,7 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.2
 - ✅ **M2** — mark-as-sent flow, Home dashboard, Contacts, Blocklist, daemon scaffold (heartbeat + cron scheduler + reply-poller skeleton)
 - ✅ **M3** — Chrome extension, auto mark-as-sent for DM compose + post-comment drafts
 - ✅ **M4** — DM reply tracking via the extension's inbox poller, Conversations UI (post-comment reply tracking deferred to M4.5)
+- ✅ **M4.5** — comment-reply tracking via the extension's inbox poller
 - ⏳ **M5** — safety brake + blocklist enforcement + smart rate-limiting
 - ⏳ **M6** — templates, keyword watches, analytics, A/B tests
 - ⏳ **M7+** — additional platform adapters, posting automation, team mode
