@@ -12,6 +12,7 @@
 	import { navigating } from '$app/stores';
 	import { relativeTime, formatDuration } from '$lib/utils/time';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { slide } from 'svelte/transition';
 
 	let {
 		data,
@@ -295,12 +296,25 @@
 
 						<!-- Inline expanded log row -->
 						{#if expanded && runId != null}
-							<Table.Row class="hover:bg-transparent">
-								<Table.Cell colspan={7} class="pt-0 pb-4 px-4">
-									<div class="rounded-lg border bg-muted/30 p-4">
-										<p class="text-xs font-semibold text-muted-foreground mb-3">
-											Run #{runId} — Live log
-										</p>
+							<Table.Row class="hover:bg-transparent border-t-0">
+								<Table.Cell
+									colspan={7}
+									class="p-0 border-t border-border/50"
+								>
+									<div
+										transition:slide={{ duration: 200 }}
+										class="bg-muted/10 px-6 py-3"
+									>
+										<!-- Subtle header -->
+										<div class="flex items-center gap-2 mb-3">
+											<span
+												class="size-1.5 rounded-full shrink-0 {running
+													? 'bg-green-400 animate-pulse'
+													: 'bg-muted-foreground/40'}"
+											></span>
+											<span class="text-xs text-muted-foreground">Live log</span>
+											<span class="ml-auto text-xs text-muted-foreground/50 font-mono">Run #{runId}</span>
+										</div>
 										<RunLog {runId} />
 									</div>
 								</Table.Cell>
