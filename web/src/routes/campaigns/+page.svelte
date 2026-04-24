@@ -305,8 +305,11 @@
 							<Table.Cell class="w-8 pl-0 py-3">
 								{#if runId != null}
 									<button
-										onclick={() => toggleExpand(c.id)}
-										class="flex items-center justify-center size-7 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+										onclick={(e) => {
+											e.stopPropagation();
+											toggleExpand(c.id);
+										}}
+										class="flex items-center justify-center size-7 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
 										aria-label={expanded ? 'Collapse log' : 'Expand log'}
 									>
 										{#if expanded}
