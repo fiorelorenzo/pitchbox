@@ -12,12 +12,24 @@ export function registerRunCommands(program: Command) {
       if (!Number.isInteger(campaignId)) return fail('invalid campaign id');
       const db = getDb();
 
-      const [campaign] = await db.select().from(schema.campaigns).where(eq(schema.campaigns.id, campaignId));
+      const [campaign] = await db
+        .select()
+        .from(schema.campaigns)
+        .where(eq(schema.campaigns.id, campaignId));
       if (!campaign) return fail(`campaign ${campaignId} not found`);
 
-      const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, campaign.projectId));
-      const [platform] = await db.select().from(schema.platforms).where(eq(schema.platforms.id, campaign.platformId));
-      const accounts = await db.select().from(schema.accounts).where(eq(schema.accounts.projectId, campaign.projectId));
+      const [project] = await db
+        .select()
+        .from(schema.projects)
+        .where(eq(schema.projects.id, campaign.projectId));
+      const [platform] = await db
+        .select()
+        .from(schema.platforms)
+        .where(eq(schema.platforms.id, campaign.platformId));
+      const accounts = await db
+        .select()
+        .from(schema.accounts)
+        .where(eq(schema.accounts.projectId, campaign.projectId));
       const configs = await db
         .select()
         .from(schema.projectConfigs)
@@ -41,7 +53,12 @@ export function registerRunCommands(program: Command) {
 
       ok({
         runId: run.id,
-        campaign: { id: campaign.id, name: campaign.name, skillSlug: campaign.skillSlug, config: campaign.config },
+        campaign: {
+          id: campaign.id,
+          name: campaign.name,
+          skillSlug: campaign.skillSlug,
+          config: campaign.config,
+        },
         project: { id: project.id, slug: project.slug, name: project.name },
         platform: { id: platform.id, slug: platform.slug },
         config: configMap,

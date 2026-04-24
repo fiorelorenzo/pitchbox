@@ -7,7 +7,7 @@ export function ageDays(createdUtc: number): number {
 export async function runPool<T, R>(
   items: T[],
   concurrency: number,
-  worker: (item: T) => Promise<R>
+  worker: (item: T) => Promise<R>,
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;

@@ -14,7 +14,10 @@ export function registerRedditCommands(program: Command) {
       const db = getDb();
       const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
       if (!run) return fail(`run ${runId} not found`);
-      const [campaign] = await db.select().from(schema.campaigns).where(eq(schema.campaigns.id, run.campaignId));
+      const [campaign] = await db
+        .select()
+        .from(schema.campaigns)
+        .where(eq(schema.campaigns.id, run.campaignId));
 
       const profile = (campaign.config ?? {}) as {
         subreddits: string[];

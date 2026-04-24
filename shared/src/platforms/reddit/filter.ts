@@ -11,7 +11,7 @@ export interface FilterOptions {
  */
 export function filterCandidates(
   candidates: ScoutCandidate[],
-  opts: FilterOptions
+  opts: FilterOptions,
 ): ScoutCandidate[] {
   const contacted = new Set([...opts.contactedHandles].map((h) => h.toLowerCase()));
   const blocked = new Set([...opts.blockedHandles].map((h) => h.toLowerCase()));

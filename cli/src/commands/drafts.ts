@@ -35,7 +35,10 @@ export function registerDraftCommands(program: Command) {
       const db = getDb();
       const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
       if (!run) return fail(`run ${runId} not found`);
-      const [campaign] = await db.select().from(schema.campaigns).where(eq(schema.campaigns.id, run.campaignId));
+      const [campaign] = await db
+        .select()
+        .from(schema.campaigns)
+        .where(eq(schema.campaigns.id, run.campaignId));
 
       const body = await readStdin();
       const parsed = Payload.safeParse(JSON.parse(body));
@@ -59,10 +62,18 @@ export function registerDraftCommands(program: Command) {
         metadata: d.metadata,
       }));
 
-      const inserted = await db.insert(schema.drafts).values(rows).returning({ id: schema.drafts.id });
+      const inserted = await db
+        .insert(schema.drafts)
+        .values(rows)
+        .returning({ id: schema.drafts.id });
       if (inserted.length) {
         await db.insert(schema.draftEvents).values(
-          inserted.map((i) => ({ draftId: i.id, event: 'created', actor: 'system', details: {} })),
+          inserted.map((i) => ({
+            draftId: i.id,
+            event: 'created',
+            actor: 'system',
+            details: {},
+          })),
         );
       }
 

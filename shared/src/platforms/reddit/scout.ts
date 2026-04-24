@@ -1,10 +1,4 @@
-import {
-  browseSubreddit,
-  closeBrowser,
-  getUserAbout,
-  searchPosts,
-  profileUrl
-} from './reddit.js';
+import { browseSubreddit, closeBrowser, getUserAbout, searchPosts, profileUrl } from './reddit.js';
 import { loadEnv } from './env.js';
 import { filterCandidates } from './filter.js';
 import type { ScoutCandidate, ScoutProfile } from './types.js';
@@ -29,7 +23,7 @@ export async function runScout(opts: RunScoutOptions): Promise<ScoutCandidate[]>
           query,
           sort: 'relevance',
           timeframe: 'month',
-          limit: opts.profile.perSubredditLimit ?? 20
+          limit: opts.profile.perSubredditLimit ?? 20,
         });
         for (const post of posts) {
           if (post.subreddit.toLowerCase() !== subreddit.toLowerCase()) continue;
@@ -41,7 +35,7 @@ export async function runScout(opts: RunScoutOptions): Promise<ScoutCandidate[]>
             user: {
               name: user.name,
               karma: user.totalKarma,
-              createdUtc: user.createdUtc
+              createdUtc: user.createdUtc,
             },
             post: {
               title: post.title,
@@ -50,11 +44,11 @@ export async function runScout(opts: RunScoutOptions): Promise<ScoutCandidate[]>
               score: post.score,
               subreddit: post.subreddit,
               numComments: post.numComments,
-              createdUtc: post.createdUtc
+              createdUtc: post.createdUtc,
             },
             profileUrl: profileUrl(user.name),
             composeUrlBase: `https://www.reddit.com/message/compose?to=${encodeURIComponent(user.name)}`,
-            matchedBy: 'search'
+            matchedBy: 'search',
           });
         }
       }
@@ -64,7 +58,7 @@ export async function runScout(opts: RunScoutOptions): Promise<ScoutCandidate[]>
           subreddit,
           sort: 'hot',
           timeframe: 'day',
-          limit: 20
+          limit: 20,
         });
         for (const post of hotPosts) {
           if (seen.has(post.id)) continue;
@@ -75,7 +69,7 @@ export async function runScout(opts: RunScoutOptions): Promise<ScoutCandidate[]>
             user: {
               name: user.name,
               karma: user.totalKarma,
-              createdUtc: user.createdUtc
+              createdUtc: user.createdUtc,
             },
             post: {
               title: post.title,
@@ -84,11 +78,11 @@ export async function runScout(opts: RunScoutOptions): Promise<ScoutCandidate[]>
               score: post.score,
               subreddit: post.subreddit,
               numComments: post.numComments,
-              createdUtc: post.createdUtc
+              createdUtc: post.createdUtc,
             },
             profileUrl: profileUrl(user.name),
             composeUrlBase: `https://www.reddit.com/message/compose?to=${encodeURIComponent(user.name)}`,
-            matchedBy: 'hot'
+            matchedBy: 'hot',
           });
         }
       }
@@ -96,7 +90,7 @@ export async function runScout(opts: RunScoutOptions): Promise<ScoutCandidate[]>
 
     return filterCandidates(raw, {
       contactedHandles: opts.contactedHandles,
-      blockedHandles: opts.blockedHandles
+      blockedHandles: opts.blockedHandles,
     });
   } finally {
     await closeBrowser();

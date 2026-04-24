@@ -10,23 +10,28 @@ You are acting inside a Pitchbox campaign run. Your job is to draft discussion-f
 ## Inputs
 
 Environment variables:
+
 - `PITCHBOX_CAMPAIGN_ID`
 - `PITCHBOX_RUN_ID` (may be absent if invoked directly; step 1 creates it)
 
 ## Steps
 
 1. **Start the run.**
+
    ```
    pitchbox run:start --campaign=$PITCHBOX_CAMPAIGN_ID
    ```
+
    Parse JSON. Extract `runId`, `config` (product, voice, topicAngles), `accounts`, `blocklist`.
 
 2. **Fetch candidate posts.** The same `reddit:scout` command is used; the `matchedBy` field on each candidate tells you whether it came from a keyword search or a hot-browse pass.
+
    ```
    pitchbox reddit:scout --run=<runId>
    ```
 
 3. **Read staged candidates.**
+
    ```
    pitchbox staging:candidates --run=<runId>
    ```
@@ -54,16 +59,21 @@ Environment variables:
 6. **Pick the account.** Comments almost always use the `personal` account (brand accounts commenting on other people's posts comes off as marketing spam). Use the first account with `role === 'personal'`. Record `accountId`.
 
 7. **Build the URL.** For `post_comment` drafts the compose URL is just the post permalink:
+
    ```
    https://www.reddit.com{post.permalink}?pitchbox_draft=<draftId>
    ```
+
    The `pitchbox_draft` query param is how the browser extension (later milestone) finds the draft to auto-fill the comment textarea. For M1 the user copies the body manually; the param is harmless.
 
 8. **Write drafts back.**
+
    ```
    echo '<json>' | pitchbox drafts:create --run=<runId>
    ```
+
    Each draft:
+
    ```json
    {
      "accountId": 1,
@@ -78,6 +88,7 @@ Environment variables:
      "metadata": { "matchedBy": "search", "postAgeHours": 8 }
    }
    ```
+
    Note `targetUser` is null for post_comment — the audience is the whole thread, not one user.
 
 9. **Finish the run.**

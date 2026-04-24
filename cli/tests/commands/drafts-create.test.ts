@@ -22,8 +22,14 @@ describe('pitchbox drafts:create', () => {
 
   it('bulk-inserts drafts from stdin JSON', async () => {
     const db = getDb();
-    const [platform] = await db.select().from(schema.platforms).where(eq(schema.platforms.slug, 'reddit'));
-    const [project] = await db.insert(schema.projects).values({ slug: 'demo', name: 'D' }).returning();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ slug: 'demo', name: 'D' })
+      .returning();
     const [account] = await db
       .insert(schema.accounts)
       .values({ projectId: project.id, platformId: platform.id, handle: 'alice', role: 'personal' })

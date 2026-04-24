@@ -4,10 +4,7 @@ import { sql } from 'drizzle-orm';
 
 async function main() {
   const db = getDb();
-  await db
-    .insert(schema.platforms)
-    .values({ slug: 'reddit', enabled: true })
-    .onConflictDoNothing();
+  await db.insert(schema.platforms).values({ slug: 'reddit', enabled: true }).onConflictDoNothing();
   const result = await db.execute<{ count: number }>(
     sql`select count(*)::int as count from platforms`,
   );

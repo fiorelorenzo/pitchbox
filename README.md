@@ -36,8 +36,8 @@ npm run dev   # opens http://127.0.0.1:5180
 - **`shared/`** — Drizzle schema, platform adapters (Reddit), `AgentRunner` interface.
 - **`cli/`** — the `pitchbox` CLI that playbooks call to read/write DB.
 - **`web/`** — SvelteKit dashboard (Tailwind 4, Svelte 5): Inbox, Campaigns, Settings.
-- **`daemon/`** *(future)* — scheduler + reply pollers + safety brake.
-- **`extension/`** *(future)* — Chrome MV3 extension for mark-as-sent + DM reply sync.
+- **`daemon/`** _(future)_ — scheduler + reply pollers + safety brake.
+- **`extension/`** _(future)_ — Chrome MV3 extension for mark-as-sent + DM reply sync.
 - **`playbooks/`** — agent-agnostic markdown instructions consumed by the `AgentRunner`.
 
 ## Roadmap

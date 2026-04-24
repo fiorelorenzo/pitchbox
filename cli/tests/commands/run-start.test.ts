@@ -25,7 +25,10 @@ describe('pitchbox run:start', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
-    const [project] = await db.insert(schema.projects).values({ slug: 'test', name: 'Test' }).returning();
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ slug: 'test', name: 'Test' })
+      .returning();
     await db.insert(schema.accounts).values({
       projectId: project.id,
       platformId: platform.id,

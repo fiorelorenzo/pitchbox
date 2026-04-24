@@ -9,7 +9,7 @@ import {
   browserSearchPosts,
   closeBrowser,
   type BrowseOpts,
-  type SearchOpts
+  type SearchOpts,
 } from './client.js';
 import { cacheGet, cacheSet } from './cache.js';
 import type { RedditEnv } from './env.js';
@@ -18,7 +18,7 @@ import type {
   RedditPost,
   RedditSubredditAbout,
   RedditSubredditRule,
-  RedditUserAbout
+  RedditUserAbout,
 } from './types.js';
 
 const BASE = 'https://www.reddit.com';
@@ -43,7 +43,7 @@ export async function browseSubreddit(env: RedditEnv, opts: BrowseOpts): Promise
 
 export async function getUserAbout(
   env: RedditEnv,
-  username: string
+  username: string,
 ): Promise<RedditUserAbout | null> {
   const key = `user:${username.toLowerCase()}`;
   const cached = await cacheGet<RedditUserAbout | null>(key);
@@ -55,7 +55,7 @@ export async function getUserAbout(
 
 export async function getSubredditRules(
   env: RedditEnv,
-  subreddit: string
+  subreddit: string,
 ): Promise<RedditSubredditRule[]> {
   const key = `rules:${subreddit.toLowerCase()}`;
   const cached = await cacheGet<RedditSubredditRule[]>(key);
@@ -67,7 +67,7 @@ export async function getSubredditRules(
 
 export async function getSubredditAbout(
   env: RedditEnv,
-  subreddit: string
+  subreddit: string,
 ): Promise<RedditSubredditAbout | null> {
   const key = `about:${subreddit.toLowerCase()}`;
   const cached = await cacheGet<RedditSubredditAbout | null>(key);
@@ -80,7 +80,7 @@ export async function getSubredditAbout(
 export async function getPostComments(
   env: RedditEnv,
   permalink: string,
-  limit: number
+  limit: number,
 ): Promise<RedditComment[]> {
   const key = `comments:${permalink}:${limit}`;
   const cached = await cacheGet<RedditComment[]>(key);
@@ -93,7 +93,7 @@ export async function getPostComments(
 export async function getPostAndComments(
   env: RedditEnv,
   permalink: string,
-  commentLimit: number
+  commentLimit: number,
 ): Promise<{ post: RedditPost | null; comments: RedditComment[] }> {
   const key = `post-and-comments:${permalink}:${commentLimit}`;
   const cached = await cacheGet<{ post: RedditPost | null; comments: RedditComment[] }>(key);
@@ -106,7 +106,7 @@ export async function getPostAndComments(
 export async function getUserPosts(
   env: RedditEnv,
   username: string,
-  limit: number
+  limit: number,
 ): Promise<RedditPost[]> {
   const key = `user-posts:${username.toLowerCase()}:${limit}`;
   const cached = await cacheGet<RedditPost[]>(key);

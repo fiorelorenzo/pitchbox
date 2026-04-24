@@ -7,7 +7,7 @@ import type {
   RedditPost,
   RedditSubredditAbout,
   RedditSubredditRule,
-  RedditUserAbout
+  RedditUserAbout,
 } from './types.js';
 
 const chromium = rawChromium.use(StealthPlugin());
@@ -25,7 +25,7 @@ async function ensureContext(env: RedditEnv): Promise<BrowserContext> {
   browser = await chromium.launch({
     headless: env.headless,
     channel: 'chrome',
-    args: ['--disable-blink-features=AutomationControlled']
+    args: ['--disable-blink-features=AutomationControlled'],
   });
   context = await browser.newContext({
     userAgent: CHROME_UA,
@@ -33,8 +33,8 @@ async function ensureContext(env: RedditEnv): Promise<BrowserContext> {
     locale: 'en-US',
     timezoneId: 'America/New_York',
     extraHTTPHeaders: {
-      'Accept-Language': 'en-US,en;q=0.9'
-    }
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
   });
   return context;
 }
@@ -47,7 +47,7 @@ async function warmup(env: RedditEnv): Promise<void> {
     try {
       const res = await page.goto('https://www.reddit.com/', {
         waitUntil: 'domcontentloaded',
-        timeout: 30_000
+        timeout: 30_000,
       });
       await page.waitForTimeout(1_000);
       if (process.env.REDDIT_SCOUT_DEBUG === '1') {
@@ -100,7 +100,7 @@ async function scrollToLoadMore(
   page: Page,
   selector: string,
   limit: number,
-  maxScrolls = 6
+  maxScrolls = 6,
 ): Promise<number> {
   let stalls = 0;
   let count = await page.$$eval(selector, (els) => els.length);
@@ -125,7 +125,7 @@ export async function browserSearchPosts(env: RedditEnv, opts: SearchOpts): Prom
     q: opts.query,
     type: 'link',
     sort: opts.sort,
-    t: opts.timeframe
+    t: opts.timeframe,
   });
   const url = `https://www.reddit.com/search/?${qs}`;
   const page = await newPage(env);
@@ -134,13 +134,13 @@ export async function browserSearchPosts(env: RedditEnv, opts: SearchOpts): Prom
     const status = res?.status() ?? 0;
     if (status === 403 || status === 401) {
       throw new Error(
-        `Reddit ${status} on ${url}. The subreddit may be private/gated or Reddit is rate-limiting anonymous access.`
+        `Reddit ${status} on ${url}. The subreddit may be private/gated or Reddit is rate-limiting anonymous access.`,
       );
     }
     await page
       .waitForSelector(
         '[data-testid="search-post-unit"], [data-testid="search-results-empty-state"]',
-        { timeout: 8_000 }
+        { timeout: 8_000 },
       )
       .catch(() => undefined);
 
@@ -152,7 +152,7 @@ export async function browserSearchPosts(env: RedditEnv, opts: SearchOpts): Prom
         const out: Array<Record<string, unknown>> = [];
         for (const el of els.slice(0, max)) {
           const tracker = el.querySelector(
-            'search-telemetry-tracker[data-faceplate-tracking-context]'
+            'search-telemetry-tracker[data-faceplate-tracking-context]',
           );
           let ctx: {
             post?: { id?: string; title?: string; nsfw?: boolean };
@@ -200,12 +200,12 @@ export async function browserSearchPosts(env: RedditEnv, opts: SearchOpts): Prom
             authorFullname: ctx?.profile?.id ?? null,
             over18: !!ctx?.post?.nsfw,
             locked: false,
-            stickied: false
+            stickied: false,
           });
         }
         return out;
       },
-      opts.limit
+      opts.limit,
     );
     return posts as RedditPost[];
   } finally {
@@ -220,7 +220,7 @@ export async function browserSearchPosts(env: RedditEnv, opts: SearchOpts): Prom
  */
 export async function browserBrowseSubreddit(
   env: RedditEnv,
-  opts: BrowseOpts
+  opts: BrowseOpts,
 ): Promise<RedditPost[]> {
   const sortSegment =
     opts.sort === 'top' ? `top/?t=${encodeURIComponent(opts.timeframe)}` : `${opts.sort}/`;
@@ -231,7 +231,7 @@ export async function browserBrowseSubreddit(
     const status = res?.status() ?? 0;
     if (status === 403 || status === 401) {
       throw new Error(
-        `Reddit ${status} on ${url}. The subreddit may be private/gated or Reddit is rate-limiting anonymous access.`
+        `Reddit ${status} on ${url}. The subreddit may be private/gated or Reddit is rate-limiting anonymous access.`,
       );
     }
     if (status === 404) return [];
@@ -275,12 +275,12 @@ export async function browserBrowseSubreddit(
             over18: el.getAttribute('is-nsfw') === 'true',
             locked: isLocked,
             stickied: isStickied,
-            linkFlairText: el.getAttribute('post-flair-text') || null
+            linkFlairText: el.getAttribute('post-flair-text') || null,
           });
         }
         return out;
       },
-      opts.limit
+      opts.limit,
     );
     return posts as RedditPost[];
   } finally {
@@ -290,7 +290,7 @@ export async function browserBrowseSubreddit(
 
 export async function browserGetUserAbout(
   env: RedditEnv,
-  username: string
+  username: string,
 ): Promise<RedditUserAbout | null> {
   const url = `https://www.reddit.com/user/${encodeURIComponent(username)}/`;
   const page = await newPage(env);
@@ -304,13 +304,13 @@ export async function browserGetUserAbout(
 
     await page
       .waitForSelector('time[datetime], shreddit-profile-card, [data-testid="profile-sidebar"]', {
-        timeout: 6_000
+        timeout: 6_000,
       })
       .catch(() => undefined);
 
     if (process.env.REDDIT_SCOUT_DEBUG === '1') {
       const dbg = (await page.evaluate(
-        "(()=>{const dump=(sel)=>Array.from(document.querySelectorAll(sel)).slice(0,8).map(e=>({tag:e.tagName.toLowerCase(),id:e.id,class:(e.className||'').toString().slice(0,80),aria:e.getAttribute('aria-label'),number:e.getAttribute('number'),text:(e.textContent||'').trim().slice(0,60)}));return{title:document.title,faceplate:dump('faceplate-number'),karmaAny:dump('[id*=karma],[data-testid*=karma],[class*=karma]'),shredditProfileCard:!!document.querySelector('shreddit-profile-card'),timeCount:document.querySelectorAll('time[datetime]').length};})()"
+        "(()=>{const dump=(sel)=>Array.from(document.querySelectorAll(sel)).slice(0,8).map(e=>({tag:e.tagName.toLowerCase(),id:e.id,class:(e.className||'').toString().slice(0,80),aria:e.getAttribute('aria-label'),number:e.getAttribute('number'),text:(e.textContent||'').trim().slice(0,60)}));return{title:document.title,faceplate:dump('faceplate-number'),karmaAny:dump('[id*=karma],[data-testid*=karma],[class*=karma]'),shredditProfileCard:!!document.querySelector('shreddit-profile-card'),timeCount:document.querySelectorAll('time[datetime]').length};})()",
       )) as unknown;
       console.error(`  [debug user ${username}]`, JSON.stringify(dbg, null, 2).slice(0, 2000));
     }
@@ -319,7 +319,7 @@ export async function browserGetUserAbout(
     // Strategy: find the karma label ("Karma") and take the closest following number-like text,
     // fallback to the first plain-number span on the page (which on modern Reddit is karma total).
     const info = (await page.evaluate(
-      "(()=>{const parseNum=(s)=>{if(!s)return 0;const c=String(s).replace(/[, ]/g,'').toLowerCase();const m=c.match(/^(\\d+(?:\\.\\d+)?)([km]?)$/);if(!m)return Number(c)||0;const n=Number(m[1]);if(m[2]==='k')return Math.round(n*1000);if(m[2]==='m')return Math.round(n*1000000);return Math.round(n);};const isNumText=(t)=>/^\\d{1,3}(?:,\\d{3})*(?:\\.\\d+)?[km]?$|^\\d+(?:\\.\\d+)?[km]?$/i.test(String(t||'').trim());let karma=0;const all=Array.from(document.querySelectorAll('span, div, faceplate-number'));for(const el of all){const t=(el.getAttribute('number')||el.textContent||'').trim();if(!t)continue;if(el.children&&el.children.length>0&&el.tagName!=='FACEPLATE-NUMBER')continue;if(isNumText(t)){const n=parseNum(t);if(n>=1){karma=n;break;}}}let createdUtc=0;const time=document.querySelector('time[datetime]');if(time){const dt=time.getAttribute('datetime');if(dt)createdUtc=Math.floor(new Date(dt).getTime()/1000);}return{karma,createdUtc};})()"
+      "(()=>{const parseNum=(s)=>{if(!s)return 0;const c=String(s).replace(/[, ]/g,'').toLowerCase();const m=c.match(/^(\\d+(?:\\.\\d+)?)([km]?)$/);if(!m)return Number(c)||0;const n=Number(m[1]);if(m[2]==='k')return Math.round(n*1000);if(m[2]==='m')return Math.round(n*1000000);return Math.round(n);};const isNumText=(t)=>/^\\d{1,3}(?:,\\d{3})*(?:\\.\\d+)?[km]?$|^\\d+(?:\\.\\d+)?[km]?$/i.test(String(t||'').trim());let karma=0;const all=Array.from(document.querySelectorAll('span, div, faceplate-number'));for(const el of all){const t=(el.getAttribute('number')||el.textContent||'').trim();if(!t)continue;if(el.children&&el.children.length>0&&el.tagName!=='FACEPLATE-NUMBER')continue;if(isNumText(t)){const n=parseNum(t);if(n>=1){karma=n;break;}}}let createdUtc=0;const time=document.querySelector('time[datetime]');if(time){const dt=time.getAttribute('datetime');if(dt)createdUtc=Math.floor(new Date(dt).getTime()/1000);}return{karma,createdUtc};})()",
     )) as { karma: number; createdUtc: number };
 
     return {
@@ -331,7 +331,7 @@ export async function browserGetUserAbout(
       createdUtc: info.createdUtc,
       isSuspended: false,
       isEmployee: false,
-      acceptsFollowers: false
+      acceptsFollowers: false,
     };
   } finally {
     await page.close();
@@ -369,7 +369,7 @@ type RulesResponse = {
 
 export async function browserGetSubredditRules(
   env: RedditEnv,
-  subreddit: string
+  subreddit: string,
 ): Promise<RedditSubredditRule[]> {
   const url = `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/about/rules.json`;
   const data = await fetchJson<RulesResponse>(env, url);
@@ -378,7 +378,7 @@ export async function browserGetSubredditRules(
     shortName: r.short_name ?? '',
     description: r.description ?? '',
     kind: r.kind ?? '',
-    priority: Number(r.priority ?? 0)
+    priority: Number(r.priority ?? 0),
   }));
 }
 
@@ -395,7 +395,7 @@ type AboutResponse = {
 
 export async function browserGetSubredditAbout(
   env: RedditEnv,
-  subreddit: string
+  subreddit: string,
 ): Promise<RedditSubredditAbout | null> {
   const url = `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/about.json`;
   const data = await fetchJson<AboutResponse>(env, url);
@@ -407,7 +407,7 @@ export async function browserGetSubredditAbout(
     subscribers: Number(d.subscribers ?? 0),
     publicDescription: d.public_description ?? '',
     submissionType: d.submission_type ?? 'any',
-    over18: !!d.over18
+    over18: !!d.over18,
   };
 }
 
@@ -430,7 +430,7 @@ type CommentsResponse = Array<{
 export async function browserGetPostComments(
   env: RedditEnv,
   permalink: string,
-  limit: number
+  limit: number,
 ): Promise<RedditComment[]> {
   const clean = permalink.startsWith('/') ? permalink : `/${permalink}`;
   const url = `https://www.reddit.com${clean}.json?limit=${limit}&depth=1&sort=top`;
@@ -448,7 +448,7 @@ export async function browserGetPostComments(
       author: d.author ?? '',
       score: Number(d.score ?? 0),
       body: d.body,
-      createdUtc: Number(d.created_utc ?? 0)
+      createdUtc: Number(d.created_utc ?? 0),
     });
     if (out.length >= limit) break;
   }
@@ -484,7 +484,7 @@ type PostAndCommentsResponse = Array<{
 export async function browserGetPostAndComments(
   env: RedditEnv,
   permalink: string,
-  commentLimit: number
+  commentLimit: number,
 ): Promise<{ post: RedditPost | null; comments: RedditComment[] }> {
   const clean = permalink.startsWith('/') ? permalink : `/${permalink}`;
   const url = `https://www.reddit.com${clean}.json?limit=${commentLimit}&depth=1&sort=top`;
@@ -509,7 +509,7 @@ export async function browserGetPostAndComments(
       over18: !!d.over_18,
       locked: !!d.locked,
       stickied: !!d.stickied,
-      linkFlairText: d.link_flair_text ?? null
+      linkFlairText: d.link_flair_text ?? null,
     };
   }
   const children = data[1]?.data?.children ?? [];
@@ -523,7 +523,7 @@ export async function browserGetPostAndComments(
       author: d.author ?? '',
       score: Number(d.score ?? 0),
       body: d.body,
-      createdUtc: Number(d.created_utc ?? 0)
+      createdUtc: Number(d.created_utc ?? 0),
     });
     if (comments.length >= commentLimit) break;
   }
@@ -558,7 +558,7 @@ type UserSubmittedResponse = {
 export async function browserGetUserPosts(
   env: RedditEnv,
   username: string,
-  limit: number
+  limit: number,
 ): Promise<RedditPost[]> {
   const url = `https://www.reddit.com/user/${encodeURIComponent(username)}/submitted.json?limit=${limit}`;
   const data = await fetchJson<UserSubmittedResponse>(env, url);
@@ -583,7 +583,7 @@ export async function browserGetUserPosts(
       over18: !!d.over_18,
       locked: !!d.locked,
       stickied: !!d.stickied,
-      linkFlairText: d.link_flair_text ?? null
+      linkFlairText: d.link_flair_text ?? null,
     });
   }
   return out;

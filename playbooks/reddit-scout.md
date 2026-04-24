@@ -10,27 +10,34 @@ You are acting inside a Pitchbox campaign run. All state lives in Postgres; the 
 ## Inputs
 
 Environment variables available to you:
+
 - `PITCHBOX_CAMPAIGN_ID` — the campaign id to run.
 - `PITCHBOX_RUN_ID` — the run id created by the scheduler (may be absent if the CLI was invoked directly; in that case the first step creates one).
 
 ## Steps
 
 1. **Start the run and load context.** Shell out:
+
    ```
    pitchbox run:start --campaign=$PITCHBOX_CAMPAIGN_ID
    ```
+
    Parse the JSON. Extract: `runId`, `project`, `platform`, `campaign.config` (the scout profile), `config` (product, voice, offer, templates), `accounts`, `blocklist`, `contactedRecently`.
 
 2. **Fetch raw candidates.** Shell out:
+
    ```
    pitchbox reddit:scout --run=<runId>
    ```
+
    This fetches Reddit via the Pitchbox backend, applies blocklist + contact-history filters, and writes `staging_scout_candidates` rows.
 
 3. **Read the staged candidates.** Shell out:
+
    ```
    pitchbox staging:candidates --run=<runId>
    ```
+
    This returns an array of candidate objects, each with `user`, `post`, `profileUrl`, `composeUrlBase`, `matchedBy`.
 
 4. **For each candidate, do the following:**
@@ -57,10 +64,13 @@ Environment variables available to you:
 5. **Pick the account.** Use the first account from `accounts` whose `role` matches `config['product.defaultAccountRole']` (default: `personal`). Record its `id` as `accountId`.
 
 6. **Write drafts back.** Build a JSON array of draft objects, one per candidate you scored ≥3, and pipe it to:
+
    ```
    echo '<json>' | pitchbox drafts:create --run=<runId>
    ```
+
    Each draft object:
+
    ```json
    {
      "accountId": 1,
