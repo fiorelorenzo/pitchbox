@@ -1,8 +1,7 @@
 import { getSettings, setSettings } from '../lib/storage.js';
 import { api } from '../lib/api.js';
 
-const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
-  document.getElementById(id) as T;
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 function setStatus(msg: string, kind: 'ok' | 'err') {
   const el = $('status');

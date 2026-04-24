@@ -14,16 +14,8 @@ export const GET: RequestHandler = async ({ params }) => {
       createdAt: schema.messages.createdAtPlatform,
     })
     .from(schema.messages)
-    .innerJoin(
-      schema.contactHistory,
-      eq(schema.messages.contactId, schema.contactHistory.id),
-    )
-    .where(
-      and(
-        eq(schema.contactHistory.draftId, id),
-        eq(schema.messages.isFromUs, false),
-      ),
-    )
+    .innerJoin(schema.contactHistory, eq(schema.messages.contactId, schema.contactHistory.id))
+    .where(and(eq(schema.contactHistory.draftId, id), eq(schema.messages.isFromUs, false)))
     .orderBy(desc(schema.messages.createdAtPlatform))
     .limit(1);
   return json(msg ?? null);

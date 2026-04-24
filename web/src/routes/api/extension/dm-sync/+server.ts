@@ -3,11 +3,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireExtensionAuth } from '$lib/server/extension-auth.js';
 import { emit } from '$lib/server/events.js';
-import {
-  matchIncomingDms,
-  type ContactRow,
-  type IncomingDm,
-} from '@pitchbox/shared/dm-sync';
+import { matchIncomingDms, type ContactRow, type IncomingDm } from '@pitchbox/shared/dm-sync';
 
 type Body = { platform: string; items: IncomingDm[] };
 

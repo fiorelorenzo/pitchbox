@@ -49,8 +49,7 @@ export function matchIncomingDms(
   const seenPlatformMessage = new Set<string>();
 
   type IndexKey = string;
-  const key = (account: string, target: string): IndexKey =>
-    `${norm(account)}::${norm(target)}`;
+  const key = (account: string, target: string): IndexKey => `${norm(account)}::${norm(target)}`;
   const byPair = new Map<IndexKey, ContactRow>();
   for (const c of contacts) byPair.set(key(c.accountHandle, c.targetUser), c);
 

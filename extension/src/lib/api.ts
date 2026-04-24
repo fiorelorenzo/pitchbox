@@ -69,6 +69,5 @@ export const api = {
       platform,
       items,
     }),
-  dmSyncStatus: () =>
-    getJson<{ lastSyncAt: string | null }>('/api/extension/dm-sync/status'),
+  dmSyncStatus: () => getJson<{ lastSyncAt: string | null }>('/api/extension/dm-sync/status'),
 };

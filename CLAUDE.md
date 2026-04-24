@@ -61,6 +61,7 @@ npm workspaces monorepo. All workspaces share a single version (`0.2.0`), and th
 - **`playbooks/`** — agent-agnostic markdown consumed by an `AgentRunner`. Today: `reddit-scout.md`, `reddit-commenter.md`. They assume `bin/pitchbox` is on PATH within the agent sandbox.
 
 - **`extension/`** — Chrome MV3 companion built with Vite + `@crxjs/vite-plugin`. Reads the `pitchbox_draft=<id>` query param the dashboard appends to compose URLs; calls token-authenticated `/api/extension/*` endpoints on the local web server to flip drafts to `sent` when the user submits on Reddit. Build with `npm run build:extension` then load `extension/dist/` unpacked in `chrome://extensions`. Token lives in `app_config.extension_api_token` (generate/rotate from Settings).
+  - Background service worker (`src/background/dm-sync.ts`) polls `reddit.com/message/inbox.json` every 10 min via `chrome.alarms` and posts new DMs to `POST /api/extension/dm-sync`. The server matches on `(account_handle, target_user)` → `contact_history` rows, records replies in the `messages` table, and flips draft state to `replied`.
 
 ## Conventions
 

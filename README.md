@@ -34,6 +34,8 @@ npm run build:extension   # outputs extension/dist/
 
 Then in Chrome: `chrome://extensions` → enable _Developer mode_ → **Load unpacked** → pick `extension/dist/`. In the dashboard Settings → Browser extension, click **Generate token**, then paste the dashboard URL + token into the extension popup and click **Connect**.
 
+The extension also polls your Reddit inbox every 10 min and flips DM drafts to `replied` when the target user writes back. See the Conversations page in the dashboard.
+
 ## What ships today (v0.2.0, M0–M2)
 
 **Content pipeline**
@@ -71,7 +73,7 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.2
 - **`cli/`** — the `pitchbox` CLI that playbooks call to read/write DB (`run:start`, `run:finish`, `reddit:scout`, `drafts:create`, …).
 - **`web/`** — SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte dashboard. Routes: `/` (home), `/inbox`, `/campaigns`, `/campaigns/[id]`, `/contacts`, `/blocklist`, `/settings`.
 - **`daemon/`** — heartbeat + scheduler + reply poller (real DM reader still pending).
-- **`extension/`** — Chrome MV3 companion (Vite + `@crxjs/vite-plugin`) that auto-marks drafts as `sent` when you submit on Reddit. DM reply sync comes in M4.
+- **`extension/`** — Chrome MV3 companion (Vite + `@crxjs/vite-plugin`) that auto-marks drafts as `sent` when you submit on Reddit and polls your DM inbox to flip drafts to `replied` once the target user writes back.
 - **`playbooks/`** — agent-agnostic markdown instructions consumed by the `AgentRunner`.
 
 ## Roadmap
@@ -80,7 +82,7 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.2
 - ✅ **M1** — reddit-scout + reddit-commenter playbooks, Inbox, manual "Run now"
 - ✅ **M2** — mark-as-sent flow, Home dashboard, Contacts, Blocklist, daemon scaffold (heartbeat + cron scheduler + reply-poller skeleton)
 - ✅ **M3** — Chrome extension, auto mark-as-sent for DM compose + post-comment drafts
-- ⏳ **M4** — reply tracking: live Reddit DM reader + post-reply poller, Conversations UI
+- ✅ **M4** — DM reply tracking via the extension's inbox poller, Conversations UI (post-comment reply tracking deferred to M4.5)
 - ⏳ **M5** — safety brake + blocklist enforcement + smart rate-limiting
 - ⏳ **M6** — templates, keyword watches, analytics, A/B tests
 - ⏳ **M7+** — additional platform adapters, posting automation, team mode
