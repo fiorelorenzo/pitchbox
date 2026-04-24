@@ -8,7 +8,9 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import { onMount, onDestroy } from 'svelte';
+	import { navigating } from '$app/stores';
 	import { relativeTime, formatDuration } from '$lib/utils/time';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 
 	let {
 		data,
@@ -108,6 +110,8 @@
 	function isRunning(c: (typeof data.campaigns)[0]): boolean {
 		return c.isRunning || runningCampaignIds.has(c.id);
 	}
+
+	let isNavigating = $derived($navigating != null);
 </script>
 
 <h1 class="text-2xl font-semibold mb-6">Campaigns</h1>
@@ -131,10 +135,21 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
+					{#if isNavigating}
+						{#each Array(4) as _, i (i)}
+							<Table.Row>
+								{#each Array(6) as __, j (j)}
+									<Table.Cell><Skeleton class="h-5 w-full" /></Table.Cell>
+								{/each}
+							</Table.Row>
+						{/each}
+					{:else}
 					{#each data.campaigns as c (c.id)}
 						{@const running = isRunning(c)}
 						<Table.Row class={running ? 'border-l-2 border-green-500' : ''}>
-							<Table.Cell class="font-medium">{c.name}</Table.Cell>
+							<Table.Cell class="font-medium">
+									<a href="/campaigns/{c.id}" class="hover:underline">{c.name}</a>
+								</Table.Cell>
 							<Table.Cell class="text-muted-foreground text-xs">{c.skillSlug}</Table.Cell>
 							<Table.Cell>
 								{#if running}
@@ -199,6 +214,7 @@
 							</Table.Cell>
 						</Table.Row>
 					{/each}
+					{/if}
 				</Table.Body>
 			</Table.Root>
 		</Card.Content>

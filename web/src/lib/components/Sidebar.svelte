@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { Inbox, PlayCircle, MessageSquare, Settings, type Icon as LucideIcon } from 'lucide-svelte';
+	import { Inbox, PlayCircle, MessageSquare, Settings, BookOpen, type Icon as LucideIcon } from 'lucide-svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { cn } from '$lib/utils';
 	import { VERSION } from '$lib/shared/version';
@@ -47,9 +47,21 @@
 		{/each}
 	</nav>
 
-	<!-- Daemon status (placeholder for M2+) -->
-	<div class="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground border-t border-border mt-4 pt-4">
-		<span class="size-2 rounded-full bg-muted-foreground/40 shrink-0"></span>
-		<span>Daemon: unknown</span>
+	<!-- Bottom section: docs + version -->
+	<div class="flex flex-col gap-1 border-t border-border mt-4 pt-4">
+		<a
+			href="/README.md"
+			target="_blank"
+			rel="noopener"
+			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+		>
+			<BookOpen class="size-4 shrink-0" />
+			Docs
+		</a>
+		<div class="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
+			<span class="size-2 rounded-full bg-muted-foreground/40 shrink-0"></span>
+			<span>Daemon: unknown</span>
+			<span class="ml-auto font-mono opacity-50">{VERSION}</span>
+		</div>
 	</div>
 </aside>
