@@ -37,4 +37,38 @@ async function reapOrphanedRuns() {
 // Run once at module load (first request to the server).
 await reapOrphanedRuns();
 
-export const handle = async ({ event, resolve }) => resolve(event);
+const EXTENSION_ALLOWED_ORIGINS = new Set([
+  'https://www.reddit.com',
+  'https://old.reddit.com',
+]);
+
+function extensionCorsHeaders(origin: string | null): Record<string, string> {
+  const allowed = origin && EXTENSION_ALLOWED_ORIGINS.has(origin) ? origin : 'null';
+  return {
+    'access-control-allow-origin': allowed,
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
+    'access-control-allow-headers': 'authorization, content-type',
+    'access-control-max-age': '86400',
+    vary: 'Origin',
+  };
+}
+
+export const handle = async ({ event, resolve }) => {
+  const isExtensionRoute = event.url.pathname.startsWith('/api/extension/');
+
+  if (isExtensionRoute && event.request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: extensionCorsHeaders(event.request.headers.get('origin')),
+    });
+  }
+
+  const response = await resolve(event);
+
+  if (isExtensionRoute) {
+    const headers = extensionCorsHeaders(event.request.headers.get('origin'));
+    for (const [k, v] of Object.entries(headers)) response.headers.set(k, v);
+  }
+
+  return response;
+};

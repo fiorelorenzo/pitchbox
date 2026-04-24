@@ -140,6 +140,7 @@
 		sent: 'Sent',
 		edited: 'Edited',
 		replied: 'Replied',
+		armed: 'Send clicked on Reddit',
 	};
 
 	let editedFromDraft = $derived(draft != null && sentDraftText !== draft.body);

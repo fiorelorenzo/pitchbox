@@ -1,11 +1,17 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert';
-	import { Info, Activity, Cpu, Terminal } from 'lucide-svelte';
+	import { Info, Activity, Cpu } from 'lucide-svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import ExtensionCard from '$lib/components/ExtensionCard.svelte';
 	import { daemonStatus } from '$lib/stores/daemon';
+
+	type PageData = {
+		extension: { token: string | null; createdAt: string | null; backendUrl: string };
+	};
+	let { data }: { data: PageData } = $props();
 
 	function formatAge(seconds: number): string {
 		if (seconds < 60) return `${seconds}s ago`;
@@ -83,19 +89,9 @@
 		</Card.Content>
 	</Card.Root>
 
-	<Card.Root size="sm">
-		<Card.Header class="flex-row items-center gap-2">
-			<Terminal class="size-4 text-muted-foreground" />
-			<Card.Title class="text-base">Browser extension</Card.Title>
-		</Card.Header>
-		<Card.Content>
-			<Alert.Root>
-				<Info class="size-4" />
-				<Alert.Title>Not yet shipped</Alert.Title>
-				<Alert.Description>
-					Will auto-mark drafts as sent and sync DM reply state back into the dashboard.
-				</Alert.Description>
-			</Alert.Root>
-		</Card.Content>
-	</Card.Root>
+	<ExtensionCard
+		token={data.extension.token}
+		createdAt={data.extension.createdAt}
+		backendUrl={data.extension.backendUrl}
+	/>
 </div>
