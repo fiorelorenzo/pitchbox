@@ -36,26 +36,61 @@ export class ClaudeCodeRunner implements AgentRunner {
 
     const prompt = `Invoke the '${opts.slug}' skill for campaign ${opts.env.PITCHBOX_CAMPAIGN_ID ?? ''}. The skill knows what to do.`;
 
+    let tokensUsed: number | undefined;
+
     try {
       const exitCode = await new Promise<number>((resolve, reject) => {
         const child = this.spawn(
           this.binary,
-          ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'json'],
+          [
+            '-p',
+            prompt,
+            '--dangerously-skip-permissions',
+            '--verbose',
+            '--output-format',
+            'stream-json',
+          ],
           { cwd: opts.cwd, env: { ...process.env, ...opts.env } },
         );
         const chunks: string[] = [];
+        let buffer = '';
+
+        const emitLine = (line: string) => {
+          if (!line) return;
+          opts.onLogLine?.(line);
+          // Extract token usage from the final result event.
+          try {
+            const evt = JSON.parse(line);
+            if (evt?.type === 'result' && typeof evt.usage === 'object') {
+              tokensUsed =
+                (evt.usage.input_tokens ?? 0) + (evt.usage.output_tokens ?? 0) || undefined;
+            }
+          } catch {
+            // Not JSON, ignore.
+          }
+        };
+
         child.stdout?.on('data', (d: Buffer) => {
           const s = d.toString('utf8');
           chunks.push(s);
-          s.split(/\r?\n/).forEach((line) => opts.onLogLine?.(line));
+          buffer += s;
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() ?? '';
+          for (const line of lines) emitLine(line);
         });
-        child.stderr?.on('data', (d: Buffer) => chunks.push(d.toString('utf8')));
+        child.stderr?.on('data', (d: Buffer) => {
+          const s = d.toString('utf8');
+          chunks.push(s);
+          opts.onLogLine?.(`[stderr] ${s.trimEnd()}`);
+        });
+
         const timer = setTimeout(() => {
           child.kill('SIGTERM');
           reject(new Error(`agent run timed out after ${opts.timeoutMs}ms`));
         }, opts.timeoutMs);
         child.on('exit', (code: number | null) => {
           clearTimeout(timer);
+          if (buffer) emitLine(buffer);
           writeFileSync(logPath, chunks.join(''), 'utf8');
           resolve(code ?? 1);
         });
@@ -64,7 +99,7 @@ export class ClaudeCodeRunner implements AgentRunner {
           reject(err);
         });
       });
-      return { exitCode, logPath };
+      return { exitCode, logPath, tokensUsed };
     } finally {
       if (existsSync(skillDir)) rmSync(skillDir, { recursive: true, force: true });
     }
