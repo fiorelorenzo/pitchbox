@@ -8,7 +8,8 @@
     "shared",
     "cli",
     "web",
-    "daemon"
+    "daemon",
+    "extension"
   ],
   "engines": {
     "node": ">=22"
@@ -27,7 +28,9 @@
     "dev": "npm run -w web dev",
     "migrate:from-ai-game": "tsx scripts/migrate-from-ai-game.ts",
     "seed:embertold": "tsx scripts/seed-embertold.ts",
-    "reseed": "npm run -w @pitchbox/shared seed:core && npm run seed:embertold"
+    "reseed": "npm run -w @pitchbox/shared seed:core && npm run seed:embertold",
+    "build:extension": "npm run -w @pitchbox/extension build",
+    "zip:extension": "npm run -w @pitchbox/extension zip"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
