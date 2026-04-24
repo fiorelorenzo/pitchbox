@@ -137,12 +137,6 @@
 				toast.error(`Run #${rid} failed`);
 			}
 			await invalidateAll();
-			// Auto-collapse the expanded row 2.5s after the run finishes.
-			if (campaignId && expandedId === campaignId) {
-				setTimeout(() => {
-					if (expandedId === campaignId) expandedId = null;
-				}, 2500);
-			}
 		});
 	});
 
