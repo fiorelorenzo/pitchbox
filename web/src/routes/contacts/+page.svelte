@@ -3,12 +3,12 @@
 	import { page } from '$app/stores';
 	import { Search } from 'lucide-svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { SelectField } from '$lib/components/ui/select-field';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import { relativeTime } from '$lib/utils/time';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
 
 	type Contact = {
 		id: number;
@@ -124,7 +124,7 @@
 							</Table.Cell>
 							<Table.Cell>
 								{#if c.draftKind}
-									<Badge variant="outline" class="text-[10px]">{c.draftKind}</Badge>
+									<StatusBadge domain="draft-kind" value={c.draftKind} />
 								{:else}
 									<span class="text-xs text-muted-foreground italic">—</span>
 								{/if}
@@ -134,9 +134,12 @@
 							</Table.Cell>
 							<Table.Cell>
 								{#if c.repliedAt}
-									<Badge class="text-[10px] bg-emerald-500/90 hover:bg-emerald-500/90">
+									<span
+										class="inline-flex items-center gap-1.5 rounded-md px-1.5 py-[1px] h-[18px] text-[10px] font-medium bg-emerald-500/15 text-emerald-300 ring-1 ring-inset ring-emerald-500/25"
+									>
+										<span class="size-1.5 rounded-full bg-emerald-400"></span>
 										replied {relativeTime(c.repliedAt)}
-									</Badge>
+									</span>
 								{:else if c.replyCheckedAt}
 									<span class="text-[10px] text-muted-foreground">no reply yet</span>
 								{:else}

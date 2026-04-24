@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { Loader2, ChevronLeft, ChevronDown, ChevronUp } from 'lucide-svelte';
+	import { ChevronLeft, ChevronDown, ChevronUp } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { invalidateAll } from '$app/navigation';
 	import { navigating } from '$app/stores';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -46,30 +47,6 @@
 	let isStarting = $state(false);
 	// Single-expanded run id in the history table.
 	let expandedRunId = $state<number | null>(null);
-
-	const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-		active: 'default',
-		paused: 'secondary',
-		safety_braked: 'destructive',
-	};
-
-	const RUN_STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-		success: 'default',
-		running: 'default',
-		failed: 'destructive',
-		cancelled: 'secondary',
-		queued: 'secondary',
-		error: 'destructive',
-	};
-
-	const RUN_STATUS_COLOR: Record<string, string> = {
-		success: 'bg-green-500/15 text-green-700 border-green-200',
-		failed: 'bg-red-500/15 text-red-700 border-red-200',
-		error: 'bg-red-500/15 text-red-700 border-red-200',
-		cancelled: 'bg-amber-500/15 text-amber-700 border-amber-200',
-		running: 'bg-indigo-500/15 text-indigo-700 border-indigo-200',
-		queued: 'bg-muted text-muted-foreground border-border',
-	};
 
 	// Summary stats from last 30 runs
 	let stats = $derived(() => {
@@ -131,11 +108,11 @@
 	<div class="min-w-0 space-y-1.5">
 		<div class="flex items-center gap-3 flex-wrap">
 			<h1 class="text-2xl font-semibold tracking-tight leading-none">{data.campaign.name}</h1>
-			<Badge variant={STATUS_VARIANT[data.campaign.status] ?? 'secondary'}>
-				{data.campaign.status}
-			</Badge>
+			<StatusBadge domain="campaign-status" value={data.campaign.status} size="sm" />
 			<Badge variant="outline" class="font-mono text-[11px]">{data.campaign.skillSlug}</Badge>
-			<Badge variant="outline" class="font-mono text-[11px] text-muted-foreground">{data.campaign.agentRunner}</Badge>
+			<Badge variant="outline" class="font-mono text-[11px] text-muted-foreground"
+				>{data.campaign.agentRunner}</Badge
+			>
 		</div>
 		<p class="text-xs text-muted-foreground">
 			{#if data.project}
@@ -157,7 +134,7 @@
 <!-- Two cards: config + activity -->
 <div class="grid gap-4 md:grid-cols-2 mb-6">
 	<!-- Config card -->
-	<Card.Root>
+	<Card.Root size="sm">
 		<Card.Header>
 			<div class="flex items-center justify-between">
 				<Card.Title class="text-base">Configuration</Card.Title>
@@ -204,7 +181,7 @@
 	</Card.Root>
 
 	<!-- Recent activity summary card -->
-	<Card.Root>
+	<Card.Root size="sm">
 		<Card.Header>
 			<Card.Title class="text-base">Recent activity</Card.Title>
 			<Card.Description>Last {data.runs.length} runs</Card.Description>
@@ -241,10 +218,10 @@
 </div>
 
 <!-- Run history -->
-<Card.Root>
+<Card.Root size="sm">
 	<Card.Header>
-		<Card.Title>Run history</Card.Title>
-		<Card.Description>Last 30 runs</Card.Description>
+		<Card.Title class="text-base">Run history</Card.Title>
+		<Card.Description class="text-xs">Last 30 runs</Card.Description>
 	</Card.Header>
 	<Card.Content class="p-0">
 		{#if isNavigating}
@@ -279,16 +256,7 @@
 						<Table.Row class="hover:bg-muted/40 transition-colors border-b">
 							<Table.Cell class="font-mono text-xs text-muted-foreground py-3">#{run.id}</Table.Cell>
 							<Table.Cell class="py-3">
-								<span
-									class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium {RUN_STATUS_COLOR[
-										run.status
-									] ?? 'bg-muted text-muted-foreground border-border'}"
-								>
-									{#if run.status === 'running'}
-										<Loader2 class="size-3 animate-spin" />
-									{/if}
-									{run.status}
-								</span>
+								<StatusBadge domain="run-status" value={run.status} />
 							</Table.Cell>
 							<Table.Cell class="text-xs text-muted-foreground py-3">{run.trigger}</Table.Cell>
 							<Table.Cell class="text-xs py-3">

@@ -10,6 +10,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { relativeTime } from '$lib/utils/time';
 	import Markdown from '$lib/components/Markdown.svelte';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
 
 	type DraftEvent = {
 		id: number;
@@ -46,21 +47,6 @@
 	let sendDialogOpen = $state(false);
 	let sendingNow = $state(false);
 	let sentDraftText = $state('');
-
-	const KIND_BADGE_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
-		dm: 'default',
-		post: 'secondary',
-		post_comment: 'outline',
-		comment_reply: 'outline',
-	};
-
-	const STATE_BADGE_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> =
-		{
-			pending_review: 'secondary',
-			approved: 'default',
-			rejected: 'destructive',
-			sent: 'default',
-		};
 
 	$effect(() => {
 		if (!draft) {
@@ -176,12 +162,8 @@
 			<div class="flex flex-col gap-1.5 min-w-0">
 				<h2 class="text-lg font-semibold truncate">{primary}</h2>
 				<div class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-					<Badge variant={KIND_BADGE_VARIANT[draft.kind] ?? 'outline'} class="text-[10px]">
-						{draft.kind}
-					</Badge>
-					<Badge variant={STATE_BADGE_VARIANT[draft.state] ?? 'secondary'} class="text-[10px]">
-						{draft.state}
-					</Badge>
+					<StatusBadge domain="draft-kind" value={draft.kind} />
+					<StatusBadge domain="draft-state" value={draft.state} />
 					<span class="text-muted-foreground/40">·</span>
 					<span>fit {draft.fitScore ?? '?'}/5</span>
 					<span class="text-muted-foreground/40">·</span>

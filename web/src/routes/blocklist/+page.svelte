@@ -4,12 +4,12 @@
 	import { Plus, Trash2 } from 'lucide-svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { SelectField } from '$lib/components/ui/select-field';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import { relativeTime } from '$lib/utils/time';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
 
 	type Entry = {
 		id: number;
@@ -105,11 +105,6 @@
 		}
 	}
 
-	const KIND_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
-		subreddit: 'secondary',
-		user: 'default',
-		keyword: 'outline',
-	};
 </script>
 
 <PageHeader
@@ -199,9 +194,7 @@
 						{#each data.entries as e (e.id)}
 							<Table.Row>
 								<Table.Cell>
-									<Badge variant={KIND_VARIANT[e.kind] ?? 'outline'} class="text-[10px]">
-										{e.kind}
-									</Badge>
+									<StatusBadge domain="blocklist-kind" value={e.kind} />
 								</Table.Cell>
 								<Table.Cell class="font-mono text-xs">{e.value}</Table.Cell>
 								<Table.Cell class="text-xs text-muted-foreground">

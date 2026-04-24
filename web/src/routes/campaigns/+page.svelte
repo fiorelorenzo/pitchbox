@@ -5,6 +5,7 @@
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
@@ -50,21 +51,6 @@
 	let stopDialogOpen = $state(false);
 	let stopTarget = $state<{ campaignId: number; runId: number } | null>(null);
 	let stopping = $state(false);
-
-	const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-		active: 'default',
-		paused: 'secondary',
-		safety_braked: 'destructive',
-	};
-
-	const RUN_STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-		success: 'default',
-		running: 'default',
-		failed: 'destructive',
-		cancelled: 'secondary',
-		queued: 'secondary',
-		error: 'destructive',
-	};
 
 	async function runNow(id: number) {
 		// Synchronous guard: prevent double-click races.
@@ -183,7 +169,7 @@
 	description="Orchestrate outreach runs. Trigger a manual execution or inspect recent activity. The scheduler (daemon) will respect each campaign's status once it ships in M2."
 />
 
-<Card.Root>
+<Card.Root size="sm">
 	<Card.Content class="p-0">
 		<Table.Root>
 			<Table.Header>
@@ -237,18 +223,16 @@
 							</Table.Cell>
 							<Table.Cell class="py-3">
 								{#if running}
-									<Badge variant="default" class="gap-1.5 text-xs">
-										<span class="size-1.5 rounded-full bg-green-300 animate-pulse inline-block"
-										></span>
-										Running
-									</Badge>
+									<StatusBadge domain="run-status" value="running" size="sm" />
 								{:else}
 									<Tooltip.Provider delayDuration={200}>
 										<Tooltip.Root>
 											<Tooltip.Trigger>
-												<Badge variant={STATUS_VARIANT[c.status] ?? 'secondary'} class="text-xs">
-													{c.status}
-												</Badge>
+												<StatusBadge
+													domain="campaign-status"
+													value={c.status}
+													size="sm"
+												/>
 											</Tooltip.Trigger>
 											<Tooltip.Content class="max-w-xs">
 												{#if c.status === 'paused'}
@@ -273,12 +257,7 @@
 									<div class="flex flex-col gap-0.5">
 										<span>{relativeTime(c.lastRunFinishedAt)}</span>
 										{#if c.lastRunStatus}
-											<Badge
-												variant={RUN_STATUS_VARIANT[c.lastRunStatus] ?? 'secondary'}
-												class="text-[10px] py-0 px-1 h-4 w-fit"
-											>
-												{c.lastRunStatus}
-											</Badge>
+											<StatusBadge domain="run-status" value={c.lastRunStatus} />
 										{/if}
 										{#if c.lastRunDurationMs != null}
 											<span class="text-[10px]">{formatDuration(c.lastRunDurationMs)}</span>

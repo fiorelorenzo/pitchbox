@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Badge } from '$lib/components/ui/badge';
 	import { cn } from '$lib/utils';
 	import { relativeTime } from '$lib/utils/time';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
 
 	type Draft = {
 		id: number;
@@ -19,20 +19,6 @@
 		runId,
 		onclick,
 	}: { draft: Draft; selected?: boolean; runId?: number; onclick?: () => void } = $props();
-
-	const KIND_LABEL: Record<string, string> = {
-		dm: 'DM',
-		post: 'Post',
-		post_comment: 'Comment',
-		comment_reply: 'Reply',
-	};
-
-	const KIND_BADGE_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
-		dm: 'default',
-		post: 'secondary',
-		post_comment: 'outline',
-		comment_reply: 'outline',
-	};
 </script>
 
 <button
@@ -46,13 +32,14 @@
 		<span class="font-medium text-sm truncate">
 			{#if draft.kind === 'dm'}u/{draft.targetUser ?? '—'}{:else}r/{draft.subreddit ?? '—'}{/if}
 		</span>
-		<Badge variant={KIND_BADGE_VARIANT[draft.kind] ?? 'outline'} class="text-[10px] shrink-0">
-			{KIND_LABEL[draft.kind] ?? draft.kind}
-		</Badge>
+		<StatusBadge domain="draft-kind" value={draft.kind} class="shrink-0" />
 	</div>
-	<div class="text-xs text-muted-foreground mt-1">
-		fit {draft.fitScore ?? '?'}/5 · {draft.state}
-		{#if draft.kind !== 'dm' && draft.subreddit == null && draft.targetUser}· u/{draft.targetUser}{/if}
+	<div class="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
+		<StatusBadge domain="draft-state" value={draft.state} />
+		<span>· fit {draft.fitScore ?? '?'}/5</span>
+		{#if draft.kind !== 'dm' && draft.subreddit == null && draft.targetUser}
+			<span>· u/{draft.targetUser}</span>
+		{/if}
 	</div>
 	{#if runId != null || draft.createdAt}
 		<div class="text-[10px] text-muted-foreground/70 mt-0.5 flex items-center gap-1">
