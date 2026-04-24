@@ -153,11 +153,21 @@
       </div>
     {:else}
       {#each filtered as c (c.contactId)}
-        {@const href = c.draftId != null ? `/inbox?state=all&focus=${c.draftId}` : '#'}
-        <a
-          href={href}
+        {@const href = c.draftId != null ? `/inbox?state=all&focus=${c.draftId}` : null}
+        <div
+          role={href ? 'button' : undefined}
+          tabindex={href ? 0 : undefined}
+          aria-label={href ? `Open draft ${c.draftId} for u/${c.targetUser}` : undefined}
+          onclick={() => href && goto(href)}
+          onkeydown={(e) => {
+            if (href && (e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault();
+              goto(href);
+            }
+          }}
           class={cn(
-            'group flex items-start gap-3 px-4 py-3 transition-colors hover:bg-accent/40',
+            'group flex items-start gap-3 px-4 py-3 transition-colors',
+            href && 'cursor-pointer hover:bg-accent/40',
             c.repliedAt && 'border-l-2 border-l-violet-400/50',
           )}
         >
@@ -217,7 +227,7 @@
               </p>
             {/if}
           </div>
-        </a>
+        </div>
       {/each}
     {/if}
   </Card.Content>
