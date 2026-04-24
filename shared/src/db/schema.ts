@@ -13,7 +13,6 @@ import {
   index,
   customType,
 } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
 
 const bytea = customType<{ data: Buffer; default: false }>({
   dataType() {

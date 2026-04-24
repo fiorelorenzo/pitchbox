@@ -26,15 +26,39 @@ npm run -w daemon dev  # (optional) scheduler + reply poller
 
 ### Browser extension (optional)
 
-Auto-flip drafts to `sent` when you submit them on Reddit, instead of clicking **Mark as sent** in the dashboard.
+The companion Chrome extension does two things:
+
+1. **Auto-mark drafts as sent.** When you submit a DM or post-comment on Reddit, the extension flips the draft from `approved` → `sent` automatically — no need to click **Mark as sent** in the dashboard.
+2. **Sync DM replies back into the dashboard.** Every 10 min (and on demand) the extension reads your Reddit inbox and flips drafts to `replied` when the target user writes back. Replies appear in the Inbox draft detail and in the Conversations page.
+
+#### Install
 
 ```bash
 npm run build:extension   # outputs extension/dist/
 ```
 
-Then in Chrome: `chrome://extensions` → enable _Developer mode_ → **Load unpacked** → pick `extension/dist/`. In the dashboard Settings → Browser extension, click **Generate token**, then paste the dashboard URL + token into the extension popup and click **Connect**.
+In Chrome: `chrome://extensions` → enable **Developer mode** → **Load unpacked** → pick `extension/dist/`.
 
-The extension also polls your Reddit inbox every 10 min and flips DM drafts to `replied` when the target user writes back. See the Conversations page in the dashboard.
+#### Connect to the dashboard
+
+1. Dashboard → **Settings → Browser extension** → **Generate token**. Copy the 64-character hex token.
+2. Open the Pitchbox popup (toolbar icon). Paste the dashboard URL (`http://127.0.0.1:5180` by default) and the token. Click **Connect**.
+3. The popup shows _Connected — dashboard vX.Y.Z_ when the handshake succeeds.
+
+#### Sync DM replies
+
+Reddit ships two parallel DM systems and the extension covers both:
+
+- **Legacy private messages** (`reddit.com/message/inbox`). The extension polls `inbox.json` every 10 min — works as long as you stay logged in to Reddit in the same Chrome profile.
+- **Reddit Chat** (Matrix-based, used for all DMs sent from new Reddit). The extension auto-captures the Matrix access token from `localStorage` of any open `reddit.com` tab, then talks to `matrix.redditspace.com` directly to fetch new messages. **Open at least one reddit.com tab** while logged in for this to work — closing all Reddit tabs stops the chat sync (the popup keeps the last token but it eventually expires).
+
+Manually trigger a sync any time from the popup → **Sync now**. The popup reports `inserted: N new, M replied`.
+
+When a target user replies, you'll see:
+
+- The draft state flip to **Replied** in the Inbox.
+- The reply body shown under the draft, with a `replied` event on the timeline.
+- A row on the **Conversations** page with the latest reply snippet.
 
 ## What ships today (v0.2.0, M0–M2)
 
