@@ -36,6 +36,13 @@
       "when": 1777042500000,
       "tag": "0004_reply_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777043000000,
+      "tag": "0005_messages",
+      "breakpoints": true
     }
   ]
 }
