@@ -63,7 +63,6 @@ export class ClaudeCodeRunner implements AgentRunner {
         const emitLine = (line: string) => {
           if (!line) return;
           appendFileSync(logPath, line + '\n', 'utf8');
-          // eslint-disable-next-line no-console
           console.log(`[claude-code ${opts.slug}] ${line.slice(0, 200)}`);
           opts.onLogLine?.(line);
           try {
