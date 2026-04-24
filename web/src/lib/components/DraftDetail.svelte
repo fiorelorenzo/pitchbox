@@ -37,11 +37,14 @@
 
 	let { draft }: { draft: Draft | null } = $props();
 
+	type LatestReply = { body: string; author: string; createdAt: string | Date } | null;
+
 	let approving = $state(false);
 	let rejecting = $state(false);
 	let copied = $state(false);
 	let events = $state<DraftEvent[]>([]);
 	let loadingEvents = $state(false);
+	let latestReply = $state<LatestReply>(null);
 
 	// Mark-as-sent dialog
 	let sendDialogOpen = $state(false);
@@ -51,6 +54,7 @@
 	$effect(() => {
 		if (!draft) {
 			events = [];
+			latestReply = null;
 			return;
 		}
 		const draftId = draft.id;
@@ -65,6 +69,14 @@
 			})
 			.finally(() => {
 				loadingEvents = false;
+			});
+		fetch(`/inbox/${draftId}/reply`)
+			.then((r) => r.json())
+			.then((data: LatestReply) => {
+				latestReply = data;
+			})
+			.catch(() => {
+				latestReply = null;
 			});
 	});
 
@@ -248,6 +260,18 @@
 				>
 					<span class="font-medium text-foreground/70">Why it fits. </span>
 					{draft.reasoning}
+				</div>
+			{/if}
+
+			{#if latestReply}
+				<div class="rounded-lg border-l-2 border-violet-400/60 bg-muted/40 p-3">
+					<p class="text-[10px] uppercase tracking-wide text-muted-foreground">
+						Reply from u/{latestReply.author}
+					</p>
+					<p class="mt-1 whitespace-pre-wrap text-sm">{latestReply.body}</p>
+					<p class="mt-1 text-xs text-muted-foreground">
+						{new Date(latestReply.createdAt).toLocaleString()}
+					</p>
 				</div>
 			{/if}
 
