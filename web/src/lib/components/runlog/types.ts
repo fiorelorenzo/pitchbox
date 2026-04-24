@@ -12,7 +12,20 @@ export interface TimelineEvent {
   session?: { sessionId?: string; model?: string; cwd?: string };
   assistant?: { text: string };
   thinking?: { text: string };
-  toolCall?: { name: string; input: Record<string, unknown>; id?: string };
+  toolCall?: {
+    name: string;
+    input: Record<string, unknown>;
+    id?: string;
+    /** Attached after pairing with a matching tool-result event. */
+    pairedResult?: {
+      isError: boolean;
+      text: string;
+      raw: unknown;
+      parsedEnvelope: import('@pitchbox/shared/runlog').CliEnvelope | null;
+      /** Extracted from Bash output when it starts with "Exit code N". */
+      exitCode?: number;
+    };
+  };
   toolResult?: {
     raw: unknown;
     text: string;

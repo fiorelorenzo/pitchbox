@@ -1,7 +1,7 @@
 // Re-export shared parser + add client-side helpers (id/ts assignment).
 export { parseEvent, tryParseCliEnvelope } from '@pitchbox/shared/runlog';
 import { parseEvent } from '@pitchbox/shared/runlog';
-import type { ParsedEvent } from '@pitchbox/shared/runlog';
+import type { ParsedEvent, CliEnvelope } from '@pitchbox/shared/runlog';
 import type { TimelineEvent } from './types';
 
 let nextId = 0;
@@ -175,4 +175,66 @@ export function dbEventToTimeline(ev: {
     default:
       return { ...base, collapsed: true };
   }
+}
+
+/** Extract exit code from Bash tool-result text (e.g. "Exit code 1\n..."). */
+export function extractExitCode(text: string): number | undefined {
+  const m = /^Exit code (\d+)/i.exec(text);
+  return m ? Number(m[1]) : undefined;
+}
+
+/**
+ * Post-process a list of TimelineEvents to pair tool-call and tool-result events.
+ * - Tool-result events with a matching tool-call (by toolUseId ↔ id) are merged
+ *   into the tool-call as `pairedResult` and removed from the list.
+ * - Orphan tool-results (no matching call) are kept as standalone events.
+ * - Returns a new array; does not mutate the input.
+ */
+export function pairToolEvents(events: TimelineEvent[]): TimelineEvent[] {
+  // Build a map: toolCallId → index in the output array (populated as we walk)
+  const callIndexByToolId = new Map<string, number>();
+  const output: TimelineEvent[] = [];
+
+  for (const ev of events) {
+    if (ev.kind === 'tool-call' && ev.toolCall) {
+      const idx = output.length;
+      output.push(ev);
+      if (ev.toolCall.id) {
+        callIndexByToolId.set(ev.toolCall.id, idx);
+      }
+    } else if (ev.kind === 'tool-result' && ev.toolResult) {
+      const uid = ev.toolResult.toolUseId;
+      if (uid && callIndexByToolId.has(uid)) {
+        // Merge into the matching tool-call
+        const idx = callIndexByToolId.get(uid)!;
+        const callEv = output[idx];
+        const tr = ev.toolResult;
+        const exitCode = extractExitCode(tr.text);
+        const isError =
+          tr.isError ||
+          (exitCode !== undefined && exitCode !== 0) ||
+          (tr.parsedEnvelope != null && !tr.parsedEnvelope.ok);
+        output[idx] = {
+          ...callEv,
+          toolCall: {
+            ...callEv.toolCall!,
+            pairedResult: {
+              isError,
+              text: tr.text,
+              raw: tr.raw,
+              parsedEnvelope: (tr.parsedEnvelope as CliEnvelope | null | undefined) ?? null,
+              exitCode,
+            },
+          },
+        };
+      } else {
+        // Orphan tool-result — keep as standalone
+        output.push(ev);
+      }
+    } else {
+      output.push(ev);
+    }
+  }
+
+  return output;
 }

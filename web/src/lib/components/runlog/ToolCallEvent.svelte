@@ -11,15 +11,31 @@
 		Box,
 		Copy,
 		Check,
+		Loader2,
+		CheckCircle2,
+		XCircle,
 	} from 'lucide-svelte';
 	import { slide } from 'svelte/transition';
+	import type { CliEnvelope } from './types';
+	import TodoWriteCard from './TodoWriteCard.svelte';
 
 	let {
 		data,
 		collapsed,
 		ontoggle,
 	}: {
-		data: { name: string; input: Record<string, unknown>; id?: string };
+		data: {
+			name: string;
+			input: Record<string, unknown>;
+			id?: string;
+			pairedResult?: {
+				isError: boolean;
+				text: string;
+				raw: unknown;
+				parsedEnvelope: CliEnvelope | null;
+				exitCode?: number;
+			};
+		};
 		collapsed: boolean;
 		ontoggle: () => void;
 	} = $props();
@@ -44,6 +60,7 @@
 	let Icon = $derived(toolIcon(data.name));
 
 	let isBashTool = $derived(data.name.toLowerCase() === 'bash');
+	let isTodoWrite = $derived(data.name === 'TodoWrite');
 	let command = $derived(isBashTool ? String(data.input.command ?? '') : '');
 	let isPitchboxCmd = $derived(isBashTool && command.trimStart().startsWith('pitchbox '));
 	let description = $derived(
@@ -72,6 +89,29 @@
 	let commandPreview = $derived(
 		command.length > 100 ? command.slice(0, 100).trimEnd() + '…' : command,
 	);
+
+	// Status derived from paired result
+	let pr = $derived(data.pairedResult);
+	let statusKind = $derived<'pending' | 'ok' | 'error'>(
+		!pr ? 'pending' : pr.isError ? 'error' : 'ok',
+	);
+
+	function describeEnvelopeData(d: unknown): string {
+		if (!d || typeof d !== 'object') return String(d ?? '');
+		if (Array.isArray(d)) return `${d.length} items`;
+		const obj = d as Record<string, unknown>;
+		if ('runId' in obj && ('accounts' in obj || 'campaign' in obj)) {
+			const parts = [`run #${obj.runId} started`];
+			if (obj.project) parts.push(`project ${obj.project}`);
+			if (Array.isArray(obj.accounts)) parts.push(`${obj.accounts.length} accounts`);
+			if (obj.contacted != null) parts.push(`${obj.contacted} contacted`);
+			return parts.join(' · ');
+		}
+		if ('runId' in obj && 'candidatesFetched' in obj) return `${obj.candidatesFetched} candidates fetched`;
+		if ('runId' in obj && 'inserted' in obj) return `${obj.inserted} drafts created`;
+		if ('runId' in obj && 'staged' in obj) return `${obj.staged} staged candidates`;
+		return `{${Object.keys(obj).slice(0, 5).join(', ')}}`;
+	}
 </script>
 
 <div class="min-w-0">
@@ -131,8 +171,36 @@
 					{/if}
 				{:else if data.name.toLowerCase() === 'skill'}
 					Launching <span class="font-semibold">{data.input.skill ?? '—'}</span>
+				{:else if isTodoWrite}
+					<TodoWriteCard todos={data.input.todos as { status: string; content: string; activeForm: string }[]} inline />
 				{:else}
 					<span class="text-muted-foreground/50">…</span>
+				{/if}
+			</span>
+
+			<!-- Status badge -->
+			<span class="shrink-0 flex items-center gap-1">
+				{#if statusKind === 'pending'}
+					<Loader2 class="size-3 animate-spin text-amber-400" />
+					<span class="text-[10px] text-amber-400/80 font-mono">running</span>
+				{:else if statusKind === 'error'}
+					<XCircle class="size-3 text-destructive" />
+					{#if pr?.exitCode !== undefined}
+						<span class="text-[10px] font-mono rounded px-1 py-0.5 bg-destructive/15 text-destructive"
+							>exit {pr.exitCode}</span
+						>
+					{:else}
+						<span class="text-[10px] font-mono text-destructive">error</span>
+					{/if}
+				{:else}
+					<CheckCircle2 class="size-3 text-green-400" />
+					{#if isBashTool && pr?.exitCode !== undefined}
+						<span class="text-[10px] font-mono rounded px-1 py-0.5 bg-green-500/10 text-green-400"
+							>exit {pr.exitCode}</span
+						>
+					{:else}
+						<span class="text-[10px] font-mono text-green-400/70">ok</span>
+					{/if}
 				{/if}
 			</span>
 
@@ -161,31 +229,73 @@
 
 	<!-- Expanded body -->
 	{#if !collapsed}
-		<div transition:slide={{ duration: 160 }} class="mt-2 min-w-0">
-			{#if isBashTool}
-				<div class="min-w-0 max-w-full overflow-x-auto rounded bg-muted/60 border border-border/50">
-					<pre class="font-mono text-xs whitespace-pre p-2 text-foreground/90 min-w-0">{command}</pre>
-				</div>
-				{#if description}
-					<p class="text-xs text-muted-foreground/70 italic mt-1">{description}</p>
+		<div transition:slide={{ duration: 160 }} class="mt-2 min-w-0 space-y-2">
+			<!-- Input section -->
+			<div>
+				<p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/50 mb-1">Input</p>
+				{#if isBashTool}
+					<div class="min-w-0 max-w-full overflow-x-auto rounded bg-muted/60 border border-border/50">
+						<pre class="font-mono text-xs whitespace-pre p-2 text-foreground/90 min-w-0">{command}</pre>
+					</div>
+					{#if description}
+						<p class="text-xs text-muted-foreground/70 italic mt-1">{description}</p>
+					{/if}
+				{:else if isTodoWrite}
+					<TodoWriteCard todos={data.input.todos as { status: string; content: string; activeForm: string }[]} />
+				{:else if Object.keys(data.input).length > 0}
+					<dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs min-w-0">
+						{#each Object.entries(data.input) as [k, v]}
+							<dt class="text-muted-foreground/60 font-mono shrink-0 pt-0.5">{k}</dt>
+							<dd class="min-w-0 break-all">
+								{#if typeof v === 'string' && v.length > 60}
+									<div class="min-w-0 max-w-full overflow-x-auto rounded bg-muted/60 border border-border/50">
+										<pre class="font-mono text-[10px] whitespace-pre p-1.5 min-w-0">{v}</pre>
+									</div>
+								{:else}
+									<span class="font-mono text-foreground/80">{JSON.stringify(v)}</span>
+								{/if}
+							</dd>
+						{/each}
+					</dl>
+				{:else}
+					<p class="text-xs text-muted-foreground/50 italic">No input parameters</p>
 				{/if}
-			{:else if Object.keys(data.input).length > 0}
-				<dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs min-w-0">
-					{#each Object.entries(data.input) as [k, v]}
-						<dt class="text-muted-foreground/60 font-mono shrink-0 pt-0.5">{k}</dt>
-						<dd class="min-w-0 break-all">
-							{#if typeof v === 'string' && v.length > 60}
-								<div class="min-w-0 max-w-full overflow-x-auto rounded bg-muted/60 border border-border/50">
-									<pre class="font-mono text-[10px] whitespace-pre p-1.5 min-w-0">{v}</pre>
-								</div>
+			</div>
+
+			<!-- Output section (only if paired result is available) -->
+			{#if pr}
+				<div>
+					<p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/50 mb-1">Output</p>
+					{#if pr.isError}
+						<div class="rounded bg-destructive/10 border border-destructive/30 p-2 overflow-x-auto">
+							<pre class="font-mono text-xs whitespace-pre-wrap break-all text-destructive/90">{pr.text}</pre>
+						</div>
+					{:else if pr.parsedEnvelope}
+						{@const env = pr.parsedEnvelope}
+						{#if env.ok}
+							{#if isTodoWrite}
+								<!-- TodoWrite result is trivial, de-emphasise it -->
+								<p class="text-xs text-muted-foreground/50 italic">Todos updated.</p>
 							{:else}
-								<span class="font-mono text-foreground/80">{JSON.stringify(v)}</span>
+								<dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs min-w-0">
+									{#each Object.entries((env.data as Record<string, unknown>) ?? {}) as [k, v]}
+										<dt class="text-muted-foreground/60 font-mono shrink-0 pt-0.5">{k}</dt>
+										<dd class="min-w-0 font-mono text-foreground/80 break-all">{JSON.stringify(v)}</dd>
+									{/each}
+								</dl>
 							{/if}
-						</dd>
-					{/each}
-				</dl>
-			{:else}
-				<p class="text-xs text-muted-foreground/50 italic">No input parameters</p>
+						{:else}
+							<p class="text-xs font-medium text-destructive">{env.error}</p>
+							{#if env.details}
+								<pre class="mt-1 font-mono text-[10px] text-muted-foreground whitespace-pre-wrap break-all">{JSON.stringify(env.details, null, 2)}</pre>
+							{/if}
+						{/if}
+					{:else}
+						<div class="min-w-0 max-w-full overflow-x-auto max-h-48 rounded border border-border/50 bg-muted/60">
+							<pre class="font-mono text-xs whitespace-pre p-2 min-w-0">{pr.text}</pre>
+						</div>
+					{/if}
+				</div>
 			{/if}
 		</div>
 	{/if}

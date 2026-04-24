@@ -3,7 +3,7 @@
 	import { Loader, ChevronsDown } from 'lucide-svelte';
 
 	import { formatOffset } from '$lib/utils/time';
-	import { parse, resetParser, dbEventToTimeline } from './runlog/parse';
+	import { parse, resetParser, dbEventToTimeline, pairToolEvents } from './runlog/parse';
 	import type { TimelineEvent } from './runlog/types';
 
 	import EventRow from './runlog/EventRow.svelte';
@@ -23,6 +23,9 @@
 
 	// Tracks the highest DB-persisted event id we've seen, to dedup SSE arrivals.
 	let maxSeen = $state(-1);
+
+	// Maps tool-call id → index in `events` for live SSE pairing.
+	const liveToolCallMap = new Map<string, number>();
 
 	// Scroll / pin
 	let pinned = $state(true);
@@ -95,7 +98,7 @@
 			if (!body.events.length) return;
 
 			resetParser();
-			const hydrated = body.events.map((e) => dbEventToTimeline(e));
+			const hydrated = pairToolEvents(body.events.map((e) => dbEventToTimeline(e)));
 			hasResultEvent = hydrated.some((e) => e.kind === 'result');
 			maxSeen = Math.max(...body.events.map((e) => e.id));
 			start = hydrated[0].ts;
@@ -139,6 +142,7 @@
 				hasResultEvent = false;
 				status = 'Running';
 				resetParser();
+				liveToolCallMap.clear();
 			}
 		});
 
@@ -162,7 +166,47 @@
 
 			const te = dbEventToTimeline({ id: event.id, kind: event.kind, payload: event.payload, ts: event.ts });
 			if (te.kind === 'result') hasResultEvent = true;
-			await appendEvents([te]);
+
+			// Live pairing: tool-call → register; tool-result → merge or append standalone
+			if (te.kind === 'tool-call' && te.toolCall?.id) {
+				// Will be appended at index = current events.length
+				liveToolCallMap.set(te.toolCall.id, events.length);
+				await appendEvents([te]);
+			} else if (te.kind === 'tool-result' && te.toolResult) {
+				const uid = te.toolResult.toolUseId;
+				if (uid && liveToolCallMap.has(uid)) {
+					// Merge into the existing tool-call event
+					const idx = liveToolCallMap.get(uid)!;
+					const { extractExitCode } = await import('./runlog/parse');
+					const tr = te.toolResult;
+					const exitCode = extractExitCode(tr.text);
+					const isError =
+						tr.isError ||
+						(exitCode !== undefined && exitCode !== 0) ||
+						(tr.parsedEnvelope != null && !tr.parsedEnvelope.ok);
+					events = events.map((e, i) => {
+						if (i !== idx || !e.toolCall) return e;
+						return {
+							...e,
+							toolCall: {
+								...e.toolCall,
+								pairedResult: {
+									isError,
+									text: tr.text,
+									raw: tr.raw,
+									parsedEnvelope: tr.parsedEnvelope ?? null,
+									exitCode,
+								},
+							},
+						};
+					});
+				} else {
+					// Orphan tool-result
+					await appendEvents([te]);
+				}
+			} else {
+				await appendEvents([te]);
+			}
 		});
 
 		es.addEventListener('run:finished', async (e: MessageEvent) => {
