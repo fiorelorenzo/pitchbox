@@ -153,7 +153,7 @@
       </div>
     {:else}
       {#each filtered as c (c.contactId)}
-        {@const href = c.draftId != null ? `/inbox?focus=${c.draftId}` : '#'}
+        {@const href = c.draftId != null ? `/inbox?state=all&focus=${c.draftId}` : '#'}
         <a
           href={href}
           class={cn(

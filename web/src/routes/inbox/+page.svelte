@@ -49,6 +49,13 @@
 
 	let selectedId = $state<number | null>(null);
 	$effect(() => {
+		// `?focus=N` (e.g. coming from Conversations) wins over the default selection.
+		const focusParam = $page.url.searchParams.get('focus');
+		const focusId = focusParam ? Number(focusParam) : null;
+		if (focusId && data.drafts.find((d) => d.id === focusId)) {
+			selectedId = focusId;
+			return;
+		}
 		// When drafts list changes, select first if nothing selected
 		if (data.drafts.length > 0 && (selectedId === null || !data.drafts.find((d) => d.id === selectedId))) {
 			selectedId = data.drafts[0].id;
