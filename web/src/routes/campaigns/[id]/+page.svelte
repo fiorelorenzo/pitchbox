@@ -107,42 +107,42 @@
 </script>
 
 <!-- Breadcrumb -->
-<nav class="flex items-center gap-1.5 text-sm text-muted-foreground mb-1">
-	<a href="/campaigns" class="hover:text-foreground transition-colors flex items-center gap-1">
+<nav class="flex items-center gap-1.5 text-sm text-muted-foreground mb-2">
+	<a
+		href="/campaigns"
+		class="hover:text-foreground transition-colors inline-flex items-center gap-1"
+	>
 		<ChevronLeft class="size-3.5" />
 		Campaigns
 	</a>
-	<span>/</span>
-	<span class="text-foreground font-medium">{data.campaign.name}</span>
 </nav>
 
-<!-- Page header -->
-<div class="flex items-start justify-between mb-6 gap-4">
-	<div class="space-y-1 min-w-0">
-		<h1 class="text-2xl font-semibold tracking-tight">{data.campaign.name}</h1>
-		<p class="text-sm text-muted-foreground">
-			Configuration, activity summary, and the full run history for this campaign. Click any past
-			run to inspect its stored log.
-		</p>
-		{#if data.project}
-			<p class="text-xs text-muted-foreground/80">
-				Project <span class="font-mono font-medium text-foreground">{data.project.slug}</span>
-				{#if data.platform}
-					&nbsp;·&nbsp;{data.platform.slug}
-				{/if}
-			</p>
-		{/if}
-		<div class="flex items-center gap-2 pt-1">
+<!-- Page header: single tidy row -->
+<header class="mb-6 flex items-start justify-between gap-4">
+	<div class="min-w-0 space-y-1.5">
+		<div class="flex items-center gap-3 flex-wrap">
+			<h1 class="text-2xl font-semibold tracking-tight leading-none">{data.campaign.name}</h1>
 			<Badge variant={STATUS_VARIANT[data.campaign.status] ?? 'secondary'}>
 				{data.campaign.status}
 			</Badge>
-			<span class="text-xs text-muted-foreground font-mono">{data.campaign.skillSlug}</span>
+			<Badge variant="outline" class="font-mono text-[11px]">{data.campaign.skillSlug}</Badge>
 		</div>
+		<p class="text-xs text-muted-foreground">
+			{#if data.project}
+				Project <span class="font-mono text-foreground">{data.project.slug}</span>
+				{#if data.platform}
+					·
+					<span class="font-mono">{data.platform.slug}</span>
+				{/if}
+				·
+			{/if}
+			Configuration, activity, and run history.
+		</p>
 	</div>
 	<Button onclick={runNow} loading={isStarting} size="sm">
 		{isStarting ? 'Starting…' : 'Run now'}
 	</Button>
-</div>
+</header>
 
 <!-- Two cards: config + activity -->
 <div class="grid gap-4 md:grid-cols-2 mb-6">
