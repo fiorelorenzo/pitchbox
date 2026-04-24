@@ -21,6 +21,7 @@
 				id: number;
 				name: string;
 				skillSlug: string;
+				agentRunner: string;
 				status: string;
 				config: unknown;
 				cronExpression: string | null;
@@ -32,6 +33,7 @@
 				id: number;
 				status: string;
 				trigger: string;
+				agentRunner: string;
 				startedAt: Date | string;
 				finishedAt: Date | string | null;
 				draftCount: number;
@@ -133,6 +135,7 @@
 				{data.campaign.status}
 			</Badge>
 			<Badge variant="outline" class="font-mono text-[11px]">{data.campaign.skillSlug}</Badge>
+			<Badge variant="outline" class="font-mono text-[11px] text-muted-foreground">{data.campaign.agentRunner}</Badge>
 		</div>
 		<p class="text-xs text-muted-foreground">
 			{#if data.project}
@@ -262,6 +265,7 @@
 						<Table.Head class="w-16">ID</Table.Head>
 						<Table.Head>Status</Table.Head>
 						<Table.Head>Trigger</Table.Head>
+						<Table.Head>Runner</Table.Head>
 						<Table.Head>Started</Table.Head>
 						<Table.Head>Duration</Table.Head>
 						<Table.Head>Drafts</Table.Head>
@@ -287,6 +291,9 @@
 								</span>
 							</Table.Cell>
 							<Table.Cell class="text-xs text-muted-foreground py-3">{run.trigger}</Table.Cell>
+							<Table.Cell class="text-xs py-3">
+								<Badge variant="outline" class="font-mono text-[10px] py-0 px-1 h-4 text-muted-foreground/70">{run.agentRunner}</Badge>
+							</Table.Cell>
 							<Table.Cell class="text-xs text-muted-foreground py-3"
 								>{relativeTime(run.startedAt)}</Table.Cell
 							>
@@ -325,7 +332,7 @@
 						<!-- Inline expanded log row -->
 						{#if expanded}
 							<Table.Row class="hover:bg-transparent border-t-0">
-								<Table.Cell colspan={8} class="p-0 border-t border-border/50 max-w-0">
+								<Table.Cell colspan={9} class="p-0 border-t border-border/50 max-w-0">
 									<div transition:slide={{ duration: 200 }} class="bg-muted/10 px-6 py-3 min-w-0 overflow-hidden">
 										<RunLog runId={run.id} />
 									</div>

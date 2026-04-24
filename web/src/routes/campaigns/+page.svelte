@@ -24,6 +24,7 @@
 				id: number;
 				name: string;
 				skillSlug: string;
+				agentRunner: string;
 				status: string;
 				isRunning: boolean;
 				lastRunId: number | null;
@@ -228,7 +229,12 @@
 									{c.name}
 								</a>
 							</Table.Cell>
-							<Table.Cell class="text-muted-foreground text-xs py-3">{c.skillSlug}</Table.Cell>
+							<Table.Cell class="text-muted-foreground text-xs py-3">
+								<span class="flex items-center gap-1.5">
+									{c.skillSlug}
+									<Badge variant="outline" class="font-mono text-[10px] py-0 px-1 h-4 text-muted-foreground/70">{c.agentRunner}</Badge>
+								</span>
+							</Table.Cell>
 							<Table.Cell class="py-3">
 								{#if running}
 									<Badge variant="default" class="gap-1.5 text-xs">

@@ -1,4 +1,4 @@
-import { ClaudeCodeRunner } from '@pitchbox/shared/agents/claude-code';
+import { createAgentRunner } from '@pitchbox/shared/agents/registry';
 import { getDb, schema } from './db.js';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
@@ -43,7 +43,12 @@ export async function runCampaign(
   try {
     [run] = await db
       .insert(schema.runs)
-      .values({ campaignId, trigger: 'manual', status: 'running' })
+      .values({
+        campaignId,
+        agentRunner: campaign.agentRunner,
+        trigger: 'manual',
+        status: 'running',
+      })
       .returning();
   } catch (err) {
     // Unique violation on the partial index → someone else just inserted a running run.
@@ -76,7 +81,19 @@ export async function runCampaign(
 
   emit('run:started', { runId: run.id, campaignId });
 
-  const runner = new ClaudeCodeRunner();
+  let runner: ReturnType<typeof createAgentRunner>;
+  try {
+    runner = createAgentRunner(campaign.agentRunner);
+  } catch (err) {
+    const errMsg = String(err instanceof Error ? err.message : err);
+    await db
+      .update(schema.runs)
+      .set({ status: 'failed', finishedAt: new Date(), error: errMsg })
+      .where(eq(schema.runs.id, run.id));
+    emit('run:finished', { runId: run.id, campaignId, exitCode: 1, error: errMsg });
+    return { runId: run.id };
+  }
+
   const playbook = resolve(PITCHBOX_ROOT, 'playbooks', `${campaign.skillSlug}.md`);
 
   // Prepend our bin/ so playbooks can call `pitchbox <cmd>` directly.

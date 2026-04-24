@@ -1,6 +1,6 @@
 // Re-export shared parser + add client-side helpers (id/ts assignment).
-export { parseEvent, tryParseCliEnvelope } from '@pitchbox/shared/runlog';
-import { parseEvent } from '@pitchbox/shared/runlog';
+import { parseClaudeCodeLine } from '@pitchbox/shared/runlog';
+export { parseClaudeCodeLine } from '@pitchbox/shared/runlog';
 import type { ParsedEvent, CliEnvelope } from '@pitchbox/shared/runlog';
 import type { TimelineEvent } from './types';
 
@@ -87,7 +87,7 @@ function toTimelineEvent(pe: ParsedEvent, ts: number): TimelineEvent {
  */
 export function parse(line: string): TimelineEvent[] {
   const now = Date.now();
-  const parsed = parseEvent(line, 0);
+  const parsed = parseClaudeCodeLine(line, 0);
   return parsed.map((pe) => toTimelineEvent(pe, now));
 }
 

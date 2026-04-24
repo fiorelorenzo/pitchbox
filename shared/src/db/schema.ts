@@ -79,6 +79,7 @@ export const campaigns = pgTable('campaigns', {
     .references(() => platforms.id),
   name: text('name').notNull(),
   skillSlug: text('skill_slug').notNull(),
+  agentRunner: text('agent_runner').notNull().default('claude-code'),
   config: jsonb('config').notNull().default({}),
   cronExpression: text('cron_expression'),
   rateLimit: jsonb('rate_limit').notNull().default({}),
@@ -93,6 +94,7 @@ export const runs = pgTable('runs', {
   campaignId: integer('campaign_id')
     .notNull()
     .references(() => campaigns.id, { onDelete: 'cascade' }),
+  agentRunner: text('agent_runner').notNull().default('claude-code'),
   trigger: text('trigger').notNull(),
   status: text('status').notNull().default('queued'),
   startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
