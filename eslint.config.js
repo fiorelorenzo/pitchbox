@@ -37,4 +37,14 @@ export default [
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
+  {
+    // Extension code runs in the Chrome MV3 sandbox (browser + chrome.* APIs).
+    // TypeScript already checks identifiers; disable no-undef so DOM type
+    // references (ParentNode, HeadersInit, …) don't trip eslint.
+    files: ['extension/**/*.ts'],
+    languageOptions: {
+      globals: { ...globals.browser, chrome: 'readonly' },
+    },
+    rules: { 'no-undef': 'off' },
+  },
 ];

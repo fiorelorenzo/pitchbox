@@ -1,7 +1,4 @@
-import {
-  getExtensionToken,
-  getExtensionTokenCreatedAt,
-} from '@pitchbox/shared/extension-token';
+import { getExtensionToken, getExtensionTokenCreatedAt } from '@pitchbox/shared/extension-token';
 
 export async function load() {
   return {

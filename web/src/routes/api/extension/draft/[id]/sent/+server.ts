@@ -6,13 +6,7 @@ import { emit } from '$lib/server/events.js';
 
 type SentBody = { sentContent?: string; sentAt?: string };
 
-export async function POST({
-  params,
-  request,
-}: {
-  params: { id: string };
-  request: Request;
-}) {
+export async function POST({ params, request }: { params: { id: string }; request: Request }) {
   await requireExtensionAuth(request);
   const id = Number(params.id);
   if (!Number.isInteger(id)) throw error(400, 'invalid id');

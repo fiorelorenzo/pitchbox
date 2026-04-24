@@ -20,11 +20,7 @@ export function findCommentTextarea(): HTMLTextAreaElement | HTMLElement | null 
   );
 }
 
-export function findCommentSubmitButton(
-  root: ParentNode = document,
-): HTMLButtonElement | null {
+export function findCommentSubmitButton(root: ParentNode = document): HTMLButtonElement | null {
   const candidates = Array.from(root.querySelectorAll('button')) as HTMLButtonElement[];
-  return (
-    candidates.find((b) => /comment|reply|post/i.test(b.textContent?.trim() ?? '')) ?? null
-  );
+  return candidates.find((b) => /comment|reply|post/i.test(b.textContent?.trim() ?? '')) ?? null;
 }

@@ -2,7 +2,7 @@
 
 Self-hosted outreach agent for Reddit (and future platforms). You keep the human-in-the-loop; Pitchbox does the research, drafting, and bookkeeping.
 
-> ⚠️ Alpha — currently at **v0.2.0** (M2 shipped). Breaking changes possible until v1.0.0.
+> ⚠️ Alpha — currently at **v0.2.0** (M2 shipped; M3 in development branch). Breaking changes possible until v1.0.0.
 
 ## Quick start (macOS / Linux)
 
@@ -23,6 +23,16 @@ npx tsx scripts/seed-demo.ts
 npm run dev            # dashboard at http://127.0.0.1:5180
 npm run -w daemon dev  # (optional) scheduler + reply poller
 ```
+
+### Browser extension (optional)
+
+Auto-flip drafts to `sent` when you submit them on Reddit, instead of clicking **Mark as sent** in the dashboard.
+
+```bash
+npm run build:extension   # outputs extension/dist/
+```
+
+Then in Chrome: `chrome://extensions` → enable _Developer mode_ → **Load unpacked** → pick `extension/dist/`. In the dashboard Settings → Browser extension, click **Generate token**, then paste the dashboard URL + token into the extension popup and click **Connect**.
 
 ## What ships today (v0.2.0, M0–M2)
 
@@ -61,7 +71,7 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.2
 - **`cli/`** — the `pitchbox` CLI that playbooks call to read/write DB (`run:start`, `run:finish`, `reddit:scout`, `drafts:create`, …).
 - **`web/`** — SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte dashboard. Routes: `/` (home), `/inbox`, `/campaigns`, `/campaigns/[id]`, `/contacts`, `/blocklist`, `/settings`.
 - **`daemon/`** — heartbeat + scheduler + reply poller (real DM reader still pending).
-- **`extension/`** _(future)_ — Chrome MV3 extension for auto mark-as-sent + DM reply sync.
+- **`extension/`** — Chrome MV3 companion (Vite + `@crxjs/vite-plugin`) that auto-marks drafts as `sent` when you submit on Reddit. DM reply sync comes in M4.
 - **`playbooks/`** — agent-agnostic markdown instructions consumed by the `AgentRunner`.
 
 ## Roadmap
@@ -69,10 +79,11 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.2
 - ✅ **M0** — repo scaffold, Postgres, Drizzle migrations, CLI skeleton
 - ✅ **M1** — reddit-scout + reddit-commenter playbooks, Inbox, manual "Run now"
 - ✅ **M2** — mark-as-sent flow, Home dashboard, Contacts, Blocklist, daemon scaffold (heartbeat + cron scheduler + reply-poller skeleton)
-- ⏳ **M3** — live Reddit DM reply reader + Chrome extension (auto mark-as-sent, DM sync)
-- ⏳ **M4** — safety brake + blocklist enforcement + smart rate-limiting
-- ⏳ **M5** — templates, keyword watches, analytics, A/B tests
-- ⏳ **M6+** — additional platform adapters, posting automation, team mode
+- ✅ **M3** — Chrome extension, auto mark-as-sent for DM compose + post-comment drafts
+- ⏳ **M4** — reply tracking: live Reddit DM reader + post-reply poller, Conversations UI
+- ⏳ **M5** — safety brake + blocklist enforcement + smart rate-limiting
+- ⏳ **M6** — templates, keyword watches, analytics, A/B tests
+- ⏳ **M7+** — additional platform adapters, posting automation, team mode
 
 ## Agent runners
 

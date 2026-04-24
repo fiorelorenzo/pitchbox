@@ -29,10 +29,7 @@ export default defineManifest({
       run_at: 'document_idle',
     },
     {
-      matches: [
-        'https://www.reddit.com/r/*/comments/*',
-        'https://old.reddit.com/r/*/comments/*',
-      ],
+      matches: ['https://www.reddit.com/r/*/comments/*', 'https://old.reddit.com/r/*/comments/*'],
       js: ['src/content/post-comment.ts'],
       run_at: 'document_idle',
     },
