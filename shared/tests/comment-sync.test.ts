@@ -71,8 +71,12 @@ describe('matchIncomingCommentReplies', () => {
   });
 
   it('emits one replied event per draft (earliest reply across multiple repliers)', () => {
-    const r1 = reply({ author: 'alice', replyCommentId: 't1_a', createdAt: '2026-04-25T11:00:00Z' });
-    const r2 = reply({ author: 'bob',   replyCommentId: 't1_b', createdAt: '2026-04-25T10:00:00Z' });
+    const r1 = reply({
+      author: 'alice',
+      replyCommentId: 't1_a',
+      createdAt: '2026-04-25T11:00:00Z',
+    });
+    const r2 = reply({ author: 'bob', replyCommentId: 't1_b', createdAt: '2026-04-25T10:00:00Z' });
     const out = matchIncomingCommentReplies([r1, r2], [draft], []);
     expect(out.contactsToCreate).toHaveLength(2);
     expect(out.draftRepliedEvents).toHaveLength(1);
@@ -97,7 +101,7 @@ describe('matchIncomingCommentReplies', () => {
   });
 
   it('handles second message from a user whose first reply already updated repliedAt earlier in the batch', () => {
-    const r1 = reply({ replyCommentId: 't1_first',  createdAt: '2026-04-25T10:00:00Z' });
+    const r1 = reply({ replyCommentId: 't1_first', createdAt: '2026-04-25T10:00:00Z' });
     const r2 = reply({ replyCommentId: 't1_second', createdAt: '2026-04-25T10:05:00Z' });
     const out = matchIncomingCommentReplies([r1, r2], [draft], []);
     expect(out.contactsToCreate).toHaveLength(1);

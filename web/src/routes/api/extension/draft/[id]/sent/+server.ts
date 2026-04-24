@@ -44,11 +44,7 @@ export async function POST({ params, request }: { params: { id: string }; reques
     details: edited && sentContent !== draft.body ? { edited: true } : {},
   });
 
-  if (
-    body.commentLookup &&
-    body.commentLookup.postId &&
-    body.commentLookup.accountHandle
-  ) {
+  if (body.commentLookup && body.commentLookup.postId && body.commentLookup.accountHandle) {
     const lookup = body.commentLookup;
     const postedAtMs = lookup.postedAt ? Date.parse(lookup.postedAt) : Date.now();
     void (async () => {

@@ -4,6 +4,27 @@ import { findCommentTextarea, findCommentSubmitButton } from './shared/reddit-do
 
 const draftId = parseDraftId(location.href);
 
+function derivePostId(pathname: string): string | null {
+  // /r/<sub>/comments/<postId>/<slug>/...   — Reddit's canonical pattern.
+  const m = /\/comments\/([a-z0-9]+)\b/i.exec(pathname);
+  return m ? m[1] : null;
+}
+
+async function fetchAccountHandle(draftId: number): Promise<string | null> {
+  // The dashboard's getDraft returns { id, kind, state, body, targetUser } — it does
+  // NOT include accountHandle today. Read the page-level meta tag instead, then
+  // fall back to the new-Reddit header avatar's user link.
+  const _ = draftId; // referenced to keep the parameter for future use
+  void _;
+  const meta = document.querySelector('meta[name="user-name"]');
+  const fromMeta = meta?.getAttribute('content');
+  if (fromMeta) return fromMeta;
+  const userLink = document.querySelector('a[href^="/user/"]');
+  const href = userLink?.getAttribute('href') ?? '';
+  const m = /^\/user\/([^/]+)/.exec(href);
+  return m ? m[1] : null;
+}
+
 if (draftId !== null) {
   let armed = false;
   let sent = false;
@@ -51,7 +72,14 @@ if (draftId !== null) {
   async function onSendCompleted() {
     if (sent) return;
     sent = true;
-    await api.sent(draftId!, readCurrentText());
+    const sentContent = readCurrentText();
+    const postId = derivePostId(location.pathname);
+    const handle = await fetchAccountHandle(draftId!);
+    const commentLookup =
+      postId && handle
+        ? { postId, accountHandle: handle, postedAt: new Date().toISOString() }
+        : undefined;
+    await api.sent(draftId!, sentContent, commentLookup);
   }
 
   function wireSubmit(): boolean {
