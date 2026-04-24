@@ -206,6 +206,77 @@ describe('runChatSync', () => {
     ).toBeUndefined();
   });
 
+  it('treats Reddit system user (@t2_1qwk) and "undefined" displayname as non-members', async () => {
+    const sysUser = '@t2_1qwk:reddit.com';
+    const sync = {
+      next_batch: 's_next',
+      rooms: {
+        join: {
+          [ROOM_ID]: {
+            state: {
+              events: [
+                {
+                  type: 'm.room.member',
+                  state_key: ME,
+                  content: { displayname: 'fiorelorenzo', membership: 'join' },
+                },
+                {
+                  type: 'm.room.member',
+                  state_key: OTHER,
+                  content: { displayname: 'Blamebauer', membership: 'join' },
+                },
+                {
+                  type: 'm.room.member',
+                  state_key: sysUser,
+                  content: { displayname: 'undefined', membership: 'join' },
+                },
+              ],
+            },
+            timeline: {
+              events: [
+                {
+                  type: 'm.room.message',
+                  sender: OTHER,
+                  content: { body: 'rispondo', msgtype: 'm.text' },
+                  event_id: '$ev1',
+                  origin_server_ts: Date.parse('2026-04-24T12:00:00Z'),
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes('matrix.redditspace.com')) {
+        return new Response(JSON.stringify(sync), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true, inserted: 1, replied: 1 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { runChatSync } = await importModule();
+    const r = await runChatSync();
+    expect(r).toMatchObject({ ok: true, inserted: 1, replied: 1 });
+    const post = (fetchMock.mock.calls as unknown as unknown[][]).find((c) =>
+      String(c[0]).endsWith('/dm-sync'),
+    );
+    expect(post).toBeTruthy();
+    const body = JSON.parse((post![1] as RequestInit).body as string);
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]).toMatchObject({
+      fromUser: 'Blamebauer',
+      toUser: 'fiorelorenzo',
+      body: 'rispondo',
+    });
+  });
+
   it('sends since= cursor on subsequent calls', async () => {
     ((globalThis as any).chrome.storage.local as any)._s.matrixSince = 's_prev_999';
     const fetchMock = vi.fn(

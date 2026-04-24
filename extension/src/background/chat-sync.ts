@@ -27,6 +27,16 @@ type SyncResponse = {
   rooms?: { join?: Record<string, SyncRoom> };
 };
 
+// Reddit auto-joins this system account ("u/Reddit") into every chat room with
+// no displayname; it would otherwise inflate member counts.
+const REDDIT_SYSTEM_USER = '@t2_1qwk:reddit.com';
+
+function isRealMember(userId: string, displayName: string | undefined): boolean {
+  if (userId === REDDIT_SYSTEM_USER) return false;
+  if (!displayName || displayName === 'undefined') return false;
+  return true;
+}
+
 const FILTER = JSON.stringify({
   room: {
     timeline: { limit: 30, types: ['m.room.message'] },
@@ -101,10 +111,11 @@ export async function runChatSync(): Promise<SyncResult> {
   const items: DmItem[] = [];
 
   for (const [roomId, room] of Object.entries(joins)) {
-    const members = roomMembers[roomId] ?? [];
-    if (members.length !== 2) continue; // skip group chats
-    if (!members.includes(meId)) continue;
-    const otherId = members.find((m) => m !== meId)!;
+    const allMembers = roomMembers[roomId] ?? [];
+    const realMembers = allMembers.filter((m) => isRealMember(m, displayNames[m]));
+    if (realMembers.length !== 2) continue; // skip group chats
+    if (!realMembers.includes(meId)) continue;
+    const otherId = realMembers.find((m) => m !== meId)!;
     const meHandle = displayNames[meId];
     const otherHandle = displayNames[otherId];
     if (!meHandle || !otherHandle) continue;
