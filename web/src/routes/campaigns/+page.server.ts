@@ -1,5 +1,5 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { desc, sql } from 'drizzle-orm';
+import { desc, inArray, sql } from 'drizzle-orm';
 
 export async function load() {
   const db = getDb();
@@ -45,12 +45,7 @@ export async function load() {
         count: sql<number>`cast(count(*) as int)`,
       })
       .from(schema.drafts)
-      .where(
-        sql`${schema.drafts.runId} = ANY(ARRAY[${sql.join(
-          latestRunIds.map((id) => sql`${id}`),
-          sql`, `,
-        )}])`,
-      )
+      .where(inArray(schema.drafts.runId, latestRunIds))
       .groupBy(schema.drafts.runId);
 
     for (const row of counts) {
