@@ -282,11 +282,12 @@
 			{:else}
 				<div class="relative min-w-0">
 					{#each events as ev, i (ev.id)}
+						{@const isFirst = i === 0}
 						{@const isLast = i === events.length - 1}
 						{@const offset = start != null ? formatOffset(ev.ts - start) : ''}
 						{@const isError = ev.result ? !ev.result.success : (ev.toolResult?.isError ?? false)}
 
-						<EventRow kind={ev.kind} {isLast} {offset} {isError}>
+						<EventRow kind={ev.kind} {isFirst} {isLast} {offset} {isError}>
 							{#if ev.kind === 'session' && ev.session}
 								<SessionEvent data={ev.session} />
 							{:else if ev.kind === 'assistant' && ev.assistant}

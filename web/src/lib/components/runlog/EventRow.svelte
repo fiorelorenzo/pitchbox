@@ -5,12 +5,14 @@
 
 	let {
 		kind,
+		isFirst = false,
 		isLast,
 		offset,
 		isError = false,
 		children,
 	}: {
 		kind: EventKind;
+		isFirst?: boolean;
 		isLast: boolean;
 		offset: string;
 		isError?: boolean;
@@ -43,22 +45,21 @@
 		: 'pl-0'}
 	border-b border-border/30 last:border-b-0"
 >
-	<!-- Gutter -->
+	<!-- Gutter: dot at y=18px, continuous connector line above (except first) and below (except last) -->
 	<div class="flex flex-col items-center w-5 flex-none">
-		<span class="mt-[18px] size-2 rounded-full flex-none {dotColor}"></span>
-		{#if !isLast}
-			<span class="w-px flex-1 bg-border/40 mt-1 min-h-[8px]"></span>
-		{/if}
+		<span class="w-px h-[18px] {isFirst ? '' : 'bg-border/40'}"></span>
+		<span class="size-2 rounded-full flex-none {dotColor}"></span>
+		<span class="w-px flex-1 min-h-[4px] {isLast ? '' : 'bg-border/40'}"></span>
 	</div>
 
-	<!-- Content + timestamp -->
+	<!-- Content + timestamp. pt-[14px] aligns the first line of text with the 18px-offset dot. -->
 	<div class="flex-1 min-w-0 pb-2.5 pt-[14px]">
 		<div class="flex items-start gap-2 min-w-0">
 			<div class="flex-1 min-w-0">
 				{@render children()}
 			</div>
 			{#if offset}
-				<span class="text-[10px] text-muted-foreground/40 font-mono shrink-0 mt-0.5 tabular-nums">
+				<span class="text-[10px] text-muted-foreground/40 font-mono shrink-0 mt-[2px] tabular-nums">
 					{offset}
 				</span>
 			{/if}

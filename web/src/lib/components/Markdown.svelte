@@ -55,6 +55,14 @@
 		text-underline-offset: 2px;
 	}
 
+	/* Reset margins on the first/last child so the content fits flush inside timeline rows */
+	div :global(> :first-child) {
+		margin-top: 0;
+	}
+	div :global(> :last-child) {
+		margin-bottom: 0;
+	}
+
 	/* Headings */
 	div :global(h1) {
 		font-size: 1.125rem;
