@@ -1,0 +1,34 @@
+{
+  "name": "@pitchbox/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./db": "./src/db/client.ts",
+    "./db/schema": "./src/db/schema.ts",
+    "./platforms/reddit": "./src/platforms/reddit/index.ts",
+    "./agents": "./src/agents/base.ts",
+    "./agents/claude-code": "./src/agents/claude-code.ts",
+    "./crypto": "./src/crypto.ts"
+  },
+  "scripts": {
+    "migrate": "tsx src/db/migrate.ts",
+    "migrate:generate": "drizzle-kit generate",
+    "seed:core": "tsx src/db/seed-core.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.13.0",
+    "zod": "^3.23.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.19.0",
+    "@types/pg": "^8.11.0"
+  }
+}
