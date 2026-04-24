@@ -57,6 +57,20 @@
       "when": 1777068700000,
       "tag": "0007_contact_history_chat_room_id",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777153000000,
+      "tag": "0008_drafts_platform_comment_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777153100000,
+      "tag": "0009_contact_history_platform_context_url",
+      "breakpoints": true
     }
   ]
 }

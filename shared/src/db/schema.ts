@@ -145,6 +145,7 @@ export const drafts = pgTable(
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     sentContent: text('sent_content'),
+    platformCommentId: text('platform_comment_id'),
   },
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),
@@ -190,6 +191,7 @@ export const contactHistory = pgTable(
     repliedAt: timestamp('replied_at', { withTimezone: true }),
     replyCheckedAt: timestamp('reply_checked_at', { withTimezone: true }),
     chatRoomId: text('chat_room_id'),
+    platformContextUrl: text('platform_context_url'),
   },
   (t) => ({
     byTarget: index('contact_history_target_idx').on(t.platformId, t.targetUser),
