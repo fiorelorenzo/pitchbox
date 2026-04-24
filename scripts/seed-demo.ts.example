@@ -1,0 +1,94 @@
+import { config } from 'dotenv';
+import { resolve } from 'node:path';
+import { getDb, getPool, schema } from '@pitchbox/shared/db';
+import { eq } from 'drizzle-orm';
+
+config({ path: resolve(import.meta.dirname ?? '.', '..', '.env') });
+
+async function main() {
+  const db = getDb();
+  const [platform] = await db
+    .select()
+    .from(schema.platforms)
+    .where(eq(schema.platforms.slug, 'reddit'));
+  if (!platform) throw new Error('run seed:core first');
+
+  const [project] = await db
+    .insert(schema.projects)
+    .values({ slug: 'acme', name: 'Acme Demo', description: 'Demo project.' })
+    .onConflictDoNothing()
+    .returning();
+  if (!project) {
+    console.log('acme already seeded');
+    await getPool().end();
+    return;
+  }
+
+  await db.insert(schema.projectConfigs).values([
+    { projectId: project.id, key: 'product.pitch', value: { text: 'Acme makes rockets.' } },
+    { projectId: project.id, key: 'product.url', value: { url: 'https://acme.example' } },
+    { projectId: project.id, key: 'product.defaultAccountRole', value: { role: 'personal' } },
+    {
+      projectId: project.id,
+      key: 'offer',
+      value: { name: 'Demo Offer', cta: 'try it out', composeSubject: 'hey' },
+    },
+    {
+      projectId: project.id,
+      key: 'voice.dm_rules',
+      value: {
+        hardBans: ['em-dash', 'AI-tells'],
+        dos: ['contractions', 'lowercase casual opener'],
+        disclosure: '(demo, replace me)',
+        examples: [],
+      },
+    },
+    {
+      projectId: project.id,
+      key: 'voice.post_rules',
+      value: {
+        hardBans: ['em-dash', 'AI-tells', 'Great post!'],
+        dos: ['direct opening', 'proper capitalization'],
+        lengthRange: [60, 150],
+      },
+    },
+    { projectId: project.id, key: 'product.selfPromoPolicy', value: { default: 'never' } },
+    { projectId: project.id, key: 'topicAngles', value: ['demo topic 1', 'demo topic 2'] },
+  ]);
+
+  await db.insert(schema.accounts).values([
+    {
+      projectId: project.id,
+      platformId: platform.id,
+      handle: 'your_handle',
+      role: 'personal',
+    },
+  ]);
+
+  await db.insert(schema.campaigns).values([
+    {
+      projectId: project.id,
+      platformId: platform.id,
+      name: 'Demo scout',
+      skillSlug: 'reddit-scout',
+      config: { subreddits: ['test'], perSubredditLimit: 5 },
+      status: 'paused',
+    },
+    {
+      projectId: project.id,
+      platformId: platform.id,
+      name: 'Demo commenter',
+      skillSlug: 'reddit-commenter',
+      config: { subreddits: ['test'], perSubredditLimit: 5 },
+      status: 'paused',
+    },
+  ]);
+
+  console.log('seeded acme demo project');
+  await getPool().end();
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
