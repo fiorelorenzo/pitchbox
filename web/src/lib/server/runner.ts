@@ -48,10 +48,23 @@ export async function runCampaign(
       .returning();
   } catch (err) {
     // Unique violation on the partial index → someone else just inserted a running run.
-    const code =
-      (err as { code?: string; cause?: { code?: string } })?.code ??
-      (err as { cause?: { code?: string } })?.cause?.code;
-    if (code === '23505') {
+    // Drizzle wraps the underlying pg error; check code in a few places and fall back
+    // to matching the constraint name in the message.
+    const e = err as {
+      code?: string;
+      constraint?: string;
+      cause?: { code?: string; constraint?: string };
+      message?: string;
+    };
+    const code = e?.code ?? e?.cause?.code;
+    const constraint = e?.constraint ?? e?.cause?.constraint;
+    const message = e?.message ?? String(err);
+    const isUniqueViolation =
+      code === '23505' ||
+      constraint === 'runs_one_running_per_campaign' ||
+      message.includes('runs_one_running_per_campaign');
+
+    if (isUniqueViolation) {
       const [raced] = await db
         .select()
         .from(schema.runs)
