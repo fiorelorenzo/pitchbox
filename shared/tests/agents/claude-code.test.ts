@@ -29,13 +29,15 @@ describe('ClaudeCodeRunner', () => {
       }) as any,
     });
 
-    const res = await runner.run({
+    const handle = runner.run({
       playbookPath: playbook,
       slug: 'test-skill',
       env: { PITCHBOX_CAMPAIGN_ID: '1' },
       cwd,
       timeoutMs: 5000,
     });
+    expect(typeof handle.cancel).toBe('function');
+    const res = await handle.result;
     expect(res.exitCode).toBe(0);
     expect(() => readFileSync(join(cwd, '.claude', 'skills', 'test-skill', 'SKILL.md'))).toThrow();
     expect(spawnCalls[0].cmd).toBe('claude');

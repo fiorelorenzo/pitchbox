@@ -13,7 +13,12 @@ export interface AgentRunResult {
   tokensUsed?: number;
 }
 
+export interface AgentRunHandle {
+  result: Promise<AgentRunResult>;
+  cancel: () => void;
+}
+
 export interface AgentRunner {
   slug: string;
-  run(opts: AgentRunOptions): Promise<AgentRunResult>;
+  run(opts: AgentRunOptions): AgentRunHandle;
 }

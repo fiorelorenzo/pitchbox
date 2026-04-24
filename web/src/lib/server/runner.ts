@@ -14,6 +14,9 @@ const PITCHBOX_ROOT =
     ? process.env.PITCHBOX_ROOT
     : DERIVED_ROOT;
 
+// Track active cancel functions by runId so callers can stop them.
+const runCancels = new Map<number, () => void>();
+
 export async function runCampaign(campaignId: number): Promise<{ runId: number }> {
   const db = getDb();
   const [campaign] = await db
@@ -35,20 +38,23 @@ export async function runCampaign(campaignId: number): Promise<{ runId: number }
   // Prepend our bin/ so playbooks can call `pitchbox <cmd>` directly.
   const augmentedPath = `${PITCHBOX_ROOT}/bin:${process.env.PATH ?? ''}`;
 
-  runner
-    .run({
-      playbookPath: playbook,
-      slug: campaign.skillSlug,
-      env: {
-        PITCHBOX_CAMPAIGN_ID: String(campaignId),
-        PITCHBOX_RUN_ID: String(run.id),
-        PITCHBOX_ROOT,
-        PATH: augmentedPath,
-      },
-      cwd: PITCHBOX_ROOT,
-      timeoutMs: 15 * 60 * 1000,
-      onLogLine: (line) => emit('run:log', { runId: run.id, line }),
-    })
+  const handle = runner.run({
+    playbookPath: playbook,
+    slug: campaign.skillSlug,
+    env: {
+      PITCHBOX_CAMPAIGN_ID: String(campaignId),
+      PITCHBOX_RUN_ID: String(run.id),
+      PITCHBOX_ROOT,
+      PATH: augmentedPath,
+    },
+    cwd: PITCHBOX_ROOT,
+    timeoutMs: 15 * 60 * 1000,
+    onLogLine: (line) => emit('run:log', { runId: run.id, line }),
+  });
+
+  runCancels.set(run.id, handle.cancel);
+
+  handle.result
     .then(async (res) => {
       await db
         .update(schema.runs)
@@ -68,7 +74,33 @@ export async function runCampaign(campaignId: number): Promise<{ runId: number }
         .set({ status: 'failed', finishedAt: new Date(), error: String(err) })
         .where(eq(schema.runs.id, run.id));
       emit('run:finished', { runId: run.id, exitCode: 1, error: String(err) });
+    })
+    .finally(() => {
+      runCancels.delete(run.id);
     });
 
   return { runId: run.id };
+}
+
+/**
+ * Cancel an in-progress run by runId.
+ * Returns true if the run was found and cancelled, false if it was not running.
+ */
+export async function cancelRun(runId: number): Promise<boolean> {
+  const cancel = runCancels.get(runId);
+  if (!cancel) return false;
+
+  cancel();
+  runCancels.delete(runId);
+
+  // Mark the run as failed with a cancellation message.
+  const db = getDb();
+  await db
+    .update(schema.runs)
+    .set({ status: 'failed', finishedAt: new Date(), error: 'cancelled by user' })
+    .where(eq(schema.runs.id, runId));
+
+  emit('run:finished', { runId, exitCode: 1, error: 'cancelled by user' });
+
+  return true;
 }

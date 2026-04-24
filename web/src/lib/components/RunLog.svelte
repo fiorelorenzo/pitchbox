@@ -13,7 +13,6 @@
 		ChevronsDown,
 	} from 'lucide-svelte';
 	import { Badge } from '$lib/components/ui/badge';
-	import * as ScrollArea from '$lib/components/ui/scroll-area';
 	import { formatOffset } from '$lib/utils/time';
 
 	type EventKind =
@@ -57,10 +56,22 @@
 	type RunStatus = 'Idle' | 'Running' | 'Finished' | 'Failed';
 	let status = $state<RunStatus>('Idle');
 
-	function kindIsDefaultCollapsed(kind: EventKind, isError?: boolean): boolean {
-		if (kind === 'thinking' || kind === 'rate-limit') return true;
-		if (kind === 'tool-result' && !isError) return true;
-		return false;
+	function defaultCollapsed(kind: EventKind, isError?: boolean): boolean {
+		switch (kind) {
+			case 'session':
+			case 'assistant':
+			case 'result':
+				return false;
+			case 'tool-result':
+				// Error results are expanded so the user sees them immediately.
+				return !isError;
+			case 'thinking':
+			case 'tool-call':
+			case 'rate-limit':
+			case 'unknown':
+			default:
+				return true;
+		}
 	}
 
 	function extractToolResultBody(content: unknown): string {
@@ -105,6 +116,7 @@
 					title: 'Session started',
 					body: session.cwd,
 					meta: { sessionId: session.session_id, model: session.model },
+					collapsed: false,
 				});
 			}
 			// hook_started / hook_response → skip
@@ -146,6 +158,7 @@
 							ts: now,
 							title: 'Assistant',
 							body: c.text,
+							collapsed: false,
 						});
 					}
 				} else if (c.type === 'tool_use') {
@@ -157,6 +170,7 @@
 						toolName: c.name,
 						body: JSON.stringify(c.input, null, 2),
 						meta: { id: c.id },
+						collapsed: true,
 					});
 				}
 			}
@@ -186,7 +200,7 @@
 						body: extractToolResultBody(c.content),
 						isError,
 						meta: { toolUseId: c.tool_use_id },
-						collapsed: !isError,
+						collapsed: defaultCollapsed('tool-result', isError),
 					});
 				}
 			}
@@ -228,6 +242,7 @@
 					is_error: r.is_error,
 				},
 				isError: r.subtype !== 'success',
+				collapsed: false,
 			});
 			return results;
 		}
@@ -239,6 +254,7 @@
 			ts: now,
 			title: t ?? 'event',
 			body: line,
+			collapsed: true,
 		});
 		return results;
 	}
@@ -259,11 +275,7 @@
 	function onScroll() {
 		if (!scrollEl) return;
 		const atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 20;
-		if (atBottom) {
-			pinned = true;
-		} else {
-			pinned = false;
-		}
+		pinned = atBottom;
 	}
 
 	async function jumpToLatest() {
@@ -272,6 +284,19 @@
 		if (scrollEl) {
 			scrollEl.scrollTop = scrollEl.scrollHeight;
 		}
+	}
+
+	function toggleCollapsed(ev: TimelineEvent) {
+		ev.collapsed = !ev.collapsed;
+		// Trigger reactivity — mutating a nested object property requires reassignment.
+		events = events.map((e) => (e.id === ev.id ? { ...e, collapsed: ev.collapsed } : e));
+	}
+
+	/** First ~60 chars of body for the collapsed preview, if available. */
+	function preview(body: string | undefined): string {
+		if (!body) return '';
+		const first = body.replace(/\s+/g, ' ').trim().slice(0, 60);
+		return first.length < (body.replace(/\s+/g, ' ').trim().length) ? first + '…' : first;
 	}
 
 	onMount(() => {
@@ -310,6 +335,7 @@
 							title: exitCode === 0 ? 'Run succeeded' : 'Run failed',
 							meta: { exitCode },
 							isError: exitCode !== 0,
+							collapsed: false,
 						},
 					]);
 				}
@@ -359,8 +385,8 @@
 	> = {
 		session: 'outline',
 		thinking: 'secondary',
-		'tool-call': 'default',
-		'tool-result': 'default',
+		'tool-call': 'outline',
+		'tool-result': 'outline',
 		assistant: 'secondary',
 		'rate-limit': 'outline',
 		result: 'default',
@@ -383,37 +409,47 @@
 		if (n == null) return '—';
 		return Number(n).toLocaleString();
 	}
+
+	/** Whether this event type can be collapsed/expanded by user. */
+	function isCollapsible(kind: EventKind): boolean {
+		return kind === 'thinking' || kind === 'tool-call' || kind === 'tool-result' || kind === 'rate-limit' || kind === 'unknown';
+	}
+
+	/** Whether to use monospace / JSON styling for the body. */
+	function isMonoBody(kind: EventKind): boolean {
+		return kind === 'tool-call' || kind === 'tool-result' || kind === 'rate-limit' || kind === 'unknown';
+	}
 </script>
 
-<div class="flex flex-col gap-2">
+<div class="flex flex-col gap-2 min-w-0">
 	<!-- Status bar -->
 	<div class="flex items-center gap-2 text-xs text-muted-foreground px-1">
-		<span class="inline-block size-2 rounded-full {STATUS_DOT[status]}"></span>
+		<span class="inline-block size-2 rounded-full shrink-0 {STATUS_DOT[status]}"></span>
 		<span class="font-medium text-foreground">{status}</span>
 		{#if runId != null}
 			<span class="bg-muted rounded px-1.5 py-0.5 font-mono">#{runId}</span>
 		{:else}
 			<span class="italic">Listening for runs…</span>
 		{/if}
-		<span class="ml-auto">{events.length} events</span>
+		<span class="ml-auto shrink-0">{events.length} events</span>
 		{#if lastEventTs}
-			<span>{formatOffset(Date.now() - lastEventTs)} ago</span>
+			<span class="shrink-0">{formatOffset(Date.now() - lastEventTs)} ago</span>
 		{/if}
 	</div>
 
 	<!-- Events list -->
-	<div class="relative">
+	<div class="relative min-w-0">
 		<div
 			bind:this={scrollEl}
 			onscroll={onScroll}
-			class="max-h-[400px] overflow-y-auto pr-1"
+			class="max-h-[360px] overflow-y-auto overflow-x-hidden pr-1"
 		>
 			{#if events.length === 0}
 				<p class="text-xs text-muted-foreground text-center py-8">
 					{runId == null ? 'Waiting for a run to start…' : 'No events yet.'}
 				</p>
 			{:else}
-				<div class="relative">
+				<div class="relative min-w-0">
 					{#each events as ev, i (ev.id)}
 						{@const isLast = i === events.length - 1}
 						{@const offset = start != null ? formatOffset(ev.ts - start) : ''}
@@ -430,34 +466,48 @@
 								: ev.kind === 'result' && ev.isError
 									? 'bg-destructive'
 									: KIND_DOT_COLOR[ev.kind]}
-						{@const isCollapsible =
-							ev.kind === 'thinking' ||
-							ev.kind === 'tool-call' ||
-							ev.kind === 'tool-result' ||
-							ev.kind === 'rate-limit' ||
-							ev.kind === 'unknown'}
+						{@const collapsible = isCollapsible(ev.kind)}
+						{@const monoBody = isMonoBody(ev.kind)}
 						{@const isResultKind = ev.kind === 'result'}
+						{@const hasBody = !!ev.body}
+						{@const bodyPreview = ev.collapsed && hasBody && !isResultKind && ev.kind !== 'thinking'
+							? preview(ev.body)
+							: ''}
 
 						<div
-							class="flex gap-3 {isResultKind ? 'border-l-2 border-primary pl-2' : 'pl-0'} {isResultKind && ev.isError ? 'border-destructive' : ''}"
+							class="flex gap-3 min-w-0 {isResultKind ? 'border-l-2 border-primary pl-2' : 'pl-0'} {isResultKind && ev.isError ? 'border-destructive' : ''} border-b border-border/40 last:border-b-0"
 						>
-							<!-- Gutter -->
-							<div class="flex flex-col items-center w-4 shrink-0">
-								<span class="mt-1 size-2.5 rounded-full shrink-0 {dotColor}"></span>
+							<!-- Gutter: fixed-width, flex-none so it never overlaps text -->
+							<div class="flex flex-col items-center w-5 flex-none">
+								<span class="mt-1.5 size-2.5 rounded-full flex-none {dotColor}">
+									<Icon class="size-2.5 opacity-0 absolute" />
+								</span>
 								{#if !isLast}
-									<span class="w-px flex-1 bg-border mt-0.5 min-h-[8px]"></span>
+									<span class="w-px flex-1 bg-border/60 mt-0.5 min-h-[8px]"></span>
 								{/if}
 							</div>
 
 							<!-- Content -->
-							<div class="flex-1 pb-3 min-w-0">
-								<div class="flex items-center gap-2 mb-1 flex-wrap">
-									<Badge variant={badgeVariant} class="text-xs gap-1 py-0 px-1.5 h-5 shrink-0">
-										<Icon class="size-3" />
-										{ev.kind === 'tool-call' && ev.toolName ? ev.toolName : KIND_LABEL[ev.kind]}
+							<div class="flex-1 min-w-0 pb-3">
+								<!-- Header row -->
+								<div class="flex items-center gap-2 mb-1 flex-wrap min-w-0">
+									<Badge variant={badgeVariant} class="text-xs gap-1 py-0 px-1.5 h-5 shrink-0 flex items-center">
+										<Icon class="size-3 flex-none" />
+										<span>{ev.kind === 'tool-call' && ev.toolName ? ev.toolName : KIND_LABEL[ev.kind]}</span>
 									</Badge>
-									<span class="font-medium text-xs truncate">{ev.title}</span>
-									<span class="ml-auto text-muted-foreground text-xs shrink-0">{offset}</span>
+									<span class="font-medium text-xs truncate min-w-0 flex-1">{ev.title}</span>
+									{#if bodyPreview}
+										<span class="text-xs text-muted-foreground italic truncate min-w-0 max-w-[160px]">{bodyPreview}</span>
+									{/if}
+									<span class="ml-auto text-muted-foreground text-xs font-mono shrink-0">{offset}</span>
+									{#if collapsible && hasBody}
+										<button
+											onclick={() => toggleCollapsed(ev)}
+											class="text-xs text-muted-foreground hover:text-foreground shrink-0 underline-offset-2 hover:underline"
+										>
+											{ev.collapsed ? 'show' : 'hide'}
+										</button>
+									{/if}
 								</div>
 
 								{#if isResultKind && ev.meta}
@@ -478,23 +528,14 @@
 									</div>
 								{/if}
 
-								{#if ev.body}
-									{#if isCollapsible}
-										<details open={!kindIsDefaultCollapsed(ev.kind, ev.isError)}>
-											<summary
-												class="cursor-pointer text-xs text-muted-foreground hover:text-foreground select-none"
-											>
-												{kindIsDefaultCollapsed(ev.kind, ev.isError) ? 'Show' : 'Hide'}
-											</summary>
-											<ScrollArea.Root class="mt-1 max-h-48">
-												<pre
-													class="font-mono text-xs whitespace-pre-wrap break-words p-2 rounded bg-muted/50 overflow-x-auto"
-												>{ev.body}</pre>
-											</ScrollArea.Root>
-										</details>
+								{#if hasBody && !ev.collapsed}
+									{#if monoBody}
+										<div class="mt-1 overflow-x-auto max-h-64 rounded bg-muted/50">
+											<pre class="font-mono text-xs whitespace-pre break-all p-2">{ev.body}</pre>
+										</div>
 									{:else}
-										<!-- prose text for assistant / result -->
-										<p class="text-sm whitespace-pre-wrap break-words">{ev.body}</p>
+										<!-- prose text for assistant / session / result -->
+										<p class="text-sm whitespace-pre-wrap break-words min-w-0">{ev.body}</p>
 									{/if}
 								{/if}
 							</div>
