@@ -1,7 +1,7 @@
 <script lang="ts">
 	import RunLog from '$lib/components/RunLog.svelte';
 	import { invalidateAll } from '$app/navigation';
-	import { ChevronDown, ChevronUp, Loader2, Square } from 'lucide-svelte';
+	import { ChevronDown, ChevronUp, Square } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -160,12 +160,7 @@
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel onclick={() => (stopDialogOpen = false)}>Cancel</AlertDialog.Cancel>
 			<AlertDialog.Action onclick={confirmStop} disabled={stopping}>
-				{#if stopping}
-					<Loader2 class="size-4 animate-spin mr-1" />
-					Stopping…
-				{:else}
-					Stop run
-				{/if}
+				{#if stopping}Stopping…{:else}Stop run{/if}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
@@ -259,10 +254,7 @@
 								{#if running && runId != null}
 									<!-- Running: show spinner label + stop button -->
 									<div class="flex items-center justify-end gap-1">
-										<Button disabled size="sm" variant="secondary" class="gap-1">
-											<Loader2 class="size-4 animate-spin" />
-											Running…
-										</Button>
+										<Button loading size="sm" variant="secondary">Running…</Button>
 										<Button
 											size="sm"
 											variant="destructive"
@@ -273,7 +265,12 @@
 										</Button>
 									</div>
 								{:else}
-									<Button onclick={() => runNow(c.id)} disabled={running} size="sm" variant="secondary">
+									<Button
+										onclick={() => runNow(c.id)}
+										loading={runningCampaignIds.has(c.id)}
+										size="sm"
+										variant="secondary"
+									>
 										Run now
 									</Button>
 								{/if}

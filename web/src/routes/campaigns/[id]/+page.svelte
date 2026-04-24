@@ -127,13 +127,8 @@
 			<span class="text-xs text-muted-foreground font-mono">{data.campaign.skillSlug}</span>
 		</div>
 	</div>
-	<Button onclick={runNow} disabled={isStarting} size="sm">
-		{#if isStarting}
-			<Loader2 class="size-4 animate-spin mr-1" />
-			Starting…
-		{:else}
-			Run now
-		{/if}
+	<Button onclick={runNow} loading={isStarting} size="sm">
+		{isStarting ? 'Starting…' : 'Run now'}
 	</Button>
 </div>
 

@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { invalidateAll, goto } from '$app/navigation';
 	import { navigating, page } from '$app/stores';
-	import { ChevronDown, X, Inbox, Loader2, Keyboard } from 'lucide-svelte';
+	import { ChevronDown, X, Inbox, Keyboard } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Skeleton } from '$lib/components/ui/skeleton';
@@ -144,20 +144,28 @@
 		}
 	}
 
+	let bulkApproving = $state(false);
+	let bulkRejecting = $state(false);
+
 	async function bulkApprove() {
-		const ids = [...checkedIds];
-		let ok = 0;
-		let fail = 0;
-		await Promise.all(
-			ids.map((id) =>
-				patchDraft(id, { state: 'approved' })
-					.then(() => ok++)
-					.catch(() => fail++)
-			)
-		);
-		toast.success(`${ok} approved${fail > 0 ? `, ${fail} failed` : ''}`);
-		checkedIds = new Set();
-		await invalidateAll();
+		bulkApproving = true;
+		try {
+			const ids = [...checkedIds];
+			let ok = 0;
+			let fail = 0;
+			await Promise.all(
+				ids.map((id) =>
+					patchDraft(id, { state: 'approved' })
+						.then(() => ok++)
+						.catch(() => fail++)
+				)
+			);
+			toast.success(`${ok} approved${fail > 0 ? `, ${fail} failed` : ''}`);
+			checkedIds = new Set();
+			await invalidateAll();
+		} finally {
+			bulkApproving = false;
+		}
 	}
 
 	async function confirmAndReject() {
@@ -173,19 +181,24 @@
 	async function doReject() {
 		rejectConfirmOpen = false;
 		if (rejectBulk) {
-			const ids = [...checkedIds];
-			let ok = 0;
-			let fail = 0;
-			await Promise.all(
-				ids.map((id) =>
-					patchDraft(id, { state: 'rejected' })
-						.then(() => ok++)
-						.catch(() => fail++)
-				)
-			);
-			toast.success(`${ok} rejected${fail > 0 ? `, ${fail} failed` : ''}`);
-			checkedIds = new Set();
-			await invalidateAll();
+			bulkRejecting = true;
+			try {
+				const ids = [...checkedIds];
+				let ok = 0;
+				let fail = 0;
+				await Promise.all(
+					ids.map((id) =>
+						patchDraft(id, { state: 'rejected' })
+							.then(() => ok++)
+							.catch(() => fail++)
+					)
+				);
+				toast.success(`${ok} rejected${fail > 0 ? `, ${fail} failed` : ''}`);
+				checkedIds = new Set();
+				await invalidateAll();
+			} finally {
+				bulkRejecting = false;
+			}
 		} else {
 			if (selected) await rejectSingle(selected.id);
 		}
@@ -386,8 +399,12 @@
 	>
 		<span class="text-muted-foreground font-medium">{checkedIds.size} selected</span>
 		<div class="w-px h-4 bg-border"></div>
-		<Button size="sm" variant="default" onclick={bulkApprove}>Approve all</Button>
-		<Button size="sm" variant="destructive" onclick={confirmAndReject}>Reject all</Button>
+		<Button size="sm" variant="default" loading={bulkApproving} onclick={bulkApprove}>
+			Approve all
+		</Button>
+		<Button size="sm" variant="destructive" loading={bulkRejecting} onclick={confirmAndReject}>
+			Reject all
+		</Button>
 		<Button
 			size="sm"
 			variant="ghost"

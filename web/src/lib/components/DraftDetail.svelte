@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Loader2, Clipboard, Check } from 'lucide-svelte';
+	import { Clipboard, Check } from 'lucide-svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -172,12 +172,10 @@
 					{/if}
 				</Button>
 				{#if draft.state === 'pending_review'}
-					<Button onclick={approve} disabled={approving} variant="default" size="sm">
-						{#if approving}<Loader2 class="size-4 animate-spin" />{/if}
+					<Button onclick={approve} loading={approving} variant="default" size="sm">
 						Approve
 					</Button>
-					<Button onclick={reject} disabled={rejecting} variant="destructive" size="sm">
-						{#if rejecting}<Loader2 class="size-4 animate-spin" />{/if}
+					<Button onclick={reject} loading={rejecting} variant="destructive" size="sm">
 						Reject
 					</Button>
 				{/if}
