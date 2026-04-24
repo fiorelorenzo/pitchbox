@@ -1,16 +1,18 @@
-<svelte:options runes={false} />
-
 <script lang="ts">
 	import DraftListItem from '$lib/components/DraftListItem.svelte';
 	import DraftDetail from '$lib/components/DraftDetail.svelte';
 	import { onMount } from 'svelte';
 	import { invalidateAll, goto } from '$app/navigation';
 	import { page } from '$app/stores';
+	import { ChevronDown } from 'lucide-svelte';
+	import { Button } from '$lib/components/ui/button';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import * as Card from '$lib/components/ui/card';
 
-	export let data: { drafts: any[]; state: string; kind: string | null };
+	let { data }: { data: { drafts: any[]; state: string; kind: string | null } } = $props();
 
-	let selectedId: number | null = data.drafts[0]?.id ?? null;
-	$: selected = data.drafts.find((d) => d.id === selectedId) ?? null;
+	let selectedId = $derived<number | null>(data.drafts[0]?.id ?? null);
+	let selected = $derived(data.drafts.find((d) => d.id === selectedId) ?? null);
 
 	const KINDS = [
 		{ value: null, label: 'All' },
@@ -19,6 +21,8 @@
 		{ value: 'post_comment', label: 'Comments' },
 		{ value: 'comment_reply', label: 'Replies' },
 	];
+
+	let kindLabel = $derived(KINDS.find((k) => k.value === data.kind)?.label ?? 'All');
 
 	function setKind(kind: string | null) {
 		const url = new URL($page.url);
@@ -34,26 +38,36 @@
 	});
 </script>
 
-<div class="mb-3 flex gap-1 text-xs">
-	{#each KINDS as k (k.label)}
-		<button
-			class="px-2 py-1 rounded border border-slate-800"
-			class:bg-slate-800={data.kind === k.value}
-			on:click={() => setKind(k.value)}>{k.label}</button
-		>
-	{/each}
+<div class="mb-3 flex items-center gap-2">
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<Button {...props} variant="outline" size="sm">
+					Kind: {kindLabel}
+					<ChevronDown class="ml-1 size-3" />
+				</Button>
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="start">
+			{#each KINDS as k (k.label)}
+				<DropdownMenu.Item onclick={() => setKind(k.value)}>
+					{k.label}
+				</DropdownMenu.Item>
+			{/each}
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
 </div>
 
-<div class="grid grid-cols-[360px_1fr] gap-4 h-[calc(100vh-5rem)]">
-	<aside class="border border-slate-800 rounded overflow-auto">
+<Card.Root class="grid grid-cols-[360px_1fr] h-[calc(100vh-8rem)] overflow-hidden">
+	<aside class="border-r border-border overflow-auto">
 		{#if data.drafts.length === 0}
-			<p class="p-4 text-sm text-slate-500">No drafts in state "{data.state}".</p>
+			<p class="p-4 text-sm text-muted-foreground">No drafts in state "{data.state}".</p>
 		{/if}
 		{#each data.drafts as draft (draft.id)}
-			<DraftListItem {draft} selected={draft.id === selectedId} on:click={() => (selectedId = draft.id)} />
+			<DraftListItem {draft} selected={draft.id === selectedId} onclick={() => (selectedId = draft.id)} />
 		{/each}
 	</aside>
-	<section class="border border-slate-800 rounded p-4 overflow-auto">
+	<section class="p-4 overflow-auto">
 		<DraftDetail draft={selected} />
 	</section>
-</div>
+</Card.Root>

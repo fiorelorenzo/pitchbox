@@ -1,16 +1,55 @@
 <script lang="ts">
-	import { Inbox, PlayCircle, Settings } from 'lucide-svelte';
+	import { page } from '$app/stores';
+	import { Inbox, PlayCircle, MessageSquare, Settings, type Icon as LucideIcon } from 'lucide-svelte';
+	import { Badge } from '$lib/components/ui/badge';
+	import { cn } from '$lib/utils';
+	import { VERSION } from '$lib/shared/version';
+	import type { ComponentType } from 'svelte';
+
+	type NavItem = {
+		href: string;
+		label: string;
+		icon: ComponentType<LucideIcon>;
+	};
+
+	const navItems: NavItem[] = [
+		{ href: '/inbox', label: 'Inbox', icon: Inbox },
+		{ href: '/campaigns', label: 'Campaigns', icon: PlayCircle },
+		{ href: '/conversations', label: 'Conversations', icon: MessageSquare },
+		{ href: '/settings', label: 'Settings', icon: Settings },
+	];
 </script>
 
-<aside class="w-56 border-r border-slate-800 p-4 space-y-2">
-	<h1 class="font-semibold text-xl mb-4">Pitchbox</h1>
-	<a href="/inbox" class="flex items-center gap-2 p-2 rounded hover:bg-slate-900">
-		<Inbox class="w-4 h-4" /> Inbox
-	</a>
-	<a href="/campaigns" class="flex items-center gap-2 p-2 rounded hover:bg-slate-900">
-		<PlayCircle class="w-4 h-4" /> Campaigns
-	</a>
-	<a href="/settings" class="flex items-center gap-2 p-2 rounded hover:bg-slate-900">
-		<Settings class="w-4 h-4" /> Settings
-	</a>
+<aside class="w-60 border-r border-border flex flex-col p-4">
+	<!-- Title + version badge -->
+	<div class="flex items-center gap-2 mb-6">
+		<h1 class="font-semibold text-lg">Pitchbox</h1>
+		<Badge variant="secondary" class="text-[10px] px-1.5 py-0.5">{VERSION}</Badge>
+	</div>
+
+	<!-- Nav links -->
+	<nav class="flex flex-col gap-1 flex-1">
+		{#each navItems as item (item.href)}
+			{@const active = $page.url.pathname.startsWith(item.href)}
+			{@const Icon = item.icon}
+			<a
+				href={item.href}
+				class={cn(
+					'flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors',
+					active
+						? 'bg-accent text-accent-foreground font-medium'
+						: 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+				)}
+			>
+				<Icon class="size-4 shrink-0" />
+				{item.label}
+			</a>
+		{/each}
+	</nav>
+
+	<!-- Daemon status (placeholder for M2+) -->
+	<div class="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground border-t border-border mt-4 pt-4">
+		<span class="size-2 rounded-full bg-muted-foreground/40 shrink-0"></span>
+		<span>Daemon: unknown</span>
+	</div>
 </aside>

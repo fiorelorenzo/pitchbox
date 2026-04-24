@@ -1,7 +1,8 @@
-<svelte:options runes={false} />
-
 <script lang="ts">
-	export let draft: {
+	import { Badge } from '$lib/components/ui/badge';
+	import { cn } from '$lib/utils';
+
+	type Draft = {
 		id: number;
 		kind: string;
 		targetUser: string | null;
@@ -10,7 +11,12 @@
 		state: string;
 		createdAt: string;
 	};
-	export let selected = false;
+
+	let {
+		draft,
+		selected = false,
+		onclick,
+	}: { draft: Draft; selected?: boolean; onclick?: () => void } = $props();
 
 	const KIND_LABEL: Record<string, string> = {
 		dm: 'DM',
@@ -18,22 +24,31 @@
 		post_comment: 'Comment',
 		comment_reply: 'Reply',
 	};
+
+	const KIND_BADGE_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
+		dm: 'default',
+		post: 'secondary',
+		post_comment: 'outline',
+		comment_reply: 'outline',
+	};
 </script>
 
 <button
-	class="w-full text-left p-3 border-b border-slate-800 hover:bg-slate-900"
-	class:bg-slate-900={selected}
-	on:click
+	class={cn(
+		'w-full text-left p-3 border-b border-border hover:bg-accent/50 transition-colors',
+		selected && 'bg-accent'
+	)}
+	{onclick}
 >
-	<div class="flex justify-between items-center">
-		<span class="font-medium">
+	<div class="flex justify-between items-center gap-2">
+		<span class="font-medium text-sm truncate">
 			{#if draft.kind === 'dm'}u/{draft.targetUser ?? '—'}{:else}r/{draft.subreddit ?? '—'}{/if}
 		</span>
-		<span class="text-xs px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+		<Badge variant={KIND_BADGE_VARIANT[draft.kind] ?? 'outline'} class="text-[10px] shrink-0">
 			{KIND_LABEL[draft.kind] ?? draft.kind}
-		</span>
+		</Badge>
 	</div>
-	<div class="text-xs text-slate-400 mt-1">
+	<div class="text-xs text-muted-foreground mt-1">
 		fit {draft.fitScore ?? '?'}/5 · {draft.state}
 		{#if draft.kind !== 'dm' && draft.subreddit == null && draft.targetUser}· u/{draft.targetUser}{/if}
 	</div>
