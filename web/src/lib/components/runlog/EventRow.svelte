@@ -39,11 +39,7 @@
 
 <div
 	in:fly={{ y: 6, duration: 180 }}
-	class="flex gap-3 min-w-0 hover:bg-muted/20 rounded transition-colors py-0.5
-	{isResultKind
-		? 'border-l-2 pl-2 ' + (isError ? 'border-destructive' : 'border-primary')
-		: 'pl-0'}
-	border-b border-border/30 last:border-b-0"
+	class="flex gap-3 min-w-0 hover:bg-muted/20 rounded transition-colors py-0.5 border-b border-border/30 last:border-b-0"
 >
 	<!-- Gutter: dot at y=18px, continuous connector line above (except first) and below (except last) -->
 	<div class="flex flex-col items-center w-5 flex-none">
@@ -53,7 +49,12 @@
 	</div>
 
 	<!-- Content + timestamp. pt-[14px] aligns the first line of text with the 18px-offset dot. -->
-	<div class="flex-1 min-w-0 pb-2.5 pt-[14px]">
+	<div
+		class="flex-1 min-w-0 pb-2.5 pt-[14px] {isResultKind
+			? 'pr-2 pl-2 -ml-2 rounded border-l-2 ' +
+				(isError ? 'border-destructive bg-destructive/5' : 'border-primary bg-primary/5')
+			: ''}"
+	>
 		<div class="flex items-start gap-2 min-w-0">
 			<div class="flex-1 min-w-0">
 				{@render children()}
