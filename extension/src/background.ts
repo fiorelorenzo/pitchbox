@@ -1,4 +1,4 @@
-import { runDmSync } from './background/dm-sync.js';
+import { runInboxSync } from './background/inbox-sync.js';
 import { runChatSync } from './background/chat-sync.js';
 import { setSettings } from './lib/storage.js';
 
@@ -8,19 +8,21 @@ const PERIOD_MIN = 10;
 type Result = { ok: boolean; inserted?: number; replied?: number; reason?: string };
 
 async function runAllSyncs() {
-  const dm = await runDmSync();
+  const inbox = await runInboxSync();
   const chat = await runChatSync();
-  return { dm, chat };
+  return { inbox, chat };
 }
 
-function aggregate(r: { dm: Result; chat: Result }): Result {
-  const inserted = (r.dm.ok ? (r.dm.inserted ?? 0) : 0) + (r.chat.ok ? (r.chat.inserted ?? 0) : 0);
-  const replied = (r.dm.ok ? (r.dm.replied ?? 0) : 0) + (r.chat.ok ? (r.chat.replied ?? 0) : 0);
+function aggregate(r: { inbox: Result; chat: Result }): Result {
+  const inserted =
+    (r.inbox.ok ? (r.inbox.inserted ?? 0) : 0) + (r.chat.ok ? (r.chat.inserted ?? 0) : 0);
+  const replied =
+    (r.inbox.ok ? (r.inbox.replied ?? 0) : 0) + (r.chat.ok ? (r.chat.replied ?? 0) : 0);
   const reasons: string[] = [];
-  if (!r.dm.ok) reasons.push(`pm:${r.dm.reason}`);
+  if (!r.inbox.ok) reasons.push(`inbox:${r.inbox.reason}`);
   if (!r.chat.ok && r.chat.reason !== 'no-matrix-creds') reasons.push(`chat:${r.chat.reason}`);
   return {
-    ok: r.dm.ok || r.chat.ok,
+    ok: r.inbox.ok || r.chat.ok,
     inserted,
     replied,
     reason: reasons.join(', ') || undefined,

@@ -69,10 +69,13 @@ export const api = {
       sentAt: new Date().toISOString(),
       commentLookup,
     }),
-  dmSync: (platform: string, items: unknown[]) =>
-    postJson<{ ok: true; inserted: number; replied: number }>('/api/extension/dm-sync', {
-      platform,
-      items,
-    }),
+  dmSync: (platform: string, items: unknown[], comments: unknown[] = []) =>
+    postJson<{
+      ok: true;
+      inserted: number;
+      replied: number;
+      commentsInserted?: number;
+      commentsReplied?: number;
+    }>('/api/extension/dm-sync', { platform, items, comments }),
   dmSyncStatus: () => getJson<{ lastSyncAt: string | null }>('/api/extension/dm-sync/status'),
 };

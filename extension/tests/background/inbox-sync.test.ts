@@ -25,17 +25,17 @@ beforeEach(() => {
 });
 
 async function importModule() {
-  return await import('../../src/background/dm-sync.js');
+  return await import('../../src/background/inbox-sync.js');
 }
 
-describe('runDmSync', () => {
+describe('runInboxSync', () => {
   it('returns not-logged-in when inbox returns 403', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('', { status: 403 })),
     );
-    const { runDmSync } = await importModule();
-    const r = await runDmSync();
+    const { runInboxSync } = await importModule();
+    const r = await runInboxSync();
     expect(r).toEqual({ ok: false, reason: 'not-logged-in' });
   });
 
@@ -95,8 +95,8 @@ describe('runDmSync', () => {
       }),
     );
 
-    const { runDmSync } = await importModule();
-    const r = await runDmSync();
+    const { runInboxSync } = await importModule();
+    const r = await runInboxSync();
     expect(r.ok).toBe(true);
     const postCall = (fetch as any).mock.calls.find((c: any[]) => c[0].endsWith('/dm-sync'));
     expect(postCall).toBeTruthy();
@@ -116,10 +116,67 @@ describe('runDmSync', () => {
           }),
       ),
     );
-    const { runDmSync } = await importModule();
-    const r = await runDmSync();
+    const { runInboxSync } = await importModule();
+    const r = await runInboxSync();
     expect(r).toMatchObject({ ok: true, inserted: 0 });
     const stored = ((globalThis as any).chrome.storage.local as any)._s;
     expect(stored.lastDmSyncAt).toBeTruthy();
+  });
+
+  it('extracts t1 comment_reply items into the comments array', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (String(url).includes('inbox.json')) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                children: [
+                  {
+                    kind: 't1',
+                    data: {
+                      name: 't1_them',
+                      parent_id: 't1_us',
+                      author: 'alice',
+                      dest: 'me',
+                      body: 'cool',
+                      context: '/r/X/comments/Y/_/t1_them/?context=3',
+                      created_utc: new Date('2026-04-25T10:00:00Z').getTime() / 1000,
+                      was_comment: true,
+                    },
+                  },
+                ],
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            inserted: 0,
+            replied: 0,
+            commentsInserted: 1,
+            commentsReplied: 1,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }),
+    );
+
+    const { runInboxSync } = await importModule();
+    const r = await runInboxSync();
+    expect(r.ok).toBe(true);
+    const post = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.find((c) =>
+      String(c[0]).endsWith('/dm-sync'),
+    );
+    expect(post).toBeTruthy();
+    const body = JSON.parse((post![1] as RequestInit).body as string);
+    expect(body.comments).toHaveLength(1);
+    expect(body.comments[0]).toMatchObject({
+      parentCommentId: 't1_us',
+      replyCommentId: 't1_them',
+      author: 'alice',
+    });
   });
 });
