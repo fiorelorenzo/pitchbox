@@ -197,12 +197,21 @@
 						{@const expanded = expandedId === c.id}
 
 						<Table.Row
-							class="hover:bg-muted/40 transition-colors border-b {running
-								? 'border-l-2 border-green-500'
-								: ''}"
+							onclick={() => {
+								if (runId != null) toggleExpand(c.id);
+							}}
+							class="transition-colors border-b {runId != null
+								? 'hover:bg-muted/40 cursor-pointer'
+								: 'hover:bg-muted/20'} {running ? 'border-l-2 border-green-500' : ''}"
 						>
 							<Table.Cell class="font-medium py-3">
-								<a href="/campaigns/{c.id}" class="hover:underline">{c.name}</a>
+								<a
+									href="/campaigns/{c.id}"
+									class="hover:underline"
+									onclick={(e) => e.stopPropagation()}
+								>
+									{c.name}
+								</a>
 							</Table.Cell>
 							<Table.Cell class="text-muted-foreground text-xs py-3">{c.skillSlug}</Table.Cell>
 							<Table.Cell class="py-3">
@@ -240,7 +249,11 @@
 							</Table.Cell>
 							<Table.Cell class="py-3">
 								{#if c.lastRunId != null && c.lastRunDraftCount > 0}
-									<a href="/inbox?state=pending_review&campaign={c.id}" class="hover:underline">
+									<a
+										href="/inbox?state=pending_review&campaign={c.id}"
+										class="hover:underline"
+										onclick={(e) => e.stopPropagation()}
+									>
 										<Badge variant="default" class="text-xs bg-primary/80 hover:bg-primary">
 											{c.lastRunDraftCount} drafts
 										</Badge>
@@ -259,7 +272,11 @@
 							<Table.Cell class="text-right py-3">
 								{#if running && runId != null}
 									<!-- Running: show spinner label + stop button -->
-									<div class="flex items-center justify-end gap-1">
+									<div
+										class="flex items-center justify-end gap-1"
+										onclick={(e) => e.stopPropagation()}
+										role="presentation"
+									>
 										<Button loading size="sm" variant="secondary">Running…</Button>
 										<Button
 											size="sm"
@@ -272,7 +289,10 @@
 									</div>
 								{:else}
 									<Button
-										onclick={() => runNow(c.id)}
+										onclick={(e) => {
+											e.stopPropagation();
+											runNow(c.id);
+										}}
 										loading={runningCampaignIds.has(c.id)}
 										size="sm"
 										variant="secondary"

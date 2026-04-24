@@ -198,9 +198,18 @@
 		>
 			{#if events.length === 0}
 				{#if status === 'Running'}
-					<div class="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground/50">
+					<div
+						class="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground/50"
+					>
 						<Loader class="size-4 animate-spin" />
 						<span class="text-xs">Waiting for the first event…</span>
+					</div>
+				{:else if runId != null}
+					<div class="flex flex-col items-center justify-center gap-1 py-10 text-center">
+						<p class="text-xs text-muted-foreground/60">No events recorded for run #{runId}.</p>
+						<p class="text-[10px] text-muted-foreground/40 italic">
+							This run may pre-date event persistence.
+						</p>
 					</div>
 				{:else}
 					<p class="text-xs text-muted-foreground/50 text-center py-10 italic">
