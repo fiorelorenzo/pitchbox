@@ -136,19 +136,22 @@ export async function runCampaign(
 
   runCancels.set(run.id, handle.cancel);
 
+  const TERMINAL_STATUSES = new Set(['success', 'failed', 'cancelled']);
+
   handle.result
     .then(async (res) => {
-      // If the run was already cancelled, don't overwrite the status.
+      // If the run is already in a terminal state (cancelled by user OR
+      // pre-marked by the playbook via `pitchbox run:finish`), don't overwrite it.
       const [current] = await db
         .select({ status: schema.runs.status })
         .from(schema.runs)
         .where(eq(schema.runs.id, run.id));
-      if (current?.status === 'cancelled') {
+      if (current && TERMINAL_STATUSES.has(current.status)) {
         emit('run:finished', {
           runId: run.id,
           campaignId,
-          exitCode: 1,
-          error: 'cancelled by user',
+          exitCode: current.status === 'success' ? 0 : 1,
+          error: current.status === 'cancelled' ? 'cancelled by user' : undefined,
         });
         emit('drafts:changed', {});
         return;
@@ -166,17 +169,16 @@ export async function runCampaign(
       emit('drafts:changed', {});
     })
     .catch(async (err) => {
-      // If the run was already cancelled, don't overwrite the status.
       const [current] = await db
         .select({ status: schema.runs.status })
         .from(schema.runs)
         .where(eq(schema.runs.id, run.id));
-      if (current?.status === 'cancelled') {
+      if (current && TERMINAL_STATUSES.has(current.status)) {
         emit('run:finished', {
           runId: run.id,
           campaignId,
-          exitCode: 1,
-          error: 'cancelled by user',
+          exitCode: current.status === 'success' ? 0 : 1,
+          error: current.status === 'cancelled' ? 'cancelled by user' : undefined,
         });
         emit('drafts:changed', {});
         return;
