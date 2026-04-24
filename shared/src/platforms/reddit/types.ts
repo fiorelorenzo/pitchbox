@@ -54,3 +54,29 @@ export type RedditSubredditAbout = {
   submissionType: string;
   over18: boolean;
 };
+
+export interface ScoutProfile {
+  subreddits: string[];
+  queries?: string[];
+  perSubredditLimit?: number;
+  includeHotBrowse?: boolean;
+  minKarma?: number;
+  maxAccountAgeDays?: number;
+  minPostScore?: number;
+}
+
+export interface ScoutCandidate {
+  user: { name: string; karma: number; createdUtc: number };
+  post: {
+    title: string;
+    selftext: string;
+    permalink: string;
+    score: number;
+    subreddit: string;
+    numComments: number;
+    createdUtc: number;
+  };
+  profileUrl: string;
+  composeUrlBase: string;
+  matchedBy: 'search' | 'hot';
+}
