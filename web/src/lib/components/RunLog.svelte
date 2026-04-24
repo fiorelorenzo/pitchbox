@@ -1,71 +1,518 @@
-<svelte:options runes={false} />
-
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-	export let runId: number | null = null;
+	import { onMount, onDestroy, tick } from 'svelte';
+	import {
+		Sparkles,
+		Brain,
+		Terminal,
+		CheckCircle2,
+		AlertCircle,
+		MessageSquare,
+		Gauge,
+		Flag,
+		HelpCircle,
+		ChevronsDown,
+	} from 'lucide-svelte';
+	import { Badge } from '$lib/components/ui/badge';
+	import * as ScrollArea from '$lib/components/ui/scroll-area';
+	import { formatOffset } from '$lib/utils/time';
 
-	let lines: string[] = [];
+	type EventKind =
+		| 'session'
+		| 'thinking'
+		| 'tool-call'
+		| 'tool-result'
+		| 'assistant'
+		| 'rate-limit'
+		| 'result'
+		| 'unknown';
+
+	interface TimelineEvent {
+		id: number;
+		kind: EventKind;
+		ts: number; // unix ms
+		title: string;
+		body?: string;
+		meta?: Record<string, unknown>;
+		isError?: boolean;
+		toolName?: string;
+		collapsed?: boolean;
+	}
+
+	let { runId = null }: { runId?: number | null } = $props();
+
+	let events = $state<TimelineEvent[]>([]);
+	let nextId = 0;
+	let start = $state<number | null>(null);
+
+	// Scroll / pin state
+	let pinned = $state(true);
+	let scrollEl: HTMLElement | null = null;
+	let hasResultEvent = false;
+	let lastEventTs = $state<number | null>(null);
+
+	// SSE
 	let es: EventSource | null = null;
 
-	function pretty(raw: string): string {
-		if (!raw.trim()) return '';
+	// --- Status derived from events ---
+	type RunStatus = 'Idle' | 'Running' | 'Finished' | 'Failed';
+	let status = $state<RunStatus>('Idle');
+
+	function kindIsDefaultCollapsed(kind: EventKind, isError?: boolean): boolean {
+		if (kind === 'thinking' || kind === 'rate-limit') return true;
+		if (kind === 'tool-result' && !isError) return true;
+		return false;
+	}
+
+	function extractToolResultBody(content: unknown): string {
+		if (typeof content === 'string') return content;
+		if (Array.isArray(content)) {
+			const texts = content
+				.filter((c): c is { type: string; text: string } => c && c.type === 'text')
+				.map((c) => c.text);
+			if (texts.length) return texts.join('\n');
+		}
+		return JSON.stringify(content, null, 2);
+	}
+
+	function parse(line: string): TimelineEvent[] {
+		if (!line.trim()) return [];
+		// skip our own comment banners
+		if (line.startsWith('#')) return [];
+
 		let evt: Record<string, unknown>;
 		try {
-			evt = JSON.parse(raw);
+			evt = JSON.parse(line);
 		} catch {
-			return raw;
+			return [];
 		}
+
 		const t = evt.type as string | undefined;
-		if (t === 'system' && evt.subtype === 'init') {
-			const cwd = evt.cwd as string | undefined;
-			return `[system] init (cwd=${cwd ?? '?'})`;
+		const results: TimelineEvent[] = [];
+		const now = Date.now();
+
+		if (t === 'system') {
+			const sub = evt.subtype as string | undefined;
+			if (sub === 'init') {
+				const session = evt as {
+					session_id?: string;
+					model?: string;
+					cwd?: string;
+				};
+				results.push({
+					id: nextId++,
+					kind: 'session',
+					ts: now,
+					title: 'Session started',
+					body: session.cwd,
+					meta: { sessionId: session.session_id, model: session.model },
+				});
+			}
+			// hook_started / hook_response → skip
+			return results;
 		}
+
 		if (t === 'assistant') {
-			const msg = (evt.message as { content?: Array<{ type: string; text?: string; name?: string; input?: unknown }> } | undefined)?.content;
-			if (Array.isArray(msg)) {
-				return msg
-					.map((c) => {
-						if (c.type === 'text') return `[assistant] ${c.text?.slice(0, 300) ?? ''}`;
-						if (c.type === 'tool_use')
-							return `[tool] ${c.name} ${JSON.stringify(c.input).slice(0, 200)}`;
-						return `[${c.type}]`;
-					})
-					.join('\n');
+			const msg = evt.message as
+				| {
+						content?: Array<{
+							type: string;
+							text?: string;
+							thinking?: string;
+							name?: string;
+							id?: string;
+							input?: unknown;
+						}>;
+				  }
+				| undefined;
+			const content = msg?.content ?? [];
+			for (const c of content) {
+				if (c.type === 'thinking') {
+					const text = c.thinking ?? c.text ?? '';
+					if (text) {
+						results.push({
+							id: nextId++,
+							kind: 'thinking',
+							ts: now,
+							title: 'Thinking…',
+							body: text,
+							collapsed: true,
+						});
+					}
+				} else if (c.type === 'text') {
+					if (c.text) {
+						results.push({
+							id: nextId++,
+							kind: 'assistant',
+							ts: now,
+							title: 'Assistant',
+							body: c.text,
+						});
+					}
+				} else if (c.type === 'tool_use') {
+					results.push({
+						id: nextId++,
+						kind: 'tool-call',
+						ts: now,
+						title: c.name ?? 'tool',
+						toolName: c.name,
+						body: JSON.stringify(c.input, null, 2),
+						meta: { id: c.id },
+					});
+				}
 			}
-			return '[assistant] (empty)';
+			return results;
 		}
+
 		if (t === 'user') {
-			const msg = (evt.message as { content?: Array<{ type: string; content?: string }> } | undefined)?.content;
-			if (Array.isArray(msg)) {
-				return msg
-					.map((c) => `[tool-result] ${typeof c.content === 'string' ? c.content.slice(0, 300) : JSON.stringify(c.content).slice(0, 300)}`)
-					.join('\n');
+			const msg = evt.message as
+				| {
+						content?: Array<{
+							type: string;
+							content?: unknown;
+							is_error?: boolean;
+							tool_use_id?: string;
+						}>;
+				  }
+				| undefined;
+			const content = msg?.content ?? [];
+			for (const c of content) {
+				if (c.type === 'tool_result') {
+					const isError = !!c.is_error;
+					results.push({
+						id: nextId++,
+						kind: 'tool-result',
+						ts: now,
+						title: 'Tool result',
+						body: extractToolResultBody(c.content),
+						isError,
+						meta: { toolUseId: c.tool_use_id },
+						collapsed: !isError,
+					});
+				}
 			}
-			return '[user]';
+			return results;
 		}
+
+		if (t === 'rate_limit_event') {
+			results.push({
+				id: nextId++,
+				kind: 'rate-limit',
+				ts: now,
+				title: 'Rate limit',
+				body: JSON.stringify(evt.rate_limit_info ?? evt, null, 2),
+				collapsed: true,
+			});
+			return results;
+		}
+
 		if (t === 'result') {
-			const cost = evt.total_cost_usd ?? (evt as { cost_usd?: number }).cost_usd;
-			return `[result] ${evt.subtype ?? 'done'}${cost ? ` cost=$${cost}` : ''}`;
+			const r = evt as {
+				subtype?: string;
+				result?: unknown;
+				total_cost_usd?: number;
+				duration_ms?: number;
+				usage?: { input_tokens?: number; output_tokens?: number };
+				is_error?: boolean;
+			};
+			results.push({
+				id: nextId++,
+				kind: 'result',
+				ts: now,
+				title: r.subtype === 'success' ? 'Run succeeded' : 'Run failed',
+				body: r.result != null ? String(r.result) : undefined,
+				meta: {
+					total_cost_usd: r.total_cost_usd,
+					duration_ms: r.duration_ms,
+					input_tokens: r.usage?.input_tokens,
+					output_tokens: r.usage?.output_tokens,
+					is_error: r.is_error,
+				},
+				isError: r.subtype !== 'success',
+			});
+			return results;
 		}
-		return raw;
+
+		// Unknown
+		results.push({
+			id: nextId++,
+			kind: 'unknown',
+			ts: now,
+			title: t ?? 'event',
+			body: line,
+		});
+		return results;
+	}
+
+	async function appendEvents(newEvents: TimelineEvent[]) {
+		if (!newEvents.length) return;
+		if (start === null) start = newEvents[0].ts;
+		lastEventTs = newEvents[newEvents.length - 1].ts;
+		events = [...events, ...newEvents];
+		if (pinned) {
+			await tick();
+			if (scrollEl) {
+				scrollEl.scrollTop = scrollEl.scrollHeight;
+			}
+		}
+	}
+
+	function onScroll() {
+		if (!scrollEl) return;
+		const atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 20;
+		if (atBottom) {
+			pinned = true;
+		} else {
+			pinned = false;
+		}
+	}
+
+	async function jumpToLatest() {
+		pinned = true;
+		await tick();
+		if (scrollEl) {
+			scrollEl.scrollTop = scrollEl.scrollHeight;
+		}
 	}
 
 	onMount(() => {
 		es = new EventSource('/api/stream');
-		es.addEventListener('run:log', (e: MessageEvent) => {
-			const { runId: rid, line } = JSON.parse(e.data);
+
+		es.addEventListener('run:started', (e: MessageEvent) => {
+			const { runId: rid } = JSON.parse(e.data);
 			if (runId === null || rid === runId) {
-				const formatted = pretty(line);
-				if (formatted) lines = [...lines.slice(-199), formatted];
+				events = [];
+				start = null;
+				hasResultEvent = false;
+				status = 'Running';
+				nextId = 0;
 			}
 		});
-		es.addEventListener('run:finished', (e: MessageEvent) => {
+
+		es.addEventListener('run:log', async (e: MessageEvent) => {
+			const { runId: rid, line } = JSON.parse(e.data);
+			if (runId === null || rid === runId) {
+				const parsed = parse(line);
+				if (parsed.some((ev) => ev.kind === 'result')) hasResultEvent = true;
+				await appendEvents(parsed);
+			}
+		});
+
+		es.addEventListener('run:finished', async (e: MessageEvent) => {
 			const { runId: rid, exitCode } = JSON.parse(e.data);
-			if (runId === null || rid === runId)
-				lines = [...lines, `--- finished exit=${exitCode} ---`];
+			if (runId === null || rid === runId) {
+				status = exitCode === 0 ? 'Finished' : 'Failed';
+				if (!hasResultEvent) {
+					await appendEvents([
+						{
+							id: nextId++,
+							kind: 'result',
+							ts: Date.now(),
+							title: exitCode === 0 ? 'Run succeeded' : 'Run failed',
+							meta: { exitCode },
+							isError: exitCode !== 0,
+						},
+					]);
+				}
+			}
 		});
 	});
+
 	onDestroy(() => es?.close());
+
+	// --- Icon mapping ---
+	const KIND_ICON: Record<EventKind, typeof Brain> = {
+		session: Sparkles,
+		thinking: Brain,
+		'tool-call': Terminal,
+		'tool-result': CheckCircle2,
+		assistant: MessageSquare,
+		'rate-limit': Gauge,
+		result: Flag,
+		unknown: HelpCircle,
+	};
+
+	const KIND_LABEL: Record<EventKind, string> = {
+		session: 'session',
+		thinking: 'thinking',
+		'tool-call': 'tool',
+		'tool-result': 'result',
+		assistant: 'assistant',
+		'rate-limit': 'rate limit',
+		result: 'result',
+		unknown: 'unknown',
+	};
+
+	const KIND_DOT_COLOR: Record<EventKind, string> = {
+		session: 'bg-violet-400',
+		thinking: 'bg-slate-400',
+		'tool-call': 'bg-blue-400',
+		'tool-result': 'bg-green-400',
+		assistant: 'bg-sky-400',
+		'rate-limit': 'bg-yellow-400',
+		result: 'bg-primary',
+		unknown: 'bg-slate-300',
+	};
+
+	const KIND_BADGE_VARIANT: Record<
+		EventKind,
+		'default' | 'secondary' | 'destructive' | 'outline'
+	> = {
+		session: 'outline',
+		thinking: 'secondary',
+		'tool-call': 'default',
+		'tool-result': 'default',
+		assistant: 'secondary',
+		'rate-limit': 'outline',
+		result: 'default',
+		unknown: 'outline',
+	};
+
+	const STATUS_DOT: Record<RunStatus, string> = {
+		Idle: 'bg-slate-400',
+		Running: 'bg-green-400 animate-pulse',
+		Finished: 'bg-emerald-500',
+		Failed: 'bg-destructive',
+	};
+
+	function formatCost(usd: unknown): string {
+		if (usd == null) return '';
+		return `$${Number(usd).toFixed(4)}`;
+	}
+
+	function formatTokens(n: unknown): string {
+		if (n == null) return '—';
+		return Number(n).toLocaleString();
+	}
 </script>
 
-<pre class="bg-slate-900 border border-slate-800 rounded p-3 text-xs h-64 overflow-auto">{lines.join('\n')}</pre>
+<div class="flex flex-col gap-2">
+	<!-- Status bar -->
+	<div class="flex items-center gap-2 text-xs text-muted-foreground px-1">
+		<span class="inline-block size-2 rounded-full {STATUS_DOT[status]}"></span>
+		<span class="font-medium text-foreground">{status}</span>
+		{#if runId != null}
+			<span class="bg-muted rounded px-1.5 py-0.5 font-mono">#{runId}</span>
+		{:else}
+			<span class="italic">Listening for runs…</span>
+		{/if}
+		<span class="ml-auto">{events.length} events</span>
+		{#if lastEventTs}
+			<span>{formatOffset(Date.now() - lastEventTs)} ago</span>
+		{/if}
+	</div>
+
+	<!-- Events list -->
+	<div class="relative">
+		<div
+			bind:this={scrollEl}
+			onscroll={onScroll}
+			class="max-h-[400px] overflow-y-auto pr-1"
+		>
+			{#if events.length === 0}
+				<p class="text-xs text-muted-foreground text-center py-8">
+					{runId == null ? 'Waiting for a run to start…' : 'No events yet.'}
+				</p>
+			{:else}
+				<div class="relative">
+					{#each events as ev, i (ev.id)}
+						{@const isLast = i === events.length - 1}
+						{@const offset = start != null ? formatOffset(ev.ts - start) : ''}
+						{@const Icon = ev.kind === 'tool-result' && ev.isError ? AlertCircle : KIND_ICON[ev.kind]}
+						{@const badgeVariant =
+							ev.kind === 'result' && ev.isError
+								? 'destructive'
+								: ev.kind === 'tool-result' && ev.isError
+									? 'destructive'
+									: KIND_BADGE_VARIANT[ev.kind]}
+						{@const dotColor =
+							ev.kind === 'tool-result' && ev.isError
+								? 'bg-destructive'
+								: ev.kind === 'result' && ev.isError
+									? 'bg-destructive'
+									: KIND_DOT_COLOR[ev.kind]}
+						{@const isCollapsible =
+							ev.kind === 'thinking' ||
+							ev.kind === 'tool-call' ||
+							ev.kind === 'tool-result' ||
+							ev.kind === 'rate-limit' ||
+							ev.kind === 'unknown'}
+						{@const isResultKind = ev.kind === 'result'}
+
+						<div
+							class="flex gap-3 {isResultKind ? 'border-l-2 border-primary pl-2' : 'pl-0'} {isResultKind && ev.isError ? 'border-destructive' : ''}"
+						>
+							<!-- Gutter -->
+							<div class="flex flex-col items-center w-4 shrink-0">
+								<span class="mt-1 size-2.5 rounded-full shrink-0 {dotColor}"></span>
+								{#if !isLast}
+									<span class="w-px flex-1 bg-border mt-0.5 min-h-[8px]"></span>
+								{/if}
+							</div>
+
+							<!-- Content -->
+							<div class="flex-1 pb-3 min-w-0">
+								<div class="flex items-center gap-2 mb-1 flex-wrap">
+									<Badge variant={badgeVariant} class="text-xs gap-1 py-0 px-1.5 h-5 shrink-0">
+										<Icon class="size-3" />
+										{ev.kind === 'tool-call' && ev.toolName ? ev.toolName : KIND_LABEL[ev.kind]}
+									</Badge>
+									<span class="font-medium text-xs truncate">{ev.title}</span>
+									<span class="ml-auto text-muted-foreground text-xs shrink-0">{offset}</span>
+								</div>
+
+								{#if isResultKind && ev.meta}
+									<!-- Result meta row -->
+									<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-1 mb-2">
+										{#if ev.meta.input_tokens != null}
+											<span>in: {formatTokens(ev.meta.input_tokens)}</span>
+										{/if}
+										{#if ev.meta.output_tokens != null}
+											<span>out: {formatTokens(ev.meta.output_tokens)}</span>
+										{/if}
+										{#if ev.meta.duration_ms != null}
+											<span>{Math.round(Number(ev.meta.duration_ms) / 1000)}s</span>
+										{/if}
+										{#if ev.meta.total_cost_usd != null}
+											<span>{formatCost(ev.meta.total_cost_usd)}</span>
+										{/if}
+									</div>
+								{/if}
+
+								{#if ev.body}
+									{#if isCollapsible}
+										<details open={!kindIsDefaultCollapsed(ev.kind, ev.isError)}>
+											<summary
+												class="cursor-pointer text-xs text-muted-foreground hover:text-foreground select-none"
+											>
+												{kindIsDefaultCollapsed(ev.kind, ev.isError) ? 'Show' : 'Hide'}
+											</summary>
+											<ScrollArea.Root class="mt-1 max-h-48">
+												<pre
+													class="font-mono text-xs whitespace-pre-wrap break-words p-2 rounded bg-muted/50 overflow-x-auto"
+												>{ev.body}</pre>
+											</ScrollArea.Root>
+										</details>
+									{:else}
+										<!-- prose text for assistant / result -->
+										<p class="text-sm whitespace-pre-wrap break-words">{ev.body}</p>
+									{/if}
+								{/if}
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		<!-- Jump to latest button -->
+		{#if !pinned && events.length > 0}
+			<button
+				onclick={jumpToLatest}
+				class="absolute bottom-2 right-2 z-10 flex items-center gap-1 text-xs bg-primary text-primary-foreground rounded-full px-3 py-1 shadow-md hover:bg-primary/90 transition-colors"
+			>
+				<ChevronsDown class="size-3" />
+				Jump to latest
+			</button>
+		{/if}
+	</div>
+</div>
