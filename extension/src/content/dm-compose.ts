@@ -7,18 +7,20 @@ const draftId = parseDraftId(location.href);
 if (draftId !== null) {
   let armed = false;
   let sent = false;
+  let capturedBody: string | undefined;
 
   async function onSendIntent() {
     if (armed) return;
     armed = true;
+    // Capture the textarea content at click time — Reddit clears it on success.
+    capturedBody = findComposeTextarea()?.value || undefined;
     await api.armed(draftId!);
   }
 
   async function onSendCompleted() {
     if (sent) return;
     sent = true;
-    const body = findComposeTextarea()?.value;
-    await api.sent(draftId!, body || undefined);
+    await api.sent(draftId!, capturedBody);
   }
 
   function wireUp(): boolean {
@@ -29,12 +31,18 @@ if (draftId !== null) {
       () => {
         void onSendIntent();
         const startUrl = location.href;
+        const startText = findComposeTextarea()?.value ?? '';
         const poll = window.setInterval(() => {
-          if (location.href !== startUrl) {
+          const ta = findComposeTextarea();
+          const urlChanged = location.href !== startUrl;
+          const textareaGone = !ta;
+          const textareaCleared = ta && startText.length > 0 && !ta.value;
+          const sendButtonGone = !findComposeSendButton();
+          if (urlChanged || textareaGone || textareaCleared || sendButtonGone) {
             clearInterval(poll);
             void onSendCompleted();
           }
-        }, 400);
+        }, 500);
         window.setTimeout(() => clearInterval(poll), 20_000);
       },
       { capture: true },
