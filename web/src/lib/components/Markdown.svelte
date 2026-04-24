@@ -116,16 +116,16 @@
 		color: color-mix(in srgb, currentColor 75%, transparent);
 	}
 
-	/* Tables */
+	/* Tables: shrink to content width, never wider than container */
 	div :global(table) {
-		display: block;
-		overflow-x: auto;
+		width: fit-content;
 		max-width: 100%;
 		border-collapse: collapse;
 		margin: 0.75rem 0;
 		font-size: 0.8125rem;
 		border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
 		border-radius: 0.375rem;
+		overflow: hidden;
 	}
 	div :global(thead) {
 		background: color-mix(in srgb, currentColor 8%, transparent);
@@ -133,13 +133,12 @@
 	div :global(th) {
 		text-align: left;
 		font-weight: 600;
-		padding: 0.5rem 0.75rem;
+		padding: 0.4rem 0.65rem;
 		border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent);
 		border-right: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-		white-space: nowrap;
 	}
 	div :global(td) {
-		padding: 0.45rem 0.75rem;
+		padding: 0.35rem 0.65rem;
 		border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent);
 		border-right: 1px solid color-mix(in srgb, currentColor 8%, transparent);
 		vertical-align: top;
