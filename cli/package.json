@@ -1,0 +1,22 @@
+{
+  "name": "@pitchbox/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": { "pitchbox": "./dist/index.js" },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pitchbox/shared": "*",
+    "commander": "^12.1.0",
+    "zod": "^3.23.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
