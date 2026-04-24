@@ -5,6 +5,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
+	import { SelectField } from '$lib/components/ui/select-field';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import { relativeTime } from '$lib/utils/time';
@@ -37,8 +38,11 @@
 	} = $props();
 
 	let query = $derived(data.filters.q);
-	const selectCls =
-		'h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring';
+
+	const platformOptions = $derived([
+		{ value: '', label: 'All platforms' },
+		...data.platforms.map((p) => ({ value: p.slug, label: p.slug })),
+	]);
 
 	function navigate(params: Record<string, string | null>) {
 		const url = new URL($page.url);
@@ -64,19 +68,14 @@
 	description="Everyone your campaigns have messaged, posted to, or commented on. {data.totals.unique} unique across {data.totals.total} contacts — {data.totals.replied} replied."
 />
 
-<Card.Root>
-	<Card.Header class="flex-row items-center justify-between space-y-0 pb-3 gap-3 flex-wrap">
+<Card.Root size="sm">
+	<Card.Header class="flex-row items-center justify-between space-y-0 gap-3 flex-wrap">
 		<div class="flex items-center gap-3 flex-wrap">
-			<select
+			<SelectField
 				value={data.filters.platform ?? ''}
-				onchange={(e) => navigate({ platform: (e.currentTarget as HTMLSelectElement).value || null })}
-				class={selectCls}
-			>
-				<option value="">All platforms</option>
-				{#each data.platforms as p (p.id)}
-					<option value={p.slug}>{p.slug}</option>
-				{/each}
-			</select>
+				options={platformOptions}
+				onValueChange={(v) => navigate({ platform: v ? String(v) : null })}
+			/>
 			<div class="relative">
 				<Search
 					class="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"

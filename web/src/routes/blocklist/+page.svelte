@@ -6,6 +6,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
+	import { SelectField } from '$lib/components/ui/select-field';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import { relativeTime } from '$lib/utils/time';
@@ -37,9 +38,9 @@
 		{ value: 'keyword', label: 'Keyword' },
 	];
 
-	let platformId = $state<number | null>(null);
+	let platformId = $state<number | undefined>(undefined);
 	$effect(() => {
-		if (platformId === null && data.platforms.length > 0) {
+		if (platformId === undefined && data.platforms.length > 0) {
 			platformId = data.platforms[0].id;
 		}
 	});
@@ -47,11 +48,19 @@
 	let value = $state('');
 	let reason = $state('');
 	let scope = $state<'global' | 'project'>('global');
-	let projectId = $state<number | null>(null);
+	let projectId = $state<number | undefined>(undefined);
 	let saving = $state(false);
 
-	const selectCls =
-		'h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring';
+	const platformOptions = $derived(
+		data.platforms.map((p) => ({ value: p.id, label: p.slug })),
+	);
+	const projectOptions = $derived(
+		data.projects.map((p) => ({ value: p.id, label: p.name })),
+	);
+	const scopeOptions = [
+		{ value: 'global', label: 'Global (all projects)' },
+		{ value: 'project', label: 'Project' },
+	];
 
 	async function submit(e: Event) {
 		e.preventDefault();
@@ -120,19 +129,11 @@
 			<form onsubmit={submit} class="flex flex-col gap-3">
 				<label class="flex flex-col gap-1 text-xs">
 					<span class="text-muted-foreground">Platform</span>
-					<select bind:value={platformId} class={selectCls}>
-						{#each data.platforms as p (p.id)}
-							<option value={p.id}>{p.slug}</option>
-						{/each}
-					</select>
+					<SelectField bind:value={platformId} options={platformOptions} fullWidth />
 				</label>
 				<label class="flex flex-col gap-1 text-xs">
 					<span class="text-muted-foreground">Kind</span>
-					<select bind:value={kind} class={selectCls}>
-						{#each KINDS as k (k.value)}
-							<option value={k.value}>{k.label}</option>
-						{/each}
-					</select>
+					<SelectField bind:value={kind} options={KINDS} fullWidth />
 				</label>
 				<label class="flex flex-col gap-1 text-xs">
 					<span class="text-muted-foreground">Value</span>
@@ -151,20 +152,17 @@
 				</label>
 				<label class="flex flex-col gap-1 text-xs">
 					<span class="text-muted-foreground">Scope</span>
-					<select bind:value={scope} class={selectCls}>
-						<option value="global">Global (all projects)</option>
-						<option value="project">Project</option>
-					</select>
+					<SelectField bind:value={scope} options={scopeOptions} fullWidth />
 				</label>
 				{#if scope === 'project'}
 					<label class="flex flex-col gap-1 text-xs">
 						<span class="text-muted-foreground">Project</span>
-						<select bind:value={projectId} class={selectCls}>
-							<option value={null}>— choose —</option>
-							{#each data.projects as p (p.id)}
-								<option value={p.id}>{p.name}</option>
-							{/each}
-						</select>
+						<SelectField
+							bind:value={projectId}
+							options={projectOptions}
+							placeholder="— choose —"
+							fullWidth
+						/>
 					</label>
 				{/if}
 				<Button type="submit" loading={saving}>

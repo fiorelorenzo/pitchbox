@@ -7,6 +7,7 @@
 	import { ChevronDown, X, Inbox, Keyboard } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Card from '$lib/components/ui/card';
@@ -371,20 +372,40 @@
 			</div>
 		{:else}
 			{#each data.drafts as draft (draft.id)}
-				<div class="flex items-stretch group">
-					<label class="flex items-center px-2 cursor-pointer">
-						<input
-							type="checkbox"
-							class="size-3.5 accent-primary cursor-pointer"
-							checked={checkedIds.has(draft.id)}
-							onchange={() => toggleCheck(draft.id)}
+				{@const isSelected = draft.id === selectedId}
+				{@const isChecked = checkedIds.has(draft.id)}
+				<div
+					class="flex items-stretch group relative transition-colors {isSelected
+						? 'bg-accent/60'
+						: 'hover:bg-accent/30'}"
+				>
+					<!-- Accent bar for selected row -->
+					<span
+						aria-hidden="true"
+						class="absolute inset-y-0 left-0 w-[3px] transition-colors {isSelected
+							? 'bg-primary'
+							: 'bg-transparent'}"
+					></span>
+					<div
+						class="flex items-center pl-3 pr-2 cursor-pointer"
+						onclick={(e) => e.stopPropagation()}
+						onkeydown={(e) => {
+							if (e.key === ' ' || e.key === 'Enter') {
+								e.stopPropagation();
+							}
+						}}
+						role="presentation"
+					>
+						<Checkbox
+							checked={isChecked}
+							onCheckedChange={() => toggleCheck(draft.id)}
 							aria-label="Select draft {draft.id}"
 						/>
-					</label>
+					</div>
 					<div class="flex-1 min-w-0">
 						<DraftListItem
 							{draft}
-							selected={draft.id === selectedId}
+							selected={isSelected}
 							runId={draft.runId}
 							onclick={() => (selectedId = draft.id)}
 						/>

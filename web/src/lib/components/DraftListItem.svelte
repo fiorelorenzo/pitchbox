@@ -37,8 +37,8 @@
 
 <button
 	class={cn(
-		'w-full text-left p-3 border-b border-border hover:bg-accent/50 transition-colors',
-		selected && 'bg-accent'
+		'w-full text-left p-3 border-b border-border/60 transition-colors',
+		selected && 'text-foreground',
 	)}
 	{onclick}
 >

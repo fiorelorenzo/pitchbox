@@ -158,7 +158,7 @@
 <div class="grid gap-4 md:grid-cols-2 mb-6">
 	<!-- Config card -->
 	<Card.Root>
-		<Card.Header class="pb-3">
+		<Card.Header>
 			<div class="flex items-center justify-between">
 				<Card.Title class="text-base">Configuration</Card.Title>
 				<Tooltip.Provider>
@@ -205,7 +205,7 @@
 
 	<!-- Recent activity summary card -->
 	<Card.Root>
-		<Card.Header class="pb-3">
+		<Card.Header>
 			<Card.Title class="text-base">Recent activity</Card.Title>
 			<Card.Description>Last {data.runs.length} runs</Card.Description>
 		</Card.Header>

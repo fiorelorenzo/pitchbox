@@ -113,8 +113,8 @@
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-	<Card.Root>
-		<Card.Header class="flex-row items-center justify-between space-y-0 pb-3">
+	<Card.Root size="sm">
+		<Card.Header class="flex-row items-center justify-between space-y-0">
 			<div>
 				<Card.Title class="text-base">Recent runs</Card.Title>
 				<Card.Description class="text-xs">Last 5 campaign runs</Card.Description>
@@ -164,8 +164,8 @@
 		</Card.Content>
 	</Card.Root>
 
-	<Card.Root>
-		<Card.Header class="flex-row items-center justify-between space-y-0 pb-3">
+	<Card.Root size="sm">
+		<Card.Header class="flex-row items-center justify-between space-y-0">
 			<div>
 				<Card.Title class="text-base">Campaigns</Card.Title>
 				<Card.Description class="text-xs">

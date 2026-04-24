@@ -1,12 +1,11 @@
 <script lang="ts">
-	import { Clipboard, Check, Send } from 'lucide-svelte';
+	import { Clipboard, Check, Send, ExternalLink } from 'lucide-svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import * as Card from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { relativeTime } from '$lib/utils/time';
@@ -171,30 +170,35 @@
 				? 'Open submit ↗'
 				: 'Open post ↗'}
 
-	<Card.Root class="h-full flex flex-col">
-		<Card.Header class="flex-row items-start justify-between space-y-0 pb-3">
-			<div class="space-y-1">
-				<Card.Title class="text-base">{primary}</Card.Title>
-				<div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+	<article class="h-full flex flex-col min-h-0">
+		<!-- Header: borderless, generous spacing -->
+		<header class="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-border">
+			<div class="flex flex-col gap-1.5 min-w-0">
+				<h2 class="text-lg font-semibold truncate">{primary}</h2>
+				<div class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
 					<Badge variant={KIND_BADGE_VARIANT[draft.kind] ?? 'outline'} class="text-[10px]">
 						{draft.kind}
 					</Badge>
 					<Badge variant={STATE_BADGE_VARIANT[draft.state] ?? 'secondary'} class="text-[10px]">
 						{draft.state}
 					</Badge>
+					<span class="text-muted-foreground/40">·</span>
 					<span>fit {draft.fitScore ?? '?'}/5</span>
-					<a href="/inbox?run={draft.runId}" class="hover:underline text-muted-foreground">
-						<Badge variant="outline" class="text-[10px]">Run #{draft.runId}</Badge>
+					<span class="text-muted-foreground/40">·</span>
+					<a href="/inbox?run={draft.runId}" class="hover:text-foreground transition-colors">
+						run #{draft.runId}
 					</a>
 					{#if draft.createdAt}
+						<span class="text-muted-foreground/40">·</span>
 						<span>{relativeTime(draft.createdAt)}</span>
 					{/if}
 					{#if draft.sentAt}
-						<span>· sent {relativeTime(draft.sentAt)}</span>
+						<span class="text-muted-foreground/40">·</span>
+						<span>sent {relativeTime(draft.sentAt)}</span>
 					{/if}
 				</div>
 			</div>
-			<div class="flex gap-2 flex-wrap justify-end">
+			<div class="flex gap-2 flex-wrap justify-end shrink-0">
 				<Button onclick={copyBody} variant="outline" size="sm" aria-label="Copy body to clipboard">
 					{#if copied}
 						<Check class="size-3.5" />
@@ -211,14 +215,15 @@
 					</Button>
 				{/if}
 				{#if draft.state === 'approved' && draft.composeUrl}
-					<a
+					<Button
 						href={`${draft.composeUrl}${urlSep}pitchbox_draft=${draft.id}`}
 						target="_blank"
 						rel="noopener"
-						class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+						size="sm"
 					>
-						{openLabel}
-					</a>
+						<ExternalLink class="size-3.5" />
+						{openLabel.replace(' ↗', '')}
+					</Button>
 				{/if}
 				{#if draft.state === 'approved'}
 					<Button onclick={openSendDialog} variant="outline" size="sm">
@@ -227,62 +232,77 @@
 					</Button>
 				{/if}
 			</div>
-		</Card.Header>
-		<Card.Content class="flex-1 overflow-hidden flex flex-col gap-3">
+		</header>
+
+		<!-- Body -->
+		<div class="flex-1 min-h-0 flex flex-col gap-4 py-4">
 			{#if hasSentVariant}
 				<Tabs.Root value="drafted" class="flex-1 flex flex-col min-h-0">
 					<Tabs.List class="w-fit">
 						<Tabs.Trigger value="drafted">Drafted</Tabs.Trigger>
 						<Tabs.Trigger value="sent">Sent</Tabs.Trigger>
 					</Tabs.List>
-					<Tabs.Content value="drafted" class="flex-1 min-h-0">
-						<ScrollArea class="h-full rounded border bg-muted/30 p-4">
+					<Tabs.Content value="drafted" class="flex-1 min-h-0 mt-2">
+						<ScrollArea class="h-full rounded-lg border border-border/60 bg-muted/20 p-4">
 							<Markdown source={draft.body} />
 						</ScrollArea>
 					</Tabs.Content>
-					<Tabs.Content value="sent" class="flex-1 min-h-0">
-						<ScrollArea class="h-full rounded border bg-muted/30 p-4">
+					<Tabs.Content value="sent" class="flex-1 min-h-0 mt-2">
+						<ScrollArea class="h-full rounded-lg border border-border/60 bg-muted/20 p-4">
 							<Markdown source={draft.sentContent ?? ''} />
 						</ScrollArea>
 					</Tabs.Content>
 				</Tabs.Root>
 			{:else}
-				<ScrollArea class="flex-1 rounded border bg-muted/30 p-4">
+				<ScrollArea class="flex-1 rounded-lg border border-border/60 bg-muted/20 p-4">
 					<Markdown source={draft.body} />
 				</ScrollArea>
 			{/if}
+
 			{#if draft.reasoning}
-				<p class="text-xs text-muted-foreground">
-					<strong>Why it fits:</strong>
+				<div
+					class="rounded-lg bg-muted/10 border-l-2 border-primary/40 px-3 py-2 text-xs text-muted-foreground"
+				>
+					<span class="font-medium text-foreground/70">Why it fits. </span>
 					{draft.reasoning}
-				</p>
+				</div>
 			{/if}
+
 			<!-- Event timeline -->
 			{#if events.length > 0}
-				<div class="border-t pt-3">
-					<p class="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Timeline</p>
-					<ol class="relative pl-4 border-l border-border space-y-2">
-						{#each events as ev (ev.id)}
-							<li class="relative">
-								<span
-									class="absolute -left-[17px] top-1 size-2 rounded-full bg-muted-foreground/40 border border-background"
-								></span>
-								<div class="flex items-baseline gap-1.5">
+				<div class="pt-3 border-t border-border">
+					<p class="text-[10px] font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
+						Timeline
+					</p>
+					<ol class="flex flex-col gap-3">
+						{#each events as ev, i (ev.id)}
+							{@const isLast = i === events.length - 1}
+							<li class="flex items-start gap-3 min-w-0">
+								<!-- Gutter: dot + vertical line with breathing room -->
+								<div class="flex flex-col items-center w-3 flex-none pt-1">
+									<span
+										class="size-2 rounded-full bg-primary/70 ring-2 ring-background shrink-0"
+									></span>
+									{#if !isLast}
+										<span class="w-px flex-1 bg-border mt-1 min-h-[20px]"></span>
+									{/if}
+								</div>
+								<div class="flex-1 min-w-0 flex items-baseline gap-2 flex-wrap">
 									<span class="text-xs font-medium">{EVENT_LABEL[ev.event] ?? ev.event}</span>
 									<span class="text-[10px] text-muted-foreground">by {ev.actor}</span>
-									<span class="text-[10px] text-muted-foreground ml-auto"
-										>{relativeTime(ev.createdAt)}</span
-									>
+									<span class="text-[10px] text-muted-foreground ml-auto tabular-nums">
+										{relativeTime(ev.createdAt)}
+									</span>
 								</div>
 							</li>
 						{/each}
 					</ol>
 				</div>
 			{:else if loadingEvents}
-				<div class="text-xs text-muted-foreground">Loading timeline…</div>
+				<div class="text-xs text-muted-foreground/60 italic">Loading timeline…</div>
 			{/if}
-		</Card.Content>
-	</Card.Root>
+		</div>
+	</article>
 {:else}
 	<div class="h-full flex items-center justify-center text-muted-foreground text-sm">
 		Select a draft

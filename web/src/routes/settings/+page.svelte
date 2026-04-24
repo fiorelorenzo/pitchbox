@@ -19,8 +19,8 @@
 />
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-4xl">
-	<Card.Root>
-		<Card.Header class="flex-row items-center justify-between space-y-0 pb-3">
+	<Card.Root size="sm">
+		<Card.Header class="flex-row items-center justify-between space-y-0">
 			<div class="flex items-center gap-2">
 				<Activity class="size-4 text-muted-foreground" />
 				<Card.Title class="text-base">Daemon</Card.Title>
@@ -67,8 +67,8 @@
 		</Card.Content>
 	</Card.Root>
 
-	<Card.Root>
-		<Card.Header class="flex-row items-center gap-2 pb-3">
+	<Card.Root size="sm">
+		<Card.Header class="flex-row items-center gap-2">
 			<Cpu class="size-4 text-muted-foreground" />
 			<Card.Title class="text-base">Agent runner</Card.Title>
 		</Card.Header>
@@ -83,8 +83,8 @@
 		</Card.Content>
 	</Card.Root>
 
-	<Card.Root>
-		<Card.Header class="flex-row items-center gap-2 pb-3">
+	<Card.Root size="sm">
+		<Card.Header class="flex-row items-center gap-2">
 			<Terminal class="size-4 text-muted-foreground" />
 			<Card.Title class="text-base">Browser extension</Card.Title>
 		</Card.Header>
