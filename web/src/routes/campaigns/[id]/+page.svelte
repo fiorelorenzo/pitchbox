@@ -13,6 +13,7 @@
 	import { relativeTime, formatDuration } from '$lib/utils/time';
 	import { slide } from 'svelte/transition';
 	import RunLog from '$lib/components/RunLog.svelte';
+	import Seo from '$lib/components/Seo.svelte';
 
 	let {
 		data,
@@ -91,6 +92,11 @@
 
 	let isNavigating = $derived($navigating != null);
 </script>
+
+<Seo
+	title={data.campaign.name}
+	description="Campaign detail — cron schedule, recent runs, agent configuration."
+/>
 
 <!-- Breadcrumb -->
 <nav class="flex items-center gap-1.5 text-sm text-muted-foreground mb-2">
@@ -253,14 +259,33 @@
 				<Table.Body>
 					{#each data.runs as run (run.id)}
 						{@const expanded = expandedRunId === run.id}
-						<Table.Row class="hover:bg-muted/40 transition-colors border-b">
+						<Table.Row
+							onclick={() => toggleRunExpand(run.id)}
+							onkeydown={(e: KeyboardEvent) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									e.preventDefault();
+									toggleRunExpand(run.id);
+								}
+							}}
+							tabindex={0}
+							role="button"
+							aria-expanded={expanded}
+							aria-label="Toggle run #{run.id} log"
+							class="hover:bg-muted/40 transition-colors border-b cursor-pointer {expanded
+								? 'bg-muted/30'
+								: ''}"
+						>
 							<Table.Cell class="font-mono text-xs text-muted-foreground py-3">#{run.id}</Table.Cell>
 							<Table.Cell class="py-3">
 								<StatusBadge domain="run-status" value={run.status} />
 							</Table.Cell>
 							<Table.Cell class="text-xs text-muted-foreground py-3">{run.trigger}</Table.Cell>
 							<Table.Cell class="text-xs py-3">
-								<Badge variant="outline" class="font-mono text-[10px] py-0 px-1 h-4 text-muted-foreground/70">{run.agentRunner}</Badge>
+								<Badge
+									variant="outline"
+									class="font-mono text-[10px] py-0 px-1 h-4 text-muted-foreground/70"
+									>{run.agentRunner}</Badge
+								>
 							</Table.Cell>
 							<Table.Cell class="text-xs text-muted-foreground py-3"
 								>{relativeTime(run.startedAt)}</Table.Cell
@@ -270,7 +295,7 @@
 							>
 							<Table.Cell class="py-3">
 								{#if run.draftCount > 0}
-									<a href="/inbox?run={run.id}">
+									<a href="/inbox?run={run.id}" onclick={(e) => e.stopPropagation()}>
 										<Badge variant="secondary" class="text-xs cursor-pointer hover:bg-accent">
 											{run.draftCount}
 										</Badge>
@@ -283,17 +308,16 @@
 								{run.tokensUsed != null ? run.tokensUsed.toLocaleString() : '—'}
 							</Table.Cell>
 							<Table.Cell class="w-8 pl-0 py-3">
-								<button
-									onclick={() => toggleRunExpand(run.id)}
-									class="flex items-center justify-center size-7 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-									aria-label={expanded ? 'Collapse log' : 'Expand log'}
+								<span
+									class="flex items-center justify-center size-7 rounded text-muted-foreground"
+									aria-hidden="true"
 								>
 									{#if expanded}
 										<ChevronUp class="size-4" />
 									{:else}
 										<ChevronDown class="size-4" />
 									{/if}
-								</button>
+								</span>
 							</Table.Cell>
 						</Table.Row>
 

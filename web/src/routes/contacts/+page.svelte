@@ -3,6 +3,7 @@
 	import { page } from '$app/stores';
 	import { Search } from 'lucide-svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Seo from '$lib/components/Seo.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { SelectField } from '$lib/components/ui/select-field';
 	import * as Card from '$lib/components/ui/card';
@@ -62,6 +63,11 @@
 		return `/inbox?state=sent&q=${encodeURIComponent(targetUser)}`;
 	}
 </script>
+
+<Seo
+	title="Contacts"
+	description="All outreach contacts — who you messaged, when, and who replied."
+/>
 
 <PageHeader
 	title="Contacts"
@@ -134,11 +140,11 @@
 							</Table.Cell>
 							<Table.Cell>
 								{#if c.repliedAt}
-									<span
-										class="inline-flex items-center gap-1.5 rounded-md px-1.5 py-[1px] h-[18px] text-[10px] font-medium bg-emerald-500/15 text-emerald-300 ring-1 ring-inset ring-emerald-500/25"
-									>
-										<span class="size-1.5 rounded-full bg-emerald-400"></span>
-										replied {relativeTime(c.repliedAt)}
+									<span class="inline-flex items-center gap-1.5">
+										<StatusBadge domain="contact-status" value="replied" />
+										<span class="text-[10px] text-muted-foreground tabular-nums">
+											{relativeTime(c.repliedAt)}
+										</span>
 									</span>
 								{:else if c.replyCheckedAt}
 									<span class="text-[10px] text-muted-foreground">no reply yet</span>

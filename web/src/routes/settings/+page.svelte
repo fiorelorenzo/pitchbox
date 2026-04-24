@@ -1,9 +1,10 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Info, Activity, Cpu, Terminal } from 'lucide-svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Seo from '$lib/components/Seo.svelte';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { daemonStatus } from '$lib/stores/daemon';
 
 	function formatAge(seconds: number): string {
@@ -12,6 +13,8 @@
 		return `${Math.floor(seconds / 3600)}h ago`;
 	}
 </script>
+
+<Seo title="Settings" description="Daemon status, agent runner, and extension configuration." />
 
 <PageHeader
 	title="Settings"
@@ -25,13 +28,10 @@
 				<Activity class="size-4 text-muted-foreground" />
 				<Card.Title class="text-base">Daemon</Card.Title>
 			</div>
-			{#if $daemonStatus.loading}
-				<Badge variant="secondary" class="text-[10px]">checking…</Badge>
-			{:else if $daemonStatus.alive}
-				<Badge class="text-[10px] bg-emerald-500/90 hover:bg-emerald-500/90">online</Badge>
-			{:else}
-				<Badge variant="destructive" class="text-[10px]">offline</Badge>
-			{/if}
+			<StatusBadge
+				domain="daemon-status"
+				value={$daemonStatus.loading ? 'checking' : $daemonStatus.alive ? 'online' : 'offline'}
+			/>
 		</Card.Header>
 		<Card.Content class="flex flex-col gap-3">
 			<p class="text-xs text-muted-foreground">

@@ -4,14 +4,14 @@
 		Send,
 		CheckCircle2,
 		Users,
-		PlayCircle,
 		Clock,
-		ArrowRight,
 		MessageCircle,
 		Sparkles,
 		TrendingUp,
+		AlertTriangle,
 	} from 'lucide-svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Seo from '$lib/components/Seo.svelte';
 	import StatCard from '$lib/components/StatCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import * as Card from '$lib/components/ui/card';
@@ -76,6 +76,11 @@
 	);
 </script>
 
+<Seo
+	title="Home"
+	description="Outreach overview — drafts awaiting review, recent runs, campaign status."
+/>
+
 <PageHeader
 	title="Home"
 	description="Outreach overview — drafts awaiting review, recent runs, campaign status."
@@ -84,30 +89,30 @@
 <!-- Primary stats -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
 	<StatCard
-		label="Pending review"
+		label="Drafts awaiting review"
 		value={data.stats.pending}
 		icon={Inbox}
 		accent={data.stats.pending > 0 ? 'primary' : 'default'}
 		href="/inbox?state=pending_review"
 		hint={data.stats.createdToday > 0
 			? `${data.stats.createdToday} new in the last 24h`
-			: 'Drafts to approve or reject'}
+			: 'Nothing new to approve or reject'}
 	/>
 	<StatCard
-		label="Approved"
+		label="Approved, not sent"
 		value={data.stats.approved}
 		icon={CheckCircle2}
 		accent={data.stats.approved > 0 ? 'warning' : 'default'}
 		href="/inbox?state=approved"
-		hint="Waiting to be sent"
+		hint="Open compose to send them"
 	/>
 	<StatCard
-		label="Sent · last 24h"
+		label="Messages sent (24h)"
 		value={data.stats.sentToday}
 		icon={Send}
 		accent="success"
 		href="/inbox?state=sent"
-		hint="Manual + extension"
+		hint="Marked as sent manually"
 	/>
 	<StatCard
 		label="Reply rate"
@@ -122,45 +127,40 @@
 <!-- Secondary stats: 7-day run health -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
 	<StatCard
-		label="Runs · last 7d"
+		label="Campaign runs (7d)"
 		value={data.runStats7d.total}
 		icon={Sparkles}
-		hint={successRate != null ? `${successRate}% success` : 'No runs yet'}
+		hint={successRate != null ? `${successRate}% success rate` : 'No runs yet'}
 	/>
 	<StatCard
-		label="Successful"
+		label="Successful runs"
 		value={data.runStats7d.success}
 		icon={TrendingUp}
 		accent={data.runStats7d.success > 0 ? 'success' : 'default'}
+		hint="Last 7 days"
 	/>
 	<StatCard
-		label="Failed"
+		label="Failed runs"
 		value={data.runStats7d.failed}
+		icon={AlertTriangle}
 		accent={data.runStats7d.failed > 0 ? 'destructive' : 'default'}
+		hint="Last 7 days"
 	/>
 	<StatCard
-		label="Contacts"
+		label="Unique people contacted"
 		value={data.stats.uniqueContacts}
 		icon={Users}
 		href="/contacts"
-		hint="All time, unique users"
+		hint="All-time outreach"
 	/>
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
 	<!-- Recent runs -->
 	<Card.Root size="sm">
-		<Card.Header class="flex-row items-center justify-between space-y-0">
-			<div>
-				<Card.Title class="text-base">Recent runs</Card.Title>
-				<Card.Description class="text-xs">Last 5 campaign runs</Card.Description>
-			</div>
-			<a
-				href="/campaigns"
-				class="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-			>
-				All campaigns <ArrowRight class="size-3" />
-			</a>
+		<Card.Header>
+			<Card.Title class="text-base">Recent runs</Card.Title>
+			<Card.Description class="text-xs">Last 5 campaign runs</Card.Description>
 		</Card.Header>
 		<Card.Content>
 			{#if data.recentRuns.length === 0}
@@ -199,14 +199,11 @@
 
 	<!-- Campaigns -->
 	<Card.Root size="sm">
-		<Card.Header class="flex-row items-center justify-between space-y-0">
-			<div>
-				<Card.Title class="text-base">Campaigns</Card.Title>
-				<Card.Description class="text-xs">
-					{activeCampaigns.length} active · {pausedCampaigns.length} paused
-				</Card.Description>
-			</div>
-			<PlayCircle class="size-4 text-muted-foreground" />
+		<Card.Header>
+			<Card.Title class="text-base">Campaigns</Card.Title>
+			<Card.Description class="text-xs">
+				{activeCampaigns.length} active · {pausedCampaigns.length} paused
+			</Card.Description>
 		</Card.Header>
 		<Card.Content>
 			{#if data.campaigns.length === 0}

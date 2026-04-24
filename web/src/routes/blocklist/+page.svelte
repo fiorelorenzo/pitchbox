@@ -3,6 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { Plus, Trash2 } from 'lucide-svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Seo from '$lib/components/Seo.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { SelectField } from '$lib/components/ui/select-field';
@@ -106,6 +107,11 @@
 	}
 
 </script>
+
+<Seo
+	title="Blocklist"
+	description="Subreddits, users and keywords that campaigns will skip during outreach."
+/>
 
 <PageHeader
 	title="Blocklist"

@@ -15,6 +15,7 @@
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { slide } from 'svelte/transition';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import Seo from '$lib/components/Seo.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	let {
@@ -164,6 +165,11 @@
 	</AlertDialog.Content>
 </AlertDialog.Root>
 
+<Seo
+	title="Campaigns"
+	description="Manage outreach campaigns — trigger manual runs, review recent activity, edit cron schedules."
+/>
+
 <PageHeader
 	title="Campaigns"
 	description="Orchestrate outreach runs. Trigger a manual execution or inspect recent activity. The scheduler (daemon) will respect each campaign's status once it ships in M2."
@@ -254,13 +260,14 @@
 							</Table.Cell>
 							<Table.Cell class="text-xs text-muted-foreground py-3">
 								{#if c.lastRunFinishedAt}
-									<div class="flex flex-col gap-0.5">
-										<span>{relativeTime(c.lastRunFinishedAt)}</span>
+									<div class="flex items-center gap-2 whitespace-nowrap">
 										{#if c.lastRunStatus}
 											<StatusBadge domain="run-status" value={c.lastRunStatus} />
 										{/if}
+										<span class="tabular-nums">{relativeTime(c.lastRunFinishedAt)}</span>
 										{#if c.lastRunDurationMs != null}
-											<span class="text-[10px]">{formatDuration(c.lastRunDurationMs)}</span>
+											<span class="text-muted-foreground/60">·</span>
+											<span class="tabular-nums">{formatDuration(c.lastRunDurationMs)}</span>
 										{/if}
 									</div>
 								{:else}
