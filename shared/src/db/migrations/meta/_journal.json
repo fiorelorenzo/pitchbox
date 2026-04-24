@@ -15,6 +15,13 @@
       "when": 1777035744617,
       "tag": "0001_add-run-events",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777038400000,
+      "tag": "0002_one_running_per_campaign",
+      "breakpoints": true
     }
   ]
 }

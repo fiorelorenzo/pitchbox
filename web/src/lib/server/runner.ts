@@ -28,7 +28,7 @@ export async function runCampaign(
     .where(eq(schema.campaigns.id, campaignId));
   if (!campaign) throw new Error(`campaign ${campaignId} not found`);
 
-  // Server-side guard: refuse to start a second concurrent run for the same campaign.
+  // Application-level guard: look up an existing running run and short-circuit.
   const [existing] = await db
     .select()
     .from(schema.runs)
@@ -38,10 +38,29 @@ export async function runCampaign(
     return { runId: existing.id, alreadyRunning: true };
   }
 
-  const [run] = await db
-    .insert(schema.runs)
-    .values({ campaignId, trigger: 'manual', status: 'running' })
-    .returning();
+  // DB-level safety net: a partial unique index on (campaign_id) WHERE status='running'
+  // prevents two concurrent INSERTs from both succeeding if they race past the SELECT above.
+  let run: typeof schema.runs.$inferSelect;
+  try {
+    [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId, trigger: 'manual', status: 'running' })
+      .returning();
+  } catch (err) {
+    // Unique violation on the partial index → someone else just inserted a running run.
+    const code =
+      (err as { code?: string; cause?: { code?: string } })?.code ??
+      (err as { cause?: { code?: string } })?.cause?.code;
+    if (code === '23505') {
+      const [raced] = await db
+        .select()
+        .from(schema.runs)
+        .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
+        .limit(1);
+      if (raced) return { runId: raced.id, alreadyRunning: true };
+    }
+    throw err;
+  }
 
   emit('run:started', { runId: run.id, campaignId });
 
