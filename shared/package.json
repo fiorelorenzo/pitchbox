@@ -12,7 +12,8 @@
     "./platforms/reddit": "./src/platforms/reddit/index.ts",
     "./agents": "./src/agents/base.ts",
     "./agents/claude-code": "./src/agents/claude-code.ts",
-    "./crypto": "./src/crypto.ts"
+    "./crypto": "./src/crypto.ts",
+    "./runlog": "./src/runlog/parse.ts"
   },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",

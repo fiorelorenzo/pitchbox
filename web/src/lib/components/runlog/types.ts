@@ -1,27 +1,14 @@
-export type EventKind =
-  | 'session'
-  | 'thinking'
-  | 'tool-call'
-  | 'tool-result'
-  | 'assistant'
-  | 'rate-limit'
-  | 'result'
-  | 'unknown';
+// Re-export shared types so client code keeps importing from this module.
+export type { EventKind, CliEnvelope, ParsedEvent, EventPayload } from '@pitchbox/shared/runlog';
 
-export interface CliEnvelope {
-  ok: boolean;
-  data?: unknown;
-  error?: string;
-  details?: unknown;
-}
-
+/** Client-side timeline event: adds id (local), ts (epoch ms), and collapsed state. */
 export interface TimelineEvent {
   id: number;
-  kind: EventKind;
+  kind: import('@pitchbox/shared/runlog').EventKind;
   ts: number;
   collapsed: boolean;
 
-  // Kind-specific payloads
+  // Kind-specific payloads (kept for backward compat with EventRow subcomponents)
   session?: { sessionId?: string; model?: string; cwd?: string };
   assistant?: { text: string };
   thinking?: { text: string };
@@ -29,7 +16,7 @@ export interface TimelineEvent {
   toolResult?: {
     raw: unknown;
     text: string;
-    parsedEnvelope?: CliEnvelope | null;
+    parsedEnvelope?: import('@pitchbox/shared/runlog').CliEnvelope | null;
     isError: boolean;
     toolUseId?: string;
   };

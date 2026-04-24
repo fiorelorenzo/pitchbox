@@ -199,3 +199,21 @@ export const daemonHeartbeats = pgTable('daemon_heartbeats', {
   module: text('module').primaryKey(),
   tickAt: timestamp('tick_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const runEvents = pgTable(
+  'run_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => runs.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    kind: text('kind').notNull(),
+    payload: jsonb('payload').notNull(),
+    raw: text('raw').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byRun: index('run_events_run_idx').on(t.runId, t.seq),
+  }),
+);

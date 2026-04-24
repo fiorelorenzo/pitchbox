@@ -1,4 +1,5 @@
 import { ClaudeCodeRunner } from '@pitchbox/shared/agents/claude-code';
+import { parseEvent } from '@pitchbox/shared/runlog';
 import { getDb, schema } from './db.js';
 import { eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
@@ -38,6 +39,9 @@ export async function runCampaign(campaignId: number): Promise<{ runId: number }
   // Prepend our bin/ so playbooks can call `pitchbox <cmd>` directly.
   const augmentedPath = `${PITCHBOX_ROOT}/bin:${process.env.PATH ?? ''}`;
 
+  // Per-run event sequence counter.
+  let seq = 0;
+
   const handle = runner.run({
     playbookPath: playbook,
     slug: campaign.skillSlug,
@@ -49,7 +53,41 @@ export async function runCampaign(campaignId: number): Promise<{ runId: number }
     },
     cwd: PITCHBOX_ROOT,
     timeoutMs: 15 * 60 * 1000,
-    onLogLine: (line) => emit('run:log', { runId: run.id, line }),
+    onLogLine: async (line) => {
+      const parsed = parseEvent(line, seq);
+      seq += parsed.length || 1; // advance seq even for unrecognised lines
+
+      if (parsed.length > 0) {
+        // Insert all parsed events for this line, then emit each with DB-assigned metadata.
+        for (const pe of parsed) {
+          const [row] = await db
+            .insert(schema.runEvents)
+            .values({
+              runId: run.id,
+              seq: pe.seq,
+              kind: pe.kind,
+              payload: pe.payload,
+              raw: line,
+            })
+            .returning();
+
+          emit('run:log', {
+            runId: run.id,
+            event: {
+              id: row.id,
+              seq: row.seq,
+              kind: row.kind,
+              payload: row.payload,
+              ts: row.createdAt,
+              raw: line,
+            },
+          });
+        }
+      } else {
+        // Line produced no events (blank / comment / unparseable) — still emit raw for debug.
+        emit('run:log', { runId: run.id, event: null, line });
+      }
+    },
   });
 
   runCancels.set(run.id, handle.cancel);

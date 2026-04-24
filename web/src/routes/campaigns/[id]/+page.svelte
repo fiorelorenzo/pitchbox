@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Loader2, ChevronLeft } from 'lucide-svelte';
+	import { Loader2, ChevronLeft, ChevronDown, ChevronUp } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { invalidateAll } from '$app/navigation';
 	import { navigating } from '$app/stores';
@@ -10,6 +10,8 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { relativeTime, formatDuration } from '$lib/utils/time';
+	import { slide } from 'svelte/transition';
+	import RunLog from '$lib/components/RunLog.svelte';
 
 	let {
 		data,
@@ -40,6 +42,8 @@
 	} = $props();
 
 	let isStarting = $state(false);
+	// Single-expanded run id in the history table.
+	let expandedRunId = $state<number | null>(null);
 
 	const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
 		active: 'default',
@@ -93,6 +97,10 @@
 		} finally {
 			isStarting = false;
 		}
+	}
+
+	function toggleRunExpand(runId: number) {
+		expandedRunId = expandedRunId === runId ? null : runId;
 	}
 
 	let isNavigating = $derived($navigating != null);
@@ -247,13 +255,15 @@
 						<Table.Head>Duration</Table.Head>
 						<Table.Head>Drafts</Table.Head>
 						<Table.Head>Tokens</Table.Head>
+						<Table.Head class="w-8"></Table.Head>
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
 					{#each data.runs as run (run.id)}
-						<Table.Row>
-							<Table.Cell class="font-mono text-xs text-muted-foreground">#{run.id}</Table.Cell>
-							<Table.Cell>
+						{@const expanded = expandedRunId === run.id}
+						<Table.Row class="hover:bg-muted/40 transition-colors border-b">
+							<Table.Cell class="font-mono text-xs text-muted-foreground py-3">#{run.id}</Table.Cell>
+							<Table.Cell class="py-3">
 								<span
 									class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium {RUN_STATUS_COLOR[
 										run.status
@@ -265,14 +275,14 @@
 									{run.status}
 								</span>
 							</Table.Cell>
-							<Table.Cell class="text-xs text-muted-foreground">{run.trigger}</Table.Cell>
-							<Table.Cell class="text-xs text-muted-foreground"
+							<Table.Cell class="text-xs text-muted-foreground py-3">{run.trigger}</Table.Cell>
+							<Table.Cell class="text-xs text-muted-foreground py-3"
 								>{relativeTime(run.startedAt)}</Table.Cell
 							>
-							<Table.Cell class="text-xs text-muted-foreground"
+							<Table.Cell class="text-xs text-muted-foreground py-3"
 								>{formatDuration(run.durationMs)}</Table.Cell
 							>
-							<Table.Cell>
+							<Table.Cell class="py-3">
 								{#if run.draftCount > 0}
 									<a href="/inbox?run={run.id}">
 										<Badge variant="secondary" class="text-xs cursor-pointer hover:bg-accent">
@@ -283,10 +293,45 @@
 									<span class="text-xs text-muted-foreground">—</span>
 								{/if}
 							</Table.Cell>
-							<Table.Cell class="text-xs text-muted-foreground">
+							<Table.Cell class="text-xs text-muted-foreground py-3">
 								{run.tokensUsed != null ? run.tokensUsed.toLocaleString() : '—'}
 							</Table.Cell>
+							<Table.Cell class="w-8 pl-0 py-3">
+								<button
+									onclick={() => toggleRunExpand(run.id)}
+									class="flex items-center justify-center size-7 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+									aria-label={expanded ? 'Collapse log' : 'Expand log'}
+								>
+									{#if expanded}
+										<ChevronUp class="size-4" />
+									{:else}
+										<ChevronDown class="size-4" />
+									{/if}
+								</button>
+							</Table.Cell>
 						</Table.Row>
+
+						<!-- Inline expanded log row -->
+						{#if expanded}
+							<Table.Row class="hover:bg-transparent border-t-0">
+								<Table.Cell colspan={8} class="p-0 border-t border-border/50">
+									<div transition:slide={{ duration: 200 }} class="bg-muted/10 px-6 py-3">
+										<div class="flex items-center gap-2 mb-3">
+											<span
+												class="size-1.5 rounded-full shrink-0 {run.status === 'running'
+													? 'bg-green-400 animate-pulse'
+													: 'bg-muted-foreground/40'}"
+											></span>
+											<span class="text-xs text-muted-foreground">Run log</span>
+											<span class="ml-auto text-xs text-muted-foreground/50 font-mono"
+												>Run #{run.id}</span
+											>
+										</div>
+										<RunLog runId={run.id} />
+									</div>
+								</Table.Cell>
+							</Table.Row>
+						{/if}
 					{/each}
 				</Table.Body>
 			</Table.Root>

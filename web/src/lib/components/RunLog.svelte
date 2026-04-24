@@ -3,7 +3,7 @@
 	import { Loader, ChevronsDown } from 'lucide-svelte';
 
 	import { formatOffset } from '$lib/utils/time';
-	import { parse, resetParser } from './runlog/parse';
+	import { parse, resetParser, dbEventToTimeline } from './runlog/parse';
 	import type { TimelineEvent } from './runlog/types';
 
 	import EventRow from './runlog/EventRow.svelte';
@@ -20,6 +20,9 @@
 
 	let events = $state<TimelineEvent[]>([]);
 	let start = $state<number | null>(null);
+
+	// Tracks the highest DB-persisted event id we've seen, to dedup SSE arrivals.
+	let maxSeen = $state(-1);
 
 	// Scroll / pin
 	let pinned = $state(true);
@@ -67,6 +70,50 @@
 		events = events.map((e) => (e.id === ev.id ? { ...e, collapsed: !e.collapsed } : e));
 	}
 
+	/** Load historical events from the DB endpoint. */
+	async function loadHistory(rid: number) {
+		try {
+			const res = await fetch(`/api/runs/${rid}/events`);
+			if (!res.ok) return;
+			const body = (await res.json()) as {
+				runId: number;
+				events: Array<{ id: number; seq: number; kind: string; payload: unknown; ts: string }>;
+			};
+			if (!body.events.length) return;
+
+			resetParser();
+			const hydrated = body.events.map((e) => dbEventToTimeline(e));
+			hasResultEvent = hydrated.some((e) => e.kind === 'result');
+			maxSeen = Math.max(...body.events.map((e) => e.id));
+			start = hydrated[0].ts;
+			lastEventTs = hydrated[hydrated.length - 1].ts;
+			events = hydrated;
+			// Determine status from last event.
+			if (hydrated.some((e) => e.kind === 'result')) {
+				const resultEv = hydrated.findLast((e) => e.kind === 'result');
+				status = resultEv?.result?.success ? 'Finished' : 'Failed';
+			}
+			await tick();
+			if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+		} catch {
+			// silently ignore
+		}
+	}
+
+	/** Reset and re-hydrate when runId prop changes. */
+	$effect(() => {
+		const rid = runId;
+		events = [];
+		start = null;
+		maxSeen = -1;
+		hasResultEvent = false;
+		status = 'Idle';
+		resetParser();
+		if (rid != null) {
+			loadHistory(rid);
+		}
+	});
+
 	onMount(() => {
 		es = new EventSource('/api/stream');
 
@@ -75,6 +122,7 @@
 			if (runId === null || rid === runId) {
 				events = [];
 				start = null;
+				maxSeen = -1;
 				hasResultEvent = false;
 				status = 'Running';
 				resetParser();
@@ -82,16 +130,30 @@
 		});
 
 		es.addEventListener('run:log', async (e: MessageEvent) => {
-			const { runId: rid, line } = JSON.parse(e.data);
-			if (runId === null || rid === runId) {
-				const parsed = parse(line);
-				if (parsed.some((ev) => ev.kind === 'result')) hasResultEvent = true;
-				await appendEvents(parsed);
+			const data = JSON.parse(e.data) as {
+				runId: number;
+				event?: { id: number; seq: number; kind: string; payload: unknown; ts: string; raw: string } | null;
+				line?: string;
+			};
+			const { runId: rid, event } = data;
+			if (runId !== null && rid !== runId) return;
+
+			if (!event) {
+				// Null event (blank/comment line) — nothing to display.
+				return;
 			}
+
+			// Dedup: skip if we already have this event from history load.
+			if (event.id <= maxSeen) return;
+			maxSeen = event.id;
+
+			const te = dbEventToTimeline({ id: event.id, kind: event.kind, payload: event.payload, ts: event.ts });
+			if (te.kind === 'result') hasResultEvent = true;
+			await appendEvents([te]);
 		});
 
 		es.addEventListener('run:finished', async (e: MessageEvent) => {
-			const { runId: rid, exitCode, campaignId: _cid } = JSON.parse(e.data);
+			const { runId: rid, exitCode } = JSON.parse(e.data);
 			if (runId === null || rid === runId) {
 				status = exitCode === 0 ? 'Finished' : 'Failed';
 				if (!hasResultEvent) {

@@ -167,24 +167,18 @@
 	</AlertDialog.Content>
 </AlertDialog.Root>
 
-<h1 class="text-2xl font-semibold mb-6">Campaigns</h1>
-
 <Card.Root>
-	<Card.Header>
-		<Card.Title>Campaigns</Card.Title>
-		<Card.Description>Trigger a manual run or wait for the scheduler</Card.Description>
-	</Card.Header>
 	<Card.Content class="p-0">
 		<Table.Root>
 			<Table.Header>
-				<Table.Row>
-					<Table.Head>Name</Table.Head>
-					<Table.Head>Skill</Table.Head>
-					<Table.Head>Status</Table.Head>
-					<Table.Head>Last run</Table.Head>
-					<Table.Head>Drafts</Table.Head>
-					<Table.Head></Table.Head>
-					<Table.Head class="w-8"></Table.Head>
+				<Table.Row class="border-b">
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Name</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Skill</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Status</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Last run</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Drafts</Table.Head>
+					<Table.Head class="py-3"></Table.Head>
+					<Table.Head class="w-8 py-3"></Table.Head>
 				</Table.Row>
 			</Table.Header>
 			<Table.Body>
@@ -202,25 +196,29 @@
 						{@const runId = effectiveRunId(c)}
 						{@const expanded = expandedId === c.id}
 
-						<Table.Row class={running ? 'border-l-2 border-green-500' : ''}>
-							<Table.Cell class="font-medium">
+						<Table.Row
+							class="hover:bg-muted/40 transition-colors border-b {running
+								? 'border-l-2 border-green-500'
+								: ''}"
+						>
+							<Table.Cell class="font-medium py-3">
 								<a href="/campaigns/{c.id}" class="hover:underline">{c.name}</a>
 							</Table.Cell>
-							<Table.Cell class="text-muted-foreground text-xs">{c.skillSlug}</Table.Cell>
-							<Table.Cell>
+							<Table.Cell class="text-muted-foreground text-xs py-3">{c.skillSlug}</Table.Cell>
+							<Table.Cell class="py-3">
 								{#if running}
-									<Badge variant="default" class="gap-1">
+									<Badge variant="default" class="gap-1.5 text-xs">
 										<span class="size-1.5 rounded-full bg-green-300 animate-pulse inline-block"
 										></span>
 										Running
 									</Badge>
 								{:else}
-									<Badge variant={STATUS_VARIANT[c.status] ?? 'secondary'}>
+									<Badge variant={STATUS_VARIANT[c.status] ?? 'secondary'} class="text-xs">
 										{c.status}
 									</Badge>
 								{/if}
 							</Table.Cell>
-							<Table.Cell class="text-xs text-muted-foreground">
+							<Table.Cell class="text-xs text-muted-foreground py-3">
 								{#if c.lastRunFinishedAt}
 									<div class="flex flex-col gap-0.5">
 										<span>{relativeTime(c.lastRunFinishedAt)}</span>
@@ -240,18 +238,25 @@
 									<span class="text-muted-foreground/50">—</span>
 								{/if}
 							</Table.Cell>
-							<Table.Cell>
-								{#if c.lastRunId != null}
+							<Table.Cell class="py-3">
+								{#if c.lastRunId != null && c.lastRunDraftCount > 0}
 									<a href="/inbox?state=pending_review&campaign={c.id}" class="hover:underline">
-										<Badge variant="secondary" class="text-xs">
+										<Badge variant="default" class="text-xs bg-primary/80 hover:bg-primary">
 											{c.lastRunDraftCount} drafts
 										</Badge>
 									</a>
+								{:else if c.lastRunId != null}
+									<Badge
+										variant="outline"
+										class="text-xs text-muted-foreground/50 border-dashed border-muted-foreground/30"
+									>
+										0 drafts
+									</Badge>
 								{:else}
 									<span class="text-muted-foreground/50 text-xs">—</span>
 								{/if}
 							</Table.Cell>
-							<Table.Cell class="text-right">
+							<Table.Cell class="text-right py-3">
 								{#if running && runId != null}
 									<!-- Running: show spinner label + stop button -->
 									<div class="flex items-center justify-end gap-1">
@@ -277,7 +282,7 @@
 								{/if}
 							</Table.Cell>
 							<!-- Expand/collapse chevron -->
-							<Table.Cell class="w-8 pl-0">
+							<Table.Cell class="w-8 pl-0 py-3">
 								{#if runId != null}
 									<button
 										onclick={() => toggleExpand(c.id)}
@@ -297,14 +302,8 @@
 						<!-- Inline expanded log row -->
 						{#if expanded && runId != null}
 							<Table.Row class="hover:bg-transparent border-t-0">
-								<Table.Cell
-									colspan={7}
-									class="p-0 border-t border-border/50"
-								>
-									<div
-										transition:slide={{ duration: 200 }}
-										class="bg-muted/10 px-6 py-3"
-									>
+								<Table.Cell colspan={7} class="p-0 border-t border-border/50">
+									<div transition:slide={{ duration: 200 }} class="bg-muted/10 px-6 py-3">
 										<!-- Subtle header -->
 										<div class="flex items-center gap-2 mb-3">
 											<span
@@ -312,8 +311,10 @@
 													? 'bg-green-400 animate-pulse'
 													: 'bg-muted-foreground/40'}"
 											></span>
-											<span class="text-xs text-muted-foreground">Live log</span>
-											<span class="ml-auto text-xs text-muted-foreground/50 font-mono">Run #{runId}</span>
+											<span class="text-xs text-muted-foreground">Run log</span>
+											<span class="ml-auto text-xs text-muted-foreground/50 font-mono"
+												>Run #{runId}</span
+											>
 										</div>
 										<RunLog {runId} />
 									</div>

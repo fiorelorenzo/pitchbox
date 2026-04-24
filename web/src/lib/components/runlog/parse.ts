@@ -1,4 +1,8 @@
-import type { TimelineEvent, EventKind, CliEnvelope } from './types';
+// Re-export shared parser + add client-side helpers (id/ts assignment).
+export { parseEvent, tryParseCliEnvelope } from '@pitchbox/shared/runlog';
+import { parseEvent } from '@pitchbox/shared/runlog';
+import type { ParsedEvent } from '@pitchbox/shared/runlog';
+import type { TimelineEvent } from './types';
 
 let nextId = 0;
 
@@ -6,20 +10,7 @@ export function resetParser() {
   nextId = 0;
 }
 
-export function tryParseCliEnvelope(text: string): CliEnvelope | null {
-  if (!text.trim().startsWith('{')) return null;
-  try {
-    const obj = JSON.parse(text);
-    if (obj && typeof obj === 'object' && 'ok' in obj && typeof obj.ok === 'boolean') {
-      return obj as CliEnvelope;
-    }
-  } catch {
-    // not JSON
-  }
-  return null;
-}
-
-function defaultCollapsed(kind: EventKind, isError?: boolean): boolean {
+function defaultCollapsed(kind: string, isError?: boolean): boolean {
   switch (kind) {
     case 'session':
     case 'assistant':
@@ -36,184 +27,152 @@ function defaultCollapsed(kind: EventKind, isError?: boolean): boolean {
   }
 }
 
-function extractToolResultText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    const texts = content
-      .filter((c): c is { type: string; text: string } => c && c.type === 'text')
-      .map((c) => c.text);
-    if (texts.length) return texts.join('\n');
+/** Convert a ParsedEvent (from shared) into a client TimelineEvent with id/ts/collapsed. */
+function toTimelineEvent(pe: ParsedEvent, ts: number): TimelineEvent {
+  const id = nextId++;
+  const base = { id, kind: pe.kind, ts, collapsed: defaultCollapsed(pe.kind) } as TimelineEvent;
+
+  const p = pe.payload;
+  switch (p.type) {
+    case 'session':
+      return {
+        ...base,
+        collapsed: false,
+        session: { sessionId: p.sessionId, model: p.model, cwd: p.cwd },
+      };
+    case 'assistant':
+      return { ...base, collapsed: false, assistant: { text: p.text } };
+    case 'thinking':
+      return { ...base, collapsed: true, thinking: { text: p.text } };
+    case 'tool-call':
+      return { ...base, collapsed: true, toolCall: { name: p.name, input: p.input, id: p.id } };
+    case 'tool-result':
+      return {
+        ...base,
+        collapsed: defaultCollapsed('tool-result', p.isError),
+        toolResult: {
+          raw: p.raw,
+          text: p.text,
+          parsedEnvelope: p.parsedEnvelope,
+          isError: p.isError,
+          toolUseId: p.toolUseId,
+        },
+      };
+    case 'rate-limit':
+      return { ...base, collapsed: true, rateLimit: { info: p.info } };
+    case 'result':
+      return {
+        ...base,
+        collapsed: false,
+        result: {
+          success: p.success,
+          text: p.text,
+          inputTokens: p.inputTokens,
+          outputTokens: p.outputTokens,
+          totalCostUsd: p.totalCostUsd,
+          durationMs: p.durationMs,
+          numTurns: p.numTurns,
+        },
+      };
+    case 'unknown':
+      return { ...base, collapsed: true, unknown: { type: p.eventType, raw: p.raw } };
+    default:
+      return { ...base, collapsed: true };
   }
-  return JSON.stringify(content, null, 2);
 }
 
+/**
+ * Parse a raw JSONL line into client-side TimelineEvents.
+ * Maintains the module-level `nextId` counter for stable React-style keys.
+ */
 export function parse(line: string): TimelineEvent[] {
-  if (!line.trim()) return [];
-  if (line.startsWith('#')) return [];
-
-  let evt: Record<string, unknown>;
-  try {
-    evt = JSON.parse(line);
-  } catch {
-    return [];
-  }
-
-  const t = evt.type as string | undefined;
-  const results: TimelineEvent[] = [];
   const now = Date.now();
+  const parsed = parseEvent(line, 0);
+  return parsed.map((pe) => toTimelineEvent(pe, now));
+}
 
-  if (t === 'system') {
-    const sub = evt.subtype as string | undefined;
-    if (sub === 'init') {
-      const session = evt as { session_id?: string; model?: string; cwd?: string };
-      results.push({
-        id: nextId++,
-        kind: 'session',
-        ts: now,
+/**
+ * Convert a persisted DB event (already parsed) into a client TimelineEvent.
+ * Used when hydrating history from the API endpoint.
+ */
+export function dbEventToTimeline(ev: {
+  id: number;
+  kind: string;
+  payload: unknown;
+  ts: string | Date;
+}): TimelineEvent {
+  const ts = typeof ev.ts === 'string' ? new Date(ev.ts).getTime() : ev.ts.getTime();
+  const id = nextId++;
+  const kind = ev.kind as TimelineEvent['kind'];
+  const base = { id, kind, ts, collapsed: defaultCollapsed(kind) } as TimelineEvent;
+
+  const p = ev.payload as Record<string, unknown>;
+  switch (p.type as string) {
+    case 'session':
+      return {
+        ...base,
         collapsed: false,
         session: {
-          sessionId: session.session_id,
-          model: session.model,
-          cwd: session.cwd,
+          sessionId: p.sessionId as string | undefined,
+          model: p.model as string | undefined,
+          cwd: p.cwd as string | undefined,
         },
-      });
+      };
+    case 'assistant':
+      return { ...base, collapsed: false, assistant: { text: p.text as string } };
+    case 'thinking':
+      return { ...base, collapsed: true, thinking: { text: p.text as string } };
+    case 'tool-call':
+      return {
+        ...base,
+        collapsed: true,
+        toolCall: {
+          name: p.name as string,
+          input: (p.input as Record<string, unknown>) ?? {},
+          id: p.id as string | undefined,
+        },
+      };
+    case 'tool-result': {
+      const isError = !!p.isError;
+      return {
+        ...base,
+        collapsed: defaultCollapsed('tool-result', isError),
+        toolResult: {
+          raw: p.raw,
+          text: p.text as string,
+          parsedEnvelope:
+            (p.parsedEnvelope as
+              | import('@pitchbox/shared/runlog').CliEnvelope
+              | null
+              | undefined) ?? null,
+          isError,
+          toolUseId: p.toolUseId as string | undefined,
+        },
+      };
     }
-    return results;
+    case 'rate-limit':
+      return { ...base, collapsed: true, rateLimit: { info: p.info } };
+    case 'result':
+      return {
+        ...base,
+        collapsed: false,
+        result: {
+          success: p.success as boolean,
+          text: p.text as string | undefined,
+          inputTokens: p.inputTokens as number | undefined,
+          outputTokens: p.outputTokens as number | undefined,
+          totalCostUsd: p.totalCostUsd as number | undefined,
+          durationMs: p.durationMs as number | undefined,
+          numTurns: p.numTurns as number | undefined,
+        },
+      };
+    case 'unknown':
+      return {
+        ...base,
+        collapsed: true,
+        unknown: { type: p.eventType as string, raw: p.raw as string },
+      };
+    default:
+      return { ...base, collapsed: true };
   }
-
-  if (t === 'assistant') {
-    const msg = evt.message as
-      | {
-          content?: Array<{
-            type: string;
-            text?: string;
-            thinking?: string;
-            name?: string;
-            id?: string;
-            input?: unknown;
-          }>;
-        }
-      | undefined;
-    const content = msg?.content ?? [];
-    for (const c of content) {
-      if (c.type === 'thinking') {
-        const text = c.thinking ?? c.text ?? '';
-        if (text) {
-          results.push({
-            id: nextId++,
-            kind: 'thinking',
-            ts: now,
-            collapsed: true,
-            thinking: { text },
-          });
-        }
-      } else if (c.type === 'text') {
-        if (c.text) {
-          results.push({
-            id: nextId++,
-            kind: 'assistant',
-            ts: now,
-            collapsed: false,
-            assistant: { text: c.text },
-          });
-        }
-      } else if (c.type === 'tool_use') {
-        results.push({
-          id: nextId++,
-          kind: 'tool-call',
-          ts: now,
-          collapsed: true,
-          toolCall: {
-            name: c.name ?? 'tool',
-            input: (c.input as Record<string, unknown>) ?? {},
-            id: c.id,
-          },
-        });
-      }
-    }
-    return results;
-  }
-
-  if (t === 'user') {
-    const msg = evt.message as
-      | {
-          content?: Array<{
-            type: string;
-            content?: unknown;
-            is_error?: boolean;
-            tool_use_id?: string;
-          }>;
-        }
-      | undefined;
-    const content = msg?.content ?? [];
-    for (const c of content) {
-      if (c.type === 'tool_result') {
-        const isError = !!c.is_error;
-        const text = extractToolResultText(c.content);
-        results.push({
-          id: nextId++,
-          kind: 'tool-result',
-          ts: now,
-          collapsed: defaultCollapsed('tool-result', isError),
-          toolResult: {
-            raw: c.content,
-            text,
-            parsedEnvelope: tryParseCliEnvelope(text),
-            isError,
-            toolUseId: c.tool_use_id,
-          },
-        });
-      }
-    }
-    return results;
-  }
-
-  if (t === 'rate_limit_event') {
-    results.push({
-      id: nextId++,
-      kind: 'rate-limit',
-      ts: now,
-      collapsed: true,
-      rateLimit: { info: evt.rate_limit_info ?? evt },
-    });
-    return results;
-  }
-
-  if (t === 'result') {
-    const r = evt as {
-      subtype?: string;
-      result?: unknown;
-      total_cost_usd?: number;
-      duration_ms?: number;
-      usage?: { input_tokens?: number; output_tokens?: number };
-      num_turns?: number;
-      is_error?: boolean;
-    };
-    const success = r.subtype === 'success';
-    results.push({
-      id: nextId++,
-      kind: 'result',
-      ts: now,
-      collapsed: false,
-      result: {
-        success,
-        text: r.result != null ? String(r.result) : undefined,
-        inputTokens: r.usage?.input_tokens,
-        outputTokens: r.usage?.output_tokens,
-        totalCostUsd: r.total_cost_usd,
-        durationMs: r.duration_ms,
-        numTurns: r.num_turns,
-      },
-    });
-    return results;
-  }
-
-  results.push({
-    id: nextId++,
-    kind: 'unknown',
-    ts: now,
-    collapsed: true,
-    unknown: { type: t ?? 'event', raw: line },
-  });
-  return results;
 }
