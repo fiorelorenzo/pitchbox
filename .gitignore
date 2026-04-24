@@ -1,0 +1,41 @@
+# Superpowers working files (per-user, not shared)
+docs/superpowers/
+
+# Node
+node_modules/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Local-only seeds (user-specific, never committed)
+scripts/seed-*.ts
+!scripts/seed-*.ts.example
+
+# Daemon runtime
+daemon/logs/
+daemon/run/
+
+# Extension build artefacts
+extension/dist/
+extension/*.zip
