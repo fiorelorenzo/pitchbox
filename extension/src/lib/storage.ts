@@ -2,12 +2,18 @@ export type Settings = {
   backendUrl: string;
   token: string;
   lastHandshakeAt?: string;
+  lastDmSyncAt?: string;
 };
 
 const DEFAULTS: Partial<Settings> = { backendUrl: 'http://127.0.0.1:5180' };
 
 export async function getSettings(): Promise<Partial<Settings>> {
-  const stored = await chrome.storage.local.get(['backendUrl', 'token', 'lastHandshakeAt']);
+  const stored = await chrome.storage.local.get([
+    'backendUrl',
+    'token',
+    'lastHandshakeAt',
+    'lastDmSyncAt',
+  ]);
   return { ...DEFAULTS, ...stored };
 }
 

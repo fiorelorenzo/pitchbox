@@ -64,4 +64,11 @@ export const api = {
       sentContent,
       sentAt: new Date().toISOString(),
     }),
+  dmSync: (platform: string, items: unknown[]) =>
+    postJson<{ ok: true; inserted: number; replied: number }>('/api/extension/dm-sync', {
+      platform,
+      items,
+    }),
+  dmSyncStatus: () =>
+    getJson<{ lastSyncAt: string | null }>('/api/extension/dm-sync/status'),
 };
