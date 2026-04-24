@@ -238,15 +238,16 @@ export const messages = pgTable(
     author: text('author').notNull(),
     isFromUs: boolean('is_from_us').notNull().default(false),
     body: text('body').notNull(),
-    platformMessageId: text('platform_message_id'),
+    platformMessageId: text('platform_message_id').notNull(),
     createdAtPlatform: timestamp('created_at_platform', { withTimezone: true }).notNull(),
     capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
     source: text('source').notNull(),
   },
   (t) => ({
     byContact: index('messages_contact_idx').on(t.contactId, t.createdAtPlatform),
-    uniquePlatformMessage: uniqueIndex('messages_platform_message_unique')
-      .on(t.platformId, t.platformMessageId)
-      .where(sql`${t.platformMessageId} is not null`),
+    uniquePlatformMessage: uniqueIndex('messages_platform_message_unique').on(
+      t.platformId,
+      t.platformMessageId,
+    ),
   }),
 );

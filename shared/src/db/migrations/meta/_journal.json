@@ -43,6 +43,13 @@
       "when": 1777043000000,
       "tag": "0005_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777067900000,
+      "tag": "0006_messages_message_id_not_null",
+      "breakpoints": true
     }
   ]
 }
