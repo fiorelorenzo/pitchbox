@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pitchbox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pitchbox
+      POSTGRES_PASSWORD: pitchbox
+      POSTGRES_DB: pitchbox
+    ports:
+      - '127.0.0.1:5433:5432'
+    volumes:
+      - pitchbox-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U pitchbox -d pitchbox']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pitchbox-pg-data:
