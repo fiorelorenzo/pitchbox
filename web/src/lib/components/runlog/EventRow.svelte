@@ -33,8 +33,6 @@
 	let dotColor = $derived(
 		isError && (kind === 'tool-result' || kind === 'result') ? 'bg-destructive' : DOT_COLOR[kind],
 	);
-
-	let isResultKind = $derived(kind === 'result');
 </script>
 
 <div
@@ -49,12 +47,7 @@
 	</div>
 
 	<!-- Content + timestamp. pt-[14px] aligns the first line of text with the 18px-offset dot. -->
-	<div
-		class="flex-1 min-w-0 pb-2.5 pt-[14px] {isResultKind
-			? 'pr-2 pl-2 -ml-2 rounded border-l-2 ' +
-				(isError ? 'border-destructive bg-destructive/5' : 'border-primary bg-primary/5')
-			: ''}"
-	>
+	<div class="flex-1 min-w-0 pb-2.5 pt-[14px]">
 		<div class="flex items-start gap-2 min-w-0">
 			<div class="flex-1 min-w-0">
 				{@render children()}
