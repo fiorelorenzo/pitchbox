@@ -1,5 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, appendFileSync, rmSync, existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentRunOptions, AgentRunResult, AgentRunner } from './base.js';
@@ -50,15 +50,22 @@ export class ClaudeCodeRunner implements AgentRunner {
             '--output-format',
             'stream-json',
           ],
-          { cwd: opts.cwd, env: { ...process.env, ...opts.env } },
+          {
+            cwd: opts.cwd,
+            env: { ...process.env, ...opts.env },
+            stdio: ['ignore', 'pipe', 'pipe'],
+          },
         );
-        const chunks: string[] = [];
+        // Stream-log: append mode so we can inspect progress mid-run via `tail -f`.
+        writeFileSync(logPath, `# run ${opts.slug} started ${new Date().toISOString()}\n`, 'utf8');
         let buffer = '';
 
         const emitLine = (line: string) => {
           if (!line) return;
+          appendFileSync(logPath, line + '\n', 'utf8');
+          // eslint-disable-next-line no-console
+          console.log(`[claude-code ${opts.slug}] ${line.slice(0, 200)}`);
           opts.onLogLine?.(line);
-          // Extract token usage from the final result event.
           try {
             const evt = JSON.parse(line);
             if (evt?.type === 'result' && typeof evt.usage === 'object') {
@@ -72,7 +79,6 @@ export class ClaudeCodeRunner implements AgentRunner {
 
         child.stdout?.on('data', (d: Buffer) => {
           const s = d.toString('utf8');
-          chunks.push(s);
           buffer += s;
           const lines = buffer.split(/\r?\n/);
           buffer = lines.pop() ?? '';
@@ -80,7 +86,7 @@ export class ClaudeCodeRunner implements AgentRunner {
         });
         child.stderr?.on('data', (d: Buffer) => {
           const s = d.toString('utf8');
-          chunks.push(s);
+          appendFileSync(logPath, `[stderr] ${s}`, 'utf8');
           opts.onLogLine?.(`[stderr] ${s.trimEnd()}`);
         });
 
@@ -91,7 +97,7 @@ export class ClaudeCodeRunner implements AgentRunner {
         child.on('exit', (code: number | null) => {
           clearTimeout(timer);
           if (buffer) emitLine(buffer);
-          writeFileSync(logPath, chunks.join(''), 'utf8');
+          appendFileSync(logPath, `\n# exit ${code} at ${new Date().toISOString()}\n`, 'utf8');
           resolve(code ?? 1);
         });
         child.on('error', (err: Error) => {
