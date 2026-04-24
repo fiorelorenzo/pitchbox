@@ -33,11 +33,17 @@ export default defineManifest({
       js: ['src/content/post-comment.ts'],
       run_at: 'document_idle',
     },
+    {
+      matches: ['https://www.reddit.com/chat/*'],
+      js: ['src/content/chat-token.ts'],
+      run_at: 'document_idle',
+    },
   ],
   permissions: ['storage', 'alarms'],
   host_permissions: [
     'https://www.reddit.com/*',
     'https://old.reddit.com/*',
+    'https://matrix.redditspace.com/*',
     'http://127.0.0.1/*',
     'http://localhost/*',
   ],
