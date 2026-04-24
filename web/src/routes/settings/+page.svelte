@@ -29,12 +29,11 @@
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-4xl">
 	<Card.Root size="sm">
-		<Card.Header class="flex-row items-center justify-between space-y-0">
-			<div class="flex items-center gap-2">
-				<Activity class="size-4 text-muted-foreground" />
-				<Card.Title class="text-base">Daemon</Card.Title>
-			</div>
+		<Card.Header class="flex flex-row flex-nowrap items-center gap-2 space-y-0">
+			<Activity class="size-4 shrink-0 text-muted-foreground" />
+			<Card.Title class="text-base min-w-0 flex-1 truncate">Daemon</Card.Title>
 			<StatusBadge
+				class="shrink-0"
 				domain="daemon-status"
 				value={$daemonStatus.loading ? 'checking' : $daemonStatus.alive ? 'online' : 'offline'}
 			/>
@@ -74,15 +73,15 @@
 	</Card.Root>
 
 	<Card.Root size="sm">
-		<Card.Header class="flex-row items-center gap-2">
-			<Cpu class="size-4 text-muted-foreground" />
-			<Card.Title class="text-base">Agent runner</Card.Title>
+		<Card.Header class="flex flex-row flex-nowrap items-center gap-2 space-y-0">
+			<Cpu class="size-4 shrink-0 text-muted-foreground" />
+			<Card.Title class="text-base min-w-0 flex-1 truncate">Agent runner</Card.Title>
+			<code class="shrink-0 rounded border bg-muted px-1.5 py-[1px] font-mono text-[10px]">
+				claude-code
+			</code>
 		</Card.Header>
 		<Card.Content>
-			<p class="text-sm">
-				Default: <code class="text-xs font-mono">claude-code</code>
-			</p>
-			<p class="text-xs text-muted-foreground mt-1">
+			<p class="text-xs text-muted-foreground">
 				Each campaign locks its runner at creation time, and each run snapshots the runner it used.
 				Per-campaign overrides plus codex/opencode adapters ship in the next milestones.
 			</p>

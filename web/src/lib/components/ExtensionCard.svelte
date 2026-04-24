@@ -56,9 +56,16 @@
 </script>
 
 <Card.Root size="sm">
-  <Card.Header class="flex-row items-center gap-2 space-y-0">
-    <Puzzle class="size-4 text-muted-foreground" />
-    <Card.Title class="text-base">Browser extension</Card.Title>
+  <Card.Header class="flex flex-row flex-nowrap items-center gap-2 space-y-0">
+    <Puzzle class="size-4 shrink-0 text-muted-foreground" />
+    <Card.Title class="text-base min-w-0 flex-1 truncate">Browser extension</Card.Title>
+    {#if token}
+      <span
+        class="shrink-0 rounded border bg-muted px-1.5 py-[1px] font-mono text-[10px] text-muted-foreground"
+      >
+        token set
+      </span>
+    {/if}
   </Card.Header>
   <Card.Content class="flex flex-col gap-3 text-sm">
     <p class="text-xs text-muted-foreground">
