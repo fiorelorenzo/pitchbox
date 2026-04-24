@@ -23,16 +23,18 @@
     "migrate:generate": "npm run -w shared migrate:generate",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
-    "dev": "npm run -w web dev"
+    "dev": "npm run -w web dev",
+    "migrate:from-ai-game": "tsx scripts/migrate-from-ai-game.ts"
   },
   "devDependencies": {
-    "@types/node": "^22.19.17",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.5",
-    "prettier": "^3.8.3",
-    "eslint": "^10.2.1",
     "@eslint/js": "^10.0.0",
+    "@types/node": "^22.19.17",
+    "@typescript-eslint/eslint-plugin": "^8.59.0",
     "@typescript-eslint/parser": "^8.59.0",
-    "@typescript-eslint/eslint-plugin": "^8.59.0"
+    "eslint": "^10.2.1",
+    "prettier": "^3.8.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5"
   }
 }
