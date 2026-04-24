@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { Clipboard, Check } from 'lucide-svelte';
+	import { Clipboard, Check, Send } from 'lucide-svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
+	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Card from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { relativeTime } from '$lib/utils/time';
 	import Markdown from '$lib/components/Markdown.svelte';
 
@@ -41,6 +43,11 @@
 	let events = $state<DraftEvent[]>([]);
 	let loadingEvents = $state(false);
 
+	// Mark-as-sent dialog
+	let sendDialogOpen = $state(false);
+	let sendingNow = $state(false);
+	let sentDraftText = $state('');
+
 	const KIND_BADGE_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
 		dm: 'default',
 		post: 'secondary',
@@ -53,6 +60,7 @@
 			pending_review: 'secondary',
 			approved: 'default',
 			rejected: 'destructive',
+			sent: 'default',
 		};
 
 	$effect(() => {
@@ -109,6 +117,25 @@
 		}
 	}
 
+	function openSendDialog() {
+		sentDraftText = draft?.body ?? '';
+		sendDialogOpen = true;
+	}
+
+	async function confirmSent() {
+		if (!draft) return;
+		sendingNow = true;
+		try {
+			await patch({ state: 'sent', sentContent: sentDraftText });
+			toast.success('Marked as sent');
+			sendDialogOpen = false;
+		} catch (e) {
+			toast.error('Action failed', { description: (e as Error).message });
+		} finally {
+			sendingNow = false;
+		}
+	}
+
 	async function copyBody() {
 		if (!draft) return;
 		await navigator.clipboard.writeText(draft.body);
@@ -127,7 +154,10 @@
 		rejected: 'Rejected',
 		sent: 'Sent',
 		edited: 'Edited',
+		replied: 'Replied',
 	};
+
+	let editedFromDraft = $derived(draft != null && sentDraftText !== draft.body);
 </script>
 
 {#if draft}
@@ -189,6 +219,12 @@
 					>
 						{openLabel}
 					</a>
+				{/if}
+				{#if draft.state === 'approved'}
+					<Button onclick={openSendDialog} variant="outline" size="sm">
+						<Send class="size-3.5" />
+						Mark as sent
+					</Button>
 				{/if}
 			</div>
 		</Card.Header>
@@ -252,3 +288,36 @@
 		Select a draft
 	</div>
 {/if}
+
+<Dialog.Root bind:open={sendDialogOpen}>
+	<Dialog.Content class="max-w-2xl">
+		<Dialog.Header>
+			<Dialog.Title>Mark as sent</Dialog.Title>
+			<Dialog.Description>
+				Paste or edit what you actually sent on Reddit. Saved on the draft for future reference and
+				logged to contact history.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Textarea bind:value={sentDraftText} rows={12} class="font-mono text-xs" />
+		<div class="flex items-center justify-between text-xs text-muted-foreground">
+			<span>
+				{#if editedFromDraft}
+					<Badge variant="secondary" class="text-[10px]">Edited from draft</Badge>
+				{:else}
+					<span>Identical to draft</span>
+				{/if}
+			</span>
+			<span>{sentDraftText.length} chars</span>
+		</div>
+		<Dialog.Footer>
+			<Button
+				variant="outline"
+				onclick={() => (sendDialogOpen = false)}
+				disabled={sendingNow}
+			>
+				Cancel
+			</Button>
+			<Button onclick={confirmSent} loading={sendingNow}>Confirm sent</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

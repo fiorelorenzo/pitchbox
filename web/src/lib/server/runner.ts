@@ -19,6 +19,7 @@ const runCancels = new Map<number, () => void>();
 
 export async function runCampaign(
   campaignId: number,
+  trigger: string = 'manual',
 ): Promise<{ runId: number; alreadyRunning?: boolean }> {
   const db = getDb();
   const [campaign] = await db
@@ -46,7 +47,7 @@ export async function runCampaign(
       .values({
         campaignId,
         agentRunner: campaign.agentRunner,
-        trigger: 'manual',
+        trigger,
         status: 'running',
       })
       .returning();

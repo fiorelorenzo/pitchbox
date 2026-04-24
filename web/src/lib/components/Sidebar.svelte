@@ -1,21 +1,34 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { Inbox, PlayCircle, MessageSquare, Settings, BookOpen, type Icon as LucideIcon } from 'lucide-svelte';
+	import {
+		Home,
+		Inbox,
+		PlayCircle,
+		Users,
+		Shield,
+		Settings,
+		BookOpen,
+		type Icon as LucideIcon,
+	} from 'lucide-svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { cn } from '$lib/utils';
 	import { VERSION } from '$lib/shared/version';
+	import { daemonStatus } from '$lib/stores/daemon';
 	import type { ComponentType } from 'svelte';
 
 	type NavItem = {
 		href: string;
 		label: string;
 		icon: ComponentType<LucideIcon>;
+		exact?: boolean;
 	};
 
 	const navItems: NavItem[] = [
+		{ href: '/', label: 'Home', icon: Home, exact: true },
 		{ href: '/inbox', label: 'Inbox', icon: Inbox },
 		{ href: '/campaigns', label: 'Campaigns', icon: PlayCircle },
-		{ href: '/conversations', label: 'Conversations', icon: MessageSquare },
+		{ href: '/contacts', label: 'Contacts', icon: Users },
+		{ href: '/blocklist', label: 'Blocklist', icon: Shield },
 		{ href: '/settings', label: 'Settings', icon: Settings },
 	];
 </script>
@@ -30,7 +43,9 @@
 	<!-- Nav links -->
 	<nav class="flex flex-col gap-1 flex-1">
 		{#each navItems as item (item.href)}
-			{@const active = $page.url.pathname.startsWith(item.href)}
+			{@const active = item.exact
+				? $page.url.pathname === item.href
+				: $page.url.pathname.startsWith(item.href)}
 			{@const Icon = item.icon}
 			<a
 				href={item.href}
@@ -59,8 +74,23 @@
 			Docs
 		</a>
 		<div class="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
-			<span class="size-2 rounded-full bg-muted-foreground/40 shrink-0"></span>
-			<span>Daemon: unknown</span>
+			<span
+				class="size-2 rounded-full shrink-0 {$daemonStatus.loading
+					? 'bg-muted-foreground/40'
+					: $daemonStatus.alive
+						? 'bg-emerald-400 animate-pulse'
+						: 'bg-muted-foreground/40'}"
+			></span>
+			<span>
+				Daemon:
+				{#if $daemonStatus.loading}
+					…
+				{:else if $daemonStatus.alive}
+					online
+				{:else}
+					offline
+				{/if}
+			</span>
 			<span class="ml-auto font-mono opacity-50">{VERSION}</span>
 		</div>
 	</div>
