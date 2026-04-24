@@ -65,6 +65,8 @@
 	};
 
 	async function runNow(id: number) {
+		// Synchronous guard: prevent double-click races.
+		if (runningCampaignIds.has(id)) return;
 		runningCampaignIds = new Set([...runningCampaignIds, id]);
 		try {
 			const res = await fetch('/api/run', {
@@ -73,7 +75,10 @@
 				body: JSON.stringify({ campaignId: id }),
 			});
 			if (!res.ok) throw new Error(await res.text());
-			const { runId } = await res.json();
+			const { runId, alreadyRunning } = await res.json();
+			if (alreadyRunning) {
+				toast.info(`Already running — showing live log`);
+			}
 			runIdByCampaign = new Map([...runIdByCampaign, [id, runId]]);
 		} catch {
 			toast.error('Failed to start run');
@@ -129,6 +134,12 @@
 				toast.error(`Run #${rid} failed`);
 			}
 			await invalidateAll();
+			// Auto-collapse the expanded row 2.5s after the run finishes.
+			if (campaignId && expandedId === campaignId) {
+				setTimeout(() => {
+					if (expandedId === campaignId) expandedId = null;
+				}, 2500);
+			}
 		});
 	});
 
@@ -318,6 +329,7 @@
 									<Button
 										onclick={(e) => {
 											e.stopPropagation();
+											if (runningCampaignIds.has(c.id) || running) return;
 											runNow(c.id);
 										}}
 										loading={runningCampaignIds.has(c.id)}
@@ -354,18 +366,6 @@
 							<Table.Row class="hover:bg-transparent border-t-0">
 								<Table.Cell colspan={7} class="p-0 border-t border-border/50">
 									<div transition:slide={{ duration: 200 }} class="bg-muted/10 px-6 py-3">
-										<!-- Subtle header -->
-										<div class="flex items-center gap-2 mb-3">
-											<span
-												class="size-1.5 rounded-full shrink-0 {running
-													? 'bg-green-400 animate-pulse'
-													: 'bg-muted-foreground/40'}"
-											></span>
-											<span class="text-xs text-muted-foreground">Run log</span>
-											<span class="ml-auto text-xs text-muted-foreground/50 font-mono"
-												>Run #{runId}</span
-											>
-										</div>
 										<RunLog {runId} />
 									</div>
 								</Table.Cell>

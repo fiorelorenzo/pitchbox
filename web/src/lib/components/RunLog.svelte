@@ -77,8 +77,19 @@
 			if (!res.ok) return;
 			const body = (await res.json()) as {
 				runId: number;
+				run: { status: string } | null;
 				events: Array<{ id: number; seq: number; kind: string; payload: unknown; ts: string }>;
 			};
+
+			// Set status from run metadata first (handles finished runs with no result event).
+			if (body.run) {
+				const s = body.run.status;
+				if (s === 'running') status = 'Running';
+				else if (s === 'success') status = 'Finished';
+				else if (s === 'failed' || s === 'error') status = 'Failed';
+				// 'queued' and anything else stays 'Idle'
+			}
+
 			if (!body.events.length) return;
 
 			resetParser();
@@ -88,7 +99,7 @@
 			start = hydrated[0].ts;
 			lastEventTs = hydrated[hydrated.length - 1].ts;
 			events = hydrated;
-			// Determine status from last event.
+			// Refine status from result event if present (overrides run metadata for accuracy).
 			if (hydrated.some((e) => e.kind === 'result')) {
 				const resultEv = hydrated.findLast((e) => e.kind === 'result');
 				status = resultEv?.result?.success ? 'Finished' : 'Failed';

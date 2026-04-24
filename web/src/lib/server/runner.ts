@@ -1,7 +1,7 @@
 import { ClaudeCodeRunner } from '@pitchbox/shared/agents/claude-code';
 import { parseEvent } from '@pitchbox/shared/runlog';
 import { getDb, schema } from './db.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './events.js';
@@ -18,13 +18,25 @@ const PITCHBOX_ROOT =
 // Track active cancel functions by runId so callers can stop them.
 const runCancels = new Map<number, () => void>();
 
-export async function runCampaign(campaignId: number): Promise<{ runId: number }> {
+export async function runCampaign(
+  campaignId: number,
+): Promise<{ runId: number; alreadyRunning?: boolean }> {
   const db = getDb();
   const [campaign] = await db
     .select()
     .from(schema.campaigns)
     .where(eq(schema.campaigns.id, campaignId));
   if (!campaign) throw new Error(`campaign ${campaignId} not found`);
+
+  // Server-side guard: refuse to start a second concurrent run for the same campaign.
+  const [existing] = await db
+    .select()
+    .from(schema.runs)
+    .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
+    .limit(1);
+  if (existing) {
+    return { runId: existing.id, alreadyRunning: true };
+  }
 
   const [run] = await db
     .insert(schema.runs)

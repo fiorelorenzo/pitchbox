@@ -81,6 +81,7 @@
 	});
 
 	async function runNow() {
+		if (isStarting) return;
 		isStarting = true;
 		try {
 			const res = await fetch('/api/run', {
@@ -89,8 +90,12 @@
 				body: JSON.stringify({ campaignId: data.campaign.id }),
 			});
 			if (!res.ok) throw new Error(await res.text());
-			const { runId } = await res.json();
-			toast.success(`Run #${runId} started`);
+			const { runId, alreadyRunning } = await res.json();
+			if (alreadyRunning) {
+				toast.info(`Already running — showing live log`);
+			} else {
+				toast.success(`Run #${runId} started`);
+			}
 			await invalidateAll();
 		} catch (e) {
 			toast.error('Failed to start run', { description: (e as Error).message });
@@ -320,17 +325,6 @@
 							<Table.Row class="hover:bg-transparent border-t-0">
 								<Table.Cell colspan={8} class="p-0 border-t border-border/50">
 									<div transition:slide={{ duration: 200 }} class="bg-muted/10 px-6 py-3">
-										<div class="flex items-center gap-2 mb-3">
-											<span
-												class="size-1.5 rounded-full shrink-0 {run.status === 'running'
-													? 'bg-green-400 animate-pulse'
-													: 'bg-muted-foreground/40'}"
-											></span>
-											<span class="text-xs text-muted-foreground">Run log</span>
-											<span class="ml-auto text-xs text-muted-foreground/50 font-mono"
-												>Run #{run.id}</span
-											>
-										</div>
 										<RunLog runId={run.id} />
 									</div>
 								</Table.Cell>

@@ -45,14 +45,14 @@
 >
 	<!-- Gutter -->
 	<div class="flex flex-col items-center w-5 flex-none">
-		<span class="mt-2 size-2 rounded-full flex-none {dotColor}"></span>
+		<span class="mt-[18px] size-2 rounded-full flex-none {dotColor}"></span>
 		{#if !isLast}
 			<span class="w-px flex-1 bg-border/40 mt-1 min-h-[8px]"></span>
 		{/if}
 	</div>
 
 	<!-- Content + timestamp -->
-	<div class="flex-1 min-w-0 pb-2.5 pt-1.5">
+	<div class="flex-1 min-w-0 pb-2.5 pt-[14px]">
 		<div class="flex items-start gap-2 min-w-0">
 			<div class="flex-1 min-w-0">
 				{@render children()}
