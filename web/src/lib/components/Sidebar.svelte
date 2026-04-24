@@ -10,7 +10,6 @@
 		BookOpen,
 		type Icon as LucideIcon,
 	} from 'lucide-svelte';
-	import { Badge } from '$lib/components/ui/badge';
 	import { cn } from '$lib/utils';
 	import { VERSION } from '$lib/shared/version';
 	import { daemonStatus } from '$lib/stores/daemon';
@@ -34,11 +33,8 @@
 </script>
 
 <aside class="w-60 border-r border-border flex flex-col p-4">
-	<!-- Title + version badge -->
-	<div class="flex items-center gap-2 mb-6">
-		<h1 class="font-semibold text-lg">Pitchbox</h1>
-		<Badge variant="secondary" class="text-[10px] px-1.5 py-0.5">{VERSION}</Badge>
-	</div>
+	<!-- Brand -->
+	<h1 class="font-semibold text-lg mb-6">Pitchbox</h1>
 
 	<!-- Nav links -->
 	<nav class="flex flex-col gap-1 flex-1">
