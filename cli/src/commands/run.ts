@@ -43,10 +43,26 @@ export function registerRunCommands(program: Command) {
         .from(schema.contactHistory)
         .where(eq(schema.contactHistory.platformId, campaign.platformId));
 
-      const [run] = await db
-        .insert(schema.runs)
-        .values({ campaignId, trigger: 'manual', status: 'running' })
-        .returning();
+      // If PITCHBOX_RUN_ID is set, we're running inside an already-created run
+      // (e.g., invoked by the web server / daemon). Use that row instead of
+      // creating a second one — the DB partial unique index would reject it,
+      // and logically the run-start CLI should be idempotent in that case.
+      let run: typeof schema.runs.$inferSelect | undefined;
+      const envRunId = process.env.PITCHBOX_RUN_ID ? Number(process.env.PITCHBOX_RUN_ID) : null;
+      if (envRunId && Number.isInteger(envRunId)) {
+        [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, envRunId));
+        if (!run) return fail(`PITCHBOX_RUN_ID=${envRunId} not found in runs table`);
+        if (run.campaignId !== campaignId) {
+          return fail(
+            `PITCHBOX_RUN_ID=${envRunId} belongs to campaign ${run.campaignId}, not ${campaignId}`,
+          );
+        }
+      } else {
+        [run] = await db
+          .insert(schema.runs)
+          .values({ campaignId, trigger: 'manual', status: 'running' })
+          .returning();
+      }
 
       const configMap: Record<string, unknown> = {};
       for (const c of configs) configMap[c.key] = c.value;
