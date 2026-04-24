@@ -1,0 +1,5 @@
+#!/bin/bash
+# Pitchbox CLI wrapper — forwards to the tsx-executed CLI source.
+# Invoked by playbooks running under an agent (claude, codex, ...).
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+exec "$REPO_ROOT/node_modules/.bin/tsx" "$REPO_ROOT/cli/src/index.ts" "$@"

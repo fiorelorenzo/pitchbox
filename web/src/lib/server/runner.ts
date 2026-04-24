@@ -32,6 +32,9 @@ export async function runCampaign(campaignId: number): Promise<{ runId: number }
   const runner = new ClaudeCodeRunner();
   const playbook = resolve(PITCHBOX_ROOT, 'playbooks', `${campaign.skillSlug}.md`);
 
+  // Prepend our bin/ so playbooks can call `pitchbox <cmd>` directly.
+  const augmentedPath = `${PITCHBOX_ROOT}/bin:${process.env.PATH ?? ''}`;
+
   runner
     .run({
       playbookPath: playbook,
@@ -40,6 +43,7 @@ export async function runCampaign(campaignId: number): Promise<{ runId: number }
         PITCHBOX_CAMPAIGN_ID: String(campaignId),
         PITCHBOX_RUN_ID: String(run.id),
         PITCHBOX_ROOT,
+        PATH: augmentedPath,
       },
       cwd: PITCHBOX_ROOT,
       timeoutMs: 15 * 60 * 1000,
