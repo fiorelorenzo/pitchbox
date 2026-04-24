@@ -13,7 +13,12 @@
     "./agents": "./src/agents/base.ts",
     "./agents/claude-code": "./src/agents/claude-code.ts",
     "./crypto": "./src/crypto.ts",
-    "./runlog": "./src/runlog/parse.ts"
+    "./runlog": "./src/runlog/parse.ts",
+    "./runlog/types": "./src/runlog/types.ts",
+    "./runlog/parsers": "./src/runlog/parsers/index.ts",
+    "./runlog/parsers/claude-code": "./src/runlog/parsers/claude-code.ts",
+    "./runlog/parsers/codex": "./src/runlog/parsers/codex.ts",
+    "./runlog/parsers/opencode": "./src/runlog/parsers/opencode.ts"
   },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",

@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync, appendFileSync, rmSync, existsSync } from 'no
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentRunHandle, AgentRunOptions, AgentRunResult, AgentRunner } from './base.js';
+import { parseClaudeCodeLine } from '../runlog/parsers/claude-code.js';
 
 type SpawnFn = typeof nodeSpawn;
 
@@ -41,6 +42,8 @@ export class ClaudeCodeRunner implements AgentRunner {
       const prompt = `Invoke the '${opts.slug}' skill for campaign ${opts.env.PITCHBOX_CAMPAIGN_ID ?? ''}. The skill knows what to do.`;
 
       let tokensUsed: number | undefined;
+      // Per-run sequence counter — monotonically increasing, owned by this runner.
+      let seq = 0;
 
       try {
         const exitCode = await new Promise<number>((resolve, reject) => {
@@ -87,15 +90,29 @@ export class ClaudeCodeRunner implements AgentRunner {
             if (!line) return;
             appendFileSync(logPath, line + '\n', 'utf8');
             console.log(`[claude-code ${opts.slug}] ${line.slice(0, 200)}`);
-            opts.onLogLine?.(line);
-            try {
-              const evt = JSON.parse(line);
-              if (evt?.type === 'result' && typeof evt.usage === 'object') {
-                tokensUsed =
-                  (evt.usage.input_tokens ?? 0) + (evt.usage.output_tokens ?? 0) || undefined;
+            opts.onRawLine?.(line);
+
+            // Format-native parsing → normalized events.
+            const events = parseClaudeCodeLine(line, seq);
+            if (events.length > 0) {
+              seq += events.length;
+            } else {
+              // Advance seq even for unrecognised lines so downstream can't collide
+              // with a future parsed event.
+              seq += 1;
+            }
+
+            // Extract token usage from a final 'result' event.
+            for (const e of events) {
+              if (e.kind === 'result' && e.payload?.type === 'result') {
+                const r = e.payload;
+                tokensUsed = (r.inputTokens ?? 0) + (r.outputTokens ?? 0) || tokensUsed;
               }
-            } catch {
-              // Not JSON, ignore.
+            }
+
+            if (events.length > 0) {
+              // Fire-and-forget; the caller may await if it wants.
+              void opts.onParsedEvents?.(events);
             }
           };
 
@@ -109,7 +126,7 @@ export class ClaudeCodeRunner implements AgentRunner {
           child.stderr?.on('data', (d: Buffer) => {
             const s = d.toString('utf8');
             appendFileSync(logPath, `[stderr] ${s}`, 'utf8');
-            opts.onLogLine?.(`[stderr] ${s.trimEnd()}`);
+            opts.onRawLine?.(`[stderr] ${s.trimEnd()}`);
           });
 
           const timer = setTimeout(() => {
