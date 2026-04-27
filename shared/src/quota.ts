@@ -9,6 +9,8 @@ export type UsageByKind = Record<QuotaKind, WindowCounts>;
 
 export type QuotaLimits = Record<QuotaKind, { perDay: number; perWeek: number }>;
 
+const KNOWN_DRAFT_KINDS = new Set(['dm', 'post', 'post_comment', 'comment_reply']);
+
 export function emptyUsage(): UsageByKind {
   return {
     dm: { day: 0, week: 0 },
@@ -54,6 +56,7 @@ export async function getUsageForAccounts(
     .groupBy(schema.drafts.accountId, schema.drafts.kind);
 
   for (const r of rows) {
+    if (!KNOWN_DRAFT_KINDS.has(r.kind)) continue; // future-proof: skip unknown draft kinds
     const qk = mapDraftKindToQuotaKind(
       r.kind as 'dm' | 'post_comment' | 'comment_reply' | 'post',
     );
@@ -73,6 +76,9 @@ export async function getAccountUsage(
   return m[accountId];
 }
 
+// Platform-agnostic safe defaults used when `app_config['quota_defaults']` is
+// missing the requested platform key. Today only Reddit is in use; the
+// fallback values match the Reddit defaults seeded by seed-core.
 const QUOTA_LIMITS_FALLBACK: QuotaLimits = {
   dm: { perDay: 10, perWeek: 50 },
   comment: { perDay: 50, perWeek: 200 },

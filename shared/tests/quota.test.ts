@@ -138,4 +138,65 @@ describe('loadQuotaLimits', () => {
     expect(limits.comment.perDay).toBe(50);
     expect(limits.post.perDay).toBe(5);
   });
+
+  it('returns all-fallback values when quota_defaults row is missing', async () => {
+    const db = getDb();
+    // Capture existing row so we can restore it
+    const [existing] = await db
+      .select({ value: schema.appConfig.value })
+      .from(schema.appConfig)
+      .where(eq(schema.appConfig.key, 'quota_defaults'));
+
+    await db.delete(schema.appConfig).where(eq(schema.appConfig.key, 'quota_defaults'));
+
+    try {
+      const limits = await loadQuotaLimits(db, 'reddit');
+      expect(limits.dm.perDay).toBe(10);
+      expect(limits.comment.perDay).toBe(50);
+      expect(limits.post.perDay).toBe(5);
+    } finally {
+      // Restore seeded row
+      if (existing) {
+        await db
+          .insert(schema.appConfig)
+          .values({ key: 'quota_defaults', value: existing.value })
+          .onConflictDoUpdate({ target: schema.appConfig.key, set: { value: existing.value } });
+      }
+    }
+  });
+
+  it('applies per-key fallback when platform blob is partial', async () => {
+    const db = getDb();
+    const [existing] = await db
+      .select({ value: schema.appConfig.value })
+      .from(schema.appConfig)
+      .where(eq(schema.appConfig.key, 'quota_defaults'));
+
+    const partial = { reddit: { dm: { perDay: 99, perWeek: 199 } } };
+    await db
+      .insert(schema.appConfig)
+      .values({ key: 'quota_defaults', value: partial })
+      .onConflictDoUpdate({ target: schema.appConfig.key, set: { value: partial } });
+
+    try {
+      const limits = await loadQuotaLimits(db, 'reddit');
+      expect(limits.dm.perDay).toBe(99);
+      expect(limits.comment.perDay).toBe(50);
+      expect(limits.post.perDay).toBe(5);
+    } finally {
+      if (existing) {
+        await db
+          .insert(schema.appConfig)
+          .values({ key: 'quota_defaults', value: existing.value })
+          .onConflictDoUpdate({ target: schema.appConfig.key, set: { value: existing.value } });
+      }
+    }
+  });
+
+  it('returns fallback values for an unknown platform', async () => {
+    const limits = await loadQuotaLimits(getDb(), 'twitter');
+    expect(limits.dm.perDay).toBe(10);
+    expect(limits.comment.perDay).toBe(50);
+    expect(limits.post.perDay).toBe(5);
+  });
 });
