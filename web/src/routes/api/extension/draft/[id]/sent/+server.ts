@@ -4,7 +4,11 @@ import { getDb, schema } from '$lib/server/db.js';
 import { requireExtensionAuth } from '$lib/server/extension-auth.js';
 import { emit } from '$lib/server/events.js';
 
-type SentBody = { sentContent?: string; sentAt?: string };
+type SentBody = {
+  sentContent?: string;
+  sentAt?: string;
+  commentLookup?: { postId: string; accountHandle: string; postedAt?: string };
+};
 
 export async function POST({ params, request }: { params: { id: string }; request: Request }) {
   await requireExtensionAuth(request);
@@ -39,6 +43,31 @@ export async function POST({ params, request }: { params: { id: string }; reques
     actor: 'extension',
     details: edited && sentContent !== draft.body ? { edited: true } : {},
   });
+
+  if (body.commentLookup && body.commentLookup.postId && body.commentLookup.accountHandle) {
+    const lookup = body.commentLookup;
+    const postedAtMs = lookup.postedAt ? Date.parse(lookup.postedAt) : Date.now();
+    void (async () => {
+      try {
+        const { findOurComment } = await import('$lib/server/comment-lookup.js');
+        const commentId = await findOurComment({
+          postId: lookup.postId,
+          accountHandle: lookup.accountHandle,
+          postedAtMs,
+        });
+        if (commentId) {
+          await db
+            .update(schema.drafts)
+            .set({ platformCommentId: commentId })
+            .where(eq(schema.drafts.id, id));
+        } else {
+          console.warn('[pitchbox] comment lookup miss for draft', id, lookup.postId);
+        }
+      } catch (e) {
+        console.warn('[pitchbox] comment lookup error', e);
+      }
+    })();
+  }
 
   if (draft.kind === 'dm' && draft.targetUser) {
     const [account] = await db

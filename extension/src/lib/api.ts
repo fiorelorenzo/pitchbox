@@ -59,9 +59,23 @@ export const api = {
     postJson<{ ok: true }>(`/api/extension/draft/${draftId}/armed`, {
       composedAt: new Date().toISOString(),
     }),
-  sent: (draftId: number, sentContent?: string) =>
+  sent: (
+    draftId: number,
+    sentContent?: string,
+    commentLookup?: { postId: string; accountHandle: string; postedAt: string },
+  ) =>
     postJson<{ ok: true }>(`/api/extension/draft/${draftId}/sent`, {
       sentContent,
       sentAt: new Date().toISOString(),
+      commentLookup,
     }),
+  dmSync: (platform: string, items: unknown[], comments: unknown[] = []) =>
+    postJson<{
+      ok: true;
+      inserted: number;
+      replied: number;
+      commentsInserted?: number;
+      commentsReplied?: number;
+    }>('/api/extension/dm-sync', { platform, items, comments }),
+  dmSyncStatus: () => getJson<{ lastSyncAt: string | null }>('/api/extension/dm-sync/status'),
 };

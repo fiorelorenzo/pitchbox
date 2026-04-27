@@ -33,11 +33,20 @@ export default defineManifest({
       js: ['src/content/post-comment.ts'],
       run_at: 'document_idle',
     },
+    {
+      // The Matrix token lives in reddit.com's localStorage (per-origin), so any
+      // reddit.com page works — no need to be on /chat. The chat also appears as
+      // a side-panel widget from any reddit.com page.
+      matches: ['https://www.reddit.com/*'],
+      js: ['src/content/chat-token.ts'],
+      run_at: 'document_idle',
+    },
   ],
-  permissions: ['storage'],
+  permissions: ['storage', 'alarms'],
   host_permissions: [
     'https://www.reddit.com/*',
     'https://old.reddit.com/*',
+    'https://matrix.redditspace.com/*',
     'http://127.0.0.1/*',
     'http://localhost/*',
   ],

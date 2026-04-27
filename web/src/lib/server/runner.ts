@@ -100,6 +100,39 @@ export async function runCampaign(
   // Prepend our bin/ so playbooks can call `pitchbox <cmd>` directly.
   const augmentedPath = `${PITCHBOX_ROOT}/bin:${process.env.PATH ?? ''}`;
 
+  // Per-run dedup state: claude -p sometimes emits multiple `system.init` events
+  // sharing the same session_id, plus an intermediate `result` before the final one.
+  // Show only the FIRST init for a given session_id and only the LAST result (held
+  // back until the process exits) so the timeline doesn't look like the run restarted
+  // and completed twice.
+  const seenSessionIds = new Set<string>();
+  let pendingResultEvent: { seq: number; kind: string; payload: unknown; raw: string } | null =
+    null;
+
+  const insertEvent = async (pe: { seq: number; kind: string; payload: unknown; raw: string }) => {
+    const [row] = await db
+      .insert(schema.runEvents)
+      .values({
+        runId: run.id,
+        seq: pe.seq,
+        kind: pe.kind,
+        payload: pe.payload,
+        raw: pe.raw,
+      })
+      .returning();
+    emit('run:log', {
+      runId: run.id,
+      event: {
+        id: row.id,
+        seq: row.seq,
+        kind: row.kind,
+        payload: row.payload,
+        ts: row.createdAt,
+        raw: pe.raw,
+      },
+    });
+  };
+
   const handle = runner.run({
     playbookPath: playbook,
     slug: campaign.skillSlug,
@@ -117,30 +150,20 @@ export async function runCampaign(
     },
 
     onParsedEvents: async (parsed) => {
-      // Insert all parsed events for this batch, then emit each with DB-assigned metadata.
       for (const pe of parsed) {
-        const [row] = await db
-          .insert(schema.runEvents)
-          .values({
-            runId: run.id,
-            seq: pe.seq,
-            kind: pe.kind,
-            payload: pe.payload,
-            raw: pe.raw,
-          })
-          .returning();
-
-        emit('run:log', {
-          runId: run.id,
-          event: {
-            id: row.id,
-            seq: row.seq,
-            kind: row.kind,
-            payload: row.payload,
-            ts: row.createdAt,
-            raw: pe.raw,
-          },
-        });
+        if (pe.kind === 'session') {
+          const sid = (pe.payload as { sessionId?: string } | null)?.sessionId;
+          if (sid) {
+            if (seenSessionIds.has(sid)) continue;
+            seenSessionIds.add(sid);
+          }
+        }
+        if (pe.kind === 'result') {
+          // Hold the latest result; commit only when the process exits.
+          pendingResultEvent = pe;
+          continue;
+        }
+        await insertEvent(pe);
       }
     },
   });
@@ -149,8 +172,16 @@ export async function runCampaign(
 
   const TERMINAL_STATUSES = new Set(['success', 'failed', 'cancelled']);
 
+  const flushPendingResult = async () => {
+    if (pendingResultEvent) {
+      await insertEvent(pendingResultEvent);
+      pendingResultEvent = null;
+    }
+  };
+
   handle.result
     .then(async (res) => {
+      await flushPendingResult();
       // If the run is already in a terminal state (cancelled by user OR
       // pre-marked by the playbook via `pitchbox run:finish`), don't overwrite it.
       const [current] = await db
@@ -180,6 +211,7 @@ export async function runCampaign(
       emit('drafts:changed', {});
     })
     .catch(async (err) => {
+      await flushPendingResult();
       const [current] = await db
         .select({ status: schema.runs.status })
         .from(schema.runs)

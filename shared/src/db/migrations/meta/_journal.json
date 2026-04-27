@@ -36,6 +36,41 @@
       "when": 1777042500000,
       "tag": "0004_reply_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777043000000,
+      "tag": "0005_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777067900000,
+      "tag": "0006_messages_message_id_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777068700000,
+      "tag": "0007_contact_history_chat_room_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777153000000,
+      "tag": "0008_drafts_platform_comment_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777153100000,
+      "tag": "0009_contact_history_platform_context_url",
+      "breakpoints": true
     }
   ]
 }

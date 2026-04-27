@@ -5,6 +5,7 @@
 		Inbox,
 		PlayCircle,
 		Users,
+		MessagesSquare,
 		Shield,
 		Settings,
 		BookOpen,
@@ -27,6 +28,7 @@
 		{ href: '/inbox', label: 'Inbox', icon: Inbox },
 		{ href: '/campaigns', label: 'Campaigns', icon: PlayCircle },
 		{ href: '/contacts', label: 'Contacts', icon: Users },
+		{ href: '/conversations', label: 'Conversations', icon: MessagesSquare },
 		{ href: '/blocklist', label: 'Blocklist', icon: Shield },
 		{ href: '/settings', label: 'Settings', icon: Settings },
 	];

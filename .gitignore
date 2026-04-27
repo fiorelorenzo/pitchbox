@@ -43,3 +43,5 @@ extension/*.zip
 # Web workspace
 web/.svelte-kit/
 web/build/
+.claude/settings.local.json
+shared/src/platforms/reddit/cache/

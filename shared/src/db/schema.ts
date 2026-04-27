@@ -7,6 +7,7 @@ import {
   integer,
   boolean,
   smallint,
+  bigint,
   bigserial,
   uniqueIndex,
   index,
@@ -144,6 +145,7 @@ export const drafts = pgTable(
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     sentContent: text('sent_content'),
+    platformCommentId: text('platform_comment_id'),
   },
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),
@@ -188,6 +190,8 @@ export const contactHistory = pgTable(
     draftId: integer('draft_id').references(() => drafts.id, { onDelete: 'set null' }),
     repliedAt: timestamp('replied_at', { withTimezone: true }),
     replyCheckedAt: timestamp('reply_checked_at', { withTimezone: true }),
+    chatRoomId: text('chat_room_id'),
+    platformContextUrl: text('platform_context_url'),
   },
   (t) => ({
     byTarget: index('contact_history_target_idx').on(t.platformId, t.targetUser),
@@ -219,5 +223,33 @@ export const runEvents = pgTable(
   },
   (t) => ({
     byRun: index('run_events_run_idx').on(t.runId, t.seq),
+  }),
+);
+
+export const messages = pgTable(
+  'messages',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    contactId: bigint('contact_id', { mode: 'number' })
+      .notNull()
+      .references(() => contactHistory.id, { onDelete: 'cascade' }),
+    draftId: integer('draft_id').references(() => drafts.id, { onDelete: 'set null' }),
+    platformId: integer('platform_id')
+      .notNull()
+      .references(() => platforms.id),
+    author: text('author').notNull(),
+    isFromUs: boolean('is_from_us').notNull().default(false),
+    body: text('body').notNull(),
+    platformMessageId: text('platform_message_id').notNull(),
+    createdAtPlatform: timestamp('created_at_platform', { withTimezone: true }).notNull(),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
+    source: text('source').notNull(),
+  },
+  (t) => ({
+    byContact: index('messages_contact_idx').on(t.contactId, t.createdAtPlatform),
+    uniquePlatformMessage: uniqueIndex('messages_platform_message_unique').on(
+      t.platformId,
+      t.platformMessageId,
+    ),
   }),
 );

@@ -4,6 +4,39 @@ import { findCommentTextarea, findCommentSubmitButton } from './shared/reddit-do
 
 const draftId = parseDraftId(location.href);
 
+function derivePostId(pathname: string): string | null {
+  // /r/<sub>/comments/<postId>/<slug>/...   — Reddit's canonical pattern.
+  const m = /\/comments\/([a-z0-9]+)\b/i.exec(pathname);
+  return m ? m[1] : null;
+}
+
+async function fetchAccountHandle(draftId: number): Promise<string | null> {
+  // Reddit-issued cookies authenticate /api/me.json — works uniformly on old and
+  // new Reddit, regardless of which user link happens to be first in the DOM
+  // (often the post author, not the logged-in user).
+  void draftId;
+  try {
+    const res = await fetch('https://www.reddit.com/api/me.json?raw_json=1', {
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { data?: { name?: string } };
+      const name = data?.data?.name;
+      if (name) return name;
+    }
+  } catch {
+    // ignore, fall through to DOM heuristics
+  }
+  const meta = document.querySelector('meta[name="user-name"]');
+  const fromMeta = meta?.getAttribute('content');
+  if (fromMeta) return fromMeta;
+  const userLink = document.querySelector('a[href^="/user/"]');
+  const href = userLink?.getAttribute('href') ?? '';
+  const m = /^\/user\/([^/]+)/.exec(href);
+  return m ? m[1] : null;
+}
+
 if (draftId !== null) {
   let armed = false;
   let sent = false;
@@ -51,7 +84,14 @@ if (draftId !== null) {
   async function onSendCompleted() {
     if (sent) return;
     sent = true;
-    await api.sent(draftId!, readCurrentText());
+    const sentContent = readCurrentText();
+    const postId = derivePostId(location.pathname);
+    const handle = await fetchAccountHandle(draftId!);
+    const commentLookup =
+      postId && handle
+        ? { postId, accountHandle: handle, postedAt: new Date().toISOString() }
+        : undefined;
+    await api.sent(draftId!, sentContent, commentLookup);
   }
 
   function wireSubmit(): boolean {

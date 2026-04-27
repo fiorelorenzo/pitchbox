@@ -26,13 +26,41 @@ npm run -w daemon dev  # (optional) scheduler + reply poller
 
 ### Browser extension (optional)
 
-Auto-flip drafts to `sent` when you submit them on Reddit, instead of clicking **Mark as sent** in the dashboard.
+The companion Chrome extension does two things:
+
+1. **Auto-mark drafts as sent.** When you submit a DM or post-comment on Reddit, the extension flips the draft from `approved` → `sent` automatically — no need to click **Mark as sent** in the dashboard.
+2. **Sync DM replies back into the dashboard.** Every 10 min (and on demand) the extension reads your Reddit inbox and flips drafts to `replied` when the target user writes back. Replies appear in the Inbox draft detail and in the Conversations page.
+
+#### Install
 
 ```bash
 npm run build:extension   # outputs extension/dist/
 ```
 
-Then in Chrome: `chrome://extensions` → enable _Developer mode_ → **Load unpacked** → pick `extension/dist/`. In the dashboard Settings → Browser extension, click **Generate token**, then paste the dashboard URL + token into the extension popup and click **Connect**.
+In Chrome: `chrome://extensions` → enable **Developer mode** → **Load unpacked** → pick `extension/dist/`.
+
+#### Connect to the dashboard
+
+1. Dashboard → **Settings → Browser extension** → **Generate token**. Copy the 64-character hex token.
+2. Open the Pitchbox popup (toolbar icon). Paste the dashboard URL (`http://127.0.0.1:5180` by default) and the token. Click **Connect**.
+3. The popup shows _Connected — dashboard vX.Y.Z_ when the handshake succeeds.
+
+#### Sync DM replies
+
+Reddit ships two parallel DM systems and the extension covers both:
+
+- **Legacy private messages** (`reddit.com/message/inbox`). The extension polls `inbox.json` every 10 min — works as long as you stay logged in to Reddit in the same Chrome profile.
+- **Reddit Chat** (Matrix-based, used for all DMs sent from new Reddit). The extension auto-captures the Matrix access token from `localStorage` of any open `reddit.com` tab, then talks to `matrix.redditspace.com` directly to fetch new messages. **Open at least one reddit.com tab** while logged in for this to work — closing all Reddit tabs stops the chat sync (the popup keeps the last token but it eventually expires).
+
+**Comment-reply tracking** is included: when someone replies to a comment you posted via Pitchbox, the same `Sync now` action picks it up. Make sure you submit your comments through the dashboard's Open post / extension flow so we can capture the comment id.
+
+Manually trigger a sync any time from the popup → **Sync now**. The popup reports `inserted: N new, M replied`.
+
+When a target user replies, you'll see:
+
+- The draft state flip to **Replied** in the Inbox.
+- The reply body shown under the draft, with a `replied` event on the timeline.
+- A row on the **Conversations** page with the latest reply snippet.
 
 ## What ships today (v0.2.0, M0–M2)
 
@@ -71,7 +99,7 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.2
 - **`cli/`** — the `pitchbox` CLI that playbooks call to read/write DB (`run:start`, `run:finish`, `reddit:scout`, `drafts:create`, …).
 - **`web/`** — SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte dashboard. Routes: `/` (home), `/inbox`, `/campaigns`, `/campaigns/[id]`, `/contacts`, `/blocklist`, `/settings`.
 - **`daemon/`** — heartbeat + scheduler + reply poller (real DM reader still pending).
-- **`extension/`** — Chrome MV3 companion (Vite + `@crxjs/vite-plugin`) that auto-marks drafts as `sent` when you submit on Reddit. DM reply sync comes in M4.
+- **`extension/`** — Chrome MV3 companion (Vite + `@crxjs/vite-plugin`) that auto-marks drafts as `sent` when you submit on Reddit and polls your DM inbox to flip drafts to `replied` once the target user writes back.
 - **`playbooks/`** — agent-agnostic markdown instructions consumed by the `AgentRunner`.
 
 ## Roadmap
@@ -80,7 +108,8 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.2
 - ✅ **M1** — reddit-scout + reddit-commenter playbooks, Inbox, manual "Run now"
 - ✅ **M2** — mark-as-sent flow, Home dashboard, Contacts, Blocklist, daemon scaffold (heartbeat + cron scheduler + reply-poller skeleton)
 - ✅ **M3** — Chrome extension, auto mark-as-sent for DM compose + post-comment drafts
-- ⏳ **M4** — reply tracking: live Reddit DM reader + post-reply poller, Conversations UI
+- ✅ **M4** — DM reply tracking via the extension's inbox poller, Conversations UI (post-comment reply tracking deferred to M4.5)
+- ✅ **M4.5** — comment-reply tracking via the extension's inbox poller
 - ⏳ **M5** — safety brake + blocklist enforcement + smart rate-limiting
 - ⏳ **M6** — templates, keyword watches, analytics, A/B tests
 - ⏳ **M7+** — additional platform adapters, posting automation, team mode

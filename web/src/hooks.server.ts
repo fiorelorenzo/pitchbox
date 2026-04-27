@@ -37,10 +37,7 @@ async function reapOrphanedRuns() {
 // Run once at module load (first request to the server).
 await reapOrphanedRuns();
 
-const EXTENSION_ALLOWED_ORIGINS = new Set([
-  'https://www.reddit.com',
-  'https://old.reddit.com',
-]);
+const EXTENSION_ALLOWED_ORIGINS = new Set(['https://www.reddit.com', 'https://old.reddit.com']);
 
 function extensionCorsHeaders(origin: string | null): Record<string, string> {
   const allowed = origin && EXTENSION_ALLOWED_ORIGINS.has(origin) ? origin : 'null';
