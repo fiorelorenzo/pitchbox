@@ -147,6 +147,9 @@ describe('pitchbox drafts:create', () => {
     const drafts = await db.select().from(schema.drafts);
     expect(drafts).toHaveLength(1);
     expect(drafts[0].targetUser).toBe('alice');
+    const events = await db.select().from(schema.draftEvents);
+    expect(events).toHaveLength(1);
+    expect(events[0].draftId).toBe(drafts[0].id);
   });
 });
 
