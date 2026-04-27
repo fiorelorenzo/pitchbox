@@ -12,6 +12,8 @@
 	import Markdown from '$lib/components/Markdown.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { replyUrl } from '$lib/utils/reply-url';
+	import { mapDraftKindToQuotaKind } from '@pitchbox/shared/quota';
+	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota';
 
 	type DraftEvent = {
 		id: number;
@@ -36,7 +38,15 @@
 		sentContent: string | null;
 	};
 
-	let { draft }: { draft: Draft | null } = $props();
+	let {
+		draft,
+		usage,
+		limits,
+	}: {
+		draft: Draft | null;
+		usage?: UsageByKind;
+		limits?: QuotaLimits | null;
+	} = $props();
 
 	type LatestReply = {
 		body: string;
@@ -164,6 +174,28 @@
 	};
 
 	let editedFromDraft = $derived(draft != null && sentDraftText !== draft.body);
+
+	const quotaKind = $derived(
+		draft
+			? mapDraftKindToQuotaKind(draft.kind as 'dm' | 'post_comment' | 'comment_reply' | 'post')
+			: null,
+	);
+
+	const overDay = $derived(
+		quotaKind && usage && limits
+			? usage[quotaKind].day + 1 > limits[quotaKind].perDay
+			: false,
+	);
+	const overWeek = $derived(
+		quotaKind && usage && limits
+			? usage[quotaKind].week + 1 > limits[quotaKind].perWeek
+			: false,
+	);
+	const overQuota = $derived(overDay || overWeek);
+
+	function labelFor(qk: 'dm' | 'comment' | 'post'): string {
+		return { dm: 'DM', comment: 'commenti', post: 'post' }[qk];
+	}
 </script>
 
 {#if draft}
@@ -351,6 +383,15 @@
 				logged to contact history.
 			</Dialog.Description>
 		</Dialog.Header>
+		{#if overQuota && quotaKind && usage && limits}
+			<div class="rounded-md bg-red-50 ring-1 ring-red-200 px-3 py-2 text-sm text-red-800">
+				<strong>Limite raggiunto.</strong>
+				Hai già inviato {usage[quotaKind].day}/{limits[quotaKind].perDay} {labelFor(quotaKind)} oggi
+				{#if overWeek}e {usage[quotaKind].week}/{limits[quotaKind].perWeek} questa settimana{/if}
+				da questo account. Reddit potrebbe rate-limitare o sospendere l'account se continui. Procedi
+				solo se necessario.
+			</div>
+		{/if}
 		<Textarea bind:value={sentDraftText} rows={12} class="font-mono text-xs" />
 		<div class="flex items-center justify-between text-xs text-muted-foreground">
 			<span>
