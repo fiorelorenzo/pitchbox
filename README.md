@@ -2,7 +2,7 @@
 
 Self-hosted outreach agent for Reddit (and future platforms). You keep the human-in-the-loop; Pitchbox does the research, drafting, and bookkeeping.
 
-> ⚠️ Alpha — currently at **v0.2.0** (M2 shipped; M3 in development branch). Breaking changes possible until v1.0.0.
+> ⚠️ Alpha — currently at **v0.3.0** (M5 shipped). Breaking changes possible until v1.0.0.
 
 ## Quick start (macOS / Linux)
 
@@ -92,7 +92,7 @@ When a target user replies, you'll see:
 
 ## Architecture
 
-Monorepo using npm workspaces. Every workspace versions to the same number (`0.2.0` today), and the sidebar version is sourced from `web/package.json`.
+Monorepo using npm workspaces. Every workspace versions to the same number (`0.3.0` today), and the sidebar version is sourced from `web/package.json`.
 
 - **Postgres** (via Docker) — single source of truth: projects, campaigns, runs, run events, drafts, draft events, contact history, blocklist, daemon heartbeats.
 - **`shared/`** — Drizzle schema + migrations, platform adapters (Reddit), `AgentRunner` + `ReplyReader` interfaces, run-log parsers (claude-code + stubs for codex/opencode).
@@ -110,7 +110,7 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.2
 - ✅ **M3** — Chrome extension, auto mark-as-sent for DM compose + post-comment drafts
 - ✅ **M4** — DM reply tracking via the extension's inbox poller, Conversations UI (post-comment reply tracking deferred to M4.5)
 - ✅ **M4.5** — comment-reply tracking via the extension's inbox poller
-- ⏳ **M5** — safety brake + blocklist enforcement + smart rate-limiting
+- ✅ **M5** — blocklist enforcement (creation + send) + advisory rate-limiting (Inbox badge + over-quota warning); safety brake deferred
 - ⏳ **M6** — templates, keyword watches, analytics, A/B tests
 - ⏳ **M7+** — additional platform adapters, posting automation, team mode
 
