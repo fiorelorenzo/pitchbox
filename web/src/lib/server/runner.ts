@@ -106,16 +106,10 @@ export async function runCampaign(
   // back until the process exits) so the timeline doesn't look like the run restarted
   // and completed twice.
   const seenSessionIds = new Set<string>();
-  let pendingResultEvent:
-    | { seq: number; kind: string; payload: unknown; raw: string }
-    | null = null;
+  let pendingResultEvent: { seq: number; kind: string; payload: unknown; raw: string } | null =
+    null;
 
-  const insertEvent = async (pe: {
-    seq: number;
-    kind: string;
-    payload: unknown;
-    raw: string;
-  }) => {
+  const insertEvent = async (pe: { seq: number; kind: string; payload: unknown; raw: string }) => {
     const [row] = await db
       .insert(schema.runEvents)
       .values({
