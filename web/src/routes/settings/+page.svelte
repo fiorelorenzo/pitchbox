@@ -6,12 +6,65 @@
 	import Seo from '$lib/components/Seo.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ExtensionCard from '$lib/components/ExtensionCard.svelte';
+	import { untrack } from 'svelte';
 	import { daemonStatus } from '$lib/stores/daemon';
+	import { Input } from '$lib/components/ui/input';
+	import { Button } from '$lib/components/ui/button';
+	import { toast } from 'svelte-sonner';
 
+	type QuotaWindow = { perDay: number; perWeek: number };
+	type RedditQuota = { dm: QuotaWindow; comment: QuotaWindow; post: QuotaWindow };
 	type PageData = {
 		extension: { token: string | null; createdAt: string | null; backendUrl: string };
+		quota: { reddit: RedditQuota };
 	};
 	let { data }: { data: PageData } = $props();
+
+	let q = $state<RedditQuota>(untrack(() => structuredClone(data.quota.reddit)));
+	const DEFAULTS: RedditQuota = {
+		dm: { perDay: 10, perWeek: 50 },
+		comment: { perDay: 50, perWeek: 200 },
+		post: { perDay: 5, perWeek: 20 },
+	};
+
+	const KIND_LABEL: Record<keyof RedditQuota, string> = {
+		dm: 'DM',
+		comment: 'Commenti',
+		post: 'Post',
+	};
+
+	const HELP: Record<keyof RedditQuota, string> = {
+		dm: 'DM diretti. Reddit non pubblica un limite ufficiale; sotto i 15/giorno è considerato a basso rischio per account con storia organica.',
+		comment:
+			'Somma di commenti su post + risposte ai commenti. Reddit applica throttling implicito sui nuovi account.',
+		post: "Post pubblicati. Per ora la generazione di draft post non è attiva — il limite serve per un futuro caso d'uso.",
+	};
+
+	const KINDS: (keyof RedditQuota)[] = ['dm', 'comment', 'post'];
+
+	let saving = $state(false);
+	async function save() {
+		saving = true;
+		try {
+			const res = await fetch('/api/settings/quota', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ reddit: q }),
+			});
+			if (res.ok) {
+				toast.success('Limiti salvati');
+			} else {
+				const text = await res.text();
+				toast.error('Salvataggio fallito', { description: text });
+			}
+		} finally {
+			saving = false;
+		}
+	}
+
+	function reset() {
+		q = structuredClone(DEFAULTS);
+	}
 
 	function formatAge(seconds: number): string {
 		if (seconds < 60) return `${seconds}s ago`;
@@ -19,6 +72,7 @@
 		return `${Math.floor(seconds / 3600)}h ago`;
 	}
 </script>
+
 
 <Seo title="Settings" description="Daemon status, agent runner, and extension configuration." />
 
@@ -93,4 +147,32 @@
 		createdAt={data.extension.createdAt}
 		backendUrl={data.extension.backendUrl}
 	/>
+</div>
+
+<div class="mt-4 max-w-4xl">
+	<Card.Root>
+		<Card.Header>
+			<Card.Title>Quota & limiti (Reddit)</Card.Title>
+		</Card.Header>
+		<Card.Content class="space-y-4">
+			{#each KINDS as kind}
+				<div class="grid grid-cols-[120px_1fr_1fr] gap-3 items-end">
+					<div class="text-sm font-medium">{KIND_LABEL[kind]}</div>
+					<label class="block">
+						<span class="text-xs text-muted-foreground">Per giorno</span>
+						<Input type="number" min="0" bind:value={q[kind].perDay} />
+					</label>
+					<label class="block">
+						<span class="text-xs text-muted-foreground">Per settimana</span>
+						<Input type="number" min="0" bind:value={q[kind].perWeek} />
+					</label>
+					<p class="col-span-3 text-xs text-muted-foreground">{HELP[kind]}</p>
+				</div>
+			{/each}
+			<div class="flex gap-2">
+				<Button onclick={save} disabled={saving}>Salva</Button>
+				<Button variant="outline" onclick={reset}>Ripristina default</Button>
+			</div>
+		</Card.Content>
+	</Card.Root>
 </div>
