@@ -12,6 +12,7 @@
     "./db/schema": "./src/db/schema.ts",
     "./platforms/reddit": "./src/platforms/reddit/index.ts",
     "./platforms/reply-reader": "./src/platforms/base-reply-reader.ts",
+    "./quota": "./src/quota.ts",
     "./agents": "./src/agents/base.ts",
     "./agents/claude-code": "./src/agents/claude-code.ts",
     "./agents/registry": "./src/agents/registry.ts",
