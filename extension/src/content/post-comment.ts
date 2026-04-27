@@ -11,11 +11,23 @@ function derivePostId(pathname: string): string | null {
 }
 
 async function fetchAccountHandle(draftId: number): Promise<string | null> {
-  // The dashboard's getDraft returns { id, kind, state, body, targetUser } — it does
-  // NOT include accountHandle today. Read the page-level meta tag instead, then
-  // fall back to the new-Reddit header avatar's user link.
-  const _ = draftId; // referenced to keep the parameter for future use
-  void _;
+  // Reddit-issued cookies authenticate /api/me.json — works uniformly on old and
+  // new Reddit, regardless of which user link happens to be first in the DOM
+  // (often the post author, not the logged-in user).
+  void draftId;
+  try {
+    const res = await fetch('https://www.reddit.com/api/me.json?raw_json=1', {
+      credentials: 'include',
+      headers: { accept: 'application/json' },
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { data?: { name?: string } };
+      const name = data?.data?.name;
+      if (name) return name;
+    }
+  } catch {
+    // ignore, fall through to DOM heuristics
+  }
   const meta = document.querySelector('meta[name="user-name"]');
   const fromMeta = meta?.getAttribute('content');
   if (fromMeta) return fromMeta;
