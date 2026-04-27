@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { z } from 'zod';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { eq } from 'drizzle-orm';
+import { isBlocklisted } from '@pitchbox/shared/blocklist';
 import { ok, fail } from '../lib/output.js';
 
 const DraftInput = z.object({
@@ -44,7 +45,24 @@ export function registerDraftCommands(program: Command) {
       const parsed = Payload.safeParse(JSON.parse(body));
       if (!parsed.success) return fail('invalid payload', parsed.error.issues);
 
-      const rows = parsed.data.map((d) => ({
+      const skipped: Array<{ targetUser: string; reason: string | null }> = [];
+      const allowed: typeof parsed.data = [];
+      for (const d of parsed.data) {
+        if (d.targetUser) {
+          const r = await isBlocklisted(db, {
+            platformId: campaign.platformId,
+            projectId: campaign.projectId,
+            targetUser: d.targetUser,
+          });
+          if (r.blocked) {
+            skipped.push({ targetUser: d.targetUser, reason: r.reason });
+            continue;
+          }
+        }
+        allowed.push(d);
+      }
+
+      const rows = allowed.map((d) => ({
         runId,
         projectId: campaign.projectId,
         platformId: campaign.platformId,
@@ -62,10 +80,10 @@ export function registerDraftCommands(program: Command) {
         metadata: d.metadata,
       }));
 
-      const inserted = await db
-        .insert(schema.drafts)
-        .values(rows)
-        .returning({ id: schema.drafts.id });
+      const inserted =
+        rows.length > 0
+          ? await db.insert(schema.drafts).values(rows).returning({ id: schema.drafts.id })
+          : [];
       if (inserted.length) {
         await db.insert(schema.draftEvents).values(
           inserted.map((i) => ({
@@ -77,7 +95,7 @@ export function registerDraftCommands(program: Command) {
         );
       }
 
-      ok({ runId, inserted: inserted.length });
+      ok({ runId, inserted: inserted.length, skipped });
     });
 
   program
