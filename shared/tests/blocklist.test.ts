@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb, schema } from '../src/db/client.js';
 import { isBlocklisted } from '../src/blocklist.js';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 async function platformId(slug: string) {
   const db = getDb();
@@ -20,7 +20,7 @@ async function makeProject(slug: string) {
 
 describe('isBlocklisted', () => {
   beforeEach(async () => {
-    await getDb().delete(schema.blocklist);
+    await getDb().execute(sql`TRUNCATE blocklist, projects RESTART IDENTITY CASCADE`);
   });
 
   it('returns blocked=false when no entry matches', async () => {
