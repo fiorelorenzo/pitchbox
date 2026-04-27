@@ -15,6 +15,7 @@
     "./agents": "./src/agents/base.ts",
     "./agents/claude-code": "./src/agents/claude-code.ts",
     "./agents/registry": "./src/agents/registry.ts",
+    "./blocklist": "./src/blocklist.ts",
     "./crypto": "./src/crypto.ts",
     "./dm-sync": "./src/dm-sync.ts",
     "./comment-sync": "./src/comment-sync.ts",
