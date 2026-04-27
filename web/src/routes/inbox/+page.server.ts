@@ -1,5 +1,6 @@
 import { getDb, schema } from '$lib/server/db.js';
 import { and, eq, desc, inArray, type SQL } from 'drizzle-orm';
+import { getUsageForAccounts, loadQuotaLimits } from '@pitchbox/shared/quota';
 
 export async function load({ url }: { url: URL }) {
   const state = url.searchParams.get('state') ?? 'pending_review';
@@ -17,7 +18,17 @@ export async function load({ url }: { url: URL }) {
       .from(schema.runs)
       .where(eq(schema.runs.campaignId, Number(campaign)));
     if (runs.length === 0) {
-      return { drafts: [], state, kind, run: null, campaign, runInfo: null, campaignInfo: null };
+      return {
+        drafts: [],
+        state,
+        kind,
+        run: null,
+        campaign,
+        runInfo: null,
+        campaignInfo: null,
+        usage: {},
+        quotaLimits: null,
+      };
     }
     filters.push(
       inArray(
@@ -32,6 +43,17 @@ export async function load({ url }: { url: URL }) {
     .where(filters.length > 0 ? and(...filters) : undefined)
     .orderBy(desc(schema.drafts.createdAt))
     .limit(200);
+
+  const accountIds = Array.from(new Set(drafts.map((d) => d.accountId)));
+  const usage = accountIds.length > 0 ? await getUsageForAccounts(db, accountIds) : {};
+  let quotaLimits: Awaited<ReturnType<typeof loadQuotaLimits>> | null = null;
+  if (drafts.length > 0) {
+    const [platformRow] = await db
+      .select({ slug: schema.platforms.slug })
+      .from(schema.platforms)
+      .where(eq(schema.platforms.id, drafts[0].platformId));
+    quotaLimits = await loadQuotaLimits(db, platformRow?.slug ?? 'reddit');
+  }
 
   let runInfo: {
     id: number;
@@ -63,5 +85,5 @@ export async function load({ url }: { url: URL }) {
     if (c) campaignInfo = c;
   }
 
-  return { drafts, state, kind, run, campaign, runInfo, campaignInfo };
+  return { drafts, state, kind, run, campaign, runInfo, campaignInfo, usage, quotaLimits };
 }
