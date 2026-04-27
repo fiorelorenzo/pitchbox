@@ -88,7 +88,12 @@ describe('pitchbox drafts:create', () => {
       .returning();
     const [account] = await db
       .insert(schema.accounts)
-      .values({ projectId: project.id, platformId: platform.id, handle: 'sender', role: 'personal' })
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        handle: 'sender',
+        role: 'personal',
+      })
       .returning();
     const [campaign] = await db
       .insert(schema.campaigns)

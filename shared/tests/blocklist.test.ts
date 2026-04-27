@@ -54,16 +54,14 @@ describe('isBlocklisted', () => {
     const pid = await platformId('reddit');
     const projA = await makeProject('blk-test-a');
     const projB = await makeProject('blk-test-b');
-    await getDb()
-      .insert(schema.blocklist)
-      .values({
-        platformId: pid,
-        kind: 'user',
-        value: 'bob',
-        scope: 'project',
-        projectId: projA,
-        reason: null,
-      });
+    await getDb().insert(schema.blocklist).values({
+      platformId: pid,
+      kind: 'user',
+      value: 'bob',
+      scope: 'project',
+      projectId: projA,
+      reason: null,
+    });
 
     const inA = await isBlocklisted(getDb(), {
       platformId: pid,

@@ -98,12 +98,47 @@ describe('getAccountUsage', () => {
     const old = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
 
     for (const ts of [within24h, within24h, within7d]) {
-      await makeDraft({ account: account.id, proj: proj.id, platform: platform.id, run: run.id, kind: 'dm', sentAt: ts });
+      await makeDraft({
+        account: account.id,
+        proj: proj.id,
+        platform: platform.id,
+        run: run.id,
+        kind: 'dm',
+        sentAt: ts,
+      });
     }
-    await makeDraft({ account: account.id, proj: proj.id, platform: platform.id, run: run.id, kind: 'dm', sentAt: old });
-    await makeDraft({ account: account.id, proj: proj.id, platform: platform.id, run: run.id, kind: 'post_comment', sentAt: within24h });
-    await makeDraft({ account: account.id, proj: proj.id, platform: platform.id, run: run.id, kind: 'comment_reply', sentAt: within7d });
-    await makeDraft({ account: account.id, proj: proj.id, platform: platform.id, run: run.id, kind: 'post', sentAt: within24h });
+    await makeDraft({
+      account: account.id,
+      proj: proj.id,
+      platform: platform.id,
+      run: run.id,
+      kind: 'dm',
+      sentAt: old,
+    });
+    await makeDraft({
+      account: account.id,
+      proj: proj.id,
+      platform: platform.id,
+      run: run.id,
+      kind: 'post_comment',
+      sentAt: within24h,
+    });
+    await makeDraft({
+      account: account.id,
+      proj: proj.id,
+      platform: platform.id,
+      run: run.id,
+      kind: 'comment_reply',
+      sentAt: within7d,
+    });
+    await makeDraft({
+      account: account.id,
+      proj: proj.id,
+      platform: platform.id,
+      run: run.id,
+      kind: 'post',
+      sentAt: within24h,
+    });
 
     const u = await getAccountUsage(getDb(), account.id, now);
     expect(u.dm).toEqual({ day: 2, week: 3 });
@@ -122,7 +157,14 @@ describe('getUsageForAccounts', () => {
       .values({ projectId: proj.id, platformId: platform.id, handle: 'other' })
       .returning();
     const now = new Date('2026-04-27T12:00:00Z');
-    await makeDraft({ account: account.id, proj: proj.id, platform: platform.id, run: run.id, kind: 'dm', sentAt: now });
+    await makeDraft({
+      account: account.id,
+      proj: proj.id,
+      platform: platform.id,
+      run: run.id,
+      kind: 'dm',
+      sentAt: now,
+    });
 
     const m = await getUsageForAccounts(getDb(), [account.id, account2.id], now);
     expect(m[account.id].dm.day).toBe(1);

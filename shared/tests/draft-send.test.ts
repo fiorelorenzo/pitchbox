@@ -42,18 +42,16 @@ async function makeSentDraft(opts: {
   kind: 'dm' | 'post_comment' | 'comment_reply' | 'post';
   sentAt: Date;
 }) {
-  await getDb()
-    .insert(schema.drafts)
-    .values({
-      runId: opts.run,
-      projectId: opts.proj,
-      platformId: opts.platform,
-      accountId: opts.account,
-      kind: opts.kind,
-      state: 'sent',
-      body: 'x',
-      sentAt: opts.sentAt,
-    });
+  await getDb().insert(schema.drafts).values({
+    runId: opts.run,
+    projectId: opts.proj,
+    platformId: opts.platform,
+    accountId: opts.account,
+    kind: opts.kind,
+    state: 'sent',
+    body: 'x',
+    sentAt: opts.sentAt,
+  });
 }
 
 describe('evaluateDraftSend', () => {

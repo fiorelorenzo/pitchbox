@@ -47,19 +47,12 @@ export async function getUsageForAccounts(
       week: sql<number>`count(*) filter (where ${schema.drafts.sentAt} >= ${weekStart})::int`,
     })
     .from(schema.drafts)
-    .where(
-      and(
-        inArray(schema.drafts.accountId, accountIds),
-        gte(schema.drafts.sentAt, weekStart),
-      ),
-    )
+    .where(and(inArray(schema.drafts.accountId, accountIds), gte(schema.drafts.sentAt, weekStart)))
     .groupBy(schema.drafts.accountId, schema.drafts.kind);
 
   for (const r of rows) {
     if (!KNOWN_DRAFT_KINDS.has(r.kind)) continue; // future-proof: skip unknown draft kinds
-    const qk = mapDraftKindToQuotaKind(
-      r.kind as 'dm' | 'post_comment' | 'comment_reply' | 'post',
-    );
+    const qk = mapDraftKindToQuotaKind(r.kind as 'dm' | 'post_comment' | 'comment_reply' | 'post');
     const u = out[r.accountId];
     u[qk].day += Number(r.day);
     u[qk].week += Number(r.week);
@@ -67,11 +60,7 @@ export async function getUsageForAccounts(
   return out;
 }
 
-export async function getAccountUsage(
-  db: Db,
-  accountId: number,
-  now?: Date,
-): Promise<UsageByKind> {
+export async function getAccountUsage(db: Db, accountId: number, now?: Date): Promise<UsageByKind> {
   const m = await getUsageForAccounts(db, [accountId], now);
   return m[accountId];
 }
