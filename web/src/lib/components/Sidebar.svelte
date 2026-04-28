@@ -3,6 +3,7 @@
 	import {
 		Home,
 		Inbox,
+		FolderKanban,
 		PlayCircle,
 		Users,
 		MessagesSquare,
@@ -26,6 +27,7 @@
 	const navItems: NavItem[] = [
 		{ href: '/', label: 'Home', icon: Home, exact: true },
 		{ href: '/inbox', label: 'Inbox', icon: Inbox },
+		{ href: '/projects', label: 'Projects', icon: FolderKanban },
 		{ href: '/campaigns', label: 'Campaigns', icon: PlayCircle },
 		{ href: '/contacts', label: 'Contacts', icon: Users },
 		{ href: '/conversations', label: 'Conversations', icon: MessagesSquare },
