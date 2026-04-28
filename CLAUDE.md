@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Pitchbox: self-hosted outreach agent for Reddit (future: other platforms). Human-in-the-loop — the system researches, drafts, and bookkeeps; the human approves and sends. Alpha, currently `0.2.0` (M2 shipped).
+Pitchbox: self-hosted outreach agent for Reddit (future: other platforms). Human-in-the-loop — the system researches, drafts, and bookkeeps; the human approves and sends. Alpha, currently `0.3.0` (M5 shipped).
 
 ## Commands
 
@@ -38,14 +38,17 @@ Tests share one Postgres DB (`pitchbox_test`) and run sequentially — do **not*
 
 ## Architecture
 
-npm workspaces monorepo. All workspaces share a single version (`0.2.0`), and the dashboard sidebar reads that version from `web/package.json`.
+npm workspaces monorepo. All workspaces share a single version (`0.3.0`), and the dashboard sidebar reads that version from `web/package.json`.
 
 **Data flow:** A campaign (scheduled by cron or triggered manually) spawns a run via the web `/api/run` endpoint. The run launches an `AgentRunner` (today only `claude-code`, which spawns `claude -p --verbose --output-format stream-json`). The agent executes a markdown playbook from `playbooks/` — the playbook shells out to the `pitchbox` CLI (`bin/pitchbox`) to read/write the DB and produce drafts. A human reviews drafts in the Inbox, approves, sends manually on Reddit, then clicks **Mark as sent** which advances state and logs `contact_history`. The daemon polls sent DMs for replies via a pluggable `ReplyReader`.
 
 **Workspaces:**
 
 - **`shared/`** — the only workspace that touches the DB directly.
-  - `src/db/` — Drizzle schema (`schema.ts`), client, migrations, core seed. Source of truth for all tables: projects, accounts, campaigns, runs, run_events, drafts, draft_events, contact_history, blocklist, daemon_heartbeats.
+  - `src/db/` — Drizzle schema (`schema.ts`), client, migrations, core seed. Source of truth for all tables: projects, accounts, campaigns, runs, run_events, drafts, draft_events, contact_history, messages, blocklist, daemon_heartbeats, app_config.
+  - `src/blocklist.ts` — `isBlocklisted` helper (global + project scope) used by `drafts:create` and the send path.
+  - `src/quota.ts` / `src/quota-server.ts` — per-account usage + per-platform quota limits (loaded from `app_config.quota_defaults`, editable from Settings).
+  - `src/dm-sync.ts` / `src/comment-sync.ts` — pure matchers used by the extension's `/api/extension/dm-sync` route to attribute incoming DMs and `t1` comment-replies to drafts.
   - `src/agents/` — `AgentRunner` interface (`base.ts`), `claude-code.ts` implementation, registry. `codex` and `opencode` exist only as typed stubs.
   - `src/platforms/` — Reddit adapter + `base-reply-reader.ts` (`ReplyReader` interface; null reader is wired today).
   - `src/runlog/` — parsers per agent runner, converting stream output into run events.
@@ -54,7 +57,7 @@ npm workspaces monorepo. All workspaces share a single version (`0.2.0`), and th
 
 - **`cli/`** — the `pitchbox` command invoked by playbooks. Commands live in `src/commands/` (`run`, `drafts`, `reddit`, `utility`). Entry `bin/pitchbox` is a bash wrapper that runs `cli/src/index.ts` under `tsx`, so playbooks need no build step.
 
-- **`web/`** — SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte. Routes: `/`, `/inbox`, `/campaigns`, `/campaigns/[id]`, `/contacts`, `/blocklist`, `/settings`, plus `/api/*`. Server-only DB access lives under `src/lib/server/`; do not import `@pitchbox/shared/db` from client code.
+- **`web/`** — SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte. Routes: `/`, `/inbox`, `/campaigns`, `/campaigns/[id]`, `/contacts`, `/conversations`, `/blocklist`, `/settings`, plus `/api/*` (including `/api/extension/*` for the Chrome extension and `/api/settings/quota` for editable quota limits). Server-only DB access lives under `src/lib/server/`; do not import `@pitchbox/shared/db` from client code.
 
 - **`daemon/`** — long-lived Node process. `scheduler.ts` parses `cron_expression` on active campaigns via `cron-parser` and POSTs to the web `/api/run` endpoint (the daemon never touches agent runners directly). `reply-poller.ts` drives the `ReplyReader`. `heartbeat.ts` writes to `daemon_heartbeats` so Settings can show liveness. SIGINT/SIGTERM trigger graceful shutdown.
 

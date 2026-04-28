@@ -62,32 +62,44 @@ When a target user replies, you'll see:
 - The reply body shown under the draft, with a `replied` event on the timeline.
 - A row on the **Conversations** page with the latest reply snippet.
 
-## What ships today (v0.2.0, M0–M2)
+## What ships today (v0.3.0, M0–M5)
 
 **Content pipeline**
 
 - Create projects, accounts, campaigns. Each campaign locks an agent runner (default: `claude-code`, stubs ready for `codex` / `opencode`).
 - Manual "Run now" on a scout campaign → Claude Code drafts Reddit DMs via the `reddit-scout` playbook.
 - Manual "Run now" on a commenter campaign → Claude Code drafts value-adding comments on relevant posts via the `reddit-commenter` playbook.
+- **Blocklist enforcement at draft creation**: `drafts:create` filters out targets matching subreddit / user / keyword entries (global or per-project) and reports skipped counts back to the playbook.
 
 **Review & send loop**
 
 - Inbox with filters (state, kind, run, campaign), keyboard shortcuts, bulk reject.
-- Approve a draft → the "Open compose" button unlocks; after sending on Reddit, click **Mark as sent** to log the final content, add a row to `contact_history`, and advance the draft to `sent`.
+- Approve a draft → "Open compose" deep-links to the Reddit DM compose URL or the original post/comment thread (for `post_comment` drafts).
+- The Chrome extension flips drafts to `sent` automatically when you submit on Reddit (manual **Mark as sent** still available as fallback).
+- Per-draft quota line surfaces remaining daily/weekly send budget; over-quota sends raise an audit warning but do not block.
+- Blocklist re-checked at send time — a 409 stops the send if the target was added to the blocklist after the draft was created.
+
+**Reply tracking (extension-driven)**
+
+- The Chrome extension polls Reddit's legacy inbox **and** Reddit Chat (Matrix) every 10 min and POSTs new messages to `/api/extension/dm-sync`.
+- DM replies match on `(account_handle, target_user)`; comment-replies match on `parent_id == drafts.platform_comment_id`. Both flip the draft to `replied` and append a `replied` event.
+- **Conversations** page lists every reply thread, with a kind filter (DM / comment) and per-kind deep links back to the original Reddit thread.
 
 **Dashboard & admin**
 
 - **Home** — drafts awaiting review, approved-not-sent, 24h sent, reply rate, 7-day run health, unique contacts; live recent-runs + campaigns panels.
+- **Inbox** — filters, bulk actions, per-draft quota line, blocklist warnings, draft detail with timeline of events and inline reply body.
 - **Campaigns** — list with live "Running" state and the last status + time + duration on a single row; detail page with expandable per-run log rows.
-- **Contacts** — every outreach with platform/account/kind, plus a `replied` badge driven by the daemon.
+- **Contacts** — every outreach with platform/account/kind, plus a `replied` badge.
+- **Conversations** — reply threads across DMs and comment-replies, with kind filter.
 - **Blocklist** — add/remove subreddit / user / keyword entries, scoped globally or per-project.
-- **Settings** — live daemon heartbeat status, agent runner info.
+- **Settings** — tabbed layout (Status / Integrations / Quota): daemon heartbeat, agent runner info, extension API token (generate / rotate), editable per-platform quota limits.
 
-**Daemon (M2)**
+**Daemon**
 
 - Node process (`npm run -w daemon dev`) that writes heartbeats to `daemon_heartbeats`, wakes up on a tick, and:
   - triggers active campaigns whose `cron_expression` is due (parsed with `cron-parser`) via the web `/api/run` endpoint,
-  - polls sent DMs for replies through a pluggable `ReplyReader` interface (null reader wired for Reddit until a real DM reader lands).
+  - polls sent DMs for replies through a pluggable `ReplyReader` interface (null reader wired today; the Chrome extension covers reply ingestion in practice).
 - Graceful SIGINT/SIGTERM shutdown.
 
 ## Architecture
@@ -97,7 +109,7 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.3
 - **Postgres** (via Docker) — single source of truth: projects, campaigns, runs, run events, drafts, draft events, contact history, blocklist, daemon heartbeats.
 - **`shared/`** — Drizzle schema + migrations, platform adapters (Reddit), `AgentRunner` + `ReplyReader` interfaces, run-log parsers (claude-code + stubs for codex/opencode).
 - **`cli/`** — the `pitchbox` CLI that playbooks call to read/write DB (`run:start`, `run:finish`, `reddit:scout`, `drafts:create`, …).
-- **`web/`** — SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte dashboard. Routes: `/` (home), `/inbox`, `/campaigns`, `/campaigns/[id]`, `/contacts`, `/blocklist`, `/settings`.
+- **`web/`** — SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte dashboard. Routes: `/` (home), `/inbox`, `/campaigns`, `/campaigns/[id]`, `/contacts`, `/conversations`, `/blocklist`, `/settings`.
 - **`daemon/`** — heartbeat + scheduler + reply poller (real DM reader still pending).
 - **`extension/`** — Chrome MV3 companion (Vite + `@crxjs/vite-plugin`) that auto-marks drafts as `sent` when you submit on Reddit and polls your DM inbox to flip drafts to `replied` once the target user writes back.
 - **`playbooks/`** — agent-agnostic markdown instructions consumed by the `AgentRunner`.
