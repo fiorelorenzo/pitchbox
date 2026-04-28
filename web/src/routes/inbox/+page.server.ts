@@ -28,6 +28,7 @@ export async function load({ url }: { url: URL }) {
         campaignInfo: null,
         usage: {},
         quotaLimitsByPlatform: {},
+        accountsById: {},
       };
     }
     filters.push(
@@ -47,6 +48,17 @@ export async function load({ url }: { url: URL }) {
   const accountIds = Array.from(new Set(drafts.map((d) => d.accountId)));
   const platformIds = Array.from(new Set(drafts.map((d) => d.platformId)));
   const usage = accountIds.length > 0 ? await getUsageForAccounts(db, accountIds) : {};
+
+  const accountsById: Record<number, { id: number; handle: string; platformId: number }> = {};
+  if (accountIds.length > 0) {
+    const accountRows = await db
+      .select({ id: schema.accounts.id, handle: schema.accounts.handle, platformId: schema.accounts.platformId })
+      .from(schema.accounts)
+      .where(inArray(schema.accounts.id, accountIds));
+    for (const row of accountRows) {
+      accountsById[row.id] = row;
+    }
+  }
 
   const quotaLimitsByPlatform: Record<number, Awaited<ReturnType<typeof loadQuotaLimits>>> = {};
   if (platformIds.length > 0) {
@@ -89,5 +101,5 @@ export async function load({ url }: { url: URL }) {
     if (c) campaignInfo = c;
   }
 
-  return { drafts, state, kind, run, campaign, runInfo, campaignInfo, usage, quotaLimitsByPlatform };
+  return { drafts, state, kind, run, campaign, runInfo, campaignInfo, usage, quotaLimitsByPlatform, accountsById };
 }

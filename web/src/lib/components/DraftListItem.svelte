@@ -2,9 +2,6 @@
 	import { cn } from '$lib/utils';
 	import { relativeTime } from '$lib/utils/time';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import QuotaBadge from '$lib/components/QuotaBadge.svelte';
-	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
-	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 
 	type Draft = {
 		id: number;
@@ -21,20 +18,12 @@
 		selected = false,
 		runId,
 		onclick,
-		usage,
-		limits,
 	}: {
 		draft: Draft;
 		selected?: boolean;
 		runId?: number;
 		onclick?: () => void;
-		usage?: UsageByKind;
-		limits?: QuotaLimits | null;
 	} = $props();
-
-	const quotaKind = $derived(
-		isDraftKind(draft.kind) ? mapDraftKindToQuotaKind(draft.kind) : null,
-	);
 </script>
 
 <button
@@ -55,9 +44,6 @@
 		<span>· fit {draft.fitScore ?? '?'}/5</span>
 		{#if draft.kind !== 'dm' && draft.subreddit == null && draft.targetUser}
 			<span>· u/{draft.targetUser}</span>
-		{/if}
-		{#if usage && limits && quotaKind != null}
-			<QuotaBadge kind={quotaKind} {usage} {limits} />
 		{/if}
 	</div>
 	{#if runId != null || draft.createdAt}
