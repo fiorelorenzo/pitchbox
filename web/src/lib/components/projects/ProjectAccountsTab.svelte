@@ -2,6 +2,7 @@
   import { invalidateAll } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import { SelectField } from '$lib/components/ui/select-field';
   import { toast } from 'svelte-sonner';
 
   type Account = { id: number; handle: string; role: string; platformId: number };
@@ -63,14 +64,16 @@
     <div class="border border-border rounded-md p-3 flex items-center gap-3">
       <code class="text-sm">{a.handle}</code>
       <span class="text-xs text-muted-foreground">{platformSlug(a.platformId)}</span>
-      <select
-        class="border border-input rounded-md h-8 px-2 text-sm ml-auto bg-background"
-        value={a.role}
-        onchange={(e) => changeRole(a.id, (e.currentTarget as HTMLSelectElement).value as 'personal' | 'brand')}
-      >
-        <option value="personal">personal</option>
-        <option value="brand">brand</option>
-      </select>
+      <SelectField
+        value={a.role as 'personal' | 'brand'}
+        onValueChange={(v) => changeRole(a.id, v as 'personal' | 'brand')}
+        options={[
+          { value: 'personal', label: 'personal' },
+          { value: 'brand', label: 'brand' },
+        ]}
+        size="sm"
+        class="ml-auto"
+      />
       <Button size="sm" variant="ghost" onclick={() => remove(a.id)}>Delete</Button>
     </div>
   {/each}
@@ -80,18 +83,23 @@
       <label class="flex flex-col gap-1 text-xs">Handle<Input bind:value={newHandle} /></label>
       <label class="flex flex-col gap-1 text-xs">
         Role
-        <select class="border border-input rounded-md h-9 px-2 w-full bg-background text-sm" bind:value={newRole}>
-          <option value="personal">personal</option>
-          <option value="brand">brand</option>
-        </select>
+        <SelectField
+          value={newRole}
+          onValueChange={(v) => (newRole = v as 'personal' | 'brand')}
+          options={[
+            { value: 'personal', label: 'personal' },
+            { value: 'brand', label: 'brand' },
+          ]}
+          fullWidth
+        />
       </label>
       <label class="flex flex-col gap-1 text-xs">
         Platform
-        <select class="border border-input rounded-md h-9 px-2 w-full bg-background text-sm" bind:value={newPlatform}>
-          {#each platforms as p (p.slug)}
-            <option value={p.slug}>{p.slug}</option>
-          {/each}
-        </select>
+        <SelectField
+          bind:value={newPlatform}
+          options={platforms.map((p) => ({ value: p.slug, label: p.slug }))}
+          fullWidth
+        />
       </label>
       <div class="flex gap-2">
         <Button size="sm" onclick={add} disabled={busy || !newHandle.trim()}>Add</Button>

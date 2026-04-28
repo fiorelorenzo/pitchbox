@@ -18,6 +18,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { SelectField } from '$lib/components/ui/select-field';
 
 	let {
 		data,
@@ -190,16 +191,15 @@
 
 <div class="mb-3 flex items-center gap-2">
 	<span class="text-xs text-muted-foreground">Project</span>
-	<select
-		class="border border-input rounded-md h-8 px-2 text-sm bg-background"
+	<SelectField
 		value={data.activeProject?.slug ?? ''}
-		onchange={(e) => changeProject((e.currentTarget as HTMLSelectElement).value)}
-	>
-		<option value="">All projects</option>
-		{#each data.projects as p (p.slug)}
-			<option value={p.slug}>{p.name}</option>
-		{/each}
-	</select>
+		onValueChange={(v) => changeProject(v)}
+		options={[
+			{ value: '', label: 'All projects' },
+			...data.projects.map((p) => ({ value: p.slug, label: p.name })),
+		]}
+		size="sm"
+	/>
 </div>
 
 <Card.Root size="sm">

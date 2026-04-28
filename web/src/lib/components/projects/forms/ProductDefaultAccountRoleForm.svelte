@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { SelectField } from '$lib/components/ui/select-field';
+
   type V = { role: 'personal' | 'brand' };
   type Props = { value: V; onChange: (v: V) => void };
   let { value, onChange }: Props = $props();
@@ -9,11 +11,13 @@
 
 <label class="flex flex-col gap-1 text-xs">
   Default account role
-  <select
-    class="border border-input rounded-md h-9 px-2 w-full bg-background text-sm"
-    bind:value={role}
-  >
-    <option value="personal">personal</option>
-    <option value="brand">brand</option>
-  </select>
+  <SelectField
+    value={role}
+    onValueChange={(v) => (role = v as V['role'])}
+    options={[
+      { value: 'personal', label: 'personal' },
+      { value: 'brand', label: 'brand' },
+    ]}
+    fullWidth
+  />
 </label>

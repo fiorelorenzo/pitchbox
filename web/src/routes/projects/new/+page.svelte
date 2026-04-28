@@ -5,6 +5,7 @@
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   import TagListInput from '$lib/components/projects/TagListInput.svelte';
+  import { SelectField } from '$lib/components/ui/select-field';
   import { toast } from 'svelte-sonner';
 
   let { data }: { data: PageData } = $props();
@@ -116,24 +117,23 @@
     </label>
     <label class="flex flex-col gap-1 text-xs">
       Role
-      <select
-        class="border border-input rounded-md h-9 px-2 w-full bg-background text-sm"
-        bind:value={role}
-      >
-        <option value="personal">personal</option>
-        <option value="brand">brand</option>
-      </select>
+      <SelectField
+        value={role}
+        onValueChange={(v) => (role = v as 'personal' | 'brand')}
+        options={[
+          { value: 'personal', label: 'personal' },
+          { value: 'brand', label: 'brand' },
+        ]}
+        fullWidth
+      />
     </label>
     <label class="flex flex-col gap-1 text-xs">
       Platform
-      <select
-        class="border border-input rounded-md h-9 px-2 w-full bg-background text-sm"
+      <SelectField
         bind:value={platformSlug}
-      >
-        {#each data.platforms as p (p.slug)}
-          <option value={p.slug}>{p.slug}</option>
-        {/each}
-      </select>
+        options={data.platforms.map((p) => ({ value: p.slug, label: p.slug }))}
+        fullWidth
+      />
     </label>
   </section>
 

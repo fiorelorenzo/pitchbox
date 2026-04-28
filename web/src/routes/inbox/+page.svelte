@@ -18,6 +18,7 @@
 	import { relativeTime } from '$lib/utils/time';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
+	import { SelectField } from '$lib/components/ui/select-field';
 
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 
@@ -357,17 +358,16 @@
 	</Tabs.Root>
 
 	<div class="flex items-center gap-2">
-		<select
-			class="border border-input rounded-md h-8 px-2 text-sm bg-background"
+		<SelectField
 			value={data.activeProject?.slug ?? ''}
-			onchange={(e) => navigate({ project: (e.currentTarget as HTMLSelectElement).value || null })}
-			aria-label="Filter by project"
-		>
-			<option value="">All projects</option>
-			{#each data.projects as p (p.slug)}
-				<option value={p.slug}>{p.name}</option>
-			{/each}
-		</select>
+			onValueChange={(v) => navigate({ project: v || null })}
+			options={[
+				{ value: '', label: 'All projects' },
+				...data.projects.map((p) => ({ value: p.slug, label: p.name })),
+			]}
+			size="sm"
+			placeholder="All projects"
+		/>
 
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>

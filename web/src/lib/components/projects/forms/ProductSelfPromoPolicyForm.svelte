@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { SelectField } from '$lib/components/ui/select-field';
+
   type V = { default: 'never' | 'allowed' | 'on_request' };
   type Props = { value: V; onChange: (v: V) => void };
   let { value, onChange }: Props = $props();
@@ -9,12 +11,14 @@
 
 <label class="flex flex-col gap-1 text-xs">
   Self-promo policy (default)
-  <select
-    class="border border-input rounded-md h-9 px-2 w-full bg-background text-sm"
-    bind:value={def}
-  >
-    <option value="never">never</option>
-    <option value="allowed">allowed</option>
-    <option value="on_request">on_request</option>
-  </select>
+  <SelectField
+    value={def}
+    onValueChange={(v) => (def = v as V['default'])}
+    options={[
+      { value: 'never', label: 'never' },
+      { value: 'allowed', label: 'allowed' },
+      { value: 'on_request', label: 'on_request' },
+    ]}
+    fullWidth
+  />
 </label>
