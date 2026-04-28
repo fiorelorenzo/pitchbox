@@ -1,6 +1,7 @@
 <script lang="ts">
 	import RunLog from '$lib/components/RunLog.svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { invalidateAll, goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { ChevronDown, ChevronUp, Square } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
@@ -36,9 +37,19 @@
 				lastRunDurationMs: number | null;
 				lastRunTokens: number | null;
 				lastRunDraftCount: number;
+				project: { id: number; slug: string; name: string };
 			}>;
+			projects: Array<{ id: number; slug: string; name: string }>;
+			activeProject: { id: number; slug: string; name: string } | null;
 		};
 	} = $props();
+
+	function changeProject(slug: string) {
+		const url = new URL($page.url);
+		if (slug) url.searchParams.set('project', slug);
+		else url.searchParams.delete('project');
+		goto(url.pathname + url.search, { invalidateAll: true, replaceState: true });
+	}
 
 	let runningCampaignIds = $state<Set<number>>(new Set());
 	// Track the latest runId per campaign (updated when a run starts).
@@ -172,8 +183,24 @@
 
 <PageHeader
 	title="Campaigns"
-	description="Orchestrate outreach runs. Trigger a manual execution or inspect recent activity. The scheduler (daemon) will respect each campaign's status once it ships in M2."
+	description={data.activeProject
+		? `Project: ${data.activeProject.name}`
+		: "Orchestrate outreach runs. Trigger a manual execution or inspect recent activity. The scheduler (daemon) will respect each campaign's status once it ships in M2."}
 />
+
+<div class="mb-3 flex items-center gap-2">
+	<span class="text-xs text-muted-foreground">Project</span>
+	<select
+		class="border border-input rounded-md h-8 px-2 text-sm bg-background"
+		value={data.activeProject?.slug ?? ''}
+		onchange={(e) => changeProject((e.currentTarget as HTMLSelectElement).value)}
+	>
+		<option value="">All projects</option>
+		{#each data.projects as p (p.slug)}
+			<option value={p.slug}>{p.name}</option>
+		{/each}
+	</select>
+</div>
 
 <Card.Root size="sm">
 	<Card.Content class="p-0">
@@ -181,6 +208,7 @@
 			<Table.Header>
 				<Table.Row class="border-b">
 					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Name</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Project</Table.Head>
 					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Skill</Table.Head>
 					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Status</Table.Head>
 					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Last run</Table.Head>
@@ -193,7 +221,7 @@
 				{#if isNavigating}
 					{#each Array(4) as _, i (i)}
 						<Table.Row>
-							{#each Array(7) as __, j (j)}
+							{#each Array(8) as __, j (j)}
 								<Table.Cell><Skeleton class="h-5 w-full" /></Table.Cell>
 							{/each}
 						</Table.Row>
@@ -219,6 +247,15 @@
 									onclick={(e) => e.stopPropagation()}
 								>
 									{c.name}
+								</a>
+							</Table.Cell>
+							<Table.Cell class="py-3">
+								<a
+									href={`/projects/${c.project.id}`}
+									class="text-xs text-muted-foreground hover:underline"
+									onclick={(e) => e.stopPropagation()}
+								>
+									{c.project.name}
 								</a>
 							</Table.Cell>
 							<Table.Cell class="text-muted-foreground text-xs py-3">
@@ -353,7 +390,7 @@
 						<!-- Inline expanded log row -->
 						{#if expanded && runId != null}
 							<Table.Row class="hover:bg-transparent border-t-0">
-								<Table.Cell colspan={7} class="p-0 border-t border-border/50 max-w-0">
+								<Table.Cell colspan={8} class="p-0 border-t border-border/50 max-w-0">
 									<div transition:slide={{ duration: 200 }} class="bg-muted/10 px-6 py-3 min-w-0 overflow-hidden">
 										<RunLog {runId} />
 									</div>
