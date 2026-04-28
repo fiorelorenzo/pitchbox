@@ -230,6 +230,32 @@
 						<span>sent {relativeTime(draft.sentAt)}</span>
 					{/if}
 				</div>
+				{#if quotaKind && usage && limits}
+					{@const u = usage[quotaKind]}
+					{@const l = limits[quotaKind]}
+					{@const ratio = l.perDay === 0 ? 1 : u.day / l.perDay}
+					{@const tone =
+						u.day > l.perDay || u.week > l.perWeek
+							? 'red-strong'
+							: u.day === l.perDay
+							? 'red'
+							: ratio >= 0.8
+							? 'yellow'
+							: 'green'}
+					{@const klass = {
+						green: 'text-emerald-700',
+						yellow: 'text-amber-700',
+						red: 'text-red-700',
+						'red-strong': 'text-red-800 font-medium',
+					}[tone]}
+					{@const label = { dm: 'DM', comment: 'commenti', post: 'post' }[quotaKind]}
+					<div class="text-xs text-muted-foreground">
+						Quota account:
+						<span class={klass}>{u.day}/{l.perDay} {label} oggi</span>
+						· {u.week}/{l.perWeek} questa settimana
+						{#if tone === 'red-strong'}<span aria-hidden="true">⚠</span>{/if}
+					</div>
+				{/if}
 			</div>
 			<div class="flex gap-2 flex-wrap justify-end shrink-0">
 				<Button onclick={copyBody} variant="outline" size="sm" aria-label="Copy body to clipboard">

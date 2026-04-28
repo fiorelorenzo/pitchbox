@@ -20,8 +20,6 @@
 	import Seo from '$lib/components/Seo.svelte';
 
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
-	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
-	import InboxQuotaSummary from '$lib/components/InboxQuotaSummary.svelte';
 
 	let {
 		data,
@@ -52,7 +50,6 @@
 			campaignInfo: { id: number; name: string } | null;
 			usage: Record<number, UsageByKind>;
 			quotaLimitsByPlatform: Record<number, QuotaLimits>;
-			accountsById: Record<number, { id: number; handle: string; platformId: number }>;
 		};
 	} = $props();
 
@@ -102,35 +99,6 @@
 
 	let kindLabel = $derived(KINDS.find((k) => k.value === data.kind)?.label ?? 'All');
 	let isNavigating = $derived($navigating != null);
-
-	// Quota summary: only when a specific kind is selected and there are drafts
-	const summaryQuotaKind = $derived(
-		data.kind && isDraftKind(data.kind) ? mapDraftKindToQuotaKind(data.kind) : null,
-	);
-
-	// Map quota kind labels for display (Italian, consistent with rest of UI)
-	const QUOTA_KIND_LABEL: Record<string, string> = { dm: 'DM', comment: 'commenti', post: 'post' };
-
-	const summaryAccounts = $derived.by(() => {
-		if (!summaryQuotaKind || data.drafts.length === 0) return [];
-		const seenIds = new Set(data.drafts.map((d) => d.accountId));
-		const result = [];
-		for (const accountId of seenIds) {
-			const account = data.accountsById[accountId];
-			const usage = data.usage[accountId];
-			if (!account || !usage) continue;
-			const platformId = account.platformId;
-			const limits = data.quotaLimitsByPlatform[platformId];
-			if (!limits) continue;
-			result.push({
-				id: accountId,
-				handle: account.handle,
-				usage: usage[summaryQuotaKind],
-				limits: limits[summaryQuotaKind],
-			});
-		}
-		return result;
-	});
 
 	function navigate(params: Record<string, string | null>) {
 		const url = new URL($page.url);
@@ -402,14 +370,6 @@
 		</Button>
 	</div>
 </div>
-
-{#if summaryQuotaKind && summaryAccounts.length > 0}
-	<InboxQuotaSummary
-		quotaKind={summaryQuotaKind}
-		quotaLabel={QUOTA_KIND_LABEL[summaryQuotaKind] ?? summaryQuotaKind}
-		accounts={summaryAccounts}
-	/>
-{/if}
 
 <Card.Root class="grid grid-cols-[360px_1fr] h-[calc(100vh-11rem)] overflow-hidden">
 	<aside class="border-r border-border overflow-auto relative">
