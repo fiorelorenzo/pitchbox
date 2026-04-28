@@ -28,7 +28,9 @@
     "./runlog/parsers": "./src/runlog/parsers/index.ts",
     "./runlog/parsers/claude-code": "./src/runlog/parsers/claude-code.ts",
     "./runlog/parsers/codex": "./src/runlog/parsers/codex.ts",
-    "./runlog/parsers/opencode": "./src/runlog/parsers/opencode.ts"
+    "./runlog/parsers/opencode": "./src/runlog/parsers/opencode.ts",
+    "./projects": "./src/projects/index.ts",
+    "./projects/schemas": "./src/projects/config-schemas.ts"
   },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",
