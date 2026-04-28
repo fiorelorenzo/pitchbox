@@ -28,6 +28,7 @@
 			drafts: Array<{
 				id: number;
 				accountId: number;
+				platformId: number;
 				runId: number;
 				kind: string;
 				targetUser: string | null;
@@ -48,7 +49,7 @@
 			runInfo: { id: number; campaignId: number; status: string; startedAt: Date | string; campaignName: string | null } | null;
 			campaignInfo: { id: number; name: string } | null;
 			usage: Record<number, UsageByKind>;
-			quotaLimits: QuotaLimits | null;
+			quotaLimitsByPlatform: Record<number, QuotaLimits>;
 		};
 	} = $props();
 
@@ -428,7 +429,7 @@
 							runId={draft.runId}
 							onclick={() => (selectedId = draft.id)}
 							usage={data.usage[draft.accountId]}
-							limits={data.quotaLimits}
+							limits={data.quotaLimitsByPlatform[draft.platformId] ?? null}
 						/>
 					</div>
 				</div>
@@ -439,7 +440,7 @@
 		<DraftDetail
 			draft={selected}
 			usage={selected != null ? data.usage[selected.accountId] : undefined}
-			limits={data.quotaLimits}
+			limits={selected ? (data.quotaLimitsByPlatform[selected.platformId] ?? null) : null}
 		/>
 	</section>
 </Card.Root>

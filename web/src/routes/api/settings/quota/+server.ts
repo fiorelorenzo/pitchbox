@@ -5,7 +5,10 @@ import { getDb, schema } from '$lib/server/db.js';
 
 const Window = z
   .object({ perDay: z.number().int().min(0), perWeek: z.number().int().min(0) })
-  .refine((w) => w.perWeek >= w.perDay, { message: 'perWeek must be >= perDay' });
+  .refine((w) => w.perWeek >= w.perDay, {
+    message: 'perWeek must be >= perDay',
+    path: ['perWeek'],
+  });
 
 const PlatformLimits = z.object({
   dm: Window,
@@ -13,9 +16,7 @@ const PlatformLimits = z.object({
   post: Window,
 });
 
-const Body = z.object({
-  reddit: PlatformLimits,
-});
+const Body = z.record(z.string().min(1), PlatformLimits);
 
 export async function GET() {
   const db = getDb();
@@ -29,7 +30,11 @@ export async function GET() {
 export async function POST({ request }: { request: Request }) {
   const raw = await request.json().catch(() => null);
   const parsed = Body.safeParse(raw);
-  if (!parsed.success) throw error(400, parsed.error.issues.map((i) => i.message).join('; '));
+  if (!parsed.success)
+    throw error(
+      400,
+      parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    );
 
   const db = getDb();
   await db

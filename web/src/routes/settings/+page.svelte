@@ -13,34 +13,34 @@
 	import { toast } from 'svelte-sonner';
 
 	type QuotaWindow = { perDay: number; perWeek: number };
-	type RedditQuota = { dm: QuotaWindow; comment: QuotaWindow; post: QuotaWindow };
+	type PlatformQuota = { dm: QuotaWindow; comment: QuotaWindow; post: QuotaWindow };
 	type PageData = {
 		extension: { token: string | null; createdAt: string | null; backendUrl: string };
-		quota: { reddit: RedditQuota };
+		quota: Record<string, PlatformQuota>;
 	};
 	let { data }: { data: PageData } = $props();
 
-	let q = $state<RedditQuota>(untrack(() => structuredClone(data.quota.reddit)));
-	const DEFAULTS: RedditQuota = {
+	let q = $state<Record<string, PlatformQuota>>(untrack(() => structuredClone(data.quota)));
+	const DEFAULTS: PlatformQuota = {
 		dm: { perDay: 10, perWeek: 50 },
 		comment: { perDay: 50, perWeek: 200 },
 		post: { perDay: 5, perWeek: 20 },
 	};
 
-	const KIND_LABEL: Record<keyof RedditQuota, string> = {
+	const KIND_LABEL: Record<keyof PlatformQuota, string> = {
 		dm: 'DM',
 		comment: 'Commenti',
 		post: 'Post',
 	};
 
-	const HELP: Record<keyof RedditQuota, string> = {
+	const HELP: Record<keyof PlatformQuota, string> = {
 		dm: 'DM diretti. Reddit non pubblica un limite ufficiale; sotto i 15/giorno è considerato a basso rischio per account con storia organica.',
 		comment:
 			'Somma di commenti su post + risposte ai commenti. Reddit applica throttling implicito sui nuovi account.',
 		post: "Post pubblicati. Per ora la generazione di draft post non è attiva — il limite serve per un futuro caso d'uso.",
 	};
 
-	const KINDS: (keyof RedditQuota)[] = ['dm', 'comment', 'post'];
+	const KINDS: (keyof PlatformQuota)[] = ['dm', 'comment', 'post'];
 
 	let saving = $state(false);
 	async function save() {
@@ -49,7 +49,7 @@
 			const res = await fetch('/api/settings/quota', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ reddit: q }),
+				body: JSON.stringify(q),
 			});
 			if (res.ok) {
 				toast.success('Limiti salvati');
@@ -62,8 +62,8 @@
 		}
 	}
 
-	function reset() {
-		q = structuredClone(DEFAULTS);
+	function resetPlatform(slug: string) {
+		q = { ...q, [slug]: structuredClone(DEFAULTS) };
 	}
 
 	function formatAge(seconds: number): string {
@@ -149,30 +149,32 @@
 	/>
 </div>
 
-<div class="mt-4 max-w-4xl">
-	<Card.Root>
-		<Card.Header>
-			<Card.Title>Quota & limiti (Reddit)</Card.Title>
-		</Card.Header>
-		<Card.Content class="space-y-4">
-			{#each KINDS as kind}
-				<div class="grid grid-cols-[120px_1fr_1fr] gap-3 items-end">
-					<div class="text-sm font-medium">{KIND_LABEL[kind]}</div>
-					<label class="block">
-						<span class="text-xs text-muted-foreground">Per giorno</span>
-						<Input type="number" min="0" bind:value={q[kind].perDay} />
-					</label>
-					<label class="block">
-						<span class="text-xs text-muted-foreground">Per settimana</span>
-						<Input type="number" min="0" bind:value={q[kind].perWeek} />
-					</label>
-					<p class="col-span-3 text-xs text-muted-foreground">{HELP[kind]}</p>
+<div class="mt-4 max-w-4xl flex flex-col gap-4">
+	{#each Object.entries(q) as [slug, limits] (slug)}
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>Quota & limiti ({slug[0].toUpperCase() + slug.slice(1)})</Card.Title>
+			</Card.Header>
+			<Card.Content class="space-y-4">
+				{#each KINDS as kind}
+					<div class="grid grid-cols-[120px_1fr_1fr] gap-3 items-end">
+						<div class="text-sm font-medium">{KIND_LABEL[kind]}</div>
+						<label class="block">
+							<span class="text-xs text-muted-foreground">Per giorno</span>
+							<Input type="number" min="0" bind:value={q[slug][kind].perDay} />
+						</label>
+						<label class="block">
+							<span class="text-xs text-muted-foreground">Per settimana</span>
+							<Input type="number" min="0" bind:value={q[slug][kind].perWeek} />
+						</label>
+						<p class="col-span-3 text-xs text-muted-foreground">{HELP[kind]}</p>
+					</div>
+				{/each}
+				<div class="flex gap-2">
+					<Button onclick={save} disabled={saving}>Salva</Button>
+					<Button variant="outline" onclick={() => resetPlatform(slug)}>Ripristina default</Button>
 				</div>
-			{/each}
-			<div class="flex gap-2">
-				<Button onclick={save} disabled={saving}>Salva</Button>
-				<Button variant="outline" onclick={reset}>Ripristina default</Button>
-			</div>
-		</Card.Content>
-	</Card.Root>
+			</Card.Content>
+		</Card.Root>
+	{/each}
 </div>

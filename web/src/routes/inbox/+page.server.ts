@@ -27,7 +27,7 @@ export async function load({ url }: { url: URL }) {
         runInfo: null,
         campaignInfo: null,
         usage: {},
-        quotaLimits: null,
+        quotaLimitsByPlatform: {},
       };
     }
     filters.push(
@@ -45,14 +45,18 @@ export async function load({ url }: { url: URL }) {
     .limit(200);
 
   const accountIds = Array.from(new Set(drafts.map((d) => d.accountId)));
+  const platformIds = Array.from(new Set(drafts.map((d) => d.platformId)));
   const usage = accountIds.length > 0 ? await getUsageForAccounts(db, accountIds) : {};
-  let quotaLimits: Awaited<ReturnType<typeof loadQuotaLimits>> | null = null;
-  if (drafts.length > 0) {
-    const [platformRow] = await db
-      .select({ slug: schema.platforms.slug })
+
+  const quotaLimitsByPlatform: Record<number, Awaited<ReturnType<typeof loadQuotaLimits>>> = {};
+  if (platformIds.length > 0) {
+    const rows = await db
+      .select({ id: schema.platforms.id, slug: schema.platforms.slug })
       .from(schema.platforms)
-      .where(eq(schema.platforms.id, drafts[0].platformId));
-    quotaLimits = await loadQuotaLimits(db, platformRow?.slug ?? 'reddit');
+      .where(inArray(schema.platforms.id, platformIds));
+    for (const row of rows) {
+      quotaLimitsByPlatform[row.id] = await loadQuotaLimits(db, row.slug);
+    }
   }
 
   let runInfo: {
@@ -85,5 +89,5 @@ export async function load({ url }: { url: URL }) {
     if (c) campaignInfo = c;
   }
 
-  return { drafts, state, kind, run, campaign, runInfo, campaignInfo, usage, quotaLimits };
+  return { drafts, state, kind, run, campaign, runInfo, campaignInfo, usage, quotaLimitsByPlatform };
 }
