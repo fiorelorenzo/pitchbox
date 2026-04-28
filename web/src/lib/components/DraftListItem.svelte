@@ -18,7 +18,12 @@
 		selected = false,
 		runId,
 		onclick,
-	}: { draft: Draft; selected?: boolean; runId?: number; onclick?: () => void } = $props();
+	}: {
+		draft: Draft;
+		selected?: boolean;
+		runId?: number;
+		onclick?: () => void;
+	} = $props();
 </script>
 
 <button

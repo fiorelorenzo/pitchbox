@@ -72,6 +72,8 @@ Environment variables:
    echo '<json>' | pitchbox drafts:create --run=<runId>
    ```
 
+   > Response: `{ ok, inserted, skipped: [{targetUser, reason}] }` — blocklisted targets are silently skipped, log them and do not retry.
+
    Each draft:
 
    ```json

@@ -11,6 +11,11 @@ import {
   type IncomingCommentReply,
 } from '@pitchbox/shared/comment-sync';
 
+// Invariant: this route never writes `drafts.sent_at`. It records inbound
+// messages and flips drafts to `replied`. Quota counts depend on `sent_at`,
+// so no over-quota logging happens here. If a future change starts writing
+// `sent_at` from this route, also wire `evaluateDraftSend` like the
+// /inbox/[id] and /api/extension/draft/[id]/sent routes do.
 type Body = {
   platform: string;
   items: IncomingDm[];

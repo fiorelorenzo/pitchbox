@@ -19,12 +19,16 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 
+	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
+
 	let {
 		data,
 	}: {
 		data: {
 			drafts: Array<{
 				id: number;
+				accountId: number;
+				platformId: number;
 				runId: number;
 				kind: string;
 				targetUser: string | null;
@@ -44,6 +48,8 @@
 			campaign: string | null;
 			runInfo: { id: number; campaignId: number; status: string; startedAt: Date | string; campaignName: string | null } | null;
 			campaignInfo: { id: number; name: string } | null;
+			usage: Record<number, UsageByKind>;
+			quotaLimitsByPlatform: Record<number, QuotaLimits>;
 		};
 	} = $props();
 
@@ -429,7 +435,11 @@
 		{/if}
 	</aside>
 	<section class="p-4 overflow-auto">
-		<DraftDetail draft={selected} />
+		<DraftDetail
+			draft={selected}
+			usage={selected != null ? data.usage[selected.accountId] : undefined}
+			limits={selected ? (data.quotaLimitsByPlatform[selected.platformId] ?? null) : null}
+		/>
 	</section>
 </Card.Root>
 

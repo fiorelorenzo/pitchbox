@@ -12,6 +12,8 @@
 	import Markdown from '$lib/components/Markdown.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { replyUrl } from '$lib/utils/reply-url';
+	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
+	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 
 	type DraftEvent = {
 		id: number;
@@ -36,7 +38,15 @@
 		sentContent: string | null;
 	};
 
-	let { draft }: { draft: Draft | null } = $props();
+	let {
+		draft,
+		usage,
+		limits,
+	}: {
+		draft: Draft | null;
+		usage?: UsageByKind;
+		limits?: QuotaLimits | null;
+	} = $props();
 
 	type LatestReply = {
 		body: string;
@@ -164,6 +174,26 @@
 	};
 
 	let editedFromDraft = $derived(draft != null && sentDraftText !== draft.body);
+
+	const quotaKind = $derived(
+		draft && isDraftKind(draft.kind) ? mapDraftKindToQuotaKind(draft.kind) : null,
+	);
+
+	const overDay = $derived(
+		quotaKind && usage && limits
+			? usage[quotaKind].day + 1 > limits[quotaKind].perDay
+			: false,
+	);
+	const overWeek = $derived(
+		quotaKind && usage && limits
+			? usage[quotaKind].week + 1 > limits[quotaKind].perWeek
+			: false,
+	);
+	const overQuota = $derived(overDay || overWeek);
+
+	function labelFor(qk: 'dm' | 'comment' | 'post'): string {
+		return { dm: 'DMs', comment: 'comments', post: 'posts' }[qk];
+	}
 </script>
 
 {#if draft}
@@ -200,6 +230,32 @@
 						<span>sent {relativeTime(draft.sentAt)}</span>
 					{/if}
 				</div>
+				{#if quotaKind && usage && limits}
+					{@const u = usage[quotaKind]}
+					{@const l = limits[quotaKind]}
+					{@const ratio = l.perDay === 0 ? 1 : u.day / l.perDay}
+					{@const tone =
+						u.day > l.perDay || u.week > l.perWeek
+							? 'red-strong'
+							: u.day === l.perDay
+							? 'red'
+							: ratio >= 0.8
+							? 'yellow'
+							: 'green'}
+					{@const klass = {
+						green: 'text-emerald-700',
+						yellow: 'text-amber-700',
+						red: 'text-red-700',
+						'red-strong': 'text-red-800 font-medium',
+					}[tone]}
+					{@const label = { dm: 'DMs', comment: 'comments', post: 'posts' }[quotaKind]}
+					<div class="text-xs text-muted-foreground">
+						Account quota:
+						<span class={klass}>{u.day}/{l.perDay} {label} today</span>
+						· {u.week}/{l.perWeek} this week
+						{#if tone === 'red-strong'}<span aria-hidden="true">⚠</span>{/if}
+					</div>
+				{/if}
 			</div>
 			<div class="flex gap-2 flex-wrap justify-end shrink-0">
 				<Button onclick={copyBody} variant="outline" size="sm" aria-label="Copy body to clipboard">
@@ -351,6 +407,15 @@
 				logged to contact history.
 			</Dialog.Description>
 		</Dialog.Header>
+		{#if overQuota && quotaKind && usage && limits}
+			<div class="rounded-md bg-red-50 ring-1 ring-red-200 px-3 py-2 text-sm text-red-800">
+				<strong>Quota reached.</strong>
+				You've already sent {usage[quotaKind].day}/{limits[quotaKind].perDay} {labelFor(quotaKind)} today
+				{#if overWeek}and {usage[quotaKind].week}/{limits[quotaKind].perWeek} this week{/if}
+				from this account. Reddit may rate-limit or suspend the account if you continue. Proceed only
+				if necessary.
+			</div>
+		{/if}
 		<Textarea bind:value={sentDraftText} rows={12} class="font-mono text-xs" />
 		<div class="flex items-center justify-between text-xs text-muted-foreground">
 			<span>

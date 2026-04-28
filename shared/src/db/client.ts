@@ -22,3 +22,5 @@ export function getDb() {
 }
 
 export { schema };
+
+export type Db = ReturnType<typeof getDb>;

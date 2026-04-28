@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireExtensionAuth } from '$lib/server/extension-auth.js';
 import { emit } from '$lib/server/events.js';
+import { evaluateDraftSend } from '@pitchbox/shared/draft-send';
 
 type SentBody = {
   sentContent?: string;
@@ -24,6 +25,11 @@ export async function POST({ params, request }: { params: { id: string }; reques
   }
 
   const now = body.sentAt ? new Date(body.sentAt) : new Date();
+  const evald = await evaluateDraftSend(db, draft, now);
+  if (evald.kind === 'blocked') {
+    throw error(409, `blocklisted: ${evald.reason ?? 'no reason'}`);
+  }
+
   const edited = typeof body.sentContent === 'string' && body.sentContent.trim().length > 0;
   const sentContent = edited ? body.sentContent! : draft.body;
 
@@ -37,11 +43,16 @@ export async function POST({ params, request }: { params: { id: string }; reques
     })
     .where(eq(schema.drafts.id, id));
 
+  const details: Record<string, unknown> = {
+    ...(edited && sentContent !== draft.body ? { edited: true } : {}),
+    ...(evald.quotaEventDetails ?? {}),
+  };
+
   await db.insert(schema.draftEvents).values({
     draftId: id,
     event: 'sent',
     actor: 'extension',
-    details: edited && sentContent !== draft.body ? { edited: true } : {},
+    details,
   });
 
   if (body.commentLookup && body.commentLookup.postId && body.commentLookup.accountHandle) {
