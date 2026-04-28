@@ -1,15 +1,26 @@
 import { getDb, schema } from '$lib/server/db.js';
 import { and, eq, desc, inArray, type SQL } from 'drizzle-orm';
 import { getUsageForAccounts, loadQuotaLimits } from '@pitchbox/shared/quota';
+import { listProjects } from '@pitchbox/shared/projects';
 
 export async function load({ url }: { url: URL }) {
   const state = url.searchParams.get('state') ?? 'pending_review';
   const kind = url.searchParams.get('kind');
   const run = url.searchParams.get('run');
   const campaign = url.searchParams.get('campaign');
+  const projectSlug = url.searchParams.get('project') ?? '';
   const db = getDb();
+
+  const projects = await listProjects(db);
+  const activeProject = projectSlug
+    ? (projects.find((p) => p.slug === projectSlug) ?? null)
+    : null;
+  const projectsForUi = projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name }));
+
   const filters: SQL[] = state !== 'all' ? [eq(schema.drafts.state, state)] : [];
   if (kind) filters.push(eq(schema.drafts.kind, kind));
+  if (activeProject) filters.push(eq(schema.drafts.projectId, activeProject.id));
+
   if (run) {
     filters.push(eq(schema.drafts.runId, Number(run)));
   } else if (campaign) {
@@ -28,6 +39,8 @@ export async function load({ url }: { url: URL }) {
         campaignInfo: null,
         usage: {},
         quotaLimitsByPlatform: {},
+        projects: projectsForUi,
+        activeProject,
       };
     }
     filters.push(
@@ -37,12 +50,44 @@ export async function load({ url }: { url: URL }) {
       ),
     );
   }
-  const drafts = await db
-    .select()
+
+  // JOIN projects. Enumerate every draft column explicitly so the page does not lose data.
+  const draftRows = await db
+    .select({
+      id: schema.drafts.id,
+      runId: schema.drafts.runId,
+      projectId: schema.drafts.projectId,
+      platformId: schema.drafts.platformId,
+      accountId: schema.drafts.accountId,
+      kind: schema.drafts.kind,
+      state: schema.drafts.state,
+      fitScore: schema.drafts.fitScore,
+      subreddit: schema.drafts.subreddit,
+      targetUser: schema.drafts.targetUser,
+      sourceRef: schema.drafts.sourceRef,
+      title: schema.drafts.title,
+      body: schema.drafts.body,
+      composeUrl: schema.drafts.composeUrl,
+      reasoning: schema.drafts.reasoning,
+      metadata: schema.drafts.metadata,
+      createdAt: schema.drafts.createdAt,
+      reviewedAt: schema.drafts.reviewedAt,
+      sentAt: schema.drafts.sentAt,
+      sentContent: schema.drafts.sentContent,
+      platformCommentId: schema.drafts.platformCommentId,
+      projectSlug: schema.projects.slug,
+      projectName: schema.projects.name,
+    })
     .from(schema.drafts)
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.drafts.projectId))
     .where(filters.length > 0 ? and(...filters) : undefined)
     .orderBy(desc(schema.drafts.createdAt))
     .limit(200);
+
+  const drafts = draftRows.map(({ projectSlug, projectName, ...rest }) => ({
+    ...rest,
+    project: { id: rest.projectId, slug: projectSlug, name: projectName },
+  }));
 
   const accountIds = Array.from(new Set(drafts.map((d) => d.accountId)));
   const platformIds = Array.from(new Set(drafts.map((d) => d.platformId)));
@@ -69,10 +114,7 @@ export async function load({ url }: { url: URL }) {
   let campaignInfo: { id: number; name: string } | null = null;
 
   if (run) {
-    const [r] = await db
-      .select()
-      .from(schema.runs)
-      .where(eq(schema.runs.id, Number(run)));
+    const [r] = await db.select().from(schema.runs).where(eq(schema.runs.id, Number(run)));
     if (r) {
       const [c] = await db
         .select()
@@ -89,5 +131,17 @@ export async function load({ url }: { url: URL }) {
     if (c) campaignInfo = c;
   }
 
-  return { drafts, state, kind, run, campaign, runInfo, campaignInfo, usage, quotaLimitsByPlatform };
+  return {
+    drafts,
+    state,
+    kind,
+    run,
+    campaign,
+    runInfo,
+    campaignInfo,
+    usage,
+    quotaLimitsByPlatform,
+    projects: projectsForUi,
+    activeProject,
+  };
 }
