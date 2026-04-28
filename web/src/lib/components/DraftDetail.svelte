@@ -192,7 +192,7 @@
 	const overQuota = $derived(overDay || overWeek);
 
 	function labelFor(qk: 'dm' | 'comment' | 'post'): string {
-		return { dm: 'DM', comment: 'commenti', post: 'post' }[qk];
+		return { dm: 'DMs', comment: 'comments', post: 'posts' }[qk];
 	}
 </script>
 
@@ -248,11 +248,11 @@
 						red: 'text-red-700',
 						'red-strong': 'text-red-800 font-medium',
 					}[tone]}
-					{@const label = { dm: 'DM', comment: 'commenti', post: 'post' }[quotaKind]}
+					{@const label = { dm: 'DMs', comment: 'comments', post: 'posts' }[quotaKind]}
 					<div class="text-xs text-muted-foreground">
-						Quota account:
-						<span class={klass}>{u.day}/{l.perDay} {label} oggi</span>
-						· {u.week}/{l.perWeek} questa settimana
+						Account quota:
+						<span class={klass}>{u.day}/{l.perDay} {label} today</span>
+						· {u.week}/{l.perWeek} this week
 						{#if tone === 'red-strong'}<span aria-hidden="true">⚠</span>{/if}
 					</div>
 				{/if}
@@ -409,11 +409,11 @@
 		</Dialog.Header>
 		{#if overQuota && quotaKind && usage && limits}
 			<div class="rounded-md bg-red-50 ring-1 ring-red-200 px-3 py-2 text-sm text-red-800">
-				<strong>Limite raggiunto.</strong>
-				Hai già inviato {usage[quotaKind].day}/{limits[quotaKind].perDay} {labelFor(quotaKind)} oggi
-				{#if overWeek}e {usage[quotaKind].week}/{limits[quotaKind].perWeek} questa settimana{/if}
-				da questo account. Reddit potrebbe rate-limitare o sospendere l'account se continui. Procedi
-				solo se necessario.
+				<strong>Quota reached.</strong>
+				You've already sent {usage[quotaKind].day}/{limits[quotaKind].perDay} {labelFor(quotaKind)} today
+				{#if overWeek}and {usage[quotaKind].week}/{limits[quotaKind].perWeek} this week{/if}
+				from this account. Reddit may rate-limit or suspend the account if you continue. Proceed only
+				if necessary.
 			</div>
 		{/if}
 		<Textarea bind:value={sentDraftText} rows={12} class="font-mono text-xs" />

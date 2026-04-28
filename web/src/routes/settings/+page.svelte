@@ -29,15 +29,15 @@
 
 	const KIND_LABEL: Record<keyof PlatformQuota, string> = {
 		dm: 'DM',
-		comment: 'Commenti',
-		post: 'Post',
+		comment: 'Comments',
+		post: 'Posts',
 	};
 
 	const HELP: Record<keyof PlatformQuota, string> = {
-		dm: 'DM diretti. Reddit non pubblica un limite ufficiale; sotto i 15/giorno è considerato a basso rischio per account con storia organica.',
+		dm: "Direct messages. Reddit doesn't publish an official limit; under 15/day is considered low-risk for accounts with organic history.",
 		comment:
-			'Somma di commenti su post + risposte ai commenti. Reddit applica throttling implicito sui nuovi account.',
-		post: "Post pubblicati. Per ora la generazione di draft post non è attiva — il limite serve per un futuro caso d'uso.",
+			'Sum of post comments + comment replies. Reddit applies implicit throttling on new accounts.',
+		post: "Published posts. Post-draft generation isn't wired up yet — the limit is here for future use.",
 	};
 
 	const KINDS: (keyof PlatformQuota)[] = ['dm', 'comment', 'post'];
@@ -52,10 +52,10 @@
 				body: JSON.stringify(q),
 			});
 			if (res.ok) {
-				toast.success('Limiti salvati');
+				toast.success('Limits saved');
 			} else {
 				const text = await res.text();
-				toast.error('Salvataggio fallito', { description: text });
+				toast.error('Save failed', { description: text });
 			}
 		} finally {
 			saving = false;
@@ -153,26 +153,26 @@
 	{#each Object.entries(q) as [slug, limits] (slug)}
 		<Card.Root>
 			<Card.Header>
-				<Card.Title>Quota & limiti ({slug[0].toUpperCase() + slug.slice(1)})</Card.Title>
+				<Card.Title>Quota & limits ({slug[0].toUpperCase() + slug.slice(1)})</Card.Title>
 			</Card.Header>
 			<Card.Content class="space-y-4">
 				{#each KINDS as kind}
 					<div class="grid grid-cols-[120px_1fr_1fr] gap-3 items-end">
 						<div class="text-sm font-medium">{KIND_LABEL[kind]}</div>
 						<label class="block">
-							<span class="text-xs text-muted-foreground">Per giorno</span>
+							<span class="text-xs text-muted-foreground">Per day</span>
 							<Input type="number" min="0" bind:value={q[slug][kind].perDay} />
 						</label>
 						<label class="block">
-							<span class="text-xs text-muted-foreground">Per settimana</span>
+							<span class="text-xs text-muted-foreground">Per week</span>
 							<Input type="number" min="0" bind:value={q[slug][kind].perWeek} />
 						</label>
 						<p class="col-span-3 text-xs text-muted-foreground">{HELP[kind]}</p>
 					</div>
 				{/each}
 				<div class="flex gap-2">
-					<Button onclick={save} disabled={saving}>Salva</Button>
-					<Button variant="outline" onclick={() => resetPlatform(slug)}>Ripristina default</Button>
+					<Button onclick={save} disabled={saving}>Save</Button>
+					<Button variant="outline" onclick={() => resetPlatform(slug)}>Reset to defaults</Button>
 				</div>
 			</Card.Content>
 		</Card.Root>
