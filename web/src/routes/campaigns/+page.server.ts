@@ -7,9 +7,7 @@ export async function load({ url }: { url: URL }) {
   const projectSlug = url.searchParams.get('project') ?? '';
 
   const projects = await listProjects(db);
-  const activeProject = projectSlug
-    ? (projects.find((p) => p.slug === projectSlug) ?? null)
-    : null;
+  const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
 
   const campaignRows = await db
     .select({

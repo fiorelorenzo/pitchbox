@@ -12,9 +12,7 @@ export async function load({ url }: { url: URL }) {
   const db = getDb();
 
   const projects = await listProjects(db);
-  const activeProject = projectSlug
-    ? (projects.find((p) => p.slug === projectSlug) ?? null)
-    : null;
+  const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
   const projectsForUi = projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name }));
 
   const filters: SQL[] = state !== 'all' ? [eq(schema.drafts.state, state)] : [];
@@ -114,7 +112,10 @@ export async function load({ url }: { url: URL }) {
   let campaignInfo: { id: number; name: string } | null = null;
 
   if (run) {
-    const [r] = await db.select().from(schema.runs).where(eq(schema.runs.id, Number(run)));
+    const [r] = await db
+      .select()
+      .from(schema.runs)
+      .where(eq(schema.runs.id, Number(run)));
     if (r) {
       const [c] = await db
         .select()
