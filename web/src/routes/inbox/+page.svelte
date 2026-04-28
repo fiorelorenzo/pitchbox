@@ -41,6 +41,7 @@
 				createdAt: string | Date | null;
 				sentAt: string | Date | null;
 				sentContent: string | null;
+				project: { id: number; slug: string; name: string };
 			}>;
 			state: string;
 			kind: string | null;
@@ -50,6 +51,8 @@
 			campaignInfo: { id: number; name: string } | null;
 			usage: Record<number, UsageByKind>;
 			quotaLimitsByPlatform: Record<number, QuotaLimits>;
+			projects: Array<{ id: number; slug: string; name: string }>;
+			activeProject: { id: number; slug: string; name: string } | null;
 		};
 	} = $props();
 
@@ -288,8 +291,20 @@
 />
 
 <!-- Filter pills -->
-{#if data.run || data.campaign}
+{#if data.run || data.campaign || data.activeProject}
 	<div class="flex items-center gap-2 mb-3 flex-wrap">
+		{#if data.activeProject}
+			<Badge variant="outline" class="flex items-center gap-1.5 pr-1">
+				<span>{data.activeProject.name}</span>
+				<button
+					onclick={() => navigate({ project: null })}
+					class="hover:text-foreground text-muted-foreground ml-0.5"
+					aria-label="Clear project filter"
+				>
+					<X class="size-3" />
+				</button>
+			</Badge>
+		{/if}
 		{#if data.run && data.runInfo}
 			<Badge variant="outline" class="flex items-center gap-1.5 pr-1">
 				<span>Run #{data.run}{data.runInfo.campaignName ? ` from ${data.runInfo.campaignName}` : ''}</span>
@@ -342,6 +357,18 @@
 	</Tabs.Root>
 
 	<div class="flex items-center gap-2">
+		<select
+			class="border border-input rounded-md h-8 px-2 text-sm bg-background"
+			value={data.activeProject?.slug ?? ''}
+			onchange={(e) => navigate({ project: (e.currentTarget as HTMLSelectElement).value || null })}
+			aria-label="Filter by project"
+		>
+			<option value="">All projects</option>
+			{#each data.projects as p (p.slug)}
+				<option value={p.slug}>{p.name}</option>
+			{/each}
+		</select>
+
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>
 				{#snippet child({ props })}
