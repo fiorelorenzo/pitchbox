@@ -12,8 +12,8 @@
 	import Markdown from '$lib/components/Markdown.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { replyUrl } from '$lib/utils/reply-url';
-	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota';
-	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota';
+	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
+	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 
 	type DraftEvent = {
 		id: number;

@@ -19,7 +19,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 
-	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota';
+	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 
 	let {
 		data,

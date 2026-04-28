@@ -3,8 +3,8 @@
 	import { relativeTime } from '$lib/utils/time';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import QuotaBadge from '$lib/components/QuotaBadge.svelte';
-	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota';
-	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota';
+	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
+	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 
 	type Draft = {
 		id: number;

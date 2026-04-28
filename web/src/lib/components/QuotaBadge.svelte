@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { QuotaKind, UsageByKind, QuotaLimits } from '@pitchbox/shared/quota';
+	import type { QuotaKind, UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 
 	let {
 		kind,
