@@ -2,7 +2,7 @@
 
 Self-hosted outreach agent for Reddit (and future platforms). You keep the human-in-the-loop; Pitchbox does the research, drafting, and bookkeeping.
 
-> ⚠️ Alpha — currently at **v0.3.0** (M5 shipped). Breaking changes possible until v1.0.0.
+> ⚠️ Alpha — currently at **v0.4.0** (M6.1 shipped). Breaking changes possible until v1.0.0.
 
 ## Quick start (macOS / Linux)
 
@@ -62,7 +62,7 @@ When a target user replies, you'll see:
 - The reply body shown under the draft, with a `replied` event on the timeline.
 - A row on the **Conversations** page with the latest reply snippet.
 
-## What ships today (v0.3.0, M0–M5)
+## What ships today (v0.4.0, M0–M6.1)
 
 **Content pipeline**
 
@@ -123,7 +123,9 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.3
 - ✅ **M4** — DM reply tracking via the extension's inbox poller, Conversations UI (post-comment reply tracking deferred to M4.5)
 - ✅ **M4.5** — comment-reply tracking via the extension's inbox poller
 - ✅ **M5** — blocklist enforcement (creation + send) + advisory rate-limiting (Inbox badge + over-quota warning); safety brake deferred
-- ⏳ **M6** — templates, keyword watches, analytics, A/B tests
+- ✅ **M6.1** — full project CRUD (UI + API; basic fields + versioned configs + accounts)
+- ⏳ **M6.2** — templates (few-shot examples + reusable snippets, scoped to project, override per campaign)
+- ⏳ **M6.x** — keyword watches, analytics, A/B tests
 - ⏳ **M7+** — additional platform adapters, posting automation, team mode
 
 ## Agent runners
