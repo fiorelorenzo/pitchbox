@@ -1,11 +1,104 @@
 <script lang="ts">
-  type Props = {
-    projectId: number;
-    accounts: { id: number; handle: string; role: string }[];
-    platforms: { slug: string }[];
-  };
+  import { invalidateAll } from '$app/navigation';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { toast } from 'svelte-sonner';
+
+  type Account = { id: number; handle: string; role: string; platformId: number };
+  type Platform = { id: number; slug: string };
+  type Props = { projectId: number; accounts: Account[]; platforms: Platform[] };
   let { projectId, accounts, platforms }: Props = $props();
+
+  let addOpen = $state(false);
+  let newHandle = $state('');
+  let newRole = $state<'personal' | 'brand'>('personal');
+  // svelte-ignore state_referenced_locally
+  let newPlatform = $state(platforms[0]?.slug ?? 'reddit');
+  let busy = $state(false);
+
+  function platformSlug(id: number) {
+    return platforms.find((p) => p.id === id)?.slug ?? `#${id}`;
+  }
+
+  async function add() {
+    busy = true;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/accounts`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ handle: newHandle, role: newRole, platformSlug: newPlatform }),
+      });
+      if (!res.ok) {
+        toast.error('Failed to add account');
+        return;
+      }
+      newHandle = '';
+      addOpen = false;
+      await invalidateAll();
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function remove(id: number) {
+    if (!confirm('Delete account?')) return;
+    const res = await fetch(`/api/projects/${projectId}/accounts/${id}`, { method: 'DELETE' });
+    if (!res.ok) toast.error('Failed to delete');
+    else await invalidateAll();
+  }
+
+  async function changeRole(id: number, role: 'personal' | 'brand') {
+    const res = await fetch(`/api/projects/${projectId}/accounts/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ role }),
+    });
+    if (!res.ok) toast.error('Failed to update');
+    else await invalidateAll();
+  }
 </script>
-<div class="text-sm text-muted-foreground">
-  Accounts tab coming up. ({accounts.length} accounts; {platforms.length} platforms available)
+
+<div class="space-y-3 max-w-2xl">
+  {#each accounts as a (a.id)}
+    <div class="border border-border rounded-md p-3 flex items-center gap-3">
+      <code class="text-sm">{a.handle}</code>
+      <span class="text-xs text-muted-foreground">{platformSlug(a.platformId)}</span>
+      <select
+        class="border border-input rounded-md h-8 px-2 text-sm ml-auto bg-background"
+        value={a.role}
+        onchange={(e) => changeRole(a.id, (e.currentTarget as HTMLSelectElement).value as 'personal' | 'brand')}
+      >
+        <option value="personal">personal</option>
+        <option value="brand">brand</option>
+      </select>
+      <Button size="sm" variant="ghost" onclick={() => remove(a.id)}>Delete</Button>
+    </div>
+  {/each}
+
+  {#if addOpen}
+    <div class="border border-border rounded-md p-3 space-y-2">
+      <label class="flex flex-col gap-1 text-xs">Handle<Input bind:value={newHandle} /></label>
+      <label class="flex flex-col gap-1 text-xs">
+        Role
+        <select class="border border-input rounded-md h-9 px-2 w-full bg-background text-sm" bind:value={newRole}>
+          <option value="personal">personal</option>
+          <option value="brand">brand</option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1 text-xs">
+        Platform
+        <select class="border border-input rounded-md h-9 px-2 w-full bg-background text-sm" bind:value={newPlatform}>
+          {#each platforms as p (p.slug)}
+            <option value={p.slug}>{p.slug}</option>
+          {/each}
+        </select>
+      </label>
+      <div class="flex gap-2">
+        <Button size="sm" onclick={add} disabled={busy || !newHandle.trim()}>Add</Button>
+        <Button size="sm" variant="ghost" onclick={() => (addOpen = false)}>Cancel</Button>
+      </div>
+    </div>
+  {:else}
+    <Button size="sm" variant="outline" onclick={() => (addOpen = true)}>Add account</Button>
+  {/if}
 </div>
