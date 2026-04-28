@@ -111,7 +111,10 @@ export async function createProjectTx(db: Db, args: CreateProjectArgs): Promise<
         })
         .returning({ id: schema.projects.id });
     } catch (e) {
-      const err = e as Error & { code?: string; cause?: Error & { code?: string; constraint?: string } };
+      const err = e as Error & {
+        code?: string;
+        cause?: Error & { code?: string; constraint?: string };
+      };
       const msg = String(err.message ?? '');
       const causeMsg = String(err.cause?.message ?? '');
       const code = err.code ?? err.cause?.code;

@@ -2,11 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import {
-  listProjects,
-  createProjectTx,
-  ProjectSlugConflictError,
-} from '@pitchbox/shared/projects';
+import { listProjects, createProjectTx, ProjectSlugConflictError } from '@pitchbox/shared/projects';
 
 const slugRegex = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
@@ -15,9 +11,7 @@ const CreateBody = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(2000).optional(),
   defaultAgentRunner: z.string().min(1).default('claude-code'),
-  configs: z
-    .array(z.object({ key: z.string().min(1), value: z.unknown() }))
-    .default([]),
+  configs: z.array(z.object({ key: z.string().min(1), value: z.unknown() })).default([]),
   account: z.object({
     handle: z.string().min(1).max(64),
     role: z.enum(['personal', 'brand']),

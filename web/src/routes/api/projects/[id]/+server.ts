@@ -30,10 +30,7 @@ export async function GET({ params }) {
   const project = await getProjectById(db, id);
   if (!project) return json({ error: 'not_found' }, { status: 404 });
   const configs = await listLatestConfigs(db, id);
-  const accounts = await db
-    .select()
-    .from(schema.accounts)
-    .where(eq(schema.accounts.projectId, id));
+  const accounts = await db.select().from(schema.accounts).where(eq(schema.accounts.projectId, id));
   return json({ project, configs, accounts });
 }
 

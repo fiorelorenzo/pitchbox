@@ -54,9 +54,9 @@ describe('configs helpers', () => {
     const id = await makeProject('cfg-conflict');
     await saveConfigVersion(getDb(), id, 'topicAngles', ['a'], null);
     await saveConfigVersion(getDb(), id, 'topicAngles', ['b'], 1);
-    await expect(
-      saveConfigVersion(getDb(), id, 'topicAngles', ['c'], 1),
-    ).rejects.toBeInstanceOf(ConfigConflictError);
+    await expect(saveConfigVersion(getDb(), id, 'topicAngles', ['c'], 1)).rejects.toBeInstanceOf(
+      ConfigConflictError,
+    );
   });
 
   it('saveConfigVersion validates known key value', async () => {

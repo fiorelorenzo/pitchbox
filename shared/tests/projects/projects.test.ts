@@ -12,10 +12,7 @@ import {
 } from '../../src/projects/projects.js';
 
 async function platformId(slug: string) {
-  const [p] = await getDb()
-    .select()
-    .from(schema.platforms)
-    .where(eq(schema.platforms.slug, slug));
+  const [p] = await getDb().select().from(schema.platforms).where(eq(schema.platforms.slug, slug));
   return p!.id;
 }
 

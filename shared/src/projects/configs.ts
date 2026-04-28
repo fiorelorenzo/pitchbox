@@ -56,9 +56,7 @@ export async function getLatestConfig(
   const [row] = await db
     .select()
     .from(schema.projectConfigs)
-    .where(
-      and(eq(schema.projectConfigs.projectId, projectId), eq(schema.projectConfigs.key, key)),
-    )
+    .where(and(eq(schema.projectConfigs.projectId, projectId), eq(schema.projectConfigs.key, key)))
     .orderBy(desc(schema.projectConfigs.version))
     .limit(1);
   if (!row) return null;
@@ -87,16 +85,12 @@ export async function saveConfigVersion(
     throw new ConfigConflictError(projectId, key, latestVersion ?? 0);
   }
   const nextVersion = (latestVersion ?? 0) + 1;
-  await db
-    .insert(schema.projectConfigs)
-    .values({ projectId, key, value, version: nextVersion });
+  await db.insert(schema.projectConfigs).values({ projectId, key, value, version: nextVersion });
   return { version: nextVersion };
 }
 
 export async function deleteConfigKey(db: Db, projectId: number, key: string): Promise<void> {
   await db
     .delete(schema.projectConfigs)
-    .where(
-      and(eq(schema.projectConfigs.projectId, projectId), eq(schema.projectConfigs.key, key)),
-    );
+    .where(and(eq(schema.projectConfigs.projectId, projectId), eq(schema.projectConfigs.key, key)));
 }
