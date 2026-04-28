@@ -54,12 +54,46 @@ export function isKnownConfigKey(key: string): key is KnownConfigKey {
   return Object.prototype.hasOwnProperty.call(CONFIG_SCHEMAS, key);
 }
 
+function assertJsonSafe(value: unknown, path: string, seen: WeakSet<object>): void {
+  if (value === null) return;
+  const t = typeof value;
+  if (t === 'string' || t === 'boolean') return;
+  if (t === 'number') {
+    if (!Number.isFinite(value as number)) {
+      throw new Error(`Config value at ${path} is not JSON-safe: ${value}`);
+    }
+    return;
+  }
+  if (t === 'undefined' || t === 'function' || t === 'symbol' || t === 'bigint') {
+    throw new Error(`Config value at ${path} has unsupported type: ${t}`);
+  }
+  if (t !== 'object') {
+    throw new Error(`Config value at ${path} has unsupported type: ${t}`);
+  }
+  const obj = value as object;
+  if (seen.has(obj)) {
+    throw new Error(`Config value at ${path} contains a circular reference`);
+  }
+  seen.add(obj);
+  if (Array.isArray(obj)) {
+    obj.forEach((v, i) => assertJsonSafe(v, `${path}[${i}]`, seen));
+    return;
+  }
+  // Plain object only: reject Date, Map, Set, RegExp, etc.
+  const proto = Object.getPrototypeOf(obj);
+  if (proto !== Object.prototype && proto !== null) {
+    throw new Error(
+      `Config value at ${path} is not a plain object (got ${proto?.constructor?.name ?? 'unknown'})`,
+    );
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    assertJsonSafe(v, `${path}.${k}`, seen);
+  }
+}
+
 // Validates the value against a known schema if any, otherwise enforces JSON-serializability.
 export function parseConfigValue(key: string, value: unknown): unknown {
   if (isKnownConfigKey(key)) return CONFIG_SCHEMAS[key].parse(value);
-  const serialized = JSON.stringify(value);
-  if (serialized === undefined) {
-    throw new Error(`Config value for key "${key}" is not JSON-serializable`);
-  }
-  return JSON.parse(serialized);
+  assertJsonSafe(value, `<${key}>`, new WeakSet());
+  return value;
 }

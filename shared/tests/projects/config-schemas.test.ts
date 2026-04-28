@@ -38,6 +38,11 @@ describe('CONFIG_SCHEMAS', () => {
     const v = { name: 'Demo', cta: 'try it', composeSubject: 'hi' };
     expect(CONFIG_SCHEMAS['offer'].parse(v)).toEqual(v);
   });
+
+  it('accepts voice.post_rules with min === max boundary', () => {
+    const v = { hardBans: [], dos: [], lengthRange: [100, 100] as [number, number] };
+    expect(CONFIG_SCHEMAS['voice.post_rules'].parse(v)).toEqual(v);
+  });
 });
 
 describe('parseConfigValue', () => {
@@ -51,6 +56,37 @@ describe('parseConfigValue', () => {
 
   it('rejects unknown key value that is not JSON-serializable (function)', () => {
     expect(() => parseConfigValue('custom.unknown', () => 1 as unknown)).toThrow();
+  });
+
+  it('rejects nested undefined for unknown key', () => {
+    expect(() => parseConfigValue('custom.unknown', { a: 1, b: undefined })).toThrow();
+  });
+
+  it('rejects nested function for unknown key', () => {
+    expect(() => parseConfigValue('custom.unknown', { fn: () => 1 })).toThrow();
+  });
+
+  it('rejects Date for unknown key', () => {
+    expect(() => parseConfigValue('custom.unknown', { d: new Date() })).toThrow();
+  });
+
+  it('rejects circular reference for unknown key', () => {
+    const cyclic: Record<string, unknown> = { a: 1 };
+    cyclic.self = cyclic;
+    expect(() => parseConfigValue('custom.unknown', cyclic)).toThrow();
+  });
+
+  it('rejects NaN for unknown key', () => {
+    expect(() => parseConfigValue('custom.unknown', { n: NaN })).toThrow();
+  });
+
+  it('returns the same value reference (no mutation) on success', () => {
+    const v = { a: 1, b: [2, 3], c: { nested: 'ok' } };
+    expect(parseConfigValue('custom.unknown', v)).toBe(v);
+  });
+
+  it('parseConfigValue invokes registry validation for known key (failure path)', () => {
+    expect(() => parseConfigValue('product.url', { url: 'not-a-url' })).toThrow();
   });
 });
 
