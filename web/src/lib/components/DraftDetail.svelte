@@ -12,7 +12,7 @@
 	import Markdown from '$lib/components/Markdown.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { replyUrl } from '$lib/utils/reply-url';
-	import { mapDraftKindToQuotaKind } from '@pitchbox/shared/quota';
+	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota';
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota';
 
 	type DraftEvent = {
@@ -176,9 +176,7 @@
 	let editedFromDraft = $derived(draft != null && sentDraftText !== draft.body);
 
 	const quotaKind = $derived(
-		draft
-			? mapDraftKindToQuotaKind(draft.kind as 'dm' | 'post_comment' | 'comment_reply' | 'post')
-			: null,
+		draft && isDraftKind(draft.kind) ? mapDraftKindToQuotaKind(draft.kind) : null,
 	);
 
 	const overDay = $derived(

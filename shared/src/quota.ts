@@ -4,12 +4,17 @@ import { schema, type Db } from './db/client.js';
 export type QuotaKind = 'dm' | 'comment' | 'post';
 export const QUOTA_KINDS: QuotaKind[] = ['dm', 'comment', 'post'];
 
+export const DRAFT_KINDS = ['dm', 'post', 'post_comment', 'comment_reply'] as const;
+export type DraftKind = (typeof DRAFT_KINDS)[number];
+
+export function isDraftKind(s: string): s is DraftKind {
+  return (DRAFT_KINDS as readonly string[]).includes(s);
+}
+
 export type WindowCounts = { day: number; week: number };
 export type UsageByKind = Record<QuotaKind, WindowCounts>;
 
 export type QuotaLimits = Record<QuotaKind, { perDay: number; perWeek: number }>;
-
-const KNOWN_DRAFT_KINDS = new Set(['dm', 'post', 'post_comment', 'comment_reply']);
 
 export function emptyUsage(): UsageByKind {
   return {
@@ -19,12 +24,20 @@ export function emptyUsage(): UsageByKind {
   };
 }
 
-export function mapDraftKindToQuotaKind(
-  draftKind: 'dm' | 'post_comment' | 'comment_reply' | 'post',
-): QuotaKind {
-  if (draftKind === 'dm') return 'dm';
-  if (draftKind === 'post') return 'post';
-  return 'comment';
+export function mapDraftKindToQuotaKind(draftKind: DraftKind): QuotaKind {
+  switch (draftKind) {
+    case 'dm':
+      return 'dm';
+    case 'post':
+      return 'post';
+    case 'post_comment':
+    case 'comment_reply':
+      return 'comment';
+    default: {
+      const _exhaustive: never = draftKind;
+      return _exhaustive;
+    }
+  }
 }
 
 export async function getUsageForAccounts(
@@ -51,8 +64,8 @@ export async function getUsageForAccounts(
     .groupBy(schema.drafts.accountId, schema.drafts.kind);
 
   for (const r of rows) {
-    if (!KNOWN_DRAFT_KINDS.has(r.kind)) continue; // future-proof: skip unknown draft kinds
-    const qk = mapDraftKindToQuotaKind(r.kind as 'dm' | 'post_comment' | 'comment_reply' | 'post');
+    if (!isDraftKind(r.kind)) continue; // future-proof: skip unknown draft kinds
+    const qk = mapDraftKindToQuotaKind(r.kind);
     const u = out[r.accountId];
     u[qk].day += Number(r.day);
     u[qk].week += Number(r.week);

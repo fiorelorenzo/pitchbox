@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
 import { isBlocklisted } from './blocklist.js';
-import { getAccountUsage, loadQuotaLimits, mapDraftKindToQuotaKind } from './quota.js';
+import { getAccountUsage, isDraftKind, loadQuotaLimits, mapDraftKindToQuotaKind } from './quota.js';
 
 export type DraftLike = {
   platformId: number;
@@ -50,8 +50,11 @@ export async function evaluateDraftSend(
   const usage = await getAccountUsage(db, draft.accountId, now);
   const limits = await loadQuotaLimits(db, platform?.slug ?? 'reddit');
 
-  const draftKind = draft.kind as 'dm' | 'post_comment' | 'comment_reply' | 'post';
-  const qk = mapDraftKindToQuotaKind(draftKind);
+  if (!isDraftKind(draft.kind)) {
+    // Unknown kind — no quota applies; treat as unrestricted
+    return { kind: 'ok', quotaEventDetails: null };
+  }
+  const qk = mapDraftKindToQuotaKind(draft.kind);
 
   // Use `>` (strict) because `getAccountUsage` is computed BEFORE the new
   // `sent_at` row exists; the post-flip count would be `usage[qk].day + 1`.

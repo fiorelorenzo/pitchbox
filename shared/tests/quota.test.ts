@@ -4,6 +4,7 @@ import { getDb, schema } from '../src/db/client.js';
 import {
   getAccountUsage,
   getUsageForAccounts,
+  isDraftKind,
   loadQuotaLimits,
   mapDraftKindToQuotaKind,
 } from '../src/quota.js';
@@ -61,6 +62,14 @@ async function makeDraft(opts: {
       sentAt: opts.sentAt,
     });
 }
+
+describe('isDraftKind', () => {
+  it('returns true for known kinds and false for unknown ones', () => {
+    expect(isDraftKind('dm')).toBe(true);
+    expect(isDraftKind('comment_reply')).toBe(true);
+    expect(isDraftKind('chat_dm')).toBe(false);
+  });
+});
 
 describe('mapDraftKindToQuotaKind', () => {
   it('collapses post_comment and comment_reply into comment', () => {

@@ -3,7 +3,7 @@
 	import { relativeTime } from '$lib/utils/time';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import QuotaBadge from '$lib/components/QuotaBadge.svelte';
-	import { mapDraftKindToQuotaKind } from '@pitchbox/shared/quota';
+	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota';
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota';
 
 	type Draft = {
@@ -33,7 +33,7 @@
 	} = $props();
 
 	const quotaKind = $derived(
-		mapDraftKindToQuotaKind(draft.kind as 'dm' | 'post_comment' | 'comment_reply' | 'post'),
+		isDraftKind(draft.kind) ? mapDraftKindToQuotaKind(draft.kind) : null,
 	);
 </script>
 
@@ -56,7 +56,7 @@
 		{#if draft.kind !== 'dm' && draft.subreddit == null && draft.targetUser}
 			<span>· u/{draft.targetUser}</span>
 		{/if}
-		{#if usage && limits}
+		{#if usage && limits && quotaKind != null}
 			<QuotaBadge kind={quotaKind} {usage} {limits} />
 		{/if}
 	</div>

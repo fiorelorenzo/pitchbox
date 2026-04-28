@@ -261,4 +261,24 @@ describe('evaluateDraftSend', () => {
       expect(result.quotaEventDetails).toBeNull();
     }
   });
+
+  it('returns ok with null quotaEventDetails for an unknown draft kind', async () => {
+    const db = getDb();
+    const { proj, platform, account } = await setup();
+
+    // Use a future-only kind not yet in DRAFT_KINDS; cast at test boundary since schema.kind is text
+    const draft: DraftLike = {
+      platformId: platform.id,
+      projectId: proj.id,
+      accountId: account.id,
+      targetUser: null,
+      kind: 'chat_dm' as any,
+    };
+
+    const result = await evaluateDraftSend(db, draft);
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.quotaEventDetails).toBeNull();
+    }
+  });
 });
