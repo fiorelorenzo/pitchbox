@@ -14,8 +14,11 @@
   };
   let { open, onOpenChange, projectId, initialSource, onLaunched }: Props = $props();
 
+  // svelte-ignore state_referenced_locally
   let tab = $state<'folder' | 'git'>(initialSource?.kind ?? 'folder');
+  // svelte-ignore state_referenced_locally
   let folderPath = $state(initialSource?.kind === 'folder' ? initialSource.value : '');
+  // svelte-ignore state_referenced_locally
   let gitUrl = $state(initialSource?.kind === 'git' ? initialSource.value : '');
   let submitting = $state(false);
 
