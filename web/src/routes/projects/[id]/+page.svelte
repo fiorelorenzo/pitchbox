@@ -32,7 +32,7 @@
 </div>
 
 {#if tab === 'overview'}
-  <ProjectOverviewTab project={data.project} />
+  <ProjectOverviewTab project={data.project} extractionRuns={data.extractionRuns} />
 {:else if tab === 'configs'}
   <ProjectConfigsTab projectId={data.project.id} configs={data.configs} />
 {:else}
