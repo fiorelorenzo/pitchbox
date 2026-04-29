@@ -1,5 +1,5 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { desc, eq, inArray, sql } from 'drizzle-orm';
+import { desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { listProjects } from '@pitchbox/shared/projects';
 
 export async function load({ url }: { url: URL }) {
@@ -41,12 +41,14 @@ export async function load({ url }: { url: URL }) {
       tokensUsed: schema.runs.tokensUsed,
     })
     .from(schema.runs)
+    .where(isNotNull(schema.runs.campaignId))
     .orderBy(desc(schema.runs.startedAt));
 
   const latestRunByCampaign = new Map<number, (typeof latestRuns)[0]>();
   const runningByCampaign = new Set<number>();
 
   for (const run of latestRuns) {
+    if (run.campaignId == null) continue;
     if (run.status === 'running') runningByCampaign.add(run.campaignId);
     if (!latestRunByCampaign.has(run.campaignId)) latestRunByCampaign.set(run.campaignId, run);
   }
