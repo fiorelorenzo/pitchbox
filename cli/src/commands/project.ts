@@ -57,4 +57,48 @@ export function registerProjectCommands(program: Command) {
         currentDescription: project.description ?? '',
       });
     });
+
+  program
+    .command('project:extract:finish')
+    .requiredOption('--run <id>', 'run id')
+    .action(async (opts: { run: string }) => {
+      const runId = Number(opts.run);
+      if (!Number.isInteger(runId)) return fail('invalid run id');
+      const md = await readStdin();
+      if (!md || !md.trim()) return fail('empty markdown on stdin');
+      const db = getDb();
+      const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+      if (!run) return fail(`run ${runId} not found`);
+      if (run.kind !== 'project_extraction')
+        return fail(`run ${runId} is not a project_extraction run`);
+      if (!run.projectId) return fail(`run ${runId} has no project_id`);
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(schema.projects)
+          .set({ description: md, updatedAt: new Date() })
+          .where(eq(schema.projects.id, run.projectId!));
+        await tx
+          .update(schema.runs)
+          .set({ status: 'success', finishedAt: new Date() })
+          .where(eq(schema.runs.id, runId));
+      });
+
+      // Best-effort cleanup of the temp git clone, if any.
+      const source = (run.params as { source?: { kind: string } }).source;
+      if (source?.kind === 'git') {
+        await rm(`/tmp/pitchbox-extract-${runId}`, { recursive: true, force: true }).catch(
+          () => {},
+        );
+      }
+
+      ok({ runId, projectId: run.projectId, bytes: md.length });
+    });
+}
+
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) return '';
+  const chunks: Buffer[] = [];
+  for await (const c of process.stdin) chunks.push(c as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
 }
