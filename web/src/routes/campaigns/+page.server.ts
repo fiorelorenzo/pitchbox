@@ -1,14 +1,36 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { desc, inArray, sql } from 'drizzle-orm';
+import { desc, eq, inArray, sql } from 'drizzle-orm';
+import { listProjects } from '@pitchbox/shared/projects';
 
-export async function load() {
+export async function load({ url }: { url: URL }) {
   const db = getDb();
+  const projectSlug = url.searchParams.get('project') ?? '';
 
-  // Fetch campaigns
-  const campaigns = await db.select().from(schema.campaigns);
+  const projects = await listProjects(db);
+  const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
 
-  // Fetch the most recent run per campaign + running state
-  // We do a single query: latest run for each campaign, plus draft count, plus isRunning flag
+  const campaignRows = await db
+    .select({
+      id: schema.campaigns.id,
+      projectId: schema.campaigns.projectId,
+      platformId: schema.campaigns.platformId,
+      name: schema.campaigns.name,
+      skillSlug: schema.campaigns.skillSlug,
+      agentRunner: schema.campaigns.agentRunner,
+      config: schema.campaigns.config,
+      cronExpression: schema.campaigns.cronExpression,
+      rateLimit: schema.campaigns.rateLimit,
+      status: schema.campaigns.status,
+      lastRunAt: schema.campaigns.lastRunAt,
+      nextRunAt: schema.campaigns.nextRunAt,
+      consecutiveFailures: schema.campaigns.consecutiveFailures,
+      projectSlug: schema.projects.slug,
+      projectName: schema.projects.name,
+    })
+    .from(schema.campaigns)
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.campaigns.projectId))
+    .where(activeProject ? eq(schema.campaigns.projectId, activeProject.id) : undefined);
+
   const latestRuns = await db
     .select({
       campaignId: schema.runs.campaignId,
@@ -21,23 +43,16 @@ export async function load() {
     .from(schema.runs)
     .orderBy(desc(schema.runs.startedAt));
 
-  // Build a map: campaignId → latest run
   const latestRunByCampaign = new Map<number, (typeof latestRuns)[0]>();
   const runningByCampaign = new Set<number>();
 
   for (const run of latestRuns) {
-    if (run.status === 'running') {
-      runningByCampaign.add(run.campaignId);
-    }
-    if (!latestRunByCampaign.has(run.campaignId)) {
-      latestRunByCampaign.set(run.campaignId, run);
-    }
+    if (run.status === 'running') runningByCampaign.add(run.campaignId);
+    if (!latestRunByCampaign.has(run.campaignId)) latestRunByCampaign.set(run.campaignId, run);
   }
 
-  // Fetch draft counts per run for the latest runs
   const latestRunIds = [...latestRunByCampaign.values()].map((r) => r.id);
   const draftCounts: Record<number, number> = {};
-
   if (latestRunIds.length > 0) {
     const counts = await db
       .select({
@@ -47,14 +62,10 @@ export async function load() {
       .from(schema.drafts)
       .where(inArray(schema.drafts.runId, latestRunIds))
       .groupBy(schema.drafts.runId);
-
-    for (const row of counts) {
-      draftCounts[row.runId] = row.count;
-    }
+    for (const row of counts) draftCounts[row.runId] = row.count;
   }
 
-  // Enrich campaigns
-  const enrichedCampaigns = campaigns.map((c) => {
+  const enrichedCampaigns = campaignRows.map((c) => {
     const latestRun = latestRunByCampaign.get(c.id) ?? null;
     const isRunning = runningByCampaign.has(c.id);
     const draftCount = latestRun ? (draftCounts[latestRun.id] ?? 0) : 0;
@@ -64,7 +75,20 @@ export async function load() {
         : null;
 
     return {
-      ...c,
+      id: c.id,
+      projectId: c.projectId,
+      platformId: c.platformId,
+      name: c.name,
+      skillSlug: c.skillSlug,
+      agentRunner: c.agentRunner,
+      config: c.config,
+      cronExpression: c.cronExpression,
+      rateLimit: c.rateLimit,
+      status: c.status,
+      lastRunAt: c.lastRunAt,
+      nextRunAt: c.nextRunAt,
+      consecutiveFailures: c.consecutiveFailures,
+      project: { id: c.projectId, slug: c.projectSlug, name: c.projectName },
       isRunning,
       lastRunId: latestRun?.id ?? null,
       lastRunStatus: latestRun?.status ?? null,
@@ -76,5 +100,9 @@ export async function load() {
     };
   });
 
-  return { campaigns: enrichedCampaigns };
+  return {
+    campaigns: enrichedCampaigns,
+    projects: projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name })),
+    activeProject,
+  };
 }

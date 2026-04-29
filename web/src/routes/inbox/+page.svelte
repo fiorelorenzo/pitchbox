@@ -18,6 +18,7 @@
 	import { relativeTime } from '$lib/utils/time';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
+	import { SelectField } from '$lib/components/ui/select-field';
 
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 
@@ -41,6 +42,7 @@
 				createdAt: string | Date | null;
 				sentAt: string | Date | null;
 				sentContent: string | null;
+				project: { id: number; slug: string; name: string };
 			}>;
 			state: string;
 			kind: string | null;
@@ -50,6 +52,8 @@
 			campaignInfo: { id: number; name: string } | null;
 			usage: Record<number, UsageByKind>;
 			quotaLimitsByPlatform: Record<number, QuotaLimits>;
+			projects: Array<{ id: number; slug: string; name: string }>;
+			activeProject: { id: number; slug: string; name: string } | null;
 		};
 	} = $props();
 
@@ -288,8 +292,20 @@
 />
 
 <!-- Filter pills -->
-{#if data.run || data.campaign}
+{#if data.run || data.campaign || data.activeProject}
 	<div class="flex items-center gap-2 mb-3 flex-wrap">
+		{#if data.activeProject}
+			<Badge variant="outline" class="flex items-center gap-1.5 pr-1">
+				<span>{data.activeProject.name}</span>
+				<button
+					onclick={() => navigate({ project: null })}
+					class="hover:text-foreground text-muted-foreground ml-0.5"
+					aria-label="Clear project filter"
+				>
+					<X class="size-3" />
+				</button>
+			</Badge>
+		{/if}
 		{#if data.run && data.runInfo}
 			<Badge variant="outline" class="flex items-center gap-1.5 pr-1">
 				<span>Run #{data.run}{data.runInfo.campaignName ? ` from ${data.runInfo.campaignName}` : ''}</span>
@@ -342,6 +358,17 @@
 	</Tabs.Root>
 
 	<div class="flex items-center gap-2">
+		<SelectField
+			value={data.activeProject?.slug ?? ''}
+			onValueChange={(v) => navigate({ project: v || null })}
+			options={[
+				{ value: '', label: 'All projects' },
+				...data.projects.map((p) => ({ value: p.slug, label: p.name })),
+			]}
+			size="sm"
+			placeholder="All projects"
+		/>
+
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>
 				{#snippet child({ props })}
