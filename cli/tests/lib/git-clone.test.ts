@@ -10,7 +10,10 @@ let srcRepo: string;
 beforeAll(async () => {
   srcRepo = await mkdtemp(join(tmpdir(), 'gitsrc-'));
   execSync('git init -q -b main', { cwd: srcRepo });
-  execSync('git config user.email t@t.t && git config user.name t', { cwd: srcRepo, shell: '/bin/bash' });
+  execSync('git config user.email t@t.t && git config user.name t', {
+    cwd: srcRepo,
+    shell: '/bin/bash',
+  });
   await writeFile(join(srcRepo, 'README.md'), '# Hello');
   execSync('git add . && git commit -q -m "init"', { cwd: srcRepo, shell: '/bin/bash' });
 });

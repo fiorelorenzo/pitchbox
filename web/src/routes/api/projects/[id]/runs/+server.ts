@@ -30,7 +30,10 @@ export async function POST({ params, request }) {
     }
     return json({ runId: out.runId }, { status: 201 });
   } catch (e) {
-    return json({ error: 'dispatch_failed', message: String((e as Error).message) }, { status: 500 });
+    return json(
+      { error: 'dispatch_failed', message: String((e as Error).message) },
+      { status: 500 },
+    );
   }
 }
 

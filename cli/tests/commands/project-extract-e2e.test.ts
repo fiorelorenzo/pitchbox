@@ -39,12 +39,16 @@ describe('project_extraction end-to-end (no real agent)', () => {
       })
       .returning();
 
-    const startOut = JSON.parse(cli(`project:extract:start --run=${run.id}`).trim().split('\n').at(-1)!);
+    const startOut = JSON.parse(
+      cli(`project:extract:start --run=${run.id}`).trim().split('\n').at(-1)!,
+    );
     expect(startOut.ok).toBe(true);
     expect(startOut.data.sourcePath).toBe(folder);
 
     const md = `## Product\n\nDemo product.\n\n## Target audience\n\nDevs.\n`;
-    const finishOut = JSON.parse(cli(`project:extract:finish --run=${run.id}`, md).trim().split('\n').at(-1)!);
+    const finishOut = JSON.parse(
+      cli(`project:extract:finish --run=${run.id}`, md).trim().split('\n').at(-1)!,
+    );
     expect(finishOut.ok).toBe(true);
 
     const [p] = await db.select().from(schema.projects).where(eq(schema.projects.id, project.id));

@@ -7,9 +7,7 @@ import { isAbsolute } from 'node:path';
 import { ok, fail } from '../lib/output.js';
 import { shallowClone } from '../lib/git-clone.js';
 
-type Source =
-  | { kind: 'folder'; value: string }
-  | { kind: 'git'; value: string };
+type Source = { kind: 'folder'; value: string } | { kind: 'git'; value: string };
 
 export function registerProjectCommands(program: Command) {
   program
