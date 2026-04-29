@@ -20,7 +20,7 @@
     "test:watch": "vitest",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p cli && tsc --noEmit -p daemon && tsc --noEmit -p extension && npm run -w web check",
     "migrate": "npm run -w shared migrate",
     "migrate:generate": "npm run -w shared migrate:generate",
     "db:up": "docker compose up -d postgres",
@@ -43,5 +43,14 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.5"
+  },
+  "overrides": {
+    "cookie": "^1.0.2",
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.0"
+    },
+    "@crxjs/vite-plugin": {
+      "rollup": "^4.0.0"
+    }
   }
 }
