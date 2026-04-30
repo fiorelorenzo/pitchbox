@@ -138,8 +138,8 @@
   onDestroy(() => es?.close());
 </script>
 
-<div class="space-y-6 max-w-3xl">
-  <div class="max-w-xl space-y-6">
+<div class="space-y-6">
+  <div class="grid gap-4 md:grid-cols-3">
     <label class="flex flex-col gap-1 text-xs">
       Slug
       <Input value={project.slug} disabled />
@@ -148,6 +148,10 @@
     <label class="flex flex-col gap-1 text-xs">
       Name
       <Input bind:value={name} />
+    </label>
+    <label class="flex flex-col gap-1 text-xs">
+      Default agent runner
+      <Input bind:value={runner} />
     </label>
   </div>
 
@@ -170,20 +174,14 @@
         </Button>
       </div>
     </div>
-    <MarkdownEditor value={description} onchange={(v) => (description = v)} />
+    <MarkdownEditor value={description} onchange={(v) => (description = v)} height="540px" />
   </div>
 
   <ProjectExtractionRunsTable runs={extractionRunsState} />
 
-  <div class="max-w-xl space-y-6">
-    <label class="flex flex-col gap-1 text-xs">
-      Default agent runner
-      <Input bind:value={runner} />
-    </label>
-    <div class="flex justify-between items-center pt-2">
-      <Button onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-      <Button variant="destructive" onclick={() => (deleteOpen = true)}>Delete project</Button>
-    </div>
+  <div class="flex justify-between items-center pt-2 border-t">
+    <Button onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+    <Button variant="destructive" onclick={() => (deleteOpen = true)}>Delete project</Button>
   </div>
 </div>
 
