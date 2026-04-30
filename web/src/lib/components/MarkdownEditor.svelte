@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Editor } from 'bytemd';
   import gfm from '@bytemd/plugin-gfm';
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import 'bytemd/dist/index.css';
 
   type Props = {
@@ -21,60 +21,56 @@
 
   let host: HTMLDivElement | null = $state(null);
 
-  onMount(async () => {
-    await tick();
-    setTimeout(() => {
+  // Custom ratio-based scroll sync. bytemd's built-in sync breaks under Svelte 5 because it
+  // assumes `previewEl.childNodes[0]` is the markdown-body div, but Svelte 5 inserts anchor
+  // comment nodes from the inner `{#if}` block ahead of it.
+  onMount(() => {
+    let cleanup: (() => void) | null = null;
+    let attempts = 0;
+    const tryWire = () => {
       const root = host;
-      if (!root) {
-        console.warn('[MarkdownEditor] host not found');
-        return;
-      }
+      if (!root) return;
       const preview = root.querySelector<HTMLElement>('.bytemd-preview');
       const cmScroller = root.querySelector<HTMLElement>('.CodeMirror-scroll');
-      const body = root.querySelector<HTMLElement>('.bytemd-body');
+      if (!preview || !cmScroller) {
+        if (++attempts < 30) setTimeout(tryWire, 100);
+        return;
+      }
 
-      console.log('[MarkdownEditor] elements:', {
-        host: root,
-        body,
-        preview,
-        cmScroller,
-      });
-      if (preview) {
-        console.log('[MarkdownEditor] preview overflow:', getComputedStyle(preview).overflow);
-        console.log(
-          '[MarkdownEditor] preview heights — scrollHeight:',
-          preview.scrollHeight,
-          'clientHeight:',
-          preview.clientHeight,
-        );
-        console.log(
-          '[MarkdownEditor] preview.childNodes:',
-          [...preview.childNodes].map((n) => ({
-            type: n.nodeType,
-            name: n.nodeName,
-            isElement: n instanceof HTMLElement,
-            class: (n as HTMLElement).className ?? null,
-          })),
-        );
-        preview.addEventListener('scroll', () => {
-          console.log('[MarkdownEditor] preview scroll', preview.scrollTop);
-        });
-      }
-      if (cmScroller) {
-        console.log(
-          '[MarkdownEditor] cm heights — scrollHeight:',
-          cmScroller.scrollHeight,
-          'clientHeight:',
-          cmScroller.clientHeight,
-        );
-        cmScroller.addEventListener('scroll', () => {
-          console.log('[MarkdownEditor] cm scroll', cmScroller.scrollTop);
-        });
-      }
-      if (body) {
-        console.log('[MarkdownEditor] body overflow:', getComputedStyle(body).overflow);
-      }
-    }, 600);
+      let syncing = false;
+      const syncFromEditor = () => {
+        if (syncing) return;
+        const max = cmScroller.scrollHeight - cmScroller.clientHeight;
+        if (max <= 0) return;
+        const ratio = cmScroller.scrollTop / max;
+        const target = ratio * (preview.scrollHeight - preview.clientHeight);
+        if (Math.abs(preview.scrollTop - target) < 1) return;
+        syncing = true;
+        preview.scrollTop = target;
+        requestAnimationFrame(() => (syncing = false));
+      };
+      const syncFromPreview = () => {
+        if (syncing) return;
+        const max = preview.scrollHeight - preview.clientHeight;
+        if (max <= 0) return;
+        const ratio = preview.scrollTop / max;
+        const target = ratio * (cmScroller.scrollHeight - cmScroller.clientHeight);
+        if (Math.abs(cmScroller.scrollTop - target) < 1) return;
+        syncing = true;
+        cmScroller.scrollTop = target;
+        requestAnimationFrame(() => (syncing = false));
+      };
+
+      cmScroller.addEventListener('scroll', syncFromEditor, { passive: true });
+      preview.addEventListener('scroll', syncFromPreview, { passive: true });
+
+      cleanup = () => {
+        cmScroller.removeEventListener('scroll', syncFromEditor);
+        preview.removeEventListener('scroll', syncFromPreview);
+      };
+    };
+    tryWire();
+    return () => cleanup?.();
   });
 </script>
 
