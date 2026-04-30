@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
   import { Editor } from 'bytemd';
   import gfm from '@bytemd/plugin-gfm';
   import 'bytemd/dist/index.css';
@@ -7,28 +6,13 @@
   type Props = { value: string; onchange: (v: string) => void; height?: string };
   let { value, onchange, height = '420px' }: Props = $props();
 
-  let host: HTMLDivElement | null = null;
-  let editor: Editor | null = null;
+  const plugins = [gfm()];
 
-  onMount(() => {
-    if (!host) return;
-    editor = new Editor({
-      target: host,
-      props: { value, mode: 'split', plugins: [gfm()] },
-    });
-    editor.$on('change', (e: CustomEvent<{ value: string }>) => {
-      onchange(e.detail.value);
-    });
-  });
-
-  onDestroy(() => {
-    editor?.$destroy();
-    editor = null;
-  });
-
-  $effect(() => {
-    if (editor) editor.$set({ value });
-  });
+  function handleChange(e: CustomEvent<{ value: string }>) {
+    onchange(e.detail.value);
+  }
 </script>
 
-<div bind:this={host} style="height: {height}"></div>
+<div style="height: {height}">
+  <Editor {value} {plugins} mode="split" on:change={handleChange} />
+</div>
