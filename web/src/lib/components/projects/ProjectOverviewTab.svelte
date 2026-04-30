@@ -234,9 +234,11 @@
   onOpenChange={(v) => (extractOpen = v)}
   projectId={project.id}
   {initialSource}
-  onLaunched={(runId) => {
+  onLaunched={async (runId) => {
     runningRunId = runId;
     descriptionAtLaunch = description;
+    await invalidateAll();
+    extractionRunsState = extractionRuns;
   }}
 />
 
