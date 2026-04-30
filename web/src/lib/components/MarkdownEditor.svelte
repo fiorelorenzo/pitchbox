@@ -45,6 +45,11 @@
   .md-host :global(.bytemd-toolbar-tab) {
     color: var(--muted-foreground);
   }
+
+  /* Hide bytemd's GitHub link in the right toolbar (the only <a> there). */
+  .md-host :global(.bytemd-toolbar-right a.bytemd-toolbar-icon) {
+    display: none !important;
+  }
   .md-host :global(.bytemd-toolbar-tab-active) {
     color: var(--foreground);
     border-bottom-color: var(--foreground);
