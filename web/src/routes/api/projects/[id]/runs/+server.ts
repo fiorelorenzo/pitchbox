@@ -7,6 +7,7 @@ import { runProjectExtraction } from '$lib/server/runner.js';
 const SourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('folder'), value: z.string().min(1) }),
   z.object({ kind: z.literal('git'), value: z.string().min(1) }),
+  z.object({ kind: z.literal('upload'), value: z.string().min(1) }),
 ]);
 const PostBody = z.object({ source: SourceSchema });
 

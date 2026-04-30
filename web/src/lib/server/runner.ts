@@ -3,6 +3,7 @@ import { getDb, schema } from './db.js';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { rm } from 'node:fs/promises';
 import { emit } from './events.js';
 
 // Derive repo root from this module's location (web/src/lib/server/runner.ts → ../../../..).
@@ -218,8 +219,28 @@ async function dispatchRun(
         error: String(err),
       });
     })
-    .finally(() => {
+    .finally(async () => {
       runCancels.delete(run.id);
+      try {
+        const params = run.params as { source?: { kind?: string; value?: string } } | null;
+        if (
+          run.kind === 'project_extraction' &&
+          params?.source?.kind === 'upload' &&
+          typeof params.source.value === 'string'
+        ) {
+          // Re-read the run row to check terminal status — the CLI's `extract:finish`
+          // handles cleanup on success; we only own the failure/cancellation path.
+          const [latest] = await db
+            .select({ status: schema.runs.status })
+            .from(schema.runs)
+            .where(eq(schema.runs.id, run.id));
+          if (latest && latest.status !== 'success') {
+            await rm(params.source.value, { recursive: true, force: true }).catch(() => {});
+          }
+        }
+      } catch {
+        // Never let cleanup throw out of finally.
+      }
     });
 }
 
@@ -298,7 +319,10 @@ export async function runCampaign(
 
 export async function runProjectExtraction(
   projectId: number,
-  source: { kind: 'folder'; value: string } | { kind: 'git'; value: string },
+  source:
+    | { kind: 'folder'; value: string }
+    | { kind: 'git'; value: string }
+    | { kind: 'upload'; value: string },
   trigger: string = 'manual',
 ): Promise<{ runId: number; alreadyRunning?: boolean }> {
   const db = getDb();

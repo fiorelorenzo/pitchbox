@@ -7,7 +7,10 @@ import { isAbsolute } from 'node:path';
 import { ok, fail } from '../lib/output.js';
 import { shallowClone } from '../lib/git-clone.js';
 
-type Source = { kind: 'folder'; value: string } | { kind: 'git'; value: string };
+type Source =
+  | { kind: 'folder'; value: string }
+  | { kind: 'git'; value: string }
+  | { kind: 'upload'; value: string };
 
 export function registerProjectCommands(program: Command) {
   program
@@ -43,6 +46,12 @@ export function registerProjectCommands(program: Command) {
         sourcePath = `/tmp/pitchbox-extract-${runId}`;
         await rm(sourcePath, { recursive: true, force: true });
         await shallowClone(source.value, sourcePath);
+      } else if (source.kind === 'upload') {
+        if (!isAbsolute(source.value)) return fail('upload path must be absolute');
+        const s = await stat(source.value).catch(() => null);
+        if (!s || !s.isDirectory())
+          return fail(`upload ${source.value} is not a readable directory`);
+        sourcePath = source.value;
       } else {
         return fail(`unsupported source kind: ${(source as { kind: string }).kind}`);
       }
@@ -82,12 +91,14 @@ export function registerProjectCommands(program: Command) {
           .where(eq(schema.runs.id, runId));
       });
 
-      // Best-effort cleanup of the temp git clone, if any.
-      const source = (run.params as { source?: { kind: string } }).source;
+      // Best-effort cleanup of any temp dir created for the run.
+      const source = (run.params as { source?: { kind: string; value?: string } }).source;
       if (source?.kind === 'git') {
         await rm(`/tmp/pitchbox-extract-${runId}`, { recursive: true, force: true }).catch(
           () => {},
         );
+      } else if (source?.kind === 'upload' && typeof source.value === 'string') {
+        await rm(source.value, { recursive: true, force: true }).catch(() => {});
       }
 
       ok({ runId, projectId: run.projectId, bytes: md.length });
