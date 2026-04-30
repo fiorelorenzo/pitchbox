@@ -20,10 +20,14 @@
   }
 
   let host: HTMLDivElement | null = $state(null);
+  let scrollSyncOn = $state(true);
+  let cmScrollerRef: HTMLElement | null = null;
+  let previewRef: HTMLElement | null = null;
 
   // Custom ratio-based scroll sync. bytemd's built-in sync breaks under Svelte 5 because it
   // assumes `previewEl.childNodes[0]` is the markdown-body div, but Svelte 5 inserts anchor
-  // comment nodes from the inner `{#if}` block ahead of it.
+  // comment nodes from the inner `{#if}` block ahead of it. We also disable bytemd's own
+  // (broken) handlers by un-checking its native sync checkbox at mount.
   onMount(() => {
     let cleanup: (() => void) | null = null;
     let attempts = 0;
@@ -37,9 +41,22 @@
         return;
       }
 
+      previewRef = preview;
+      cmScrollerRef = cmScroller;
+
+      // Disable bytemd's broken internal sync by un-checking its native checkbox and
+      // dispatching the change event so its `syncEnabled` becomes false.
+      const nativeCb = root.querySelector<HTMLInputElement>(
+        '.bytemd-status input[type="checkbox"]',
+      );
+      if (nativeCb && nativeCb.checked) {
+        nativeCb.checked = false;
+        nativeCb.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+
       let syncing = false;
       const syncFromEditor = () => {
-        if (syncing) return;
+        if (!scrollSyncOn || syncing) return;
         const max = cmScroller.scrollHeight - cmScroller.clientHeight;
         if (max <= 0) return;
         const ratio = cmScroller.scrollTop / max;
@@ -50,7 +67,7 @@
         requestAnimationFrame(() => (syncing = false));
       };
       const syncFromPreview = () => {
-        if (syncing) return;
+        if (!scrollSyncOn || syncing) return;
         const max = preview.scrollHeight - preview.clientHeight;
         if (max <= 0) return;
         const ratio = preview.scrollTop / max;
@@ -72,6 +89,11 @@
     tryWire();
     return () => cleanup?.();
   });
+
+  function scrollToTop() {
+    cmScrollerRef?.scrollTo({ top: 0, behavior: 'smooth' });
+    previewRef?.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 </script>
 
 <div
@@ -81,6 +103,13 @@
   aria-disabled={disabled}
 >
   <Editor {value} {plugins} mode="split" on:change={handleChange} />
+  <div class="md-footer">
+    <label class="flex items-center gap-1.5 cursor-pointer select-none">
+      <input type="checkbox" bind:checked={scrollSyncOn} class="md-cb" />
+      <span>Scroll sync</span>
+    </label>
+    <button type="button" class="md-link" onclick={scrollToTop}>Scroll to top</button>
+  </div>
 </div>
 
 <style>
@@ -341,15 +370,42 @@
     background: var(--muted);
   }
 
+  /* Hide bytemd's native status bar entirely — we render our own footer below. */
   .md-host :global(.bytemd-status) {
-    background: var(--muted);
-    border-top: 1px solid var(--border);
-    color: var(--muted-foreground);
+    display: none !important;
+  }
+  /* The bytemd inner panes assume a status bar of ~26px; without it, body sits taller.
+     Our wrapper also adds the .md-footer (~28px). Compensate so body fits inside. */
+  .md-host :global(.bytemd-body) {
+    height: calc(100% - 38px) !important;
+    overflow: hidden;
   }
 
-  .md-host :global(.bytemd-status-left),
-  .md-host :global(.bytemd-status-right) {
+  .md-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 1rem;
+    padding: 0.35rem 0.75rem;
+    font-size: 12px;
     color: var(--muted-foreground);
+    background: var(--muted);
+    border-top: 1px solid var(--border);
+    border-bottom-left-radius: var(--radius, 0.5rem);
+    border-bottom-right-radius: var(--radius, 0.5rem);
+  }
+  .md-cb {
+    accent-color: var(--foreground);
+  }
+  .md-link {
+    background: transparent;
+    border: 0;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    padding: 0;
+  }
+  .md-link:hover {
+    color: var(--foreground);
   }
 
   .md-host :global(.bytemd-help),
