@@ -46,8 +46,8 @@
     color: var(--muted-foreground);
   }
 
-  /* Hide bytemd's GitHub link in the right toolbar (the only <a> there). */
-  .md-host :global(.bytemd-toolbar-right a.bytemd-toolbar-icon) {
+  /* Hide bytemd's "Source code" GitHub icon — last item in the right toolbar. */
+  .md-host :global(.bytemd-toolbar-right > .bytemd-toolbar-icon:last-child) {
     display: none !important;
   }
   .md-host :global(.bytemd-toolbar-tab-active) {
@@ -150,6 +150,20 @@
   .md-host :global(.bytemd-preview .markdown-body ul),
   .md-host :global(.bytemd-preview .markdown-body ol) {
     padding-left: 1.5rem !important;
+  }
+  .md-host :global(.bytemd-preview .markdown-body ul) {
+    list-style: disc outside !important;
+  }
+  .md-host :global(.bytemd-preview .markdown-body ol) {
+    list-style: decimal outside !important;
+  }
+  .md-host :global(.bytemd-preview .markdown-body li) {
+    list-style: inherit !important;
+  }
+  /* Task-list checkboxes (GFM): keep them clean and aligned. */
+  .md-host :global(.bytemd-preview .markdown-body li.task-list-item) {
+    list-style: none !important;
+    margin-left: -1.25rem;
   }
   .md-host :global(.bytemd-preview .markdown-body li + li) {
     margin-top: 0.25em;
