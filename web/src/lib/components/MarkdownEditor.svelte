@@ -146,6 +146,46 @@
   .md-host :global(.bytemd-preview .markdown-body h4) {
     font-size: 1em;
   }
+  .md-host :global(.bytemd-preview .markdown-body h5) {
+    font-size: 0.92em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted-foreground);
+  }
+  .md-host :global(.bytemd-preview .markdown-body h6) {
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted-foreground);
+  }
+
+  .md-host :global(.bytemd-preview .markdown-body strong) {
+    font-weight: 600;
+    color: var(--foreground);
+  }
+  .md-host :global(.bytemd-preview .markdown-body em) {
+    font-style: italic;
+  }
+  .md-host :global(.bytemd-preview .markdown-body del) {
+    text-decoration: line-through;
+    color: var(--muted-foreground);
+  }
+  .md-host :global(.bytemd-preview .markdown-body img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.375rem;
+    border: 1px solid var(--border);
+  }
+  .md-host :global(.bytemd-preview .markdown-body kbd) {
+    background: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 0.25rem;
+    padding: 0.05em 0.35em;
+    font-size: 0.85em;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+      monospace;
+  }
 
   .md-host :global(.bytemd-preview .markdown-body ul),
   .md-host :global(.bytemd-preview .markdown-body ol) {
