@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Editor } from 'bytemd';
   import gfm from '@bytemd/plugin-gfm';
+  import { onMount, tick } from 'svelte';
   import 'bytemd/dist/index.css';
 
   type Props = {
@@ -17,9 +18,59 @@
     if (disabled) return;
     onchange(e.detail.value);
   }
+
+  let host: HTMLDivElement | null = $state(null);
+
+  onMount(async () => {
+    await tick();
+    setTimeout(() => {
+      const root = host;
+      if (!root) {
+        console.warn('[MarkdownEditor] host not found');
+        return;
+      }
+      const preview = root.querySelector<HTMLElement>('.bytemd-preview');
+      const cmScroller = root.querySelector<HTMLElement>('.CodeMirror-scroll');
+      const body = root.querySelector<HTMLElement>('.bytemd-body');
+
+      console.log('[MarkdownEditor] elements:', {
+        host: root,
+        body,
+        preview,
+        cmScroller,
+      });
+      if (preview) {
+        console.log('[MarkdownEditor] preview overflow:', getComputedStyle(preview).overflow);
+        console.log(
+          '[MarkdownEditor] preview heights — scrollHeight:',
+          preview.scrollHeight,
+          'clientHeight:',
+          preview.clientHeight,
+        );
+        preview.addEventListener('scroll', () => {
+          console.log('[MarkdownEditor] preview scroll', preview.scrollTop);
+        });
+      }
+      if (cmScroller) {
+        console.log(
+          '[MarkdownEditor] cm heights — scrollHeight:',
+          cmScroller.scrollHeight,
+          'clientHeight:',
+          cmScroller.clientHeight,
+        );
+        cmScroller.addEventListener('scroll', () => {
+          console.log('[MarkdownEditor] cm scroll', cmScroller.scrollTop);
+        });
+      }
+      if (body) {
+        console.log('[MarkdownEditor] body overflow:', getComputedStyle(body).overflow);
+      }
+    }, 600);
+  });
 </script>
 
 <div
+  bind:this={host}
   class="md-host {disabled ? 'is-disabled' : ''}"
   style="height: {height}"
   aria-disabled={disabled}
