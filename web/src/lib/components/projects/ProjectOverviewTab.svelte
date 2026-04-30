@@ -8,7 +8,7 @@
   import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
   import ExtractDescriptionDialog from './ExtractDescriptionDialog.svelte';
   import DescriptionDiffModal from './DescriptionDiffModal.svelte';
-  import RecentExtractionsList from './RecentExtractionsList.svelte';
+  import ProjectExtractionRunsTable from './ProjectExtractionRunsTable.svelte';
   import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
 
   type Project = {
@@ -21,8 +21,12 @@
   type ExtractionRun = {
     id: number;
     status: string;
+    trigger: string;
+    agentRunner: string;
     startedAt: string;
     finishedAt: string | null;
+    durationMs: number | null;
+    tokensUsed: number | null;
     error: string | null;
     params: { source?: { kind: string; value: string } } | null;
   };
@@ -169,10 +173,7 @@
     <MarkdownEditor value={description} onchange={(v) => (description = v)} />
   </div>
 
-  <div class="flex flex-col gap-2">
-    <span class="text-xs">Recent extractions</span>
-    <RecentExtractionsList runs={extractionRunsState} />
-  </div>
+  <ProjectExtractionRunsTable runs={extractionRunsState} />
 
   <div class="max-w-xl space-y-6">
     <label class="flex flex-col gap-1 text-xs">
