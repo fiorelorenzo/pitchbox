@@ -88,11 +88,9 @@
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3">{run.trigger}</Table.Cell>
               <Table.Cell class="text-xs py-3">
-                <Badge
-                  variant="outline"
-                  class="font-mono text-[10px] py-0 px-1 h-4 text-muted-foreground/70"
-                  >{run.agentRunner}</Badge
-                >
+                <Badge variant="outline" class="font-mono text-[11px] py-0.5 px-1.5">
+                  {run.agentRunner}
+                </Badge>
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3 max-w-[260px] truncate">
                 <code class="font-mono">{shortSource(run.params)}</code>
