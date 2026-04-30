@@ -95,27 +95,116 @@
   .md-host :global(.bytemd-preview .markdown-body) {
     background: var(--background);
     color: var(--foreground);
-    padding: 1rem;
+    padding: 1.25rem 1.5rem;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .md-host :global(.bytemd-preview .markdown-body > *:first-child) {
+    margin-top: 0 !important;
+  }
+  .md-host :global(.bytemd-preview .markdown-body > *:last-child) {
+    margin-bottom: 0 !important;
+  }
+
+  .md-host :global(.bytemd-preview .markdown-body p),
+  .md-host :global(.bytemd-preview .markdown-body ul),
+  .md-host :global(.bytemd-preview .markdown-body ol),
+  .md-host :global(.bytemd-preview .markdown-body blockquote),
+  .md-host :global(.bytemd-preview .markdown-body pre),
+  .md-host :global(.bytemd-preview .markdown-body table) {
+    margin: 0 0 1em 0 !important;
+  }
+
+  .md-host :global(.bytemd-preview .markdown-body h1),
+  .md-host :global(.bytemd-preview .markdown-body h2),
+  .md-host :global(.bytemd-preview .markdown-body h3),
+  .md-host :global(.bytemd-preview .markdown-body h4),
+  .md-host :global(.bytemd-preview .markdown-body h5),
+  .md-host :global(.bytemd-preview .markdown-body h6) {
+    margin: 1.6em 0 0.6em 0 !important;
+    line-height: 1.3;
+    font-weight: 600;
+    color: var(--foreground);
+    border-bottom: none !important;
+    padding-bottom: 0 !important;
+  }
+  .md-host :global(.bytemd-preview .markdown-body h1) {
+    font-size: 1.6em;
+  }
+  .md-host :global(.bytemd-preview .markdown-body h2) {
+    font-size: 1.35em;
+  }
+  .md-host :global(.bytemd-preview .markdown-body h3) {
+    font-size: 1.15em;
+  }
+  .md-host :global(.bytemd-preview .markdown-body h4) {
+    font-size: 1em;
+  }
+
+  .md-host :global(.bytemd-preview .markdown-body ul),
+  .md-host :global(.bytemd-preview .markdown-body ol) {
+    padding-left: 1.5rem !important;
+  }
+  .md-host :global(.bytemd-preview .markdown-body li + li) {
+    margin-top: 0.25em;
+  }
+  .md-host :global(.bytemd-preview .markdown-body li > p) {
+    margin-bottom: 0.4em !important;
   }
 
   .md-host :global(.bytemd-preview .markdown-body a) {
     color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
 
-  .md-host :global(.bytemd-preview .markdown-body code),
-  .md-host :global(.bytemd-preview .markdown-body pre) {
+  .md-host :global(.bytemd-preview .markdown-body code) {
     background: var(--muted);
     color: var(--foreground);
     border-radius: 0.25rem;
+    padding: 0.1em 0.35em;
+    font-size: 0.92em;
+  }
+  .md-host :global(.bytemd-preview .markdown-body pre) {
+    background: var(--muted);
+    color: var(--foreground);
+    border-radius: 0.375rem;
+    padding: 0.85em 1em;
+    overflow-x: auto;
+  }
+  .md-host :global(.bytemd-preview .markdown-body pre code) {
+    background: transparent;
+    padding: 0;
+    font-size: 0.9em;
   }
 
   .md-host :global(.bytemd-preview .markdown-body blockquote) {
-    border-left-color: var(--border);
+    border-left: 3px solid var(--border);
     color: var(--muted-foreground);
+    padding: 0.25em 0 0.25em 1em;
+    margin-left: 0;
   }
 
   .md-host :global(.bytemd-preview .markdown-body hr) {
+    height: 1px;
     background: var(--border);
+    border: 0;
+    margin: 1.5em 0;
+  }
+
+  .md-host :global(.bytemd-preview .markdown-body table) {
+    border-collapse: collapse;
+    display: block;
+    overflow-x: auto;
+  }
+  .md-host :global(.bytemd-preview .markdown-body th),
+  .md-host :global(.bytemd-preview .markdown-body td) {
+    border: 1px solid var(--border);
+    padding: 0.4em 0.7em;
+  }
+  .md-host :global(.bytemd-preview .markdown-body th) {
+    background: var(--muted);
   }
 
   .md-host :global(.bytemd-status) {
