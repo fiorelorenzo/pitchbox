@@ -34,10 +34,7 @@ describe('project_extraction with kind=upload', () => {
     await writeFile(join(upload, 'README.md'), '# Demo\nA demo product.\n');
 
     const db = getDb();
-    const [project] = await db
-      .insert(schema.projects)
-      .values({ slug: 'p', name: 'P' })
-      .returning();
+    const [project] = await db.insert(schema.projects).values({ slug: 'p', name: 'P' }).returning();
     const [run] = await db
       .insert(schema.runs)
       .values({
@@ -61,10 +58,7 @@ describe('project_extraction with kind=upload', () => {
     );
     expect(finishOut.ok).toBe(true);
 
-    const [p] = await db
-      .select()
-      .from(schema.projects)
-      .where(eq(schema.projects.id, project.id));
+    const [p] = await db.select().from(schema.projects).where(eq(schema.projects.id, project.id));
     expect(p.description).toBe(md);
 
     const [r] = await db.select().from(schema.runs).where(eq(schema.runs.id, run.id));
