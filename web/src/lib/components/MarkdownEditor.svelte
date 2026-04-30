@@ -47,6 +47,15 @@
           'clientHeight:',
           preview.clientHeight,
         );
+        console.log(
+          '[MarkdownEditor] preview.childNodes:',
+          [...preview.childNodes].map((n) => ({
+            type: n.nodeType,
+            name: n.nodeName,
+            isElement: n instanceof HTMLElement,
+            class: (n as HTMLElement).className ?? null,
+          })),
+        );
         preview.addEventListener('scroll', () => {
           console.log('[MarkdownEditor] preview scroll', preview.scrollTop);
         });
