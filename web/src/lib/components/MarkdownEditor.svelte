@@ -73,6 +73,9 @@
 
   .md-host :global(.bytemd-body) {
     background: var(--background);
+    /* Prevent the wrapper from scrolling — force scroll into the inner panes
+       so bytemd's scroll-sync handler on .bytemd-preview actually fires. */
+    overflow: hidden;
   }
 
   .md-host :global(.bytemd-editor),
