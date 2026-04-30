@@ -11,7 +11,7 @@
   import DescriptionDiffModal from './DescriptionDiffModal.svelte';
   import ProjectExtractionRunsTable from './ProjectExtractionRunsTable.svelte';
   import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
-  import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/registry';
+  import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 
   const RUNNER_OPTIONS = AGENT_RUNNER_META.map((m) => ({
     value: m.slug,

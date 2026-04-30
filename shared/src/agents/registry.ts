@@ -1,7 +1,8 @@
 import { ClaudeCodeRunner } from './claude-code.js';
 import type { AgentRunner } from './base.js';
+import type { AgentRunnerSlug } from './meta.js';
 
-export type AgentRunnerSlug = 'claude-code' | 'codex' | 'opencode';
+export { AGENT_RUNNER_META, type AgentRunnerSlug, type AgentRunnerMeta } from './meta.js';
 
 export const AGENT_RUNNERS: Record<AgentRunnerSlug, () => AgentRunner> = {
   'claude-code': () => new ClaudeCodeRunner(),
@@ -22,14 +23,3 @@ export function createAgentRunner(slug: string): AgentRunner {
   throw new Error(`Unknown agent runner: ${slug}`);
 }
 
-export type AgentRunnerMeta = {
-  slug: AgentRunnerSlug;
-  label: string;
-  implemented: boolean;
-};
-
-export const AGENT_RUNNER_META: AgentRunnerMeta[] = [
-  { slug: 'claude-code', label: 'Claude Code', implemented: true },
-  { slug: 'codex', label: 'Codex', implemented: false },
-  { slug: 'opencode', label: 'OpenCode', implemented: false },
-];
