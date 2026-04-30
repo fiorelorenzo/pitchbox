@@ -3,6 +3,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import { SelectField } from '$lib/components/ui/select-field';
   import { toast } from 'svelte-sonner';
   import DeleteProjectDialog from './DeleteProjectDialog.svelte';
   import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
@@ -10,6 +11,13 @@
   import DescriptionDiffModal from './DescriptionDiffModal.svelte';
   import ProjectExtractionRunsTable from './ProjectExtractionRunsTable.svelte';
   import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
+  import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/registry';
+
+  const RUNNER_OPTIONS = AGENT_RUNNER_META.map((m) => ({
+    value: m.slug,
+    label: m.implemented ? m.label : `${m.label} (coming soon)`,
+    disabled: !m.implemented,
+  }));
 
   type Project = {
     id: number;
@@ -151,7 +159,12 @@
     </label>
     <label class="flex flex-col gap-1 text-xs">
       Default agent runner
-      <Input bind:value={runner} />
+      <SelectField
+        value={runner}
+        onValueChange={(v) => (runner = v as string)}
+        options={RUNNER_OPTIONS}
+        fullWidth
+      />
     </label>
   </div>
 

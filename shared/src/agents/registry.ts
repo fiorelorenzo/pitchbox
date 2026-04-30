@@ -21,3 +21,15 @@ export function createAgentRunner(slug: string): AgentRunner {
   }
   throw new Error(`Unknown agent runner: ${slug}`);
 }
+
+export type AgentRunnerMeta = {
+  slug: AgentRunnerSlug;
+  label: string;
+  implemented: boolean;
+};
+
+export const AGENT_RUNNER_META: AgentRunnerMeta[] = [
+  { slug: 'claude-code', label: 'Claude Code', implemented: true },
+  { slug: 'codex', label: 'Codex', implemented: false },
+  { slug: 'opencode', label: 'OpenCode', implemented: false },
+];
