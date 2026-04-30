@@ -57,6 +57,10 @@
   let descriptionBeforeUpdate = $state<string>('');
   // svelte-ignore state_referenced_locally
   let extractionRunsState = $state(extractionRuns);
+
+  let extractionRunning = $derived(
+    runningRunId !== null || extractionRunsState.some((r) => r.status === 'running'),
+  );
   // svelte-ignore state_referenced_locally
   let initialSource = $state<{ kind: 'folder' | 'git'; value: string } | undefined>(
     (() => {
@@ -172,7 +176,7 @@
     <div class="flex items-center justify-between">
       <span class="text-xs">Description</span>
       <div class="flex gap-2">
-        {#if !description}
+        {#if !description && !extractionRunning}
           <Button
             type="button"
             variant="ghost"
@@ -182,18 +186,38 @@
             Insert template
           </Button>
         {/if}
-        <Button type="button" variant="outline" size="sm" onclick={() => (extractOpen = true)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onclick={() => (extractOpen = true)}
+          disabled={extractionRunning}
+        >
           Auto-extract
         </Button>
       </div>
     </div>
-    <MarkdownEditor value={description} onchange={(v) => (description = v)} height="540px" />
+    {#if extractionRunning}
+      <div
+        class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+      >
+        An extraction is running — the editor is locked until it finishes.
+      </div>
+    {/if}
+    <MarkdownEditor
+      value={description}
+      onchange={(v) => (description = v)}
+      height="540px"
+      disabled={extractionRunning}
+    />
   </div>
 
   <ProjectExtractionRunsTable runs={extractionRunsState} />
 
   <div class="flex justify-between items-center pt-2 border-t">
-    <Button onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+    <Button onclick={save} disabled={saving || extractionRunning}>
+      {saving ? 'Saving…' : 'Save'}
+    </Button>
     <Button variant="destructive" onclick={() => (deleteOpen = true)}>Delete project</Button>
   </div>
 </div>

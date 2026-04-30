@@ -3,17 +3,27 @@
   import gfm from '@bytemd/plugin-gfm';
   import 'bytemd/dist/index.css';
 
-  type Props = { value: string; onchange: (v: string) => void; height?: string };
-  let { value, onchange, height = '420px' }: Props = $props();
+  type Props = {
+    value: string;
+    onchange: (v: string) => void;
+    height?: string;
+    disabled?: boolean;
+  };
+  let { value, onchange, height = '420px', disabled = false }: Props = $props();
 
   const plugins = [gfm()];
 
   function handleChange(e: CustomEvent<{ value: string }>) {
+    if (disabled) return;
     onchange(e.detail.value);
   }
 </script>
 
-<div class="md-host" style="height: {height}">
+<div
+  class="md-host {disabled ? 'is-disabled' : ''}"
+  style="height: {height}"
+  aria-disabled={disabled}
+>
   <Editor {value} {plugins} mode="split" on:change={handleChange} />
 </div>
 
@@ -25,6 +35,12 @@
     background: var(--background);
     color: var(--foreground);
     font-family: inherit;
+  }
+
+  .md-host.is-disabled {
+    opacity: 0.6;
+    pointer-events: none;
+    user-select: none;
   }
 
   .md-host :global(.bytemd-toolbar) {
