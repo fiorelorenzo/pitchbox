@@ -151,11 +151,23 @@ async function dispatchRun(
       // If the run is already in a terminal state (cancelled by user OR
       // pre-marked by the playbook via `pitchbox run:finish`), don't overwrite it.
       const [current] = await db
-        .select({ status: schema.runs.status })
+        .select({
+          status: schema.runs.status,
+          tokensUsed: schema.runs.tokensUsed,
+          stdoutLogPath: schema.runs.stdoutLogPath,
+        })
         .from(schema.runs)
         .where(eq(schema.runs.id, run.id));
       if (current && TERMINAL_STATUSES.has(current.status)) {
         const finalStatus = current.status as 'success' | 'failed' | 'cancelled';
+        // Backfill metadata that the CLI doesn't know (token count, stdout log path),
+        // without disturbing the terminal status the playbook already committed to.
+        const patch: { tokensUsed?: number; stdoutLogPath?: string } = {};
+        if (current.tokensUsed == null && res.tokensUsed != null) patch.tokensUsed = res.tokensUsed;
+        if (current.stdoutLogPath == null && res.logPath) patch.stdoutLogPath = res.logPath;
+        if (Object.keys(patch).length > 0) {
+          await db.update(schema.runs).set(patch).where(eq(schema.runs.id, run.id));
+        }
         // Skip onFinish in the cancellation path — cancelRun handles its own emit.
         if (finalStatus !== 'cancelled') opts.onFinish?.(finalStatus);
         emit('run:finished', {
