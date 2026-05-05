@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { ChevronLeft, ChevronDown, ChevronUp } from 'lucide-svelte';
+	import { ChevronLeft } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { invalidateAll } from '$app/navigation';
-	import { navigating } from '$app/stores';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import * as Card from '$lib/components/ui/card';
-	import * as Table from '$lib/components/ui/table';
-	import * as Tooltip from '$lib/components/ui/tooltip';
-	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { relativeTime, formatDuration } from '$lib/utils/time';
-	import { slide } from 'svelte/transition';
-	import RunLog from '$lib/components/RunLog.svelte';
+	import { formatDuration } from '$lib/utils/time';
 	import Seo from '$lib/components/Seo.svelte';
+	import CampaignProfileTab from '$lib/components/campaigns/CampaignProfileTab.svelte';
+	import CampaignRunsTab from '$lib/components/campaigns/CampaignRunsTab.svelte';
+	import RegenerateProfileDialog from '$lib/components/campaigns/RegenerateProfileDialog.svelte';
+	import type { ScenarioSlug } from '@pitchbox/shared/campaigns';
+
+	type SkillRun = { id: number; status: string; params: { objective?: string } | null };
 
 	let {
 		data,
@@ -25,7 +25,7 @@
 				skillSlug: string;
 				agentRunner: string;
 				status: string;
-				config: unknown;
+				config: Record<string, unknown> | null;
 				cronExpression: string | null;
 				rateLimit: unknown;
 			};
@@ -33,24 +33,36 @@
 			platform: { id: number; slug: string } | null;
 			runs: Array<{
 				id: number;
+				kind: string;
 				status: string;
 				trigger: string;
 				agentRunner: string;
-				startedAt: Date | string;
-				finishedAt: Date | string | null;
+				startedAt: string | Date;
+				finishedAt: string | Date | null;
 				draftCount: number;
 				durationMs: number | null;
 				tokensUsed: number | null;
 			}>;
+			skillRuns: SkillRun[];
 		};
 	} = $props();
 
 	let isStarting = $state(false);
-	// Single-expanded run id in the history table.
-	let expandedRunId = $state<number | null>(null);
+	let tab = $state<'overview' | 'profile' | 'runs'>('overview');
+	let regenOpen = $state(false);
+
+	const tabs = [
+		{ k: 'overview' as const, label: 'Overview' },
+		{ k: 'profile' as const, label: 'Profile' },
+		{ k: 'runs' as const, label: 'Runs' },
+	];
+
+	const isDraft = $derived(data.campaign.status === 'draft');
+	const configEmpty = $derived(Object.keys(data.campaign.config ?? {}).length === 0);
+	const showProfileBanner = $derived(isDraft || configEmpty);
 
 	// Summary stats from last 30 runs
-	let stats = $derived(() => {
+	let stats = $derived.by(() => {
 		const total = data.runs.length;
 		const successful = data.runs.filter((r) => r.status === 'success').length;
 		const failed = data.runs.filter((r) => r.status === 'failed' || r.status === 'error').length;
@@ -58,12 +70,14 @@
 		const totalTokens = data.runs.reduce((s, r) => s + (r.tokensUsed ?? 0), 0);
 		const durations = data.runs.filter((r) => r.durationMs != null).map((r) => r.durationMs!);
 		const avgDuration =
-			durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null;
+			durations.length > 0
+				? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+				: null;
 		return { total, successful, failed, totalDrafts, totalTokens, avgDuration };
 	});
 
 	async function runNow() {
-		if (isStarting) return;
+		if (isStarting || isDraft) return;
 		isStarting = true;
 		try {
 			const res = await fetch('/api/run', {
@@ -86,11 +100,7 @@
 		}
 	}
 
-	function toggleRunExpand(runId: number) {
-		expandedRunId = expandedRunId === runId ? null : runId;
-	}
-
-	let isNavigating = $derived($navigating != null);
+	const lastObjective = $derived(data.skillRuns[0]?.params?.objective ?? '');
 </script>
 
 <Seo
@@ -109,8 +119,8 @@
 	</a>
 </nav>
 
-<!-- Page header: single tidy row -->
-<header class="mb-6 flex items-start justify-between gap-4">
+<!-- Page header -->
+<header class="mb-4 flex items-start justify-between gap-4">
 	<div class="min-w-0 space-y-1.5">
 		<div class="flex items-center gap-3 flex-wrap">
 			<h1 class="text-2xl font-semibold tracking-tight leading-none">{data.campaign.name}</h1>
@@ -132,208 +142,124 @@
 			Configuration, activity, and run history.
 		</p>
 	</div>
-	<Button onclick={runNow} loading={isStarting} size="sm">
+	<Button onclick={runNow} loading={isStarting} size="sm" disabled={isDraft || isStarting}>
 		{isStarting ? 'Starting…' : 'Run now'}
 	</Button>
 </header>
 
-<!-- Two cards: config + activity -->
-<div class="grid gap-4 md:grid-cols-2 mb-6">
-	<!-- Config card -->
-	<Card.Root size="sm">
-		<Card.Header>
-			<div class="flex items-center justify-between">
-				<Card.Title class="text-base">Configuration</Card.Title>
-				<Tooltip.Provider>
-					<Tooltip.Root>
-						<Tooltip.Trigger>
-							{#snippet child({ props })}
-								<Button {...props} variant="outline" size="sm" disabled>Edit config</Button>
-							{/snippet}
-						</Tooltip.Trigger>
-						<Tooltip.Content>Config editing ships in M6</Tooltip.Content>
-					</Tooltip.Root>
-				</Tooltip.Provider>
-			</div>
-		</Card.Header>
-		<Card.Content class="space-y-3">
-			{#if data.campaign.cronExpression}
-				<div>
-					<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Cron</p>
-					<code class="font-mono text-xs bg-muted px-2 py-1 rounded"
-						>{data.campaign.cronExpression}</code
-					>
-				</div>
-			{/if}
-			{#if data.campaign.rateLimit && JSON.stringify(data.campaign.rateLimit) !== '{}'}
-				<div>
-					<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Rate limit</p>
-					<pre class="font-mono text-xs whitespace-pre-wrap bg-muted p-2 rounded">{JSON.stringify(
-							data.campaign.rateLimit,
-							null,
-							2
-						)}</pre>
-				</div>
-			{/if}
-			<div>
-				<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Config</p>
-				<pre class="font-mono text-xs whitespace-pre-wrap bg-muted p-2 rounded overflow-auto max-h-48">{JSON.stringify(
-						data.campaign.config,
-						null,
-						2
-					)}</pre>
-			</div>
-		</Card.Content>
-	</Card.Root>
-
-	<!-- Recent activity summary card -->
-	<Card.Root size="sm">
-		<Card.Header>
-			<Card.Title class="text-base">Recent activity</Card.Title>
-			<Card.Description>Last {data.runs.length} runs</Card.Description>
-		</Card.Header>
-		<Card.Content>
-			<dl class="grid grid-cols-2 gap-3">
-				<div>
-					<dt class="text-xs text-muted-foreground">Total runs</dt>
-					<dd class="text-2xl font-semibold">{stats().total}</dd>
-				</div>
-				<div>
-					<dt class="text-xs text-muted-foreground">Successful</dt>
-					<dd class="text-2xl font-semibold text-green-600">{stats().successful}</dd>
-				</div>
-				<div>
-					<dt class="text-xs text-muted-foreground">Failed</dt>
-					<dd class="text-2xl font-semibold text-red-600">{stats().failed}</dd>
-				</div>
-				<div>
-					<dt class="text-xs text-muted-foreground">Total drafts</dt>
-					<dd class="text-2xl font-semibold">{stats().totalDrafts}</dd>
-				</div>
-				<div>
-					<dt class="text-xs text-muted-foreground">Total tokens</dt>
-					<dd class="text-2xl font-semibold">{stats().totalTokens.toLocaleString()}</dd>
-				</div>
-				<div>
-					<dt class="text-xs text-muted-foreground">Avg duration</dt>
-					<dd class="text-2xl font-semibold">{formatDuration(stats().avgDuration)}</dd>
-				</div>
-			</dl>
-		</Card.Content>
-	</Card.Root>
+<!-- Tabs -->
+<div class="flex gap-2 border-b border-border mb-6">
+	{#each tabs as t (t.k)}
+		<button
+			type="button"
+			class={`px-3 py-2 text-sm border-b-2 ${tab === t.k ? 'border-foreground' : 'border-transparent text-muted-foreground'}`}
+			onclick={() => (tab = t.k)}
+		>
+			{t.label}
+		</button>
+	{/each}
 </div>
 
-<!-- Run history -->
-<Card.Root size="sm">
-	<Card.Header>
-		<Card.Title class="text-base">Run history</Card.Title>
-		<Card.Description class="text-xs">Last 30 runs</Card.Description>
-	</Card.Header>
-	<Card.Content class="p-0">
-		{#if isNavigating}
-			<div class="p-4 space-y-2">
-				{#each Array(6) as _, i (i)}
-					<Skeleton class="h-10 w-full" />
-				{/each}
-			</div>
-		{:else if data.runs.length === 0}
-			<div class="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
-				<p class="text-sm">No runs yet</p>
-				<p class="text-xs">Click "Run now" above to kick off the first run.</p>
-			</div>
-		{:else}
-			<Table.Root>
-				<Table.Header>
-					<Table.Row>
-						<Table.Head class="w-16">ID</Table.Head>
-						<Table.Head>Status</Table.Head>
-						<Table.Head>Trigger</Table.Head>
-						<Table.Head>Runner</Table.Head>
-						<Table.Head>Started</Table.Head>
-						<Table.Head>Duration</Table.Head>
-						<Table.Head>Drafts</Table.Head>
-						<Table.Head>Tokens</Table.Head>
-						<Table.Head class="w-8"></Table.Head>
-					</Table.Row>
-				</Table.Header>
-				<Table.Body>
-					{#each data.runs as run (run.id)}
-						{@const expanded = expandedRunId === run.id}
-						<Table.Row
-							onclick={() => toggleRunExpand(run.id)}
-							onkeydown={(e: KeyboardEvent) => {
-								if (e.key === 'Enter' || e.key === ' ') {
-									e.preventDefault();
-									toggleRunExpand(run.id);
-								}
-							}}
-							tabindex={0}
-							role="button"
-							aria-expanded={expanded}
-							aria-label="Toggle run #{run.id} log"
-							class="hover:bg-muted/40 transition-colors border-b cursor-pointer {expanded
-								? 'bg-muted/30'
-								: ''}"
-						>
-							<Table.Cell class="font-mono text-xs text-muted-foreground py-3">#{run.id}</Table.Cell>
-							<Table.Cell class="py-3">
-								<StatusBadge domain="run-status" value={run.status} />
-							</Table.Cell>
-							<Table.Cell class="text-xs text-muted-foreground py-3">{run.trigger}</Table.Cell>
-							<Table.Cell class="text-xs py-3">
-								<Badge
-									variant="outline"
-									class="font-mono text-[10px] py-0 px-1 h-4 text-muted-foreground/70"
-									>{run.agentRunner}</Badge
-								>
-							</Table.Cell>
-							<Table.Cell class="text-xs text-muted-foreground py-3"
-								>{relativeTime(run.startedAt)}</Table.Cell
-							>
-							<Table.Cell class="text-xs text-muted-foreground py-3"
-								>{formatDuration(run.durationMs)}</Table.Cell
-							>
-							<Table.Cell class="py-3">
-								{#if run.draftCount > 0}
-									<a href="/inbox?run={run.id}" onclick={(e) => e.stopPropagation()}>
-										<Badge variant="secondary" class="text-xs cursor-pointer hover:bg-accent">
-											{run.draftCount}
-										</Badge>
-									</a>
-								{:else}
-									<span class="text-xs text-muted-foreground">—</span>
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="text-xs text-muted-foreground py-3">
-								{run.tokensUsed != null ? run.tokensUsed.toLocaleString() : '—'}
-							</Table.Cell>
-							<Table.Cell class="w-8 pl-0 py-3">
-								<span
-									class="flex items-center justify-center size-7 rounded text-muted-foreground"
-									aria-hidden="true"
-								>
-									{#if expanded}
-										<ChevronUp class="size-4" />
-									{:else}
-										<ChevronDown class="size-4" />
-									{/if}
-								</span>
-							</Table.Cell>
-						</Table.Row>
+{#if tab === 'overview'}
+	{#if showProfileBanner}
+		<div
+			class="mb-4 flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+		>
+			<span>Profile not yet generated — generate it before running.</span>
+			<Button size="sm" variant="outline" onclick={() => (regenOpen = true)}>Generate now</Button>
+		</div>
+	{/if}
 
-						<!-- Inline expanded log row -->
-						{#if expanded}
-							<Table.Row class="hover:bg-transparent border-t-0">
-								<Table.Cell colspan={9} class="p-0 border-t border-border/50 max-w-0">
-									<div transition:slide={{ duration: 200 }} class="bg-muted/10 px-6 py-3 min-w-0 overflow-hidden">
-										<RunLog runId={run.id} />
-									</div>
-								</Table.Cell>
-							</Table.Row>
-						{/if}
-					{/each}
-				</Table.Body>
-			</Table.Root>
-		{/if}
-	</Card.Content>
-</Card.Root>
+	<div class="grid gap-4 md:grid-cols-2 mb-6">
+		<!-- Config card -->
+		<Card.Root size="sm">
+			<Card.Header>
+				<Card.Title class="text-base">Configuration</Card.Title>
+			</Card.Header>
+			<Card.Content class="space-y-3">
+				{#if data.campaign.cronExpression}
+					<div>
+						<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Cron</p>
+						<code class="font-mono text-xs bg-muted px-2 py-1 rounded"
+							>{data.campaign.cronExpression}</code
+						>
+					</div>
+				{/if}
+				{#if data.campaign.rateLimit && JSON.stringify(data.campaign.rateLimit) !== '{}'}
+					<div>
+						<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Rate limit</p>
+						<pre class="font-mono text-xs whitespace-pre-wrap bg-muted p-2 rounded">{JSON.stringify(
+								data.campaign.rateLimit,
+								null,
+								2
+							)}</pre>
+					</div>
+				{/if}
+				<p class="text-xs text-muted-foreground">
+					View profile in the
+					<button
+						type="button"
+						class="underline hover:text-foreground"
+						onclick={() => (tab = 'profile')}>Profile tab</button
+					>.
+				</p>
+			</Card.Content>
+		</Card.Root>
+
+		<!-- Recent activity summary card -->
+		<Card.Root size="sm">
+			<Card.Header>
+				<Card.Title class="text-base">Recent activity</Card.Title>
+				<Card.Description>Last {data.runs.length} runs</Card.Description>
+			</Card.Header>
+			<Card.Content>
+				<dl class="grid grid-cols-2 gap-3">
+					<div>
+						<dt class="text-xs text-muted-foreground">Total runs</dt>
+						<dd class="text-2xl font-semibold">{stats.total}</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-muted-foreground">Successful</dt>
+						<dd class="text-2xl font-semibold text-green-600">{stats.successful}</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-muted-foreground">Failed</dt>
+						<dd class="text-2xl font-semibold text-red-600">{stats.failed}</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-muted-foreground">Total drafts</dt>
+						<dd class="text-2xl font-semibold">{stats.totalDrafts}</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-muted-foreground">Total tokens</dt>
+						<dd class="text-2xl font-semibold">{stats.totalTokens.toLocaleString()}</dd>
+					</div>
+					<div>
+						<dt class="text-xs text-muted-foreground">Avg duration</dt>
+						<dd class="text-2xl font-semibold">{formatDuration(stats.avgDuration)}</dd>
+					</div>
+				</dl>
+			</Card.Content>
+		</Card.Root>
+	</div>
+{:else if tab === 'profile'}
+	<CampaignProfileTab
+		campaignId={data.campaign.id}
+		scenarioSlug={data.campaign.skillSlug as ScenarioSlug}
+		initialConfig={data.campaign.config ?? {}}
+		skillRuns={data.skillRuns}
+	/>
+{:else}
+	<CampaignRunsTab runs={data.runs} />
+{/if}
+
+<RegenerateProfileDialog
+	open={regenOpen}
+	onOpenChange={(v) => (regenOpen = v)}
+	campaignId={data.campaign.id}
+	initialObjective={lastObjective}
+	onLaunched={() => {
+		invalidateAll();
+		tab = 'profile';
+	}}
+/>
