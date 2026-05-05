@@ -3,6 +3,26 @@ import { execSync } from 'node:child_process';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
 import { eq, sql } from 'drizzle-orm';
 
+const VALID_SCOUT_PROFILE = {
+  targetSubreddits: ['rpg'],
+  topicKeywords: ['ai dm'],
+  avoidKeywords: [],
+  fitScoreThreshold: 3,
+  voice: {
+    tone: 'casual',
+    hardBans: [],
+    dos: [],
+    openerStyle: 'lowercase-casual',
+    disclosure: 'i build this',
+  },
+  offer: {
+    productUrl: 'https://example.com',
+    subject: 'invite',
+    text: 'short pitch',
+  },
+  systemInstructions: 'casual tone',
+};
+
 function cli(args: string): string {
   return execSync(`npm -s run -w @pitchbox/cli dev -- ${args}`, {
     encoding: 'utf8',
@@ -40,7 +60,7 @@ describe('pitchbox run:start', () => {
       platformId: platform.id,
       name: 'Scout',
       skillSlug: 'reddit-scout',
-      config: { subreddits: ['x'] },
+      config: VALID_SCOUT_PROFILE,
     });
   });
 

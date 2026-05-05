@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { getSchema, SCENARIO_META } from '@pitchbox/shared/campaigns';
 import { eq } from 'drizzle-orm';
 import { ok, fail } from '../lib/output.js';
 
@@ -17,6 +18,18 @@ export function registerRunCommands(program: Command) {
         .from(schema.campaigns)
         .where(eq(schema.campaigns.id, campaignId));
       if (!campaign) return fail(`campaign ${campaignId} not found`);
+
+      const scenarioMeta = SCENARIO_META.find((s) => s.slug === campaign.skillSlug);
+      if (scenarioMeta) {
+        const validation = getSchema(
+          campaign.skillSlug as 'reddit-scout' | 'reddit-commenter',
+        ).safeParse(campaign.config);
+        if (!validation.success) {
+          return fail(
+            'campaign profile is not in the structured format — regenerate it from the dashboard',
+          );
+        }
+      }
 
       const [project] = await db
         .select()
