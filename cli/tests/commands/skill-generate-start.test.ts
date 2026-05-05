@@ -12,9 +12,7 @@ function cli(args: string): string {
 
 async function reset() {
   const db = getDb();
-  await db.execute(
-    sql`TRUNCATE runs, campaigns, projects, accounts RESTART IDENTITY CASCADE`,
-  );
+  await db.execute(sql`TRUNCATE runs, campaigns, projects, accounts RESTART IDENTITY CASCADE`);
 }
 
 describe('pitchbox skill:generate:start', () => {

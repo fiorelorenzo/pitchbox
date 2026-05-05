@@ -1,10 +1,6 @@
 import { Command } from 'commander';
 import { getDb, schema } from '@pitchbox/shared/db';
-import {
-  describeScenarioSchema,
-  getSchema,
-  type ScenarioSlug,
-} from '@pitchbox/shared/campaigns';
+import { describeScenarioSchema, getSchema, type ScenarioSlug } from '@pitchbox/shared/campaigns';
 import { eq } from 'drizzle-orm';
 import { ok, fail } from '../lib/output.js';
 
