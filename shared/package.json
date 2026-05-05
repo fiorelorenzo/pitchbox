@@ -18,6 +18,7 @@
     "./agents/claude-code": "./src/agents/claude-code.ts",
     "./agents/registry": "./src/agents/registry.ts",
     "./agents/meta": "./src/agents/meta.ts",
+    "./campaigns": "./src/campaigns/index.ts",
     "./blocklist": "./src/blocklist.ts",
     "./draft-send": "./src/draft-send.ts",
     "./crypto": "./src/crypto.ts",
