@@ -53,4 +53,73 @@ export function registerSkillCommands(program: Command) {
         existingConfig: campaign.config ?? null,
       });
     });
+
+  program
+    .command('skill:generate:finish')
+    .requiredOption('--run <id>', 'run id')
+    .action(async (opts: { run: string }) => {
+      const runId = Number(opts.run);
+      if (!Number.isInteger(runId)) return fail('invalid run id');
+      const raw = await readStdin();
+      if (!raw || !raw.trim()) return fail('empty payload on stdin');
+
+      let payload: unknown;
+      try {
+        payload = JSON.parse(raw);
+      } catch (e) {
+        return fail(`stdin is not valid JSON: ${(e as Error).message}`);
+      }
+
+      const db = getDb();
+      const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+      if (!run) return fail(`run ${runId} not found`);
+      if (run.kind !== 'campaign_skill_generation')
+        return fail(`run ${runId} is not a campaign_skill_generation run`);
+      if (!run.campaignId) return fail(`run ${runId} has no campaign_id`);
+
+      const [campaign] = await db
+        .select()
+        .from(schema.campaigns)
+        .where(eq(schema.campaigns.id, run.campaignId));
+      if (!campaign) return fail(`campaign ${run.campaignId} not found`);
+
+      const scenario = (run.params as { scenario?: string } | null)?.scenario as
+        | ScenarioSlug
+        | undefined;
+      if (!scenario) return fail('run.params.scenario missing');
+
+      const schema0 = getSchema(scenario);
+      const result = schema0.safeParse(payload);
+      if (!result.success) {
+        const issues = result.error.issues
+          .map((i) => `${i.path.join('.')}: ${i.message}`)
+          .join('; ');
+        await db
+          .update(schema.runs)
+          .set({ status: 'failed', finishedAt: new Date(), error: `validation: ${issues}` })
+          .where(eq(schema.runs.id, runId));
+        return fail(`profile failed validation: ${issues}`);
+      }
+
+      await db.transaction(async (tx) => {
+        const nextStatus = campaign.status === 'draft' ? 'active' : campaign.status;
+        await tx
+          .update(schema.campaigns)
+          .set({ config: result.data, status: nextStatus })
+          .where(eq(schema.campaigns.id, run.campaignId!));
+        await tx
+          .update(schema.runs)
+          .set({ status: 'success', finishedAt: new Date() })
+          .where(eq(schema.runs.id, runId));
+      });
+
+      ok({ runId, campaignId: run.campaignId, status: 'success' });
+    });
+}
+
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) return '';
+  const chunks: Buffer[] = [];
+  for await (const c of process.stdin) chunks.push(c as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
 }
