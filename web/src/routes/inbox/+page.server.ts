@@ -116,12 +116,18 @@ export async function load({ url }: { url: URL }) {
       .select()
       .from(schema.runs)
       .where(eq(schema.runs.id, Number(run)));
-    if (r) {
+    if (r && r.campaignId != null) {
       const [c] = await db
         .select()
         .from(schema.campaigns)
         .where(eq(schema.campaigns.id, r.campaignId));
-      runInfo = { ...r, campaignName: c?.name ?? null };
+      runInfo = {
+        id: r.id,
+        campaignId: r.campaignId,
+        status: r.status,
+        startedAt: r.startedAt,
+        campaignName: c?.name ?? null,
+      };
     }
   }
   if (campaign) {

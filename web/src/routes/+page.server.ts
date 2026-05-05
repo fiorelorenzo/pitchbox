@@ -1,5 +1,5 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
 
 export async function load() {
   const db = getDb();
@@ -85,11 +85,13 @@ export async function load() {
       startedAt: schema.runs.startedAt,
     })
     .from(schema.runs)
+    .where(isNotNull(schema.runs.campaignId))
     .orderBy(desc(schema.runs.startedAt));
 
   const latestRunByCampaign = new Map<number, (typeof allRuns)[number]>();
   const runningByCampaign = new Set<number>();
   for (const r of allRuns) {
+    if (r.campaignId == null) continue;
     if (r.status === 'running') runningByCampaign.add(r.campaignId);
     if (!latestRunByCampaign.has(r.campaignId)) latestRunByCampaign.set(r.campaignId, r);
   }

@@ -14,6 +14,7 @@ export function registerRedditCommands(program: Command) {
       const db = getDb();
       const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
       if (!run) return fail(`run ${runId} not found`);
+      if (run.campaignId == null) return fail(`run ${runId} has no campaign`);
       const [campaign] = await db
         .select()
         .from(schema.campaigns)
