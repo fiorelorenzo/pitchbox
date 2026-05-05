@@ -22,7 +22,9 @@ Environment variables:
    pitchbox run:start --campaign=$PITCHBOX_CAMPAIGN_ID
    ```
 
-   Parse JSON. Extract `runId`, `config` (product, voice, topicAngles), `accounts`, `blocklist`.
+   Parse JSON. Extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (the strict-validated commenter profile — `targetSubreddits`, `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`.
+
+   Treat `campaign.config.systemInstructions` as additional voice & content guidance — it overrides defaults.
 
 2. **Fetch candidate posts.** The same `reddit:scout` command is used; the `matchedBy` field on each candidate tells you whether it came from a keyword search or a hot-browse pass.
 
@@ -38,23 +40,25 @@ Environment variables:
 
 4. **Score each post for commenting fit (1–5).** Different criteria than the scout:
    - Is the post asking a question you can answer substantively?
-   - Is it discussing a topic in `config['topicAngles']` or one of the project's strengths?
+   - Is it discussing a topic that overlaps with `campaign.config.topicKeywords` or one of the project's strengths (drawn from `project.description`)?
    - Is the thread fresh enough that a new comment will be seen (prefer < 24h old, `post.score` moderate, `numComments` growing but < 50)?
    - Is the community receptive to new voices (check `matchedBy`: `search` hits signal the OP invited broader engagement; `hot` hits are trendier but more crowded)?
    - Skip posts where the OP is hostile, venting about AI, or where the top comments already say what you would say.
+   - Skip posts whose body or title contains any term from `campaign.config.avoidKeywords`.
 
    Drop candidates below 3.
 
-5. **Draft the comment.** The voice rules are in `config['voice.post_rules']` (or fall back to `config['voice.dm_rules']` if post_rules absent — note the stylistic overlap). Typical hard rules:
-   - No em-dashes.
-   - No AI-tell vocabulary.
-   - Capitalization proper. Not the DM lowercase register — comments are mid-register.
+5. **Draft the comment.** The voice rules are in `campaign.config.voice` (`tone`, `hardBans`, `dos`, `disclosure`). Typical hard rules:
+   - Honour every entry in `campaign.config.voice.hardBans` literally — they are exact substrings to never emit.
+   - Capitalization proper. Comments are mid-register (not the DM lowercase opener).
    - Contractions natural, not forced slang.
    - Open with the observation or direct answer. No "Great post!", no "Hope this helps!", no throat-clearing.
    - Close with a concrete question or observation, never "hope this helps" / "just my 2c".
    - Length: 60–150 words usually. Match the thread's register — if replies in the thread are one-liners, keep it short.
 
-   **Self-promo constraint**: Default = no link, no product name, no offer. The comment stands on its own merits. Exception: if the OP is directly asking for recommendations and your product is a genuinely appropriate answer, one mention at the end (not the top) is acceptable — and only if `config['product.selfPromoPolicy']` allows it for the subreddit.
+   **Value framing.** Pick the angle from `campaign.config.valuePropositions` that best fits the question — write the comment so the value-prop is *implicit* (you're sharing the perspective, not selling). Quote a concrete detail from the post.
+
+   **Self-promo constraint.** Default = no link, no product name, no offer. The comment stands on its own merits. Exception: if the OP is directly asking for recommendations and the product (link in `campaign.config.productUrl`) is a genuinely appropriate answer, one mention at the end (not the top) is acceptable. If you mention it, also follow `campaign.config.voice.disclosure` to flag your relationship with the project.
 
 6. **Pick the account.** Comments almost always use the `personal` account (brand accounts commenting on other people's posts comes off as marketing spam). Use the first account with `role === 'personal'`. Record `accountId`.
 
@@ -64,7 +68,7 @@ Environment variables:
    https://www.reddit.com{post.permalink}?pitchbox_draft=<draftId>
    ```
 
-   The `pitchbox_draft` query param is how the browser extension (later milestone) finds the draft to auto-fill the comment textarea. For M1 the user copies the body manually; the param is harmless.
+   The `pitchbox_draft` query param is how the browser extension finds the draft to auto-fill the comment textarea.
 
 8. **Write drafts back.**
 
@@ -102,9 +106,9 @@ Environment variables:
 
 - Never submit the comment. The human reviews and posts from Pitchbox.
 - No shilling. If the only reason to comment is to plug the product, skip the post.
-- No astroturfing. Don't pretend to be a random enthusiast if the product is ours — if asked, disclose per `config['product.disclosurePolicy']`.
+- No astroturfing. Don't pretend to be a random enthusiast if the product is ours — if asked, disclose per `campaign.config.voice.disclosure`.
 - Respect subreddit rules. If the subreddit bans outside links or promotional content, your comment must not violate that even by implication.
-- Skip any post authored by a handle in `config['blocklist']` or whose body ships the complaint pattern "AI is killing X".
+- Skip any post authored by a handle in `blocklist` or whose body matches the "AI is killing X" complaint pattern.
 
 ## Failure modes
 
