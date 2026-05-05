@@ -28,7 +28,8 @@ describe('reddit-scout schema', () => {
   });
 
   it('rejects missing required field', () => {
-    const { targetSubreddits: _t, ...rest } = valid;
+    const rest = { ...valid } as Partial<typeof valid>;
+    delete rest.targetSubreddits;
     expect(() => schema.parse(rest)).toThrow();
   });
 
