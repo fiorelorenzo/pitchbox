@@ -187,7 +187,13 @@
 	description={data.activeProject
 		? `Project: ${data.activeProject.name}`
 		: "Orchestrate outreach runs. Trigger a manual execution or inspect recent activity. The scheduler (daemon) will respect each campaign's status once it ships in M2."}
-/>
+>
+	{#snippet actions()}
+		<a href="/campaigns/new">
+			<Button size="sm">New campaign</Button>
+		</a>
+	{/snippet}
+</PageHeader>
 
 <div class="mb-3 flex items-center gap-2">
 	<span class="text-xs text-muted-foreground">Project</span>
