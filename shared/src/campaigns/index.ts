@@ -10,3 +10,5 @@ export {
   getSchema,
   type CampaignProfile,
 } from './scenario-schemas.js';
+
+export { describeScenarioSchema } from './schema-to-prompt.js';
