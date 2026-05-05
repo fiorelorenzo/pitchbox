@@ -47,10 +47,7 @@ describe('pitchbox skill:generate:finish', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
-    const [project] = await db
-      .insert(schema.projects)
-      .values({ slug: 'p', name: 'P' })
-      .returning();
+    const [project] = await db.insert(schema.projects).values({ slug: 'p', name: 'P' }).returning();
     const [campaign] = await db
       .insert(schema.campaigns)
       .values({
@@ -92,7 +89,9 @@ describe('pitchbox skill:generate:finish', () => {
 
   it('rejects invalid JSON with Zod issues', () => {
     const bad = { ...VALID_SCOUT_PROFILE, fitScoreThreshold: 99 };
-    expect(() => cliWithStdin(`skill:generate:finish --run=${runId}`, JSON.stringify(bad))).toThrow();
+    expect(() =>
+      cliWithStdin(`skill:generate:finish --run=${runId}`, JSON.stringify(bad)),
+    ).toThrow();
   });
 
   it('does not flip status when campaign is already active', async () => {

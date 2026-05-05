@@ -44,9 +44,7 @@ export async function load({ params }: { params: { id: string } }) {
         ? new Date(r.finishedAt).getTime() - new Date(r.startedAt).getTime()
         : null,
   }));
-  const skillRuns = enrichedRuns
-    .filter((r) => r.kind === 'campaign_skill_generation')
-    .slice(0, 5);
+  const skillRuns = enrichedRuns.filter((r) => r.kind === 'campaign_skill_generation').slice(0, 5);
   return {
     campaign,
     project: project ?? null,

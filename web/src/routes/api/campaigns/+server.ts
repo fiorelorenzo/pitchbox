@@ -51,11 +51,7 @@ export async function POST({ request }) {
 
   let runId: number;
   try {
-    const out = await runCampaignSkillGeneration(
-      campaign.id,
-      body.scenarioSlug,
-      body.objective,
-    );
+    const out = await runCampaignSkillGeneration(campaign.id, body.scenarioSlug, body.objective);
     runId = out.runId;
   } catch (e) {
     return json(

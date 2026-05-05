@@ -56,7 +56,7 @@ Environment variables:
    - Close with a concrete question or observation, never "hope this helps" / "just my 2c".
    - Length: 60–150 words usually. Match the thread's register — if replies in the thread are one-liners, keep it short.
 
-   **Value framing.** Pick the angle from `campaign.config.valuePropositions` that best fits the question — write the comment so the value-prop is *implicit* (you're sharing the perspective, not selling). Quote a concrete detail from the post.
+   **Value framing.** Pick the angle from `campaign.config.valuePropositions` that best fits the question — write the comment so the value-prop is _implicit_ (you're sharing the perspective, not selling). Quote a concrete detail from the post.
 
    **Self-promo constraint.** Default = no link, no product name, no offer. The comment stands on its own merits. Exception: if the OP is directly asking for recommendations and the product (link in `campaign.config.productUrl`) is a genuinely appropriate answer, one mention at the end (not the top) is acceptable. If you mention it, also follow `campaign.config.voice.disclosure` to flag your relationship with the project.
 

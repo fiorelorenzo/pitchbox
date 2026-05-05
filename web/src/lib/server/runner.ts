@@ -268,9 +268,7 @@ export async function runCampaign(
   if (!campaign) throw new Error(`campaign ${campaignId} not found`);
 
   if (campaign.status === 'draft') {
-    throw new Error(
-      `campaign ${campaignId} is still draft — generate the profile first`,
-    );
+    throw new Error(`campaign ${campaignId} is still draft — generate the profile first`);
   }
 
   // Application-level guard: look up an existing running run and short-circuit.

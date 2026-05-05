@@ -26,10 +26,7 @@ export async function PATCH({ params, request }) {
     return json({ error: 'invalid_body', issues: parsed.error.issues }, { status: 400 });
   }
   const db = getDb();
-  const [campaign] = await db
-    .select()
-    .from(schema.campaigns)
-    .where(eq(schema.campaigns.id, id));
+  const [campaign] = await db.select().from(schema.campaigns).where(eq(schema.campaigns.id, id));
   if (!campaign) return json({ error: 'not_found' }, { status: 404 });
 
   const patch: Record<string, unknown> = {};
@@ -39,15 +36,10 @@ export async function PATCH({ params, request }) {
   if (parsed.data.agentRunner !== undefined) patch.agentRunner = parsed.data.agentRunner;
 
   if (parsed.data.config !== undefined) {
-    const scenarioSchema = getSchema(
-      campaign.skillSlug as 'reddit-scout' | 'reddit-commenter',
-    );
+    const scenarioSchema = getSchema(campaign.skillSlug as 'reddit-scout' | 'reddit-commenter');
     const result = scenarioSchema.safeParse(parsed.data.config);
     if (!result.success) {
-      return json(
-        { error: 'invalid_config', issues: result.error.issues },
-        { status: 400 },
-      );
+      return json({ error: 'invalid_config', issues: result.error.issues }, { status: 400 });
     }
     patch.config = result.data;
   }

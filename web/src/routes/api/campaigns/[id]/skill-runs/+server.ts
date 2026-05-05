@@ -20,10 +20,7 @@ export async function POST({ params, request }) {
     return json({ error: 'invalid_body', issues: parsed.error.issues }, { status: 400 });
   }
   const db = getDb();
-  const [campaign] = await db
-    .select()
-    .from(schema.campaigns)
-    .where(eq(schema.campaigns.id, id));
+  const [campaign] = await db.select().from(schema.campaigns).where(eq(schema.campaigns.id, id));
   if (!campaign) return json({ error: 'not_found' }, { status: 404 });
 
   try {
@@ -52,12 +49,7 @@ export async function GET({ params, url }) {
   const rows = await db
     .select()
     .from(schema.runs)
-    .where(
-      and(
-        eq(schema.runs.campaignId, id),
-        eq(schema.runs.kind, 'campaign_skill_generation'),
-      ),
-    )
+    .where(and(eq(schema.runs.campaignId, id), eq(schema.runs.kind, 'campaign_skill_generation')))
     .orderBy(desc(schema.runs.startedAt))
     .limit(limit);
   return json({ runs: rows });
