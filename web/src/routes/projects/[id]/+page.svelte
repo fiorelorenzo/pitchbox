@@ -1,15 +1,13 @@
 <script lang="ts">
   import type { PageData } from './$types';
   import ProjectOverviewTab from '$lib/components/projects/ProjectOverviewTab.svelte';
-  import ProjectConfigsTab from '$lib/components/projects/ProjectConfigsTab.svelte';
   import ProjectAccountsTab from '$lib/components/projects/ProjectAccountsTab.svelte';
 
   let { data }: { data: PageData } = $props();
-  let tab = $state<'overview' | 'configs' | 'accounts'>('overview');
+  let tab = $state<'overview' | 'accounts'>('overview');
 
   const tabs = [
     { k: 'overview' as const, label: 'Overview' },
-    { k: 'configs' as const, label: 'Configs' },
     { k: 'accounts' as const, label: 'Accounts' },
   ];
 </script>
@@ -37,8 +35,6 @@
     extractionRuns={data.extractionRuns}
     recommendations={data.recommendations}
   />
-{:else if tab === 'configs'}
-  <ProjectConfigsTab projectId={data.project.id} configs={data.configs} />
 {:else}
   <ProjectAccountsTab
     projectId={data.project.id}

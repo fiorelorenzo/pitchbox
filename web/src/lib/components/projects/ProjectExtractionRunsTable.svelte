@@ -27,13 +27,15 @@
     expandedRunId = expandedRunId === id ? null : id;
   }
 
-  function shortSource(p: Run['params']): string {
+  function sourceLabel(p: Run['params']): { kind: string; detail: string | null } {
     const s = p?.source;
-    if (!s) return '—';
+    if (!s) return { kind: '—', detail: null };
+    // Upload paths are internal tmp dirs (e.g. /tmp/pitchbox-upload-<uuid>) — useless to expose.
+    if (s.kind === 'upload') return { kind: 'uploaded folder', detail: null };
     const v = s.value ?? '';
     const max = 64;
     const short = v.length > max ? '…' + v.slice(v.length - max) : v;
-    return `${s.kind}: ${short}`;
+    return { kind: s.kind, detail: short };
   }
 </script>
 
@@ -88,12 +90,20 @@
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3">{run.trigger}</Table.Cell>
               <Table.Cell class="text-xs py-3">
-                <Badge variant="outline" class="font-mono text-[11px] py-0.5 px-1.5">
+                <Badge variant="outline" class="font-mono text-[11px]">
                   {run.agentRunner}
                 </Badge>
               </Table.Cell>
-              <Table.Cell class="text-xs text-muted-foreground py-3 max-w-[260px] truncate">
-                <code class="font-mono">{shortSource(run.params)}</code>
+              <Table.Cell class="text-xs text-muted-foreground py-3 max-w-[260px]">
+                {@const src = sourceLabel(run.params)}
+                <div class="flex items-center gap-2 min-w-0">
+                  <Badge variant="outline" class="font-mono text-[11px] shrink-0">
+                    {src.kind}
+                  </Badge>
+                  {#if src.detail}
+                    <code class="font-mono truncate" title={src.detail}>{src.detail}</code>
+                  {/if}
+                </div>
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3"
                 >{relativeTime(run.startedAt)}</Table.Cell

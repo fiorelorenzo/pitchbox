@@ -33,7 +33,7 @@ function cli(args: string): string {
 async function reset() {
   const db = getDb();
   await db.execute(
-    sql`TRUNCATE drafts, runs, campaigns, accounts, project_configs, projects, blocklist, contact_history RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE drafts, runs, campaigns, accounts, projects, blocklist, contact_history RESTART IDENTITY CASCADE`,
   );
 }
 

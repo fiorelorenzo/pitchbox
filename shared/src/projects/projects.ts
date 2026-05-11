@@ -1,7 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import type { getDb } from '../db/client.js';
 import { schema } from '../db/client.js';
-import { parseConfigValue } from './config-schemas.js';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -87,17 +86,10 @@ export type CreateProjectArgs = {
   name: string;
   description?: string | null;
   defaultAgentRunner?: string;
-  configs: { key: string; value: unknown }[];
   account?: { handle: string; role: 'personal' | 'brand'; platformId: number };
 };
 
 export async function createProjectTx(db: Db, args: CreateProjectArgs): Promise<{ id: number }> {
-  // Pre-validate config values BEFORE opening the tx.
-  const configs = args.configs.map((c) => ({
-    key: c.key,
-    value: parseConfigValue(c.key, c.value),
-  }));
-
   return await db.transaction(async (tx) => {
     let project: { id: number } | undefined;
     try {
@@ -132,17 +124,6 @@ export async function createProjectTx(db: Db, args: CreateProjectArgs): Promise<
       throw e;
     }
     if (!project) throw new Error('Project insert returned no row');
-
-    if (configs.length > 0) {
-      await tx.insert(schema.projectConfigs).values(
-        configs.map((c) => ({
-          projectId: project!.id,
-          key: c.key,
-          value: c.value,
-          version: 1,
-        })),
-      );
-    }
 
     if (args.account) {
       await tx.insert(schema.accounts).values({

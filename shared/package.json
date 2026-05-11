@@ -32,7 +32,6 @@
     "./runlog/parsers/codex": "./src/runlog/parsers/codex.ts",
     "./runlog/parsers/opencode": "./src/runlog/parsers/opencode.ts",
     "./projects": "./src/projects/index.ts",
-    "./projects/schemas": "./src/projects/config-schemas.ts",
     "./project-extraction": "./src/project-extraction/index.ts"
   },
   "scripts": {

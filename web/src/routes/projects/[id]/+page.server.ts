@@ -2,7 +2,7 @@ import type { PageServerLoad } from './$types';
 import { error } from '@sveltejs/kit';
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import { getProjectById, listLatestConfigs } from '@pitchbox/shared/projects';
+import { getProjectById } from '@pitchbox/shared/projects';
 
 export const load: PageServerLoad = async ({ params }) => {
   const id = Number(params.id);
@@ -10,8 +10,7 @@ export const load: PageServerLoad = async ({ params }) => {
   const db = getDb();
   const project = await getProjectById(db, id);
   if (!project) throw error(404, 'project not found');
-  const [configs, accounts, platforms, runRows, recommendations] = await Promise.all([
-    listLatestConfigs(db, id),
+  const [accounts, platforms, runRows, recommendations] = await Promise.all([
     db.select().from(schema.accounts).where(eq(schema.accounts.projectId, id)),
     db.select().from(schema.platforms),
     db
@@ -58,5 +57,5 @@ export const load: PageServerLoad = async ({ params }) => {
       params: (r.params ?? null) as { source?: { kind: string; value: string } } | null,
     };
   });
-  return { project, configs, accounts, platforms, extractionRuns, recommendations };
+  return { project, accounts, platforms, extractionRuns, recommendations };
 };

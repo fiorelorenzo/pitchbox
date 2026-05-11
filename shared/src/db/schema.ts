@@ -36,23 +36,6 @@ export const projects = pgTable('projects', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const projectConfigs = pgTable(
-  'project_configs',
-  {
-    id: serial('id').primaryKey(),
-    projectId: integer('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    key: text('key').notNull(),
-    value: jsonb('value').notNull(),
-    version: integer('version').notNull().default(1),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    uqKeyVersion: uniqueIndex('project_configs_key_version_uq').on(t.projectId, t.key, t.version),
-  }),
-);
-
 export const accounts = pgTable('accounts', {
   id: serial('id').primaryKey(),
   projectId: integer('project_id')

@@ -7,7 +7,6 @@ import {
   updateProject,
   deleteProject,
   ProjectDeleteSlugMismatchError,
-  listLatestConfigs,
 } from '@pitchbox/shared/projects';
 
 const PatchBody = z.object({
@@ -29,9 +28,8 @@ export async function GET({ params }) {
   const db = getDb();
   const project = await getProjectById(db, id);
   if (!project) return json({ error: 'not_found' }, { status: 404 });
-  const configs = await listLatestConfigs(db, id);
   const accounts = await db.select().from(schema.accounts).where(eq(schema.accounts.projectId, id));
-  return json({ project, configs, accounts });
+  return json({ project, accounts });
 }
 
 export async function PATCH({ params, request }) {

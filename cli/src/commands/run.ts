@@ -43,10 +43,6 @@ export function registerRunCommands(program: Command) {
         .select()
         .from(schema.accounts)
         .where(eq(schema.accounts.projectId, campaign.projectId));
-      const configs = await db
-        .select()
-        .from(schema.projectConfigs)
-        .where(eq(schema.projectConfigs.projectId, campaign.projectId));
       const blocks = await db
         .select()
         .from(schema.blocklist)
@@ -77,9 +73,6 @@ export function registerRunCommands(program: Command) {
           .returning();
       }
 
-      const configMap: Record<string, unknown> = {};
-      for (const c of configs) configMap[c.key] = c.value;
-
       ok({
         runId: run.id,
         campaign: {
@@ -90,7 +83,6 @@ export function registerRunCommands(program: Command) {
         },
         project: { id: project.id, slug: project.slug, name: project.name },
         platform: { id: platform.id, slug: platform.slug },
-        config: configMap,
         accounts: accounts.map((a) => ({ id: a.id, handle: a.handle, role: a.role })),
         blocklist: blocks.map((b) => ({ kind: b.kind, value: b.value })),
         contactedRecently: contacted.map((c) => c.target),

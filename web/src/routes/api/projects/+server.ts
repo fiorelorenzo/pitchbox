@@ -11,7 +11,6 @@ const CreateBody = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(2000).optional(),
   defaultAgentRunner: z.string().min(1).default('claude-code'),
-  configs: z.array(z.object({ key: z.string().min(1), value: z.unknown() })).default([]),
   account: z
     .object({
       handle: z.string().min(1).max(64),
@@ -70,16 +69,12 @@ export async function POST({ request }) {
       name: body.name,
       description: body.description,
       defaultAgentRunner: body.defaultAgentRunner,
-      configs: body.configs.map((c) => ({ key: c.key, value: c.value })),
       account: accountArg,
     });
     return json({ id: out.id }, { status: 201 });
   } catch (e) {
     if (e instanceof ProjectSlugConflictError) {
       return json({ error: 'slug_conflict', slug }, { status: 409 });
-    }
-    if (e instanceof z.ZodError) {
-      return json({ error: 'invalid_config', issues: e.issues }, { status: 400 });
     }
     throw error(500, (e as Error).message);
   }

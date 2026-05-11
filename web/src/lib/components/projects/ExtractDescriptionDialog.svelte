@@ -50,6 +50,28 @@
     '.svg',
   ]);
   const EXTLESS_ALLOW = /^(README|LICENSE|CHANGELOG|NOTICE|AUTHORS)([._-].*)?$/i;
+  // Skipped during the File System Access API walk — huge, noisy, irrelevant to a product description.
+  const SKIP_DIRS = new Set([
+    'node_modules',
+    '.git',
+    'dist',
+    'build',
+    'out',
+    '.next',
+    '.nuxt',
+    '.svelte-kit',
+    '.turbo',
+    '.cache',
+    '.parcel-cache',
+    'coverage',
+    'target',
+    'vendor',
+    '.venv',
+    'venv',
+    '__pycache__',
+    '.idea',
+    '.vscode',
+  ]);
 
   function isAcceptableName(rel: string): boolean {
     const base = rel.split('/').pop() ?? '';
@@ -57,6 +79,15 @@
     if (dot === -1) return EXTLESS_ALLOW.test(base);
     return EXT_ALLOW.has(base.slice(dot).toLowerCase());
   }
+
+  // File System Access API isn't in lib.dom yet, so type the window cast locally.
+  type WindowWithDirPicker = Window & {
+    showDirectoryPicker?: (opts?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;
+  };
+  const hasDirectoryPicker = $derived(
+    typeof window !== 'undefined' &&
+      typeof (window as WindowWithDirPicker).showDirectoryPicker === 'function',
+  );
 
   function fmtBytes(n: number): string {
     if (n < 1024) return `${n} B`;
@@ -123,6 +154,97 @@
     folderName = '';
     totalBytes = 0;
     if (fileInput) fileInput.value = '';
+  }
+
+  // Walks a FileSystemDirectoryHandle filtering files BEFORE reading them, so Chrome never asks
+  // the "upload N files in this site?" confirmation that `<input webkitdirectory>` triggers on
+  // large repos. Caps short-circuit the walk as soon as they're hit.
+  type FsWalkResult = { kept: Picked[]; skipped: number; totalBytes: number; truncated: boolean };
+  async function walkDirectory(
+    root: FileSystemDirectoryHandle,
+    prefix: string,
+    acc: FsWalkResult,
+  ): Promise<void> {
+    if (acc.truncated) return;
+    for await (const [name, handle] of root as unknown as AsyncIterable<
+      [string, FileSystemHandle]
+    >) {
+      if (acc.truncated) return;
+      const rel = prefix ? `${prefix}/${name}` : name;
+      if (handle.kind === 'directory') {
+        if (SKIP_DIRS.has(name)) {
+          acc.skipped++;
+          continue;
+        }
+        await walkDirectory(handle as FileSystemDirectoryHandle, rel, acc);
+      } else {
+        if (!isAcceptableName(rel)) {
+          acc.skipped++;
+          continue;
+        }
+        const file = await (handle as FileSystemFileHandle).getFile();
+        if (file.size > MAX_FILE_BYTES) {
+          acc.skipped++;
+          continue;
+        }
+        if (acc.totalBytes + file.size > MAX_TOTAL_BYTES) {
+          acc.truncated = true;
+          return;
+        }
+        acc.totalBytes += file.size;
+        acc.kept.push({ rel, file });
+        if (acc.kept.length >= MAX_FILES) {
+          acc.truncated = true;
+          return;
+        }
+      }
+    }
+  }
+
+  async function pickFolderWithFsApi() {
+    let handle: FileSystemDirectoryHandle;
+    try {
+      const w = window as WindowWithDirPicker;
+      if (!w.showDirectoryPicker) return;
+      handle = await w.showDirectoryPicker({ mode: 'read' });
+    } catch (e) {
+      // User cancelled — leave state untouched.
+      if ((e as DOMException)?.name === 'AbortError') return;
+      throw e;
+    }
+    picked = [];
+    skipped = 0;
+    totalBytes = 0;
+    folderName = handle.name;
+    const acc: FsWalkResult = { kept: [], skipped: 0, totalBytes: 0, truncated: false };
+    try {
+      await walkDirectory(handle, '', acc);
+    } catch (e) {
+      toast.error(`Failed to read folder: ${(e as Error).message ?? 'unknown error'}`);
+      folderName = '';
+      return;
+    }
+    if (acc.truncated && acc.kept.length === 0) {
+      toast.error(`Folder exceeds caps (max ${MAX_FILES} files / ${fmtBytes(MAX_TOTAL_BYTES)})`);
+      folderName = '';
+      return;
+    }
+    if (acc.truncated) {
+      toast.warning(
+        `Reached cap — stopped at ${acc.kept.length} files / ${fmtBytes(acc.totalBytes)}`,
+      );
+    }
+    picked = acc.kept;
+    skipped = acc.skipped;
+    totalBytes = acc.totalBytes;
+  }
+
+  function chooseFolder() {
+    if (hasDirectoryPicker) {
+      void pickFolderWithFsApi();
+    } else {
+      fileInput?.click();
+    }
   }
 
   async function submit() {
@@ -218,9 +340,7 @@
           onchange={onFolderChosen}
         />
         <div class="flex items-center gap-2">
-          <Button type="button" variant="outline" onclick={() => fileInput?.click()}>
-            Choose folder…
-          </Button>
+          <Button type="button" variant="outline" onclick={chooseFolder}>Choose folder…</Button>
           {#if picked.length > 0}
             <Button type="button" variant="ghost" size="sm" onclick={clearPicked}>Clear</Button>
           {/if}

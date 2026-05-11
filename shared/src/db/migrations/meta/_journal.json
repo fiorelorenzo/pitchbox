@@ -92,6 +92,13 @@
       "when": 1778050000000,
       "tag": "0012_campaign_recommendations",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778495500000,
+      "tag": "0013_drop_project_configs",
+      "breakpoints": true
     }
   ]
 }
