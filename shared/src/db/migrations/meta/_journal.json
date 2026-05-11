@@ -134,6 +134,13 @@
       "when": 1778526100000,
       "tag": "0018_users_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1778527000000,
+      "tag": "0019_drafts_platform_post_id",
+      "breakpoints": true
     }
   ]
 }

@@ -63,11 +63,13 @@ export const api = {
     draftId: number,
     sentContent?: string,
     commentLookup?: { postId: string; accountHandle: string; postedAt: string },
+    platformPostId?: string,
   ) =>
     postJson<{ ok: true }>(`/api/extension/draft/${draftId}/sent`, {
       sentContent,
       sentAt: new Date().toISOString(),
       commentLookup,
+      platformPostId,
     }),
   dmSync: (platform: string, items: unknown[], comments: unknown[] = []) =>
     postJson<{

@@ -27,6 +27,7 @@
 		id: number;
 		runId: number;
 		kind: string;
+		title?: string | null;
 		targetUser: string | null;
 		platformSlug: string | null;
 		metadata: Record<string, unknown> | null;
@@ -217,6 +218,11 @@
 		<header class="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-border">
 			<div class="flex flex-col gap-1.5 min-w-0">
 				<h2 class="text-lg font-semibold truncate">{primary}</h2>
+				{#if draft.kind === 'post' && draft.title}
+					<p class="text-base font-medium text-foreground/90 truncate" title={draft.title}>
+						{draft.title}
+					</p>
+				{/if}
 				<div class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
 					<StatusBadge domain="draft-kind" value={draft.kind} />
 					<StatusBadge domain="draft-state" value={draft.state} />

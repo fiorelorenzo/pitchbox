@@ -187,6 +187,7 @@ export const drafts = pgTable(
     sentAt: timestamp('sent_at', { withTimezone: true }),
     sentContent: text('sent_content'),
     platformCommentId: text('platform_comment_id'),
+    platformPostId: text('platform_post_id'),
   },
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),

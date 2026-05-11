@@ -24,6 +24,11 @@ const BUILTIN_PLAYBOOKS = [
     name: 'Reddit commenter',
     description: 'Draft helpful comment-replies that reference the product on target subreddits.',
   },
+  {
+    slug: 'reddit-poster',
+    name: 'Reddit poster',
+    description: 'Draft proactive top-level posts (title + body) for target subreddits.',
+  },
 ];
 
 function repoRoot(): string {

@@ -9,6 +9,7 @@ type SentBody = {
   sentContent?: string;
   sentAt?: string;
   commentLookup?: { postId: string; accountHandle: string; postedAt?: string };
+  platformPostId?: string;
 };
 
 export async function POST({ params, request }: { params: { id: string }; request: Request }) {
@@ -40,6 +41,7 @@ export async function POST({ params, request }: { params: { id: string }; reques
       reviewedAt: draft.reviewedAt ?? now,
       sentAt: now,
       sentContent,
+      ...(body.platformPostId ? { platformPostId: body.platformPostId } : {}),
     })
     .where(eq(schema.drafts.id, id));
 

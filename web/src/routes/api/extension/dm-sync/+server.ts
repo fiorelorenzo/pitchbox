@@ -84,18 +84,35 @@ export async function POST({ request }: { request: Request }) {
         draftId: schema.drafts.id,
         accountId: schema.drafts.accountId,
         platformCommentId: schema.drafts.platformCommentId,
+        platformPostId: schema.drafts.platformPostId,
       })
       .from(schema.drafts)
       .where(eq(schema.drafts.platformId, platform.id));
-    commentDrafts = draftRows
-      .filter((d) => d.platformCommentId)
-      .map((d) => ({
-        draftId: d.draftId,
-        platformId: platform.id,
-        platformCommentId: d.platformCommentId!,
-        accountHandle: handleByAccountId.get(d.accountId) ?? '',
-      }))
-      .filter((d) => d.accountHandle);
+    // Two channels feed the comment matcher with the same shape:
+    //   - comment-reply drafts (parent is the t1_ id of our comment)
+    //   - reddit-poster drafts (parent is the t3_ id of our submission)
+    commentDrafts = draftRows.flatMap((d) => {
+      const account = handleByAccountId.get(d.accountId);
+      if (!account) return [];
+      const rows: CommentDraftRow[] = [];
+      if (d.platformCommentId) {
+        rows.push({
+          draftId: d.draftId,
+          platformId: platform.id,
+          platformCommentId: d.platformCommentId,
+          accountHandle: account,
+        });
+      }
+      if (d.platformPostId) {
+        rows.push({
+          draftId: d.draftId,
+          platformId: platform.id,
+          platformCommentId: d.platformPostId,
+          accountHandle: account,
+        });
+      }
+      return rows;
+    });
 
     const draftIds = commentDrafts.map((d) => d.draftId);
     if (draftIds.length > 0) {

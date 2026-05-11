@@ -7,6 +7,7 @@
 	type Draft = {
 		id: number;
 		kind: string;
+		title?: string | null;
 		targetUser: string | null;
 		platformSlug: string | null;
 		metadata: Record<string, unknown> | null;
@@ -44,6 +45,11 @@
 		</span>
 		<StatusBadge domain="draft-kind" value={draft.kind} class="shrink-0" />
 	</div>
+	{#if draft.kind === 'post' && draft.title}
+		<div class="text-xs text-foreground/90 truncate mt-0.5" title={draft.title}>
+			{draft.title}
+		</div>
+	{/if}
 	{#if draft.project}
 		<div class="text-[10px] text-muted-foreground/70 truncate mt-0.5">
 			{draft.project.name}

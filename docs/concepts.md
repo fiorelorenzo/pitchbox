@@ -10,7 +10,7 @@ An **account** is a platform identity (e.g. `u/myhandle` on Reddit) tied to a pr
 
 ## Campaigns
 
-A **campaign** scopes an outreach intent: which platform, which skill (e.g. `reddit-scout` or `reddit-commenter`), which agent runner, which cron schedule. Campaigns snapshot their runner at creation; runs snapshot the runner and playbook at start.
+A **campaign** scopes an outreach intent: which platform, which skill (`reddit-scout` for DMs, `reddit-commenter` for comment-replies, `reddit-poster` for top-level posts), which agent runner, which cron schedule. Campaigns snapshot their runner at creation; runs snapshot the runner and playbook at start.
 
 ## Runs
 

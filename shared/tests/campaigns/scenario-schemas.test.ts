@@ -71,3 +71,36 @@ describe('reddit-commenter schema', () => {
     expect(() => schema.parse({ ...valid, productUrl: 'not-a-url' })).toThrow();
   });
 });
+
+describe('reddit-poster schema', () => {
+  const schema = getSchema('reddit-poster');
+  const valid = {
+    targetSubreddits: ['rpg'],
+    topicKeywords: ['campaign tips'],
+    avoidKeywords: ['ai-slop'],
+    postAngle: 'lessons learned from running a homebrew west marches',
+    voice: {
+      tone: 'casual' as const,
+      hardBans: [],
+      dos: ['cite a specific session moment'],
+      disclosure: 'creator here, sharing what i tried',
+    },
+    valuePropositions: ['quick session prep'],
+    productUrl: 'https://example.com',
+    systemInstructions: 'mid-register, no AI clichés',
+  };
+
+  it('accepts a complete valid object', () => {
+    expect(schema.parse(valid)).toEqual(valid);
+  });
+
+  it('rejects missing postAngle', () => {
+    const rest = { ...valid } as Partial<typeof valid>;
+    delete rest.postAngle;
+    expect(() => schema.parse(rest)).toThrow();
+  });
+
+  it('rejects empty targetSubreddits array', () => {
+    expect(() => schema.parse({ ...valid, targetSubreddits: [] })).toThrow();
+  });
+});
