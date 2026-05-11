@@ -85,6 +85,13 @@
       "when": 1777890000000,
       "tag": "0011_runs_kind_skill_generation",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1778050000000,
+      "tag": "0012_campaign_recommendations",
+      "breakpoints": true
     }
   ]
 }
