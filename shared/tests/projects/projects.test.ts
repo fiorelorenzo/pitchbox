@@ -29,9 +29,8 @@ describe('projects helpers', () => {
       description: 'd',
       defaultAgentRunner: 'claude-code',
       configs: [
-        { key: 'product.pitch', value: { text: 'Hello' } },
-        { key: 'voice.dm_rules', value: { hardBans: [], dos: [], disclosure: '', examples: [] } },
-        { key: 'topicAngles', value: ['x'] },
+        { key: 'product.url', value: { url: 'https://example.com' } },
+        { key: 'product.defaultAccountRole', value: { role: 'personal' } },
       ],
       account: { handle: 'me', role: 'personal', platformId: pid },
     });
@@ -86,7 +85,7 @@ describe('projects helpers', () => {
     const { id } = await createProjectTx(getDb(), {
       slug: 'delme',
       name: 'd',
-      configs: [{ key: 'topicAngles', value: ['x'] }],
+      configs: [{ key: 'product.url', value: { url: 'https://example.com' } }],
       account: { handle: 'h', role: 'personal', platformId: pid },
     });
     await deleteProject(getDb(), id, 'delme');

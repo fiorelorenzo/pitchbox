@@ -88,7 +88,7 @@ export type CreateProjectArgs = {
   description?: string | null;
   defaultAgentRunner?: string;
   configs: { key: string; value: unknown }[];
-  account: { handle: string; role: 'personal' | 'brand'; platformId: number };
+  account?: { handle: string; role: 'personal' | 'brand'; platformId: number };
 };
 
 export async function createProjectTx(db: Db, args: CreateProjectArgs): Promise<{ id: number }> {
@@ -144,12 +144,14 @@ export async function createProjectTx(db: Db, args: CreateProjectArgs): Promise<
       );
     }
 
-    await tx.insert(schema.accounts).values({
-      projectId: project.id,
-      platformId: args.account.platformId,
-      handle: args.account.handle,
-      role: args.account.role,
-    });
+    if (args.account) {
+      await tx.insert(schema.accounts).values({
+        projectId: project.id,
+        platformId: args.account.platformId,
+        handle: args.account.handle,
+        role: args.account.role,
+      });
+    }
 
     return { id: project.id };
   });

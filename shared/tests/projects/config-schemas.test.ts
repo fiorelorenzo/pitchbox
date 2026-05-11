@@ -6,18 +6,8 @@ import {
 } from '../../src/projects/config-schemas.js';
 
 describe('CONFIG_SCHEMAS', () => {
-  it('round-trips product.pitch', () => {
-    const v = { text: 'Acme makes rockets.' };
-    expect(CONFIG_SCHEMAS['product.pitch'].parse(v)).toEqual(v);
-  });
-
   it('rejects product.url with non-url string', () => {
     expect(() => CONFIG_SCHEMAS['product.url'].parse({ url: 'not-a-url' })).toThrow();
-  });
-
-  it('round-trips voice.dm_rules with empty arrays', () => {
-    const v = { hardBans: [], dos: [], disclosure: '', examples: [] };
-    expect(CONFIG_SCHEMAS['voice.dm_rules'].parse(v)).toEqual(v);
   });
 
   it('rejects voice.post_rules.lengthRange where min > max', () => {
@@ -28,10 +18,6 @@ describe('CONFIG_SCHEMAS', () => {
         lengthRange: [200, 60],
       }),
     ).toThrow();
-  });
-
-  it('round-trips topicAngles as string array', () => {
-    expect(CONFIG_SCHEMAS['topicAngles'].parse(['a', 'b'])).toEqual(['a', 'b']);
   });
 
   it('round-trips offer with optional url', () => {
@@ -47,7 +33,9 @@ describe('CONFIG_SCHEMAS', () => {
 
 describe('parseConfigValue', () => {
   it('uses registry schema for known key', () => {
-    expect(parseConfigValue('topicAngles', ['x'])).toEqual(['x']);
+    expect(parseConfigValue('product.url', { url: 'https://x.com' })).toEqual({
+      url: 'https://x.com',
+    });
   });
 
   it('returns value as-is for unknown key (must be JSON-serializable)', () => {
@@ -92,7 +80,7 @@ describe('parseConfigValue', () => {
 
 describe('isKnownConfigKey', () => {
   it('returns true for known keys', () => {
-    expect(isKnownConfigKey('voice.dm_rules')).toBe(true);
+    expect(isKnownConfigKey('voice.post_rules')).toBe(true);
   });
   it('returns false for unknown keys', () => {
     expect(isKnownConfigKey('something.else')).toBe(false);

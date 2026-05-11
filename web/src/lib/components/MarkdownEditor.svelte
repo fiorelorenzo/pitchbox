@@ -113,10 +113,20 @@
 </div>
 
 <style>
-  .md-host :global(.bytemd) {
-    height: 100%;
+  .md-host {
+    display: flex;
+    flex-direction: column;
     border: 1px solid var(--border);
     border-radius: var(--radius, 0.5rem);
+    overflow: hidden;
+    background: var(--background);
+  }
+
+  .md-host :global(.bytemd) {
+    flex: 1 1 auto;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
     background: var(--background);
     color: var(--foreground);
     font-family: inherit;
@@ -374,14 +384,14 @@
   .md-host :global(.bytemd-status) {
     display: none !important;
   }
-  /* The bytemd inner panes assume a status bar of ~26px; without it, body sits taller.
-     Our wrapper also adds the .md-footer (~28px). Compensate so body fits inside. */
+  /* bytemd body needs to leave room for its (hidden) status bar inside the .bytemd flex column. */
   .md-host :global(.bytemd-body) {
     height: calc(100% - 38px) !important;
     overflow: hidden;
   }
 
   .md-footer {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -391,8 +401,6 @@
     color: var(--muted-foreground);
     background: var(--muted);
     border-top: 1px solid var(--border);
-    border-bottom-left-radius: var(--radius, 0.5rem);
-    border-bottom-right-radius: var(--radius, 0.5rem);
   }
   .md-cb {
     accent-color: var(--foreground);

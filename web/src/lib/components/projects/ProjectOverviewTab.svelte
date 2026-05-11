@@ -182,27 +182,19 @@
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
       <span class="text-xs">Description</span>
-      <div class="flex gap-2">
-        {#if !description && !extractionRunning}
+      {#if description || extractionRunning}
+        <div class="flex gap-2">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
-            onclick={() => (description = DESCRIPTION_SCAFFOLD)}
+            onclick={() => (extractOpen = true)}
+            disabled={extractionRunning}
           >
-            Insert template
+            Auto-extract
           </Button>
-        {/if}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onclick={() => (extractOpen = true)}
-          disabled={extractionRunning}
-        >
-          Auto-extract
-        </Button>
-      </div>
+        </div>
+      {/if}
     </div>
     {#if extractionRunning}
       <div
@@ -210,13 +202,38 @@
       >
         An extraction is running — the editor is locked until it finishes.
       </div>
+      <MarkdownEditor
+        value={description}
+        onchange={(v) => (description = v)}
+        height="540px"
+        disabled
+      />
+    {:else if description}
+      <MarkdownEditor value={description} onchange={(v) => (description = v)} height="540px" />
+    {:else}
+      <div
+        class="flex flex-col items-center justify-center gap-4 rounded-md border border-dashed border-border bg-muted/30 px-6 py-16 text-center"
+      >
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-medium">No description yet</h3>
+          <p class="text-xs text-muted-foreground max-w-md">
+            The description grounds the agent during scouting and drafting. Auto-extract pulls one
+            from your codebase or a public Git repo, or start from a blank template.
+          </p>
+        </div>
+        <div class="flex gap-2">
+          <Button type="button" size="lg" onclick={() => (extractOpen = true)}>Auto-extract</Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            onclick={() => (description = DESCRIPTION_SCAFFOLD)}
+          >
+            Start from template
+          </Button>
+        </div>
+      </div>
     {/if}
-    <MarkdownEditor
-      value={description}
-      onchange={(v) => (description = v)}
-      height="540px"
-      disabled={extractionRunning}
-    />
   </div>
 
   <ProjectExtractionRunsTable runs={extractionRunsState} />
@@ -235,11 +252,29 @@
     </div>
   {/if}
 
-  <div class="flex justify-between items-center pt-2 border-t">
+  <div class="flex justify-end pt-2 border-t">
     <Button onclick={save} disabled={saving || extractionRunning}>
       {saving ? 'Saving…' : 'Save'}
     </Button>
-    <Button variant="destructive" onclick={() => (deleteOpen = true)}>Delete project</Button>
+  </div>
+
+  <div
+    class="mt-10 rounded-md border border-destructive/40 bg-destructive/5 p-4 flex items-start justify-between gap-4"
+  >
+    <div class="flex flex-col gap-1">
+      <h3 class="text-sm font-medium text-destructive">Danger zone</h3>
+      <p class="text-xs text-muted-foreground">
+        Permanently delete this project and all its data. This cannot be undone.
+      </p>
+    </div>
+    <Button
+      variant="outline"
+      size="sm"
+      class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
+      onclick={() => (deleteOpen = true)}
+    >
+      Delete project
+    </Button>
   </div>
 </div>
 

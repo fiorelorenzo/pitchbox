@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-export const productPitchSchema = z.object({ text: z.string().min(1) });
 export const productUrlSchema = z.object({ url: z.string().url() });
 export const productDefaultAccountRoleSchema = z.object({
   role: z.enum(['personal', 'brand']),
@@ -17,13 +16,6 @@ export const offerSchema = z.object({
   url: z.string().url().optional(),
 });
 
-export const voiceDmRulesSchema = z.object({
-  hardBans: z.array(z.string()),
-  dos: z.array(z.string()),
-  disclosure: z.string(),
-  examples: z.array(z.string()),
-});
-
 export const voicePostRulesSchema = z.object({
   hardBans: z.array(z.string()),
   dos: z.array(z.string()),
@@ -34,18 +26,13 @@ export const voicePostRulesSchema = z.object({
     }),
 });
 
-export const topicAnglesSchema = z.array(z.string());
-
 export const CONFIG_SCHEMAS = {
-  'product.pitch': productPitchSchema,
   'product.url': productUrlSchema,
   'product.defaultAccountRole': productDefaultAccountRoleSchema,
   'product.selfPromoPolicy': productSelfPromoPolicySchema,
   'product.disclosurePolicy': productDisclosurePolicySchema,
   offer: offerSchema,
-  'voice.dm_rules': voiceDmRulesSchema,
   'voice.post_rules': voicePostRulesSchema,
-  topicAngles: topicAnglesSchema,
 } as const satisfies Record<string, z.ZodTypeAny>;
 
 export type KnownConfigKey = keyof typeof CONFIG_SCHEMAS;
