@@ -16,3 +16,41 @@ export const AGENT_RUNNER_META: AgentRunnerMeta[] = [
   { slug: 'opencode', label: 'OpenCode', implemented: false },
   { slug: 'cloud', label: 'Pitchbox Cloud', implemented: false },
 ];
+
+// Typed config schema so the dashboard can render per-runner fields
+// generically without hardcoding inputs in components.
+export type RunnerConfigField =
+  | { key: string; kind: 'string'; label: string; placeholder?: string; description?: string }
+  | {
+      key: string;
+      kind: 'select';
+      label: string;
+      options: string[];
+      allowCustom?: boolean;
+      description?: string;
+    }
+  | { key: string; kind: 'number'; label: string; min?: number; max?: number; description?: string }
+  | { key: string; kind: 'boolean'; label: string; description?: string };
+
+const CLAUDE_KNOWN_MODELS = ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5'];
+
+export const RUNNER_CONFIG_SCHEMA: Partial<Record<AgentRunnerSlug, RunnerConfigField[]>> = {
+  'claude-code': [
+    {
+      key: 'model',
+      kind: 'select',
+      label: 'Model',
+      options: CLAUDE_KNOWN_MODELS,
+      allowCustom: true,
+      description: 'Maps to `--model` on the `claude` CLI. Leave empty for the CLI default.',
+    },
+    {
+      key: 'maxTurns',
+      kind: 'number',
+      label: 'Max turns',
+      min: 1,
+      max: 200,
+      description: 'Hard cap on agent turns per run.',
+    },
+  ],
+};

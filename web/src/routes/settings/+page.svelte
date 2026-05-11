@@ -35,11 +35,13 @@
 		extension: { token: string | null; createdAt: string | null; backendUrl: string };
 		quota: Record<string, PlatformQuota>;
 		runners: RunnerInfo[];
+		defaultRunner: string | null;
 	};
 
 	let { data }: { data: PageData } = $props();
 
 	let runners = $state(untrack(() => data.runners));
+	let defaultRunner = $state(untrack(() => data.defaultRunner));
 
 	const DEFAULTS: PlatformQuota = {
 		dm: { perDay: 10, perWeek: 50 },
@@ -55,7 +57,7 @@
 	let saving = $state(false);
 
 	// Tab state — driven by URL ?tab=
-	const VALID_TABS = ['status', 'integrations', 'quota'] as const;
+	const VALID_TABS = ['status', 'runners', 'integrations', 'quota'] as const;
 	type TabValue = (typeof VALID_TABS)[number];
 
 	let activeTab = $state<TabValue>('status');
@@ -127,6 +129,7 @@
 	<Tabs.Root value={activeTab} onValueChange={onTabChange} class="mt-2">
 		<Tabs.List variant="line">
 			<Tabs.Trigger value="status">Status</Tabs.Trigger>
+			<Tabs.Trigger value="runners">Runners</Tabs.Trigger>
 			<Tabs.Trigger value="integrations">Integrations</Tabs.Trigger>
 			<Tabs.Trigger value="quota">Quota</Tabs.Trigger>
 		</Tabs.List>
@@ -178,8 +181,14 @@
 					</Card.Content>
 				</Card.Root>
 
-				<SettingsRunnersCard bind:runners />
 
+			</div>
+		</Tabs.Content>
+
+		<!-- Runners tab -->
+		<Tabs.Content value="runners" class="mt-4">
+			<div class="max-w-3xl">
+				<SettingsRunnersCard bind:runners bind:defaultRunner />
 			</div>
 		</Tabs.Content>
 

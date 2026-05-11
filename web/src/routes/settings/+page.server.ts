@@ -31,6 +31,12 @@ export async function load() {
     config: runnerConfigs[m.slug],
   }));
 
+  const [defaultRunnerRow] = await db
+    .select({ value: schema.appConfig.value })
+    .from(schema.appConfig)
+    .where(eq(schema.appConfig.key, 'default_runner'));
+  const defaultRunner = (defaultRunnerRow?.value as { slug?: string })?.slug ?? null;
+
   return {
     extension: {
       token: await getExtensionToken(),
@@ -39,5 +45,6 @@ export async function load() {
     },
     quota,
     runners,
+    defaultRunner,
   };
 }
