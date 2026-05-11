@@ -68,6 +68,10 @@
 	const isDraft = $derived(data.campaign.status === 'draft');
 	const ready = $derived(data.readiness?.ready ?? false);
 	const issues = $derived(data.readiness?.issues ?? []);
+	const hasRateLimit = $derived(
+		!!data.campaign.rateLimit && JSON.stringify(data.campaign.rateLimit) !== '{}',
+	);
+	const hasConfigCard = $derived(!!data.campaign.cronExpression || hasRateLimit);
 
 	// Summary stats from last 30 runs
 	let stats = $derived.by(() => {
@@ -228,41 +232,34 @@
 
 {#if tab === 'overview'}
 
-	<div class="grid gap-4 md:grid-cols-2 mb-6">
-		<!-- Config card -->
-		<Card.Root size="sm">
-			<Card.Header>
-				<Card.Title class="text-base">Configuration</Card.Title>
-			</Card.Header>
-			<Card.Content class="space-y-3">
-				{#if data.campaign.cronExpression}
-					<div>
-						<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Cron</p>
-						<code class="font-mono text-xs bg-muted px-2 py-1 rounded"
-							>{data.campaign.cronExpression}</code
-						>
-					</div>
-				{/if}
-				{#if data.campaign.rateLimit && JSON.stringify(data.campaign.rateLimit) !== '{}'}
-					<div>
-						<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Rate limit</p>
-						<pre class="font-mono text-xs whitespace-pre-wrap bg-muted p-2 rounded">{JSON.stringify(
-								data.campaign.rateLimit,
-								null,
-								2
-							)}</pre>
-					</div>
-				{/if}
-				<p class="text-xs text-muted-foreground">
-					View profile in the
-					<button
-						type="button"
-						class="underline hover:text-foreground"
-						onclick={() => (tab = 'profile')}>Profile tab</button
-					>.
-				</p>
-			</Card.Content>
-		</Card.Root>
+	<div class={`grid gap-4 mb-6 ${hasConfigCard ? 'md:grid-cols-2' : ''}`}>
+		{#if hasConfigCard}
+			<Card.Root size="sm">
+				<Card.Header>
+					<Card.Title class="text-base">Configuration</Card.Title>
+				</Card.Header>
+				<Card.Content class="space-y-3">
+					{#if data.campaign.cronExpression}
+						<div>
+							<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Cron</p>
+							<code class="font-mono text-xs bg-muted px-2 py-1 rounded"
+								>{data.campaign.cronExpression}</code
+							>
+						</div>
+					{/if}
+					{#if hasRateLimit}
+						<div>
+							<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Rate limit</p>
+							<pre class="font-mono text-xs whitespace-pre-wrap bg-muted p-2 rounded">{JSON.stringify(
+									data.campaign.rateLimit,
+									null,
+									2
+								)}</pre>
+						</div>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		{/if}
 
 		<!-- Recent activity summary card -->
 		<Card.Root size="sm">
@@ -278,11 +275,11 @@
 					</div>
 					<div>
 						<dt class="text-xs text-muted-foreground">Successful</dt>
-						<dd class="text-2xl font-semibold text-green-600">{stats.successful}</dd>
+						<dd class="text-2xl font-semibold">{stats.successful}</dd>
 					</div>
 					<div>
 						<dt class="text-xs text-muted-foreground">Failed</dt>
-						<dd class="text-2xl font-semibold text-red-600">{stats.failed}</dd>
+						<dd class="text-2xl font-semibold">{stats.failed}</dd>
 					</div>
 					<div>
 						<dt class="text-xs text-muted-foreground">Total drafts</dt>

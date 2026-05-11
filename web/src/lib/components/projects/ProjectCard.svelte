@@ -10,6 +10,28 @@
     };
   };
   let { project }: Props = $props();
+
+  // Strip enough markdown for a one-paragraph preview: headings, emphasis, code fences,
+  // inline code, link markup, list bullets, blockquote arrows, then collapse whitespace.
+  function toPreview(md: string): string {
+    return md
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+      .replace(/^\s{0,3}>\s?/gm, '')
+      .replace(/^\s*[-*+]\s+/gm, '')
+      .replace(/^\s*\d+\.\s+/gm, '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/_([^_]+)_/g, '$1')
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  const preview = $derived(project.description ? toPreview(project.description) : '');
 </script>
 
 <a
@@ -20,8 +42,8 @@
     <h3 class="font-medium truncate">{project.name}</h3>
     <code class="text-xs text-muted-foreground">{project.slug}</code>
   </div>
-  {#if project.description}
-    <p class="text-sm text-muted-foreground line-clamp-2 mb-3">{project.description}</p>
+  {#if preview}
+    <p class="text-sm text-muted-foreground line-clamp-2 mb-3">{preview}</p>
   {/if}
   <div class="text-xs text-muted-foreground flex gap-3">
     <span>{project.campaignCount} campaigns</span>

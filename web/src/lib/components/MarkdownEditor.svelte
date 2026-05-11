@@ -327,7 +327,7 @@
   }
 
   .md-host :global(.bytemd-preview .markdown-body a) {
-    color: var(--primary);
+    color: var(--link);
     text-decoration: underline;
     text-underline-offset: 2px;
   }
