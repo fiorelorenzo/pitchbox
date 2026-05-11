@@ -17,7 +17,7 @@ export async function load() {
       draftKind: schema.drafts.kind,
       draftState: schema.drafts.state,
       draftBody: schema.drafts.body,
-      subreddit: schema.drafts.subreddit,
+      draftMetadata: schema.drafts.metadata,
       platformContextUrl: schema.contactHistory.platformContextUrl,
     })
     .from(schema.contactHistory)

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import '$lib/platforms/register';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
 

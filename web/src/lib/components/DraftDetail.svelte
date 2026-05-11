@@ -12,6 +12,7 @@
 	import Markdown from '$lib/components/Markdown.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { replyUrl } from '$lib/utils/reply-url';
+	import { getPresenter } from '$lib/platforms/presenter';
 	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 
@@ -27,7 +28,8 @@
 		runId: number;
 		kind: string;
 		targetUser: string | null;
-		subreddit: string | null;
+		platformSlug: string | null;
+		metadata: Record<string, unknown> | null;
 		fitScore: number | null;
 		state: string;
 		body: string;
@@ -163,15 +165,19 @@
 		draft?.sentContent != null && draft.sentContent !== draft.body
 	);
 
-	const EVENT_LABEL: Record<string, string> = {
+	const GENERIC_EVENT_LABEL: Record<string, string> = {
 		created: 'Created',
 		approved: 'Approved',
 		rejected: 'Rejected',
 		sent: 'Sent',
 		edited: 'Edited',
 		replied: 'Replied',
-		armed: 'Send clicked on Reddit',
 	};
+
+	function eventLabel(event: string): string {
+		const fromPresenter = getPresenter(draft?.platformSlug ?? null).eventLabel(event);
+		return fromPresenter ?? GENERIC_EVENT_LABEL[event] ?? event;
+	}
 
 	let editedFromDraft = $derived(draft != null && sentDraftText !== draft.body);
 
@@ -197,8 +203,7 @@
 </script>
 
 {#if draft}
-	{@const primary =
-		draft.kind === 'dm' ? `u/${draft.targetUser ?? '—'}` : `r/${draft.subreddit ?? '—'}`}
+	{@const primary = getPresenter(draft.platformSlug).primaryLabel(draft)}
 	{@const urlSep = draft.composeUrl?.includes('?') ? '&' : '?'}
 	{@const openLabel =
 		draft.kind === 'dm'
@@ -335,7 +340,7 @@
 							class="shrink-0"
 						>
 							<MessageSquare class="size-3.5" />
-							Reply on Reddit
+							{getPresenter(draft.platformSlug).replyActionLabel()}
 						</Button>
 					</div>
 					<p class="mt-1 whitespace-pre-wrap text-sm">{latestReply.body}</p>
@@ -365,7 +370,7 @@
 									{/if}
 								</div>
 								<div class="flex-1 min-w-0 flex items-baseline gap-2 flex-wrap">
-									<span class="text-xs font-medium">{EVENT_LABEL[ev.event] ?? ev.event}</span>
+									<span class="text-xs font-medium">{eventLabel(ev.event)}</span>
 									<span class="text-[10px] text-muted-foreground">by {ev.actor}</span>
 									<span class="text-[10px] text-muted-foreground ml-auto tabular-nums">
 										{relativeTime(ev.createdAt)}
@@ -391,8 +396,8 @@
 		<Dialog.Header>
 			<Dialog.Title>Mark as sent</Dialog.Title>
 			<Dialog.Description>
-				Paste or edit what you actually sent on Reddit. Saved on the draft for future reference and
-				logged to contact history.
+				Paste or edit what you actually sent. Saved on the draft for future reference and logged
+				to contact history.
 			</Dialog.Description>
 		</Dialog.Header>
 		{#if overQuota && quotaKind && usage && limits}
@@ -400,8 +405,8 @@
 				<strong>Quota reached.</strong>
 				You've already sent {usage[quotaKind].day}/{limits[quotaKind].perDay} {labelFor(quotaKind)} today
 				{#if overWeek}and {usage[quotaKind].week}/{limits[quotaKind].perWeek} this week{/if}
-				from this account. Reddit may rate-limit or suspend the account if you continue. Proceed only
-				if necessary.
+				from this account. The platform may rate-limit or suspend the account if you continue.
+				Proceed only if necessary.
 			</div>
 		{/if}
 		<Textarea bind:value={sentDraftText} rows={12} class="font-mono text-xs" />

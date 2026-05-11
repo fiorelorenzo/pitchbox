@@ -140,7 +140,6 @@ export const drafts = pgTable(
     kind: text('kind').notNull(),
     state: text('state').notNull().default('pending_review'),
     fitScore: smallint('fit_score'),
-    subreddit: text('subreddit'),
     targetUser: text('target_user'),
     sourceRef: jsonb('source_ref').notNull().default({}),
     title: text('title'),

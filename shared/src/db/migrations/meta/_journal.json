@@ -99,6 +99,13 @@
       "when": 1778495500000,
       "tag": "0013_drop_project_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1778500000000,
+      "tag": "0014_drop_drafts_subreddit",
+      "breakpoints": true
     }
   ]
 }

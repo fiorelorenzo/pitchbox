@@ -10,6 +10,7 @@
   import { relativeTime } from '$lib/utils/time';
   import { cn } from '$lib/utils';
   import { replyUrl } from '$lib/utils/reply-url';
+  import { getPresenter } from '$lib/platforms/presenter';
 
   type Convo = {
     contactId: number;
@@ -19,7 +20,7 @@
     lastContactedAt: string;
     repliedAt: string | null;
     chatRoomId: string | null;
-    subreddit: string | null;
+    draftMetadata: Record<string, unknown> | null;
     platformContextUrl: string | null;
     draftId: number | null;
     draftKind: string | null;
@@ -186,11 +187,16 @@
     {:else}
       {#each filtered as c (c.contactId)}
         {@const href = c.draftId != null ? `/inbox?state=all&focus=${c.draftId}` : null}
+        {@const cp = getPresenter(c.platformSlug)}
+        {@const subredditCtx =
+          c.draftKind === 'post_comment' && typeof c.draftMetadata?.subreddit === 'string'
+            ? (c.draftMetadata.subreddit as string)
+            : null}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
           role={href ? 'button' : undefined}
           tabindex={href ? 0 : undefined}
-          aria-label={href ? `Open draft ${c.draftId} for u/${c.targetUser}` : undefined}
+          aria-label={href ? `Open draft ${c.draftId} for ${cp.userLabel(c.targetUser)}` : undefined}
           onclick={() => href && goto(href)}
           onkeydown={(e) => {
             if (href && (e.key === 'Enter' || e.key === ' ')) {
@@ -215,7 +221,7 @@
           </div>
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span class="font-mono text-sm font-medium">u/{c.targetUser}</span>
+              <span class="font-mono text-sm font-medium">{cp.userLabel(c.targetUser)}</span>
               {#if c.draftKind}
                 <StatusBadge domain="draft-kind" value={c.draftKind} />
               {/if}
@@ -223,9 +229,9 @@
                 <StatusBadge domain="draft-state" value="replied" />
               {/if}
               <span class="text-xs text-muted-foreground">
-                via u/{c.accountHandle}
-                {#if c.draftKind === 'post_comment' && c.subreddit}
-                  · r/{c.subreddit}
+                via {cp.userLabel(c.accountHandle)}
+                {#if subredditCtx}
+                  · {cp.primaryLabel({ kind: 'post_comment', targetUser: null, metadata: { subreddit: subredditCtx } })}
                 {:else}
                   · {c.platformSlug}
                 {/if}
@@ -247,11 +253,11 @@
                   rel="noopener"
                   onclick={(e) => e.stopPropagation()}
                   class="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-0.5 text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-foreground"
-                  title={c.draftKind === 'post_comment'
-                    ? `Open the comment thread on r/${c.subreddit ?? '?'}`
+                  title={c.draftKind === 'post_comment' && subredditCtx
+                    ? `Open the thread on ${cp.primaryLabel({ kind: 'post_comment', targetUser: null, metadata: { subreddit: subredditCtx } })}`
                     : c.chatRoomId
-                      ? `Open Reddit chat with u/${c.targetUser}`
-                      : `Open u/${c.targetUser}'s profile`}
+                      ? `Open chat with ${cp.userLabel(c.targetUser)}`
+                      : `Open ${cp.userLabel(c.targetUser)}'s profile`}
                 >
                   <MessageSquare class="size-3" />
                   Reply
@@ -261,7 +267,7 @@
             {#if c.lastMessage}
               <p class="mt-1 text-sm leading-snug">
                 <span class="text-muted-foreground"
-                  >{c.lastMessage.isFromUs ? 'you' : `u/${c.lastMessage.author}`}:</span
+                  >{c.lastMessage.isFromUs ? 'you' : cp.userLabel(c.lastMessage.author)}:</span
                 >
                 {snippet(c.lastMessage.body)}
               </p>

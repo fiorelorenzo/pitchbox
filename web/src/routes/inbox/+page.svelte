@@ -30,10 +30,11 @@
 				id: number;
 				accountId: number;
 				platformId: number;
+				platformSlug: string | null;
+				metadata: Record<string, unknown> | null;
 				runId: number;
 				kind: string;
 				targetUser: string | null;
-				subreddit: string | null;
 				fitScore: number | null;
 				state: string;
 				body: string;
@@ -54,6 +55,8 @@
 			quotaLimitsByPlatform: Record<number, QuotaLimits>;
 			projects: Array<{ id: number; slug: string; name: string }>;
 			activeProject: { id: number; slug: string; name: string } | null;
+			platforms: Array<{ id: number; slug: string }>;
+			activePlatform: { id: number; slug: string } | null;
 		};
 	} = $props();
 
@@ -368,6 +371,19 @@
 			size="sm"
 			placeholder="All projects"
 		/>
+
+		{#if data.platforms.length > 1}
+			<SelectField
+				value={data.activePlatform?.slug ?? ''}
+				onValueChange={(v) => navigate({ platform: v || null })}
+				options={[
+					{ value: '', label: 'All platforms' },
+					...data.platforms.map((p) => ({ value: p.slug, label: p.slug })),
+				]}
+				size="sm"
+				placeholder="All platforms"
+			/>
+		{/if}
 
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>

@@ -2,12 +2,14 @@
 	import { cn } from '$lib/utils';
 	import { relativeTime } from '$lib/utils/time';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import { getPresenter } from '$lib/platforms/presenter';
 
 	type Draft = {
 		id: number;
 		kind: string;
 		targetUser: string | null;
-		subreddit: string | null;
+		platformSlug: string | null;
+		metadata: Record<string, unknown> | null;
 		fitScore: number | null;
 		state: string;
 		createdAt: string | Date | null;
@@ -25,6 +27,8 @@
 		runId?: number;
 		onclick?: () => void;
 	} = $props();
+
+	const presenter = $derived(getPresenter(draft.platformSlug));
 </script>
 
 <button
@@ -36,7 +40,7 @@
 >
 	<div class="flex justify-between items-center gap-2">
 		<span class="font-medium text-sm truncate">
-			{#if draft.kind === 'dm'}u/{draft.targetUser ?? '—'}{:else}r/{draft.subreddit ?? '—'}{/if}
+			{presenter.primaryLabel(draft)}
 		</span>
 		<StatusBadge domain="draft-kind" value={draft.kind} class="shrink-0" />
 	</div>
@@ -48,9 +52,6 @@
 	<div class="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
 		<StatusBadge domain="draft-state" value={draft.state} />
 		<span>· fit {draft.fitScore ?? '?'}/5</span>
-		{#if draft.kind !== 'dm' && draft.subreddit == null && draft.targetUser}
-			<span>· u/{draft.targetUser}</span>
-		{/if}
 	</div>
 	{#if runId != null || draft.createdAt}
 		<div class="text-[10px] text-muted-foreground/70 mt-0.5 flex items-center gap-1">

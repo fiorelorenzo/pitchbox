@@ -26,9 +26,11 @@ export async function load({ url }: { url: URL }) {
       consecutiveFailures: schema.campaigns.consecutiveFailures,
       projectSlug: schema.projects.slug,
       projectName: schema.projects.name,
+      platformSlug: schema.platforms.slug,
     })
     .from(schema.campaigns)
     .innerJoin(schema.projects, eq(schema.projects.id, schema.campaigns.projectId))
+    .innerJoin(schema.platforms, eq(schema.platforms.id, schema.campaigns.platformId))
     .where(activeProject ? eq(schema.campaigns.projectId, activeProject.id) : undefined);
 
   const latestRuns = await db
@@ -91,6 +93,7 @@ export async function load({ url }: { url: URL }) {
       nextRunAt: c.nextRunAt,
       consecutiveFailures: c.consecutiveFailures,
       project: { id: c.projectId, slug: c.projectSlug, name: c.projectName },
+      platformSlug: c.platformSlug,
       isRunning,
       lastRunId: latestRun?.id ?? null,
       lastRunStatus: latestRun?.status ?? null,

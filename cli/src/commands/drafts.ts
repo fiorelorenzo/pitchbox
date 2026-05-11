@@ -71,14 +71,13 @@ export function registerDraftCommands(program: Command) {
         kind: d.kind,
         state: 'pending_review' as const,
         fitScore: d.fitScore ?? null,
-        subreddit: d.subreddit ?? null,
         targetUser: d.targetUser ?? null,
         title: d.title ?? null,
         body: d.body,
         composeUrl: d.composeUrl ?? null,
         reasoning: d.reasoning ?? null,
         sourceRef: d.sourceRef,
-        metadata: d.metadata,
+        metadata: d.subreddit ? { ...d.metadata, subreddit: d.subreddit } : d.metadata,
       }));
 
       const inserted =

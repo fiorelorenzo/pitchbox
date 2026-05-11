@@ -39,6 +39,7 @@
 				lastRunTokens: number | null;
 				lastRunDraftCount: number;
 				project: { id: number; slug: string; name: string };
+				platformSlug: string;
 			}>;
 			projects: Array<{ id: number; slug: string; name: string }>;
 			activeProject: { id: number; slug: string; name: string } | null;
@@ -267,6 +268,7 @@
 							<Table.Cell class="text-muted-foreground text-xs py-3">
 								<span class="flex items-center gap-1.5">
 									{c.skillSlug}
+									<Badge variant="outline" class="font-mono text-[10px] py-0 px-1 h-4 text-muted-foreground/70">{c.platformSlug}</Badge>
 									<Badge variant="outline" class="font-mono text-[10px] py-0 px-1 h-4 text-muted-foreground/70">{c.agentRunner}</Badge>
 								</span>
 							</Table.Cell>
