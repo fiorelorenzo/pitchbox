@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
+import { getCampaignReadiness } from '$lib/server/campaign-readiness.js';
 import { desc, eq, count, inArray } from 'drizzle-orm';
 
 export async function load({ params }: { params: { id: string } }) {
@@ -45,11 +46,13 @@ export async function load({ params }: { params: { id: string } }) {
         : null,
   }));
   const skillRuns = enrichedRuns.filter((r) => r.kind === 'campaign_skill_generation').slice(0, 5);
+  const readiness = await getCampaignReadiness(id);
   return {
     campaign,
     project: project ?? null,
     platform: platform ?? null,
     runs: enrichedRuns,
     skillRuns,
+    readiness,
   };
 }

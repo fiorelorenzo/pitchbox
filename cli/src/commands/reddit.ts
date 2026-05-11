@@ -26,8 +26,7 @@ export function registerRedditCommands(program: Command) {
         perSubredditLimit?: number;
         includeHotBrowse?: boolean;
       };
-      if (!profile.targetSubreddits?.length)
-        return fail('campaign config has no targetSubreddits');
+      if (!profile.targetSubreddits?.length) return fail('campaign config has no targetSubreddits');
 
       const blocks = await db
         .select()

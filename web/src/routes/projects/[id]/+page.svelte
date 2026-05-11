@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import type { PageData } from './$types';
   import ProjectOverviewTab from '$lib/components/projects/ProjectOverviewTab.svelte';
   import ProjectAccountsTab from '$lib/components/projects/ProjectAccountsTab.svelte';
 
   let { data }: { data: PageData } = $props();
-  let tab = $state<'overview' | 'accounts'>('overview');
+  const initialTab = page.url.searchParams.get('tab') === 'accounts' ? 'accounts' : 'overview';
+  let tab = $state<'overview' | 'accounts'>(initialTab);
 
   const tabs = [
     { k: 'overview' as const, label: 'Overview' },

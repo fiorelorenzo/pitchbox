@@ -15,6 +15,13 @@
 
 	type SkillRun = { id: number; status: string; params: { objective?: string } | null };
 
+	type ReadinessIssue = {
+		id: 'profile_missing' | 'profile_invalid' | 'no_account';
+		title: string;
+		hint: string;
+		fix: { label: string; kind: 'profile' | 'accounts'; href?: string };
+	};
+
 	let {
 		data,
 	}: {
@@ -44,6 +51,7 @@
 				tokensUsed: number | null;
 			}>;
 			skillRuns: SkillRun[];
+			readiness: { ready: boolean; issues: ReadinessIssue[] };
 		};
 	} = $props();
 
@@ -58,8 +66,8 @@
 	];
 
 	const isDraft = $derived(data.campaign.status === 'draft');
-	const configEmpty = $derived(Object.keys(data.campaign.config ?? {}).length === 0);
-	const showProfileBanner = $derived(isDraft || configEmpty);
+	const ready = $derived(data.readiness?.ready ?? false);
+	const issues = $derived(data.readiness?.issues ?? []);
 
 	// Summary stats from last 30 runs
 	let stats = $derived.by(() => {
@@ -77,7 +85,7 @@
 	});
 
 	async function runNow() {
-		if (isStarting || isDraft) return;
+		if (isStarting || !ready) return;
 		isStarting = true;
 		try {
 			const res = await fetch('/api/run', {
@@ -85,8 +93,17 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ campaignId: data.campaign.id }),
 			});
-			if (!res.ok) throw new Error(await res.text());
-			const { runId, alreadyRunning } = await res.json();
+			const body = await res.json().catch(() => ({}));
+			if (res.status === 422 && body?.error === 'not_ready') {
+				const first = (body.issues as ReadinessIssue[] | undefined)?.[0];
+				toast.error('Setup incomplete', {
+					description: first?.title ?? 'Resolve the items in the Setup required panel.',
+				});
+				await invalidateAll();
+				return;
+			}
+			if (!res.ok) throw new Error(body?.message ?? `HTTP ${res.status}`);
+			const { runId, alreadyRunning } = body;
 			if (alreadyRunning) {
 				toast.info(`Already running — showing live log`);
 			} else {
@@ -97,6 +114,20 @@
 			toast.error('Failed to start run', { description: (e as Error).message });
 		} finally {
 			isStarting = false;
+		}
+	}
+
+	function handleIssueAction(issue: ReadinessIssue) {
+		if (issue.fix.kind === 'profile') {
+			if (isDraft || (data.campaign.config && Object.keys(data.campaign.config).length === 0)) {
+				regenOpen = true;
+			} else {
+				tab = 'profile';
+			}
+			return;
+		}
+		if (issue.fix.kind === 'accounts' && issue.fix.href) {
+			window.location.assign(issue.fix.href);
 		}
 	}
 
@@ -142,10 +173,45 @@
 			Configuration, activity, and run history.
 		</p>
 	</div>
-	<Button onclick={runNow} loading={isStarting} size="sm" disabled={isDraft || isStarting}>
+	<Button
+		onclick={runNow}
+		loading={isStarting}
+		size="sm"
+		disabled={!ready || isStarting}
+		title={!ready ? 'Resolve the setup items below first' : undefined}
+	>
 		{isStarting ? 'Starting…' : 'Run now'}
 	</Button>
 </header>
+
+{#if !ready && issues.length > 0}
+	<div class="mb-6 rounded-md border border-amber-500/40 bg-amber-500/10 p-4">
+		<div class="flex items-baseline justify-between gap-3 mb-3">
+			<h2 class="text-sm font-medium text-amber-700 dark:text-amber-300">Setup required</h2>
+			<span class="text-xs text-amber-700/70 dark:text-amber-300/70">
+				{issues.length} item{issues.length === 1 ? '' : 's'} blocking this campaign
+			</span>
+		</div>
+		<ul class="space-y-3">
+			{#each issues as issue (issue.id)}
+				<li class="flex items-start justify-between gap-3">
+					<div class="min-w-0">
+						<p class="text-sm font-medium">{issue.title}</p>
+						<p class="text-xs text-muted-foreground">{issue.hint}</p>
+					</div>
+					<Button
+						size="sm"
+						variant="outline"
+						class="shrink-0"
+						onclick={() => handleIssueAction(issue)}
+					>
+						{issue.fix.label}
+					</Button>
+				</li>
+			{/each}
+		</ul>
+	</div>
+{/if}
 
 <!-- Tabs -->
 <div class="flex gap-2 border-b border-border mb-6">
@@ -161,14 +227,6 @@
 </div>
 
 {#if tab === 'overview'}
-	{#if showProfileBanner}
-		<div
-			class="mb-4 flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
-		>
-			<span>Profile not yet generated — generate it before running.</span>
-			<Button size="sm" variant="outline" onclick={() => (regenOpen = true)}>Generate now</Button>
-		</div>
-	{/if}
 
 	<div class="grid gap-4 md:grid-cols-2 mb-6">
 		<!-- Config card -->
