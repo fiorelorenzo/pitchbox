@@ -53,6 +53,7 @@ function extensionCorsHeaders(origin: string | null): Record<string, string> {
 
 const AUTH_ON = process.env.PITCHBOX_AUTH === 'on';
 const SESSION_COOKIE = 'pitchbox_session';
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 function isExemptPath(pathname: string): boolean {
   return (
@@ -64,6 +65,28 @@ function isExemptPath(pathname: string): boolean {
   );
 }
 
+/**
+ * Reject cross-origin mutations to /api/* (except extension routes which
+ * have their own bearer-token auth and explicit allowed origins). Same-origin
+ * dashboard fetches pass through unchanged. This is the lightweight CSRF
+ * defence — we don't need a per-request token because every state-changing
+ * route is fetch-only (no plain HTML forms).
+ */
+function blocksCrossOriginMutation(event: { request: Request; url: URL }): boolean {
+  if (!event.url.pathname.startsWith('/api/')) return false;
+  if (event.url.pathname.startsWith('/api/extension/')) return false;
+  if (!MUTATING_METHODS.has(event.request.method)) return false;
+  const origin = event.request.headers.get('origin');
+  if (!origin) return false;
+  let originUrl: URL;
+  try {
+    originUrl = new URL(origin);
+  } catch {
+    return true;
+  }
+  return originUrl.host !== event.url.host;
+}
+
 export const handle = async ({ event, resolve }) => {
   const isExtensionRoute = event.url.pathname.startsWith('/api/extension/');
 
@@ -71,6 +94,13 @@ export const handle = async ({ event, resolve }) => {
     return new Response(null, {
       status: 204,
       headers: extensionCorsHeaders(event.request.headers.get('origin')),
+    });
+  }
+
+  if (blocksCrossOriginMutation(event)) {
+    return new Response(JSON.stringify({ error: 'cross_origin_blocked' }), {
+      status: 403,
+      headers: { 'content-type': 'application/json' },
     });
   }
 

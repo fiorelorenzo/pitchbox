@@ -11,30 +11,29 @@
 	import CampaignRecommendationsList, {
 		type Recommendation,
 	} from '$lib/components/projects/CampaignRecommendationsList.svelte';
+	import { untrack } from 'svelte';
 
 	let { data }: { data: PageData } = $props();
 
-	// svelte-ignore state_referenced_locally
+	// Seed every form-field state from `data` exactly once. Wrapping in
+	// untrack() silences state_referenced_locally — the initial value should
+	// not re-fire if SvelteKit reruns the load function.
 	let projectId = $state<number | null>(
-		data.preselected?.projectId ?? data.projects[0]?.id ?? null,
+		untrack(() => data.preselected?.projectId ?? data.projects[0]?.id ?? null),
 	);
-	// svelte-ignore state_referenced_locally
-	let platformSlug = $state<string>(data.platforms[0]?.slug ?? 'reddit');
-	// svelte-ignore state_referenced_locally
+	let platformSlug = $state<string>(untrack(() => data.platforms[0]?.slug ?? 'reddit'));
 	let scenarioSlug = $state<'reddit-scout' | 'reddit-commenter'>(
-		(data.preselected?.scenarioSlug as 'reddit-scout' | 'reddit-commenter') ?? 'reddit-scout',
+		untrack(
+			() => (data.preselected?.scenarioSlug as 'reddit-scout' | 'reddit-commenter') ?? 'reddit-scout',
+		),
 	);
-	// svelte-ignore state_referenced_locally
-	let name = $state(data.preselected?.name ?? '');
+	let name = $state(untrack(() => data.preselected?.name ?? ''));
 	let runner = $state('claude-code');
-	// svelte-ignore state_referenced_locally
-	let objective = $state(data.preselected?.objective ?? '');
+	let objective = $state(untrack(() => data.preselected?.objective ?? ''));
 	let cron = $state('');
 	let saving = $state(false);
-	// svelte-ignore state_referenced_locally
-	let preselectedRecId = $state<number | null>(data.preselected?.id ?? null);
-	// svelte-ignore state_referenced_locally
-	let recommendations = $state<Recommendation[]>(data.recommendations);
+	let preselectedRecId = $state<number | null>(untrack(() => data.preselected?.id ?? null));
+	let recommendations = $state<Recommendation[]>(untrack(() => data.recommendations));
 
 	async function loadRecommendationsFor(pid: number) {
 		const res = await fetch(`/api/projects/${pid}/recommendations`);
@@ -46,8 +45,8 @@
 		recommendations = body.recommendations ?? [];
 	}
 
-	const projectOptions = data.projects.map((p) => ({ value: p.id, label: p.name }));
-	const platformOptions = data.platforms.map((p) => ({ value: p.slug, label: p.slug }));
+	const projectOptions = $derived(data.projects.map((p) => ({ value: p.id, label: p.name })));
+	const platformOptions = $derived(data.platforms.map((p) => ({ value: p.slug, label: p.slug })));
 	const scenarioOptions = $derived(
 		SCENARIO_META.filter((s) => s.platformSlug === platformSlug).map((s) => ({
 			value: s.slug,
