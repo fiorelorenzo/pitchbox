@@ -16,9 +16,7 @@ function cli(args: string, input?: string): string {
 
 async function reset() {
   const db = getDb();
-  await db.execute(
-    sql`TRUNCATE campaign_recommendations, runs, projects RESTART IDENTITY CASCADE`,
-  );
+  await db.execute(sql`TRUNCATE campaign_recommendations, runs, projects RESTART IDENTITY CASCADE`);
 }
 
 describe('project_extraction e2e with recommendations', () => {
@@ -29,10 +27,7 @@ describe('project_extraction e2e with recommendations', () => {
     await writeFile(join(folder, 'README.md'), '# Demo product');
 
     const db = getDb();
-    const [project] = await db
-      .insert(schema.projects)
-      .values({ slug: 'p', name: 'P' })
-      .returning();
+    const [project] = await db.insert(schema.projects).values({ slug: 'p', name: 'P' }).returning();
     const [run] = await db
       .insert(schema.runs)
       .values({

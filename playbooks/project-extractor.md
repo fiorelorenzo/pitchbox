@@ -54,9 +54,7 @@ Environment variables:
    ```json
    {
      "description": "<the markdown you composed in step 3>",
-     "recommendations": [
-       { "scenarioSlug": "reddit-scout", "name": "...", "objective": "..." }
-     ]
+     "recommendations": [{ "scenarioSlug": "reddit-scout", "name": "...", "objective": "..." }]
    }
    ```
 

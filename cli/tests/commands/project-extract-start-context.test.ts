@@ -102,9 +102,7 @@ describe('pitchbox project:extract:start — recommendations context', () => {
     });
     const out = cli(`project:extract:start --run=${runId}`);
     const parsed = JSON.parse(out.trim().split('\n').at(-1)!);
-    const seeded = parsed.data.existingCampaigns.find(
-      (c: { name: string }) => c.name === 'Seeded',
-    );
+    const seeded = parsed.data.existingCampaigns.find((c: { name: string }) => c.name === 'Seeded');
     expect(seeded.objective).toBe('');
   });
 });

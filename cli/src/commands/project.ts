@@ -199,15 +199,11 @@ async function loadExistingCampaigns(
       .select({ params: schema.runs.params })
       .from(schema.runs)
       .where(
-        and(
-          eq(schema.runs.campaignId, c.id),
-          eq(schema.runs.kind, 'campaign_skill_generation'),
-        ),
+        and(eq(schema.runs.campaignId, c.id), eq(schema.runs.kind, 'campaign_skill_generation')),
       )
       .orderBy(desc(schema.runs.startedAt))
       .limit(1);
-    const objective =
-      (lastRun?.params as { objective?: string } | null)?.objective ?? '';
+    const objective = (lastRun?.params as { objective?: string } | null)?.objective ?? '';
     out.push({ id: c.id, name: c.name, scenarioSlug: c.scenarioSlug, objective });
   }
   return out;

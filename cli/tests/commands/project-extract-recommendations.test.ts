@@ -26,10 +26,7 @@ async function reset() {
 
 async function setup() {
   const db = getDb();
-  const [project] = await db
-    .insert(schema.projects)
-    .values({ slug: 'p', name: 'P' })
-    .returning();
+  const [project] = await db.insert(schema.projects).values({ slug: 'p', name: 'P' }).returning();
   const [run] = await db
     .insert(schema.runs)
     .values({
@@ -52,10 +49,7 @@ describe('pitchbox project:extract:finish — recommendations payload', () => {
       description: '## Product\n\nDemo.\n',
       recommendations: [VALID_REC, { ...VALID_REC, name: 'Second' }],
     };
-    const out = cliWithStdin(
-      `project:extract:finish --run=${run.id}`,
-      JSON.stringify(payload),
-    );
+    const out = cliWithStdin(`project:extract:finish --run=${run.id}`, JSON.stringify(payload));
     expect(JSON.parse(out.trim().split('\n').at(-1)!).ok).toBe(true);
     const db = getDb();
     const recs = await db

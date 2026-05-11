@@ -20,9 +20,7 @@ describe('RecommendationItemSchema', () => {
   });
 
   it('rejects an unknown scenarioSlug', () => {
-    expect(() =>
-      RecommendationItemSchema.parse({ ...VALID, scenarioSlug: 'twitter' }),
-    ).toThrow();
+    expect(() => RecommendationItemSchema.parse({ ...VALID, scenarioSlug: 'twitter' })).toThrow();
   });
 
   it('rejects an empty name', () => {
@@ -34,9 +32,7 @@ describe('RecommendationItemSchema', () => {
   });
 
   it('rejects an extra unknown field (strict)', () => {
-    expect(() =>
-      RecommendationItemSchema.parse({ ...VALID, surprise: 'no' } as unknown),
-    ).toThrow();
+    expect(() => RecommendationItemSchema.parse({ ...VALID, surprise: 'no' } as unknown)).toThrow();
   });
 
   it('rejects an objective longer than 2000 chars', () => {
