@@ -21,12 +21,13 @@ export function registerRedditCommands(program: Command) {
         .where(eq(schema.campaigns.id, run.campaignId));
 
       const profile = (campaign.config ?? {}) as {
-        subreddits: string[];
-        queries?: string[];
+        targetSubreddits: string[];
+        topicKeywords?: string[];
         perSubredditLimit?: number;
         includeHotBrowse?: boolean;
       };
-      if (!profile.subreddits?.length) return fail('campaign config has no subreddits');
+      if (!profile.targetSubreddits?.length)
+        return fail('campaign config has no targetSubreddits');
 
       const blocks = await db
         .select()
