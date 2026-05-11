@@ -93,7 +93,7 @@ When a target user replies, you'll see:
 - **Contacts** — every outreach with platform/account/kind, plus a `replied` badge.
 - **Conversations** — reply threads across DMs and comment-replies, with kind filter.
 - **Blocklist** — add/remove subreddit / user / keyword entries, scoped globally or per-project.
-- **Settings** — tabbed layout (Status / Integrations / Quota): daemon heartbeat, agent runner info, extension API token (generate / rotate), editable per-platform quota limits.
+- **Settings** — tabbed layout (Status / Integrations / Quota): daemon heartbeat, auto-detected agent runners (CLI path + version, with **Re-detect**), extension API token (generate / rotate), editable per-platform quota limits.
 
 **Daemon**
 
@@ -131,6 +131,8 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.3
 ## Agent runners
 
 Each campaign snapshots its runner at creation time; each run snapshots the runner it used. Today only `claude-code` is implemented (spawns `claude -p --verbose --output-format stream-json`). `codex` and `opencode` adapters exist as typed stubs so new runners can be wired in without touching the rest of the pipeline.
+
+Pitchbox auto-detects installed runner CLIs by probing `<binary> --version` on PATH. Detection is cached for the process lifetime and exposed in **Settings → Status → Agent runners** with a **Re-detect** button (and via `GET /api/runners` · `POST /api/runners` for a fresh probe). The campaign-creation form disables runners that are not installed, and `POST /api/run` refuses to dispatch a campaign whose runner is unavailable (returned as a readiness issue).
 
 ## License
 

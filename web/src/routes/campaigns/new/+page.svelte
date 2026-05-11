@@ -54,11 +54,14 @@
 			label: s.label,
 		})),
 	);
-	const runnerOptions = AGENT_RUNNER_META.map((m) => ({
-		value: m.slug,
-		label: m.implemented ? m.label : `${m.label} (coming soon)`,
-		disabled: !m.implemented,
-	}));
+	const runnerOptions = AGENT_RUNNER_META.map((m) => {
+		const det = data.runners.find((r) => r.slug === m.slug);
+		const available = det?.available ?? false;
+		let label = m.label;
+		if (!m.implemented) label = `${m.label} (coming soon)`;
+		else if (!available) label = `${m.label} (not installed)`;
+		return { value: m.slug, label, disabled: !available };
+	});
 	const selectedScenarioDescription = $derived(
 		SCENARIO_META.find((s) => s.slug === scenarioSlug)?.description ?? '',
 	);
