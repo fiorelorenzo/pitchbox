@@ -2,6 +2,7 @@ import { getExtensionToken, getExtensionTokenCreatedAt } from '@pitchbox/shared/
 import { loadQuotaLimits } from '@pitchbox/shared/quota';
 import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 import { detectAllRunners } from '@pitchbox/shared/agents/detect';
+import { loadRunnerConfigs } from '@pitchbox/shared/agents/config';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 
@@ -17,6 +18,7 @@ export async function load() {
   }
 
   const detections = await detectAllRunners();
+  const runnerConfigs = await loadRunnerConfigs(db);
   const runners = AGENT_RUNNER_META.map((m) => ({
     slug: m.slug,
     label: m.label,
@@ -26,6 +28,7 @@ export async function load() {
     path: detections[m.slug].path,
     error: m.implemented ? detections[m.slug].error : 'Runner adapter not implemented yet',
     detectedAt: detections[m.slug].detectedAt,
+    config: runnerConfigs[m.slug],
   }));
 
   return {

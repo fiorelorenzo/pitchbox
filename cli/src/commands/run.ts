@@ -83,7 +83,15 @@ export function registerRunCommands(program: Command) {
         },
         project: { id: project.id, slug: project.slug, name: project.name },
         platform: { id: platform.id, slug: platform.slug },
-        accounts: accounts.map((a) => ({ id: a.id, handle: a.handle, role: a.role })),
+        accounts: accounts
+          .filter((a) => a.platformId === campaign.platformId && a.active)
+          .sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
+          .map((a) => ({
+            id: a.id,
+            handle: a.handle,
+            role: a.role,
+            isDefault: a.isDefault,
+          })),
         blocklist: blocks.map((b) => ({ kind: b.kind, value: b.value })),
         contactedRecently: contacted.map((c) => c.target),
       });

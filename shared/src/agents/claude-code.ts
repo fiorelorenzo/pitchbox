@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentRunHandle, AgentRunOptions, AgentRunResult, AgentRunner } from './base.js';
 import { parseClaudeCodeLine } from '../runlog/parsers/claude-code.js';
+import type { RunnerConfig } from './config.js';
 
 type SpawnFn = typeof nodeSpawn;
 
@@ -11,6 +12,7 @@ export interface ClaudeCodeRunnerOptions {
   binary?: string;
   spawn?: SpawnFn;
   logDir?: string;
+  config?: RunnerConfig;
 }
 
 export class ClaudeCodeRunner implements AgentRunner {
@@ -18,11 +20,13 @@ export class ClaudeCodeRunner implements AgentRunner {
   private readonly binary: string;
   private readonly spawn: SpawnFn;
   private readonly logDir: string;
+  private readonly config: RunnerConfig;
 
   constructor(opts: ClaudeCodeRunnerOptions = {}) {
     this.binary = opts.binary ?? 'claude';
     this.spawn = opts.spawn ?? nodeSpawn;
     this.logDir = opts.logDir ?? join(process.cwd(), 'daemon', 'logs');
+    this.config = opts.config ?? {};
   }
 
   run(opts: AgentRunOptions): AgentRunHandle {
@@ -56,6 +60,9 @@ export class ClaudeCodeRunner implements AgentRunner {
               '--verbose',
               '--output-format',
               'stream-json',
+              ...(this.config.model ? ['--model', this.config.model] : []),
+              ...(this.config.maxTurns ? ['--max-turns', String(this.config.maxTurns)] : []),
+              ...(this.config.extraArgs ?? []),
             ],
             {
               cwd: opts.cwd,

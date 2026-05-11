@@ -134,6 +134,10 @@ Each campaign snapshots its runner at creation time; each run snapshots the runn
 
 Pitchbox auto-detects installed runner CLIs by probing `<binary> --version` on PATH. Detection is cached for the process lifetime and exposed in **Settings → Status → Agent runners** with a **Re-detect** button (and via `GET /api/runners` · `POST /api/runners` for a fresh probe). The campaign-creation form disables runners that are not installed, and `POST /api/run` refuses to dispatch a campaign whose runner is unavailable (returned as a readiness issue).
 
+Per-runner configuration (model · max turns · extra CLI args) lives under `app_config['runner_configs']` and is editable inline under each runner in **Settings → Status → Agent runners**. The dispatch path (`web/src/lib/server/runner.ts`) calls `loadRunnerConfig(slug)` and passes the config into `createAgentRunner(slug, config)` — for `claude-code` that translates to `--model`, `--max-turns`, and any extra flags appended after the standard `-p / --output-format stream-json` invocation.
+
+**Accounts** carry a `platform_id` (first-class column) and an `is_default` flag scoped per (project, platform). A partial unique index guarantees at most one default per scope. The CLI `run:start` filters accounts to the campaign's platform and surfaces them with the default first, so playbooks can pick the right account without explicit wiring. Toggle the default from **Projects → [id] → Accounts**.
+
 ## License
 
 **AGPL-3.0-or-later** for the open-source (self-hosted) edition — see

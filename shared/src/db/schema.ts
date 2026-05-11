@@ -49,6 +49,7 @@ export const accounts = pgTable('accounts', {
   role: text('role').notNull().default('personal'),
   notes: text('notes'),
   active: boolean('active').notNull().default(true),
+  isDefault: boolean('is_default').notNull().default(false),
   cookieSession: bytea('cookie_session'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

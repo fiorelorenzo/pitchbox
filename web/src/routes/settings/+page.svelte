@@ -29,6 +29,7 @@
 		path: string | null;
 		error: string | null;
 		detectedAt: string;
+		config: { model?: string; maxTurns?: number; extraArgs?: string[] };
 	};
 	type PageData = {
 		extension: { token: string | null; createdAt: string | null; backendUrl: string };

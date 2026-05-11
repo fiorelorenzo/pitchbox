@@ -1,4 +1,6 @@
 import { createAgentRunner } from '@pitchbox/shared/agents/registry';
+import { loadRunnerConfig } from '@pitchbox/shared/agents/config';
+import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { getDb, schema } from './db.js';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
@@ -41,7 +43,8 @@ async function dispatchRun(
 
   let runner: ReturnType<typeof createAgentRunner>;
   try {
-    runner = createAgentRunner(run.agentRunner);
+    const config = await loadRunnerConfig(db, run.agentRunner as AgentRunnerSlug);
+    runner = createAgentRunner(run.agentRunner, config);
   } catch (err) {
     const errMsg = String(err instanceof Error ? err.message : err);
     await db

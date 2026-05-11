@@ -19,6 +19,7 @@
     "./agents/registry": "./src/agents/registry.ts",
     "./agents/meta": "./src/agents/meta.ts",
     "./agents/detect": "./src/agents/detect.ts",
+    "./agents/config": "./src/agents/config.ts",
     "./campaigns": "./src/campaigns/index.ts",
     "./blocklist": "./src/blocklist.ts",
     "./draft-send": "./src/draft-send.ts",
