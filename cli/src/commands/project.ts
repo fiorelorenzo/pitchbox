@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
-import { eq } from 'drizzle-orm';
+import { SCENARIO_META } from '@pitchbox/shared/campaigns';
+import { and, desc, eq } from 'drizzle-orm';
 import { stat, rm } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { ok, fail } from '../lib/output.js';
@@ -56,12 +57,21 @@ export function registerProjectCommands(program: Command) {
         return fail(`unsupported source kind: ${(source as { kind: string }).kind}`);
       }
 
+      const scenarios = SCENARIO_META.map((s) => ({
+        slug: s.slug,
+        label: s.label,
+        description: s.description,
+      }));
+      const existingCampaigns = await loadExistingCampaigns(db, project.id);
+
       ok({
         runId,
         projectId: project.id,
         sourcePath,
         scaffoldTemplate: DESCRIPTION_SCAFFOLD,
         currentDescription: project.description ?? '',
+        scenarios,
+        existingCampaigns,
       });
     });
 
@@ -103,6 +113,39 @@ export function registerProjectCommands(program: Command) {
 
       ok({ runId, projectId: run.projectId, bytes: md.length });
     });
+}
+
+async function loadExistingCampaigns(
+  db: ReturnType<typeof getDb>,
+  projectId: number,
+): Promise<Array<{ id: number; name: string; scenarioSlug: string; objective: string }>> {
+  const campaigns = await db
+    .select({
+      id: schema.campaigns.id,
+      name: schema.campaigns.name,
+      scenarioSlug: schema.campaigns.skillSlug,
+    })
+    .from(schema.campaigns)
+    .where(eq(schema.campaigns.projectId, projectId));
+
+  const out: Array<{ id: number; name: string; scenarioSlug: string; objective: string }> = [];
+  for (const c of campaigns) {
+    const [lastRun] = await db
+      .select({ params: schema.runs.params })
+      .from(schema.runs)
+      .where(
+        and(
+          eq(schema.runs.campaignId, c.id),
+          eq(schema.runs.kind, 'campaign_skill_generation'),
+        ),
+      )
+      .orderBy(desc(schema.runs.startedAt))
+      .limit(1);
+    const objective =
+      (lastRun?.params as { objective?: string } | null)?.objective ?? '';
+    out.push({ id: c.id, name: c.name, scenarioSlug: c.scenarioSlug, objective });
+  }
+  return out;
 }
 
 async function readStdin(): Promise<string> {
