@@ -233,27 +233,15 @@
 				{#if quotaKind && usage && limits}
 					{@const u = usage[quotaKind]}
 					{@const l = limits[quotaKind]}
-					{@const ratio = l.perDay === 0 ? 1 : u.day / l.perDay}
-					{@const tone =
-						u.day > l.perDay || u.week > l.perWeek
-							? 'red-strong'
-							: u.day === l.perDay
-							? 'red'
-							: ratio >= 0.8
-							? 'yellow'
-							: 'green'}
-					{@const klass = {
-						green: 'text-emerald-700',
-						yellow: 'text-amber-700',
-						red: 'text-red-700',
-						'red-strong': 'text-red-800 font-medium',
-					}[tone]}
+					{@const overLimit = u.day > l.perDay || u.week > l.perWeek}
 					{@const label = { dm: 'DMs', comment: 'comments', post: 'posts' }[quotaKind]}
 					<div class="text-xs text-muted-foreground">
 						Account quota:
-						<span class={klass}>{u.day}/{l.perDay} {label} today</span>
+						<span class={overLimit ? 'font-medium text-foreground' : ''}
+							>{u.day}/{l.perDay} {label} today</span
+						>
 						· {u.week}/{l.perWeek} this week
-						{#if tone === 'red-strong'}<span aria-hidden="true">⚠</span>{/if}
+						{#if overLimit}<span aria-hidden="true" title="Over limit">⚠</span>{/if}
 					</div>
 				{/if}
 			</div>

@@ -16,8 +16,8 @@ export async function runScout(opts: RunScoutOptions): Promise<ScoutCandidate[]>
     const raw: ScoutCandidate[] = [];
     const seen = new Set<string>();
 
-    for (const subreddit of opts.profile.subreddits) {
-      const queries = opts.profile.queries?.length ? opts.profile.queries : [''];
+    for (const subreddit of opts.profile.targetSubreddits) {
+      const queries = opts.profile.topicKeywords?.length ? opts.profile.topicKeywords : [''];
       for (const query of queries) {
         const posts = await searchPosts(env, {
           query,

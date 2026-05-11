@@ -56,8 +56,8 @@ export type RedditSubredditAbout = {
 };
 
 export interface ScoutProfile {
-  subreddits: string[];
-  queries?: string[];
+  targetSubreddits: string[];
+  topicKeywords?: string[];
   perSubredditLimit?: number;
   includeHotBrowse?: boolean;
   minKarma?: number;

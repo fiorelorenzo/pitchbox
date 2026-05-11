@@ -1,6 +1,5 @@
 <script lang="ts" generics="T extends string | number">
 	import * as Select from '$lib/components/ui/select';
-	import { ChevronDown } from 'lucide-svelte';
 	import { cn } from '$lib/utils';
 
 	type Option = { value: T; label: string; disabled?: boolean };
@@ -77,7 +76,6 @@
 		<span class={cn('truncate', !label && 'text-muted-foreground')}>
 			{label || placeholder}
 		</span>
-		<ChevronDown class="size-3.5 text-muted-foreground shrink-0" />
 	</Select.Trigger>
 	<Select.Content class="max-h-60">
 		{#each options as opt (opt.value)}

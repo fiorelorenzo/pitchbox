@@ -92,7 +92,6 @@
 		label="Drafts awaiting review"
 		value={data.stats.pending}
 		icon={Inbox}
-		accent={data.stats.pending > 0 ? 'primary' : 'default'}
 		href="/inbox?state=pending_review"
 		hint={data.stats.createdToday > 0
 			? `${data.stats.createdToday} new in the last 24h`
@@ -102,7 +101,6 @@
 		label="Approved, not sent"
 		value={data.stats.approved}
 		icon={CheckCircle2}
-		accent={data.stats.approved > 0 ? 'warning' : 'default'}
 		href="/inbox?state=approved"
 		hint="Open compose to send them"
 	/>
@@ -110,7 +108,6 @@
 		label="Messages sent (24h)"
 		value={data.stats.sentToday}
 		icon={Send}
-		accent="success"
 		href="/inbox?state=sent"
 		hint="Marked as sent manually"
 	/>
@@ -118,7 +115,6 @@
 		label="Reply rate"
 		value={replyRate > 0 ? `${replyRate}%` : '—'}
 		icon={MessageCircle}
-		accent={replyRate > 0 ? 'success' : 'default'}
 		href="/contacts"
 		hint="{data.stats.replies} replies · {data.stats.uniqueContacts} contacts"
 	/>
@@ -136,14 +132,12 @@
 		label="Successful runs"
 		value={data.runStats7d.success}
 		icon={TrendingUp}
-		accent={data.runStats7d.success > 0 ? 'success' : 'default'}
 		hint="Last 7 days"
 	/>
 	<StatCard
 		label="Failed runs"
 		value={data.runStats7d.failed}
 		icon={AlertTriangle}
-		accent={data.runStats7d.failed > 0 ? 'destructive' : 'default'}
 		hint="Last 7 days"
 	/>
 	<StatCard
