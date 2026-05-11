@@ -14,18 +14,19 @@ export function registerRedditCommands(program: Command) {
       const db = getDb();
       const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
       if (!run) return fail(`run ${runId} not found`);
+      if (run.campaignId == null) return fail(`run ${runId} has no campaign`);
       const [campaign] = await db
         .select()
         .from(schema.campaigns)
         .where(eq(schema.campaigns.id, run.campaignId));
 
       const profile = (campaign.config ?? {}) as {
-        subreddits: string[];
-        queries?: string[];
+        targetSubreddits: string[];
+        topicKeywords?: string[];
         perSubredditLimit?: number;
         includeHotBrowse?: boolean;
       };
-      if (!profile.subreddits?.length) return fail('campaign config has no subreddits');
+      if (!profile.targetSubreddits?.length) return fail('campaign config has no targetSubreddits');
 
       const blocks = await db
         .select()

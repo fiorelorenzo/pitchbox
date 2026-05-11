@@ -9,7 +9,7 @@ export default defineConfig({
     // Point all tests at a dedicated test database so they never truncate the
     // user's real data.
     env: {
-      DATABASE_URL: 'postgres://pitchbox:pitchbox@127.0.0.1:5433/pitchbox_test',
+      DATABASE_URL: 'postgres://pitchbox:pitchbox@127.0.0.1:5434/pitchbox_test',
       PITCHBOX_TEST_MODE: '1',
     },
   },

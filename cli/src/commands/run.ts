@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { getSchema, SCENARIO_META } from '@pitchbox/shared/campaigns';
 import { eq } from 'drizzle-orm';
 import { ok, fail } from '../lib/output.js';
 
@@ -18,6 +19,18 @@ export function registerRunCommands(program: Command) {
         .where(eq(schema.campaigns.id, campaignId));
       if (!campaign) return fail(`campaign ${campaignId} not found`);
 
+      const scenarioMeta = SCENARIO_META.find((s) => s.slug === campaign.skillSlug);
+      if (scenarioMeta) {
+        const validation = getSchema(
+          campaign.skillSlug as 'reddit-scout' | 'reddit-commenter',
+        ).safeParse(campaign.config);
+        if (!validation.success) {
+          return fail(
+            'campaign profile is not in the structured format — regenerate it from the dashboard',
+          );
+        }
+      }
+
       const [project] = await db
         .select()
         .from(schema.projects)
@@ -30,10 +43,6 @@ export function registerRunCommands(program: Command) {
         .select()
         .from(schema.accounts)
         .where(eq(schema.accounts.projectId, campaign.projectId));
-      const configs = await db
-        .select()
-        .from(schema.projectConfigs)
-        .where(eq(schema.projectConfigs.projectId, campaign.projectId));
       const blocks = await db
         .select()
         .from(schema.blocklist)
@@ -64,9 +73,6 @@ export function registerRunCommands(program: Command) {
           .returning();
       }
 
-      const configMap: Record<string, unknown> = {};
-      for (const c of configs) configMap[c.key] = c.value;
-
       ok({
         runId: run.id,
         campaign: {
@@ -77,7 +83,6 @@ export function registerRunCommands(program: Command) {
         },
         project: { id: project.id, slug: project.slug, name: project.name },
         platform: { id: platform.id, slug: platform.slug },
-        config: configMap,
         accounts: accounts.map((a) => ({ id: a.id, handle: a.handle, role: a.role })),
         blocklist: blocks.map((b) => ({ kind: b.kind, value: b.value })),
         contactedRecently: contacted.map((c) => c.target),

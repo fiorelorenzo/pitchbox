@@ -6,7 +6,7 @@ export default defineConfig({
   schema: './src/db/schema.ts',
   out: './src/db/migrations',
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? 'postgres://pitchbox:pitchbox@127.0.0.1:5433/pitchbox',
+    url: process.env.DATABASE_URL ?? 'postgres://pitchbox:pitchbox@127.0.0.1:5434/pitchbox',
   },
   strict: true,
   verbose: true,

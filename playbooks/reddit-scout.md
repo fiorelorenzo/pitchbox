@@ -22,7 +22,7 @@ Environment variables available to you:
    pitchbox run:start --campaign=$PITCHBOX_CAMPAIGN_ID
    ```
 
-   Parse the JSON. Extract: `runId`, `project`, `platform`, `campaign.config` (the scout profile), `config` (product, voice, offer, templates), `accounts`, `blocklist`, `contactedRecently`.
+   Parse the JSON. Extract: `runId`, `project` (includes `description` — the project's markdown briefing), `platform`, `campaign.config` (the strict-validated structured scout profile), `accounts`, `blocklist`, `contactedRecently`.
 
 2. **Fetch raw candidates.** Shell out:
 
@@ -43,27 +43,29 @@ Environment variables available to you:
 4. **For each candidate, do the following:**
 
    **a. Score them 1–5 (fit).** Factors:
-   - Topical relevance of the matched post to the product pitch in `config['product.pitch']`.
+   - Topical relevance of the matched post to the project's `description` and the target subreddits in `campaign.config.targetSubreddits`. Use `campaign.config.systemInstructions` as additional scoring guidance.
    - Engagement signal (karma, post score, comments).
    - Tone (genuine curiosity > dismissive > hostile). Skip hostile.
    - For `matchedBy === 'hot'` candidates (no keyword match, they just showed up in a target subreddit), score primarily on subreddit relevance and post engagement, and keep the DM opener loose ("saw you active on r/X" rather than quoting a specific post).
 
-   Skip candidates scoring 2 or below.
+   Skip candidates scoring below `campaign.config.fitScoreThreshold` (default 3 if absent).
 
-   **b. Draft a DM.** English, first-person, casual, ~80–100 words. Reference a concrete detail from the candidate's matched post. The DM **must** follow the voice rules in `config['voice.dm_rules']` (hard bans, do's, examples). Typical hard rules:
-   - No em-dashes (—). Use periods or commas.
-   - Contractions required ("i've", "i'm", "don't").
-   - No AI-tell vocabulary (the list of banned words lives in the voice config).
-   - Lowercase casual opener ("hey," not "Hey,").
-   - Close with the disclosure/signature from `config['voice.dm_rules'].disclosure`.
+   **b. Draft a DM.** English, first-person, casual, ~80–100 words. Reference a concrete detail from the candidate's matched post. The DM **must** follow the voice rules in `campaign.config.voice`:
+   - `voice.hardBans` — banned words/phrases. Never use them.
+   - `voice.dos` — required stylistic elements (e.g. contractions, lowercase opener).
+   - `voice.tone` — overall tone (e.g. `casual`).
+   - `voice.openerStyle` — opener convention (e.g. `lowercase-casual` → "hey," not "Hey,").
+   - `voice.disclosure` — closing self-disclosure / signature line. Always include it.
 
-   The offer text, product URL, and any fixed phrasing come from `config['offer']` and `config['product.*']`. Never invent an offer.
+   Treat `campaign.config.systemInstructions` as additional voice & content guidance — it overrides defaults.
 
-   **c. Build the compose URL.** Take `composeUrlBase` from the candidate, append `&subject=<urlencoded>&message=<urlencoded>`. Subject comes from `config['offer'].composeSubject` (or fall back to `founding player invite` style — lowercase, matches the DM voice).
+   The offer text comes from `campaign.config.offer.text` and the product URL from `campaign.config.offer.productUrl`. Never invent an offer.
 
-5. **Pick the account.** Use the first account from `accounts` whose `role` matches `config['product.defaultAccountRole']` (default: `personal`). Record its `id` as `accountId`.
+   **c. Build the compose URL.** Take `composeUrlBase` from the candidate, append `&subject=<urlencoded>&message=<urlencoded>`. Subject comes from `campaign.config.offer.subject`.
 
-6. **Write drafts back.** Build a JSON array of draft objects, one per candidate you scored ≥3, and pipe it to:
+5. **Pick the account.** Use the first account from `accounts` whose `role === 'personal'`. Record its `id` as `accountId`.
+
+6. **Write drafts back.** Build a JSON array of draft objects, one per candidate you scored at or above the threshold, and pipe it to:
 
    ```
    echo '<json>' | pitchbox drafts:create --run=<runId>

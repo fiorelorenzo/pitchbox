@@ -7,7 +7,7 @@ import { execSync } from 'node:child_process';
  * The `env` set in vitest.config.ts is already in process.env here, so child
  * processes we spawn inherit DATABASE_URL=.../pitchbox_test automatically.
  */
-const TEST_DATABASE_URL = 'postgres://pitchbox:pitchbox@127.0.0.1:5433/pitchbox_test';
+const TEST_DATABASE_URL = 'postgres://pitchbox:pitchbox@127.0.0.1:5434/pitchbox_test';
 
 export async function setup() {
   const env = { ...process.env, DATABASE_URL: TEST_DATABASE_URL };

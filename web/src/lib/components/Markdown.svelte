@@ -50,9 +50,12 @@
 	}
 	div :global(a) {
 		overflow-wrap: anywhere;
-		color: var(--color-primary, #818cf8);
+		color: var(--link, #0284c7);
 		text-decoration: underline;
 		text-underline-offset: 2px;
+	}
+	div :global(a:hover) {
+		filter: brightness(1.15);
 	}
 
 	/* Reset margins on the first/last child so the content fits flush inside timeline rows */

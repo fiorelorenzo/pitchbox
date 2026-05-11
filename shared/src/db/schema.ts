@@ -36,23 +36,6 @@ export const projects = pgTable('projects', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const projectConfigs = pgTable(
-  'project_configs',
-  {
-    id: serial('id').primaryKey(),
-    projectId: integer('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    key: text('key').notNull(),
-    value: jsonb('value').notNull(),
-    version: integer('version').notNull().default(1),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    uqKeyVersion: uniqueIndex('project_configs_key_version_uq').on(t.projectId, t.key, t.version),
-  }),
-);
-
 export const accounts = pgTable('accounts', {
   id: serial('id').primaryKey(),
   projectId: integer('project_id')
@@ -90,20 +73,44 @@ export const campaigns = pgTable('campaigns', {
   consecutiveFailures: integer('consecutive_failures').notNull().default(0),
 });
 
-export const runs = pgTable('runs', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
-  campaignId: integer('campaign_id')
-    .notNull()
-    .references(() => campaigns.id, { onDelete: 'cascade' }),
-  agentRunner: text('agent_runner').notNull().default('claude-code'),
-  trigger: text('trigger').notNull(),
-  status: text('status').notNull().default('queued'),
-  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
-  finishedAt: timestamp('finished_at', { withTimezone: true }),
-  error: text('error'),
-  stdoutLogPath: text('stdout_log_path'),
-  tokensUsed: integer('tokens_used'),
-});
+export const campaignRecommendations = pgTable(
+  'campaign_recommendations',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    scenarioSlug: text('scenario_slug').notNull(),
+    name: text('name').notNull(),
+    objective: text('objective').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byProject: index('campaign_recommendations_project_idx').on(t.projectId, t.createdAt.desc()),
+  }),
+);
+
+export const runs = pgTable(
+  'runs',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction'
+    campaignId: integer('campaign_id').references(() => campaigns.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    params: jsonb('params').notNull().default({}),
+    agentRunner: text('agent_runner').notNull().default('claude-code'),
+    trigger: text('trigger').notNull(),
+    status: text('status').notNull().default('queued'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    error: text('error'),
+    stdoutLogPath: text('stdout_log_path'),
+    tokensUsed: integer('tokens_used'),
+  },
+  (t) => ({
+    byProjectKind: index('runs_project_kind_idx').on(t.projectId, t.kind, t.startedAt.desc()),
+  }),
+);
 
 export const stagingScoutCandidates = pgTable('staging_scout_candidates', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),

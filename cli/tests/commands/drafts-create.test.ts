@@ -13,7 +13,7 @@ function cli(args: string, stdin?: string): string {
 
 async function reset() {
   await getDb().execute(
-    sql`TRUNCATE drafts, runs, campaigns, accounts, project_configs, projects, blocklist, contact_history RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE drafts, runs, campaigns, accounts, projects, blocklist, contact_history RESTART IDENTITY CASCADE`,
   );
 }
 

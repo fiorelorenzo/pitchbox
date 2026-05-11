@@ -11,6 +11,7 @@
 		fitScore: number | null;
 		state: string;
 		createdAt: string | Date | null;
+		project?: { id: number; slug: string; name: string };
 	};
 
 	let {
@@ -39,6 +40,11 @@
 		</span>
 		<StatusBadge domain="draft-kind" value={draft.kind} class="shrink-0" />
 	</div>
+	{#if draft.project}
+		<div class="text-[10px] text-muted-foreground/70 truncate mt-0.5">
+			{draft.project.name}
+		</div>
+	{/if}
 	<div class="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
 		<StatusBadge domain="draft-state" value={draft.state} />
 		<span>· fit {draft.fitScore ?? '?'}/5</span>

@@ -71,6 +71,34 @@
       "when": 1777153100000,
       "tag": "0009_contact_history_platform_context_url",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777153200000,
+      "tag": "0010_runs_kind_project_extraction",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1777890000000,
+      "tag": "0011_runs_kind_skill_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1778050000000,
+      "tag": "0012_campaign_recommendations",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778495500000,
+      "tag": "0013_drop_project_configs",
+      "breakpoints": true
     }
   ]
 }

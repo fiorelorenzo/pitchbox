@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
+import { getCampaignReadiness } from '$lib/server/campaign-readiness.js';
 import { desc, eq, count, inArray } from 'drizzle-orm';
 
 export async function load({ params }: { params: { id: string } }) {
@@ -22,23 +23,36 @@ export async function load({ params }: { params: { id: string } }) {
     .where(eq(schema.runs.campaignId, id))
     .orderBy(desc(schema.runs.startedAt))
     .limit(30);
-  const runIds = runs.map((r) => r.id);
+  // Only count drafts for regular campaign runs — skill-generation runs never produce drafts.
+  const campaignRunIds = runs.filter((r) => r.kind === 'campaign').map((r) => r.id);
   const draftCounts =
-    runIds.length > 0
+    campaignRunIds.length > 0
       ? await db
           .select({ runId: schema.drafts.runId, n: count() })
           .from(schema.drafts)
-          .where(inArray(schema.drafts.runId, runIds))
+          .where(inArray(schema.drafts.runId, campaignRunIds))
           .groupBy(schema.drafts.runId)
       : [];
   const draftsByRun = new Map(draftCounts.map((d) => [d.runId, Number(d.n)]));
   const enrichedRuns = runs.map((r) => ({
     ...r,
-    draftCount: draftsByRun.get(r.id) ?? 0,
+    // Serialize date columns to ISO strings so prop types stay simple across the wire.
+    startedAt: r.startedAt ? new Date(r.startedAt).toISOString() : r.startedAt,
+    finishedAt: r.finishedAt ? new Date(r.finishedAt).toISOString() : r.finishedAt,
+    draftCount: r.kind === 'campaign' ? (draftsByRun.get(r.id) ?? 0) : 0,
     durationMs:
       r.finishedAt && r.startedAt
         ? new Date(r.finishedAt).getTime() - new Date(r.startedAt).getTime()
         : null,
   }));
-  return { campaign, project: project ?? null, platform: platform ?? null, runs: enrichedRuns };
+  const skillRuns = enrichedRuns.filter((r) => r.kind === 'campaign_skill_generation').slice(0, 5);
+  const readiness = await getCampaignReadiness(id);
+  return {
+    campaign,
+    project: project ?? null,
+    platform: platform ?? null,
+    runs: enrichedRuns,
+    skillRuns,
+    readiness,
+  };
 }

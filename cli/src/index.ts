@@ -12,10 +12,14 @@ async function main() {
   const { registerDraftCommands } = await import('./commands/drafts.js');
   const { registerRedditCommands } = await import('./commands/reddit.js');
   const { registerUtilityCommands } = await import('./commands/utility.js');
+  const { registerProjectCommands } = await import('./commands/project.js');
+  const { registerSkillCommands } = await import('./commands/skill.js');
   registerRunCommands(program);
   registerDraftCommands(program);
   registerRedditCommands(program);
   registerUtilityCommands(program);
+  registerProjectCommands(program);
+  registerSkillCommands(program);
   await program.parseAsync(process.argv);
 }
 
