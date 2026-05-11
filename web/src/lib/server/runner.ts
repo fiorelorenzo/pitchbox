@@ -5,7 +5,7 @@ import { getDb, schema } from './db.js';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rm } from 'node:fs/promises';
+import { rm, mkdir, writeFile } from 'node:fs/promises';
 import { emit } from './events.js';
 
 // Derive repo root from this module's location (web/src/lib/server/runner.ts → ../../../..).
@@ -62,7 +62,16 @@ async function dispatchRun(
     return;
   }
 
-  const playbook = resolve(PITCHBOX_ROOT, 'playbooks', `${opts.playbookSlug}.md`);
+  // Prefer the run's snapshot (set at run-creation time) over the on-disk file.
+  // The on-disk file remains the fallback for legacy runs and for project
+  // extraction / skill generation which don't have rows in the playbooks table.
+  let playbook = resolve(PITCHBOX_ROOT, 'playbooks', `${opts.playbookSlug}.md`);
+  if (run.playbookBody) {
+    const tmpDir = resolve(PITCHBOX_ROOT, 'daemon', 'tmp');
+    await mkdir(tmpDir, { recursive: true });
+    playbook = resolve(tmpDir, `run-${run.id}-${opts.playbookSlug}.md`);
+    await writeFile(playbook, run.playbookBody, 'utf8');
+  }
 
   // Prepend our bin/ so playbooks can call `pitchbox <cmd>` directly.
   const augmentedPath = `${PITCHBOX_ROOT}/bin:${process.env.PATH ?? ''}`;
@@ -286,6 +295,14 @@ export async function runCampaign(
 
   // DB-level safety net: a partial unique index on (campaign_id) WHERE status='running'
   // prevents two concurrent INSERTs from both succeeding if they race past the SELECT above.
+  // Snapshot the playbook body at run-creation time so later edits to the
+  // playbook never retroactively change past runs. Missing rows fall back to
+  // the on-disk file at dispatch.
+  const [pb] = await db
+    .select({ body: schema.playbooks.body })
+    .from(schema.playbooks)
+    .where(eq(schema.playbooks.slug, campaign.skillSlug));
+
   let run: typeof schema.runs.$inferSelect;
   try {
     [run] = await db
@@ -295,6 +312,7 @@ export async function runCampaign(
         agentRunner: campaign.agentRunner,
         trigger,
         status: 'running',
+        playbookBody: pb?.body ?? null,
       })
       .returning();
   } catch (err) {

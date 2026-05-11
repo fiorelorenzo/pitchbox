@@ -26,6 +26,17 @@ export const platforms = pgTable('platforms', {
   enabled: boolean('enabled').notNull().default(true),
 });
 
+export const playbooks = pgTable('playbooks', {
+  id: serial('id').primaryKey(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  description: text('description'),
+  body: text('body').notNull(),
+  isBuiltin: boolean('is_builtin').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const projects = pgTable('projects', {
   id: serial('id').primaryKey(),
   slug: text('slug').notNull().unique(),
@@ -107,6 +118,7 @@ export const runs = pgTable(
     error: text('error'),
     stdoutLogPath: text('stdout_log_path'),
     tokensUsed: integer('tokens_used'),
+    playbookBody: text('playbook_body'),
   },
   (t) => ({
     byProjectKind: index('runs_project_kind_idx').on(t.projectId, t.kind, t.startedAt.desc()),

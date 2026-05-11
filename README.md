@@ -93,6 +93,7 @@ When a target user replies, you'll see:
 - **Contacts** — every outreach with platform/account/kind, plus a `replied` badge.
 - **Conversations** — reply threads across DMs and comment-replies, with kind filter.
 - **Blocklist** — add/remove subreddit / user / keyword entries, scoped globally or per-project.
+- **Playbooks** — list of agent-runner playbooks (built-in + user-created), with inline markdown editor and **Duplicate** to fork a built-in.
 - **Settings** — tabbed layout (Status / Integrations / Quota): daemon heartbeat, auto-detected agent runners (CLI path + version, with **Re-detect**), extension API token (generate / rotate), editable per-platform quota limits.
 
 **Daemon**
@@ -112,7 +113,7 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.3
 - **`web/`** — SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte dashboard. Routes: `/` (home), `/inbox`, `/campaigns`, `/campaigns/[id]`, `/contacts`, `/conversations`, `/blocklist`, `/settings`.
 - **`daemon/`** — heartbeat + scheduler + reply poller (real DM reader still pending).
 - **`extension/`** — Chrome MV3 companion (Vite + `@crxjs/vite-plugin`) that auto-marks drafts as `sent` when you submit on Reddit and polls your DM inbox to flip drafts to `replied` once the target user writes back.
-- **`playbooks/`** — agent-agnostic markdown instructions consumed by the `AgentRunner`.
+- **`playbooks/`** — agent-agnostic markdown instructions. The on-disk files are the source for the **built-in** rows in the `playbooks` table; once seeded, the dashboard becomes the editor. Each run snapshots the body of the chosen playbook into `runs.playbook_body` at creation time so future edits never retroactively change past runs. The disk file remains a fallback for legacy runs and for project extraction / skill generation.
 
 ## Roadmap
 

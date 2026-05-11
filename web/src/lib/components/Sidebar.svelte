@@ -32,6 +32,7 @@
 		{ href: '/contacts', label: 'Contacts', icon: Users },
 		{ href: '/conversations', label: 'Conversations', icon: MessagesSquare },
 		{ href: '/blocklist', label: 'Blocklist', icon: Shield },
+		{ href: '/playbooks', label: 'Playbooks', icon: BookOpen },
 		{ href: '/settings', label: 'Settings', icon: Settings },
 	];
 </script>
