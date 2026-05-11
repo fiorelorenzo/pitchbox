@@ -313,6 +313,34 @@ export const notifications = pgTable(
   }),
 );
 
+export const extensionDevices = pgTable(
+  'extension_devices',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id').references(() => organizations.id, {
+      onDelete: 'cascade',
+    }),
+    label: text('label').notNull().default('Unnamed device'),
+    tokenHash: text('token_hash').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (t) => ({
+    byHash: uniqueIndex('extension_devices_token_hash_unique').on(t.tokenHash),
+  }),
+);
+
+export const extensionPairings = pgTable('extension_pairings', {
+  code: text('code').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id, {
+    onDelete: 'cascade',
+  }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const messages = pgTable(
   'messages',
   {

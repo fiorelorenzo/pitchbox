@@ -5,6 +5,10 @@ The companion extension lives in `extension/` (MV3, Vite + `@crxjs/vite-plugin`)
 1. **Auto mark-as-sent** — when you submit a draft on Reddit, the extension picks up the `pitchbox_draft=<id>` query parameter the dashboard appended to the compose URL and flips the draft to `sent` via the local backend.
 2. **Reply ingestion** — a background service worker polls Reddit's inbox (legacy PMs + comment-replies) and Reddit Chat (Matrix) every 10 min via `chrome.alarms`, posting matches to `POST /api/extension/dm-sync`. The server attributes incoming messages to the right drafts and flips them to `replied`.
 
+## Stack
+
+The popup is a Svelte 5 app (runes mode) bundled with `@crxjs/vite-plugin` and styled with Tailwind 4 (theme tokens mirror the dashboard). Content scripts stay as plain TypeScript — they inject directly into Reddit's DOM and don't need a UI framework.
+
 ## Install
 
 ```bash
@@ -12,7 +16,11 @@ npm run build:extension
 # then load extension/dist/ unpacked in chrome://extensions
 ```
 
-In **Dashboard → Settings → Integrations**, generate (or rotate) the **extension API token**. Paste it into the extension's options page. The token authenticates every call to `/api/extension/*` and is stored in `app_config.extension_api_token`.
+## Pairing (recommended)
+
+In **Dashboard → Settings → Integrations → Browser extension**, click **Generate code**. Paste the 8-char code into the extension popup ("Pair with code" tab) along with the backend URL. The server (`POST /api/extension/pair`) consumes the code once and returns a per-device token stored in `chrome.storage.local`. Each device row is independently revocable from the dashboard.
+
+The legacy "Token" tab in the popup still works for the shared `app_config.extension_api_token` — useful for headless setups where you can't open Settings, but devices are preferred.
 
 ## Auth & CORS
 

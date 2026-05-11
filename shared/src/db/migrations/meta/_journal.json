@@ -148,6 +148,13 @@
       "when": 1778527500000,
       "tag": "0020_orgs_memberships",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1778527800000,
+      "tag": "0021_extension_devices",
+      "breakpoints": true
     }
   ]
 }
