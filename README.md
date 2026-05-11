@@ -130,6 +130,12 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.3
 - ⏳ **M6.x** — keyword watches, analytics, A/B tests
 - ⏳ **M7+** — additional platform adapters, posting automation, team mode
 
+## Authentication (opt-in)
+
+Set `PITCHBOX_AUTH=on` in `.env` to gate the dashboard behind a username + password login. The first user is created on first login — the credentials you submit become the admin account. Sessions are stored in the `sessions` table and pinned to an httpOnly cookie. Sign out lives at the bottom of the sidebar. Webhook and extension routes (`/api/extension/*`) stay unauthenticated by design — they have their own token.
+
+The self-hosted edition assumes a single user / single org. Multi-tenant orgs and SSO are intentionally deferred (umbrella issue #6 covered the long-term plan; this build ships Phase 1).
+
 ## Agent runners
 
 Each campaign snapshots its runner at creation time; each run snapshots the runner it used. Today only `claude-code` is implemented (spawns `claude -p --verbose --output-format stream-json`). `codex` and `opencode` adapters exist as typed stubs so new runners can be wired in without touching the rest of the pipeline.

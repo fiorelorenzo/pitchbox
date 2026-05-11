@@ -11,9 +11,11 @@
 		Settings,
 		BookOpen,
 		Bell,
+		LogOut,
 		type Icon as LucideIcon,
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { cn } from '$lib/utils';
 	import { VERSION } from '$lib/shared/version';
 	import { daemonStatus } from '$lib/stores/daemon';
@@ -107,6 +109,17 @@
 			<BookOpen class="size-4 shrink-0" />
 			Docs
 		</a>
+		<button
+			type="button"
+			onclick={async () => {
+				await fetch('/api/auth/logout', { method: 'POST' });
+				await goto('/login');
+			}}
+			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors text-left"
+		>
+			<LogOut class="size-4 shrink-0" />
+			Sign out
+		</button>
 		<div class="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
 			<span
 				class="size-2 rounded-full shrink-0 {$daemonStatus.loading

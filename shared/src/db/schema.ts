@@ -26,6 +26,28 @@ export const platforms = pgTable('platforms', {
   enabled: boolean('enabled').notNull().default(true),
 });
 
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  username: text('username').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byUser: index('sessions_user_idx').on(t.userId),
+  }),
+);
+
 export const playbooks = pgTable('playbooks', {
   id: serial('id').primaryKey(),
   slug: text('slug').notNull().unique(),

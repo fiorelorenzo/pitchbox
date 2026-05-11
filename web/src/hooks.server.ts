@@ -1,5 +1,6 @@
 import { getDb, schema } from '$lib/server/db.js';
 import { eq } from 'drizzle-orm';
+import { loadSession } from '@pitchbox/shared/auth';
 
 /**
  * One-shot cleanup on server boot.
@@ -50,6 +51,19 @@ function extensionCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
+const AUTH_ON = process.env.PITCHBOX_AUTH === 'on';
+const SESSION_COOKIE = 'pitchbox_session';
+
+function isExemptPath(pathname: string): boolean {
+  return (
+    pathname.startsWith('/api/extension/') ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/api/auth/') ||
+    pathname.startsWith('/_app/') ||
+    pathname.startsWith('/favicon')
+  );
+}
+
 export const handle = async ({ event, resolve }) => {
   const isExtensionRoute = event.url.pathname.startsWith('/api/extension/');
 
@@ -58,6 +72,24 @@ export const handle = async ({ event, resolve }) => {
       status: 204,
       headers: extensionCorsHeaders(event.request.headers.get('origin')),
     });
+  }
+
+  if (AUTH_ON && !isExemptPath(event.url.pathname)) {
+    const cookie = event.cookies.get(SESSION_COOKIE);
+    const session = cookie ? await loadSession(getDb(), cookie) : null;
+    if (!session) {
+      const next = encodeURIComponent(event.url.pathname + event.url.search);
+      // API callers get a 401 so they can react; HTML navigations get a redirect.
+      const wantsJson = event.request.headers.get('accept')?.includes('application/json');
+      if (event.url.pathname.startsWith('/api/') || wantsJson) {
+        return new Response(JSON.stringify({ error: 'unauthenticated' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(null, { status: 302, headers: { location: `/login?next=${next}` } });
+    }
+    event.locals.user = { id: session.userId, username: session.username };
   }
 
   const response = await resolve(event);
