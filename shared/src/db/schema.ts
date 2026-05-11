@@ -90,6 +90,23 @@ export const campaigns = pgTable('campaigns', {
   consecutiveFailures: integer('consecutive_failures').notNull().default(0),
 });
 
+export const campaignRecommendations = pgTable(
+  'campaign_recommendations',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    scenarioSlug: text('scenario_slug').notNull(),
+    name: text('name').notNull(),
+    objective: text('objective').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byProject: index('campaign_recommendations_project_idx').on(t.projectId, t.createdAt.desc()),
+  }),
+);
+
 export const runs = pgTable(
   'runs',
   {

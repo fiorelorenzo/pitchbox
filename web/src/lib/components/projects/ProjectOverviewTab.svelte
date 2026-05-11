@@ -10,6 +10,9 @@
   import ExtractDescriptionDialog from './ExtractDescriptionDialog.svelte';
   import DescriptionDiffModal from './DescriptionDiffModal.svelte';
   import ProjectExtractionRunsTable from './ProjectExtractionRunsTable.svelte';
+  import CampaignRecommendationsList, {
+    type Recommendation,
+  } from './CampaignRecommendationsList.svelte';
   import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
   import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 
@@ -38,8 +41,12 @@
     error: string | null;
     params: { source?: { kind: string; value: string } } | null;
   };
-  type Props = { project: Project; extractionRuns: ExtractionRun[] };
-  let { project, extractionRuns }: Props = $props();
+  type Props = {
+    project: Project;
+    extractionRuns: ExtractionRun[];
+    recommendations: Recommendation[];
+  };
+  let { project, extractionRuns, recommendations }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let name = $state(project.name);
@@ -213,6 +220,20 @@
   </div>
 
   <ProjectExtractionRunsTable runs={extractionRunsState} />
+
+  {#if recommendations.length > 0}
+    <div class="flex flex-col gap-2">
+      <h3 class="text-sm font-medium">Suggested campaigns</h3>
+      <p class="text-xs text-muted-foreground">
+        From the latest project description extraction. Click "Use this" to start a campaign from a
+        suggestion.
+      </p>
+      <CampaignRecommendationsList
+        {recommendations}
+        onUse={(rec) => goto(`/campaigns/new?recommendation=${rec.id}`)}
+      />
+    </div>
+  {/if}
 
   <div class="flex justify-between items-center pt-2 border-t">
     <Button onclick={save} disabled={saving || extractionRunning}>
