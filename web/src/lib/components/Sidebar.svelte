@@ -10,8 +10,10 @@
 		Shield,
 		Settings,
 		BookOpen,
+		Bell,
 		type Icon as LucideIcon,
 	} from 'lucide-svelte';
+	import { onMount } from 'svelte';
 	import { cn } from '$lib/utils';
 	import { VERSION } from '$lib/shared/version';
 	import { daemonStatus } from '$lib/stores/daemon';
@@ -33,8 +35,34 @@
 		{ href: '/conversations', label: 'Conversations', icon: MessagesSquare },
 		{ href: '/blocklist', label: 'Blocklist', icon: Shield },
 		{ href: '/playbooks', label: 'Playbooks', icon: BookOpen },
+		{ href: '/notifications', label: 'Notifications', icon: Bell },
 		{ href: '/settings', label: 'Settings', icon: Settings },
 	];
+
+	let unread = $state(0);
+
+	async function refreshUnread() {
+		try {
+			const res = await fetch('/api/notifications');
+			if (!res.ok) return;
+			const body = await res.json();
+			unread = body.unread ?? 0;
+		} catch {
+			// network errors are non-fatal for the bell badge.
+		}
+	}
+
+	onMount(() => {
+		refreshUnread();
+		const id = setInterval(refreshUnread, 30_000);
+		return () => clearInterval(id);
+	});
+
+	$effect(() => {
+		// re-poll whenever the active route changes
+		void $page.url.pathname;
+		refreshUnread();
+	});
 </script>
 
 <aside class="w-60 border-r border-border flex flex-col p-4">
@@ -58,7 +86,12 @@
 				)}
 			>
 				<Icon class="size-4 shrink-0" />
-				{item.label}
+				<span class="flex-1">{item.label}</span>
+				{#if item.href === '/notifications' && unread > 0}
+					<span class="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300">
+						{unread > 99 ? '99+' : unread}
+					</span>
+				{/if}
 			</a>
 		{/each}
 	</nav>

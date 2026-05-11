@@ -94,6 +94,7 @@ When a target user replies, you'll see:
 - **Conversations** — reply threads across DMs and comment-replies, with kind filter.
 - **Blocklist** — add/remove subreddit / user / keyword entries, scoped globally or per-project.
 - **Playbooks** — list of agent-runner playbooks (built-in + user-created), with inline markdown editor and **Duplicate** to fork a built-in.
+- **Notifications** — bell badge with unread count, recent system events (`run.success` / `run.failed` / `drafts.created` / `reply.received`), and an outgoing-webhook configuration so Slack / Discord / Telegram can be wired up.
 - **Settings** — tabbed layout (Status / Integrations / Quota): daemon heartbeat, auto-detected agent runners (CLI path + version, with **Re-detect**), extension API token (generate / rotate), editable per-platform quota limits.
 
 **Daemon**

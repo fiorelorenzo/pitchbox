@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { eq } from 'drizzle-orm';
 import { isBlocklisted } from '@pitchbox/shared/blocklist';
+import { notify } from '@pitchbox/shared/notifications';
 import { ok, fail } from '../lib/output.js';
 
 const DraftInput = z.object({
@@ -93,6 +94,13 @@ export function registerDraftCommands(program: Command) {
             details: {},
           })),
         );
+        await notify(db, {
+          kind: 'drafts.created',
+          title: `${inserted.length} draft${inserted.length === 1 ? '' : 's'} ready for review`,
+          body: `Run #${runId} produced ${inserted.length} draft${inserted.length === 1 ? '' : 's'}.`,
+          payload: { runId, count: inserted.length, campaignId: campaign.id },
+          severity: 'info',
+        });
       }
 
       ok({ runId, inserted: inserted.length, skipped });

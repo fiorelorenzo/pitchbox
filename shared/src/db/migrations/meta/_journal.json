@@ -120,6 +120,13 @@
       "when": 1778525500000,
       "tag": "0016_playbooks",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1778525800000,
+      "tag": "0017_notifications",
+      "breakpoints": true
     }
   ]
 }

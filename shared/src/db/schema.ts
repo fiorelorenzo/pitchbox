@@ -245,6 +245,23 @@ export const runEvents = pgTable(
   }),
 );
 
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    kind: text('kind').notNull(),
+    title: text('title').notNull(),
+    body: text('body'),
+    payload: jsonb('payload').notNull().default({}),
+    severity: text('severity').notNull().default('info'),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byUnread: index('notifications_unread_idx').on(t.readAt, t.createdAt.desc()),
+  }),
+);
+
 export const messages = pgTable(
   'messages',
   {

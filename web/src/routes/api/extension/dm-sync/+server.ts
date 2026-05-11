@@ -3,6 +3,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireExtensionAuth } from '$lib/server/extension-auth.js';
 import { emit } from '$lib/server/events.js';
+import { notify } from '@pitchbox/shared/notifications';
 import { matchIncomingDms, type ContactRow, type IncomingDm } from '@pitchbox/shared/dm-sync';
 import {
   matchIncomingCommentReplies,
@@ -225,6 +226,18 @@ export async function POST({ request }: { request: Request }) {
   }
   for (const ev of commentMatch.draftRepliedEvents) {
     emit('drafts:changed', { id: ev.draftId, state: 'replied' });
+  }
+
+  const repliedCount =
+    updates.filter((u) => u.draftId != null).length + commentMatch.draftRepliedEvents.length;
+  if (repliedCount > 0) {
+    await notify(db, {
+      kind: 'reply.received',
+      title: `${repliedCount} repl${repliedCount === 1 ? 'y' : 'ies'} received`,
+      body: 'New incoming replies have been attached to their drafts.',
+      payload: { count: repliedCount },
+      severity: 'success',
+    });
   }
 
   return json({

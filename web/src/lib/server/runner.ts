@@ -1,6 +1,7 @@
 import { createAgentRunner } from '@pitchbox/shared/agents/registry';
 import { loadRunnerConfig } from '@pitchbox/shared/agents/config';
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
+import { notify } from '@pitchbox/shared/notifications';
 import { getDb, schema } from './db.js';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
@@ -210,6 +211,13 @@ async function dispatchRun(
         exitCode: res.exitCode,
       });
       if (isCampaignRun && res.exitCode === 0) emit('drafts:changed', {});
+      await notify(db, {
+        kind: `run.${finalStatus}`,
+        title: `Run #${run.id} ${finalStatus}`,
+        body: isCampaignRun ? `Campaign ${run.campaignId} run finished.` : undefined,
+        payload: { runId: run.id, campaignId: run.campaignId, projectId: run.projectId },
+        severity: finalStatus === 'success' ? 'success' : 'error',
+      });
     })
     .catch(async (err) => {
       await flushPendingResult();
@@ -241,6 +249,13 @@ async function dispatchRun(
         projectId: run.projectId,
         exitCode: 1,
         error: String(err),
+      });
+      await notify(db, {
+        kind: 'run.failed',
+        title: `Run #${run.id} failed`,
+        body: String(err),
+        payload: { runId: run.id, campaignId: run.campaignId, projectId: run.projectId },
+        severity: 'error',
       });
     })
     .finally(async () => {
