@@ -130,6 +130,15 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.3
 - ⏳ **M6.x** — keyword watches, analytics, A/B tests
 - ⏳ **M7+** — additional platform adapters, posting automation, team mode
 
+## Documentation
+
+The full docs live in [`docs/`](./docs) and ship as a static VitePress site (`npm run docs:dev` for local preview, `npm run docs:build` for production output, auto-deployed to GitHub Pages on push to `main` via `.github/workflows/docs.yml`). Stable entry points:
+
+- [Getting started](./docs/getting-started.md)
+- [Concepts](./docs/concepts.md) · [Agent runners](./docs/runners.md) · [Playbooks](./docs/playbooks.md)
+- [Notifications](./docs/notifications.md) · [Authentication](./docs/auth.md)
+- [Chrome extension](./docs/extension.md) · [Daemon](./docs/daemon.md) · [CLI](./docs/cli.md) · [HTTP API](./docs/api.md) · [Self-hosting](./docs/self-hosting.md)
+
 ## Authentication (opt-in)
 
 Set `PITCHBOX_AUTH=on` in `.env` to gate the dashboard behind a username + password login. The first user is created on first login — the credentials you submit become the admin account. Sessions are stored in the `sessions` table and pinned to an httpOnly cookie. Sign out lives at the bottom of the sidebar. Webhook and extension routes (`/api/extension/*`) stay unauthenticated by design — they have their own token.

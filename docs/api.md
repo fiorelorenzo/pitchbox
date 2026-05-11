@@ -1,0 +1,50 @@
+# HTTP API
+
+The dashboard's `/api/*` routes power the UI and the extension. Authentication depends on the route prefix.
+
+## Auth
+
+- **Cookie session** (`pitchbox_session`) when `PITCHBOX_AUTH=on` — covers everything **except** the two prefixes below.
+- **Extension token** (`Authorization: Bearer <token>`) — required for every `/api/extension/*` call.
+- **Public** — `/api/auth/login` and `/api/auth/logout` (the very routes that establish a session).
+
+## Selected endpoints
+
+```http
+# Dispatch
+POST /api/run                                # { campaignId, trigger? } → { runId, alreadyRunning? }
+POST /api/run/[id]/cancel
+
+# Drafts & inbox
+PATCH /api/inbox/[id]                        # state transitions (approved | rejected | sent)
+GET   /api/inbox/[id]/events
+POST  /api/inbox/[id]/reply
+
+# Runners
+GET  /api/runners                            # detection results (cached)
+POST /api/runners                            # clears cache, re-detects
+GET  /api/settings/runner-config
+PUT  /api/settings/runner-config             # { slug, config }
+
+# Notifications
+GET  /api/notifications                      # { notifications, unread }
+POST /api/notifications                      # mark all read
+PUT  /api/settings/webhooks                  # { url } | { url: null }
+
+# Playbooks
+GET    /api/playbooks
+POST   /api/playbooks
+GET    /api/playbooks/[id]
+PATCH  /api/playbooks/[id]
+DELETE /api/playbooks/[id]
+
+# Auth
+POST /api/auth/login                         # { username, password }
+POST /api/auth/logout
+
+# Extension (Bearer-token only)
+POST /api/extension/dm-sync                  # inbox + chat poll → match drafts
+POST /api/extension/draft/[id]/sent          # auto-flip a draft to sent
+```
+
+See [`web/src/routes/api/`](https://github.com/fiorelorenzo/pitchbox/tree/development/web/src/routes/api) for the full surface — every route file is the source of truth.

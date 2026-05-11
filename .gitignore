@@ -1,6 +1,10 @@
 # Superpowers working files (per-user, not shared)
 docs/superpowers/
 
+# VitePress build output and cache
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
 # Node
 node_modules/
 dist/
