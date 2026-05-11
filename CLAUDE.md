@@ -11,7 +11,7 @@ Pitchbox: self-hosted outreach agent for Reddit (future: other platforms). Human
 Requires Node ≥22, Docker, and the `claude` CLI logged into a Claude subscription. An `ENCRYPTION_KEY` (32-byte hex) must be set in `.env`.
 
 ```bash
-# DB (port 5433 on host, not 5432 — shared by dev + test DBs)
+# DB (port 5434 on host, not 5432 — shared by dev + test DBs)
 npm run db:up                       # start Postgres
 npm run migrate                     # apply Drizzle migrations to DATABASE_URL
 npm run migrate:generate            # regenerate SQL after schema.ts edits
@@ -27,7 +27,7 @@ npm run format                      # prettier --write
 npm run typecheck                   # tsc -b (project references)
 npm run -w web check                # svelte-check (Svelte-specific types)
 
-# Tests — vitest, hits a real Postgres at pitchbox_test (port 5433)
+# Tests — vitest, hits a real Postgres at pitchbox_test (port 5434)
 npm test                            # full suite (fileParallelism disabled)
 npm run test:watch
 npx vitest run path/to/file.test.ts # single file
