@@ -33,6 +33,31 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const organizations = pgTable('organizations', {
+  id: serial('id').primaryKey(),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const memberships = pgTable(
+  'memberships',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: text('role').notNull().default('owner'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniquePair: uniqueIndex('memberships_org_user_unique').on(t.organizationId, t.userId),
+  }),
+);
+
 export const sessions = pgTable(
   'sessions',
   {
@@ -61,6 +86,9 @@ export const playbooks = pgTable('playbooks', {
 
 export const projects = pgTable('projects', {
   id: serial('id').primaryKey(),
+  organizationId: integer('organization_id').references(() => organizations.id, {
+    onDelete: 'cascade',
+  }),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   description: text('description'),

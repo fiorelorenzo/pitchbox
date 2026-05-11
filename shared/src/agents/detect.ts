@@ -13,10 +13,12 @@ export type DetectResult = {
 };
 
 const TIMEOUT_MS = 5_000;
-const BINARY_BY_SLUG: Record<AgentRunnerSlug, string> = {
+const BINARY_BY_SLUG: Partial<Record<AgentRunnerSlug, string>> = {
   'claude-code': 'claude',
   codex: 'codex',
   opencode: 'opencode',
+  // 'cloud' has no local binary — detection is meaningless. The loader returns
+  // a synthetic "unavailable" result so the Settings UI still renders it.
 };
 
 async function whichBinary(binary: string): Promise<string | null> {
@@ -63,7 +65,18 @@ const cache = new Map<AgentRunnerSlug, Promise<DetectResult>>();
 export function detectRunner(slug: AgentRunnerSlug): Promise<DetectResult> {
   let pending = cache.get(slug);
   if (!pending) {
-    pending = probe(BINARY_BY_SLUG[slug]);
+    const binary = BINARY_BY_SLUG[slug];
+    if (!binary) {
+      pending = Promise.resolve({
+        available: false,
+        version: null,
+        path: null,
+        error: 'No local binary — managed by the runtime.',
+        detectedAt: new Date().toISOString(),
+      });
+    } else {
+      pending = probe(binary);
+    }
     cache.set(slug, pending);
   }
   return pending;

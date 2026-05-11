@@ -29,6 +29,7 @@
     "./extension-token": "./src/extension-token.ts",
     "./notifications": "./src/notifications.ts",
     "./auth": "./src/auth.ts",
+    "./edition": "./src/edition.ts",
     "./runlog": "./src/runlog/index.ts",
     "./runlog/types": "./src/runlog/types.ts",
     "./runlog/parsers": "./src/runlog/parsers/index.ts",

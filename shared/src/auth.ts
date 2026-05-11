@@ -2,7 +2,7 @@ import { randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { and, eq, gt } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
-import { sessions, users } from './db/schema.js';
+import { sessions, users, organizations, memberships } from './db/schema.js';
 
 const scrypt = promisify(scryptCb) as (
   password: string | Buffer,
@@ -81,7 +81,35 @@ export async function createUser(
 ): Promise<number> {
   const passwordHash = await hashPassword(password);
   const [row] = await db.insert(users).values({ username, passwordHash }).returning();
+  // First user implicitly joins the default org as owner. If the default org
+  // doesn't exist yet (fresh install without seed:core), create it inline.
+  let [org] = await db.select().from(organizations).where(eq(organizations.slug, 'default'));
+  if (!org) {
+    [org] = await db.insert(organizations).values({ slug: 'default', name: 'Default' }).returning();
+  }
+  await db
+    .insert(memberships)
+    .values({ organizationId: org.id, userId: row.id, role: 'owner' })
+    .onConflictDoNothing();
   return row.id;
+}
+
+export async function loadOrganizationForUser(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+  userId: number,
+): Promise<{ id: number; slug: string; role: string } | null> {
+  const rows = await db
+    .select({
+      id: organizations.id,
+      slug: organizations.slug,
+      role: memberships.role,
+    })
+    .from(memberships)
+    .innerJoin(organizations, eq(organizations.id, memberships.organizationId))
+    .where(eq(memberships.userId, userId))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 export async function findUserByUsername(

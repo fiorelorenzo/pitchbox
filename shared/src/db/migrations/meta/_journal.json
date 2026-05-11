@@ -141,6 +141,13 @@
       "when": 1778527000000,
       "tag": "0019_drafts_platform_post_id",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1778527500000,
+      "tag": "0020_orgs_memberships",
+      "breakpoints": true
     }
   ]
 }

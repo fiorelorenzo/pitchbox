@@ -52,6 +52,10 @@ export async function seedCore() {
   const db = getDb();
   await db.insert(schema.platforms).values({ slug: 'reddit', enabled: true }).onConflictDoNothing();
   await db
+    .insert(schema.organizations)
+    .values({ slug: 'default', name: 'Default' })
+    .onConflictDoNothing();
+  await db
     .insert(schema.appConfig)
     .values({ key: 'quota_defaults', value: QUOTA_DEFAULTS })
     .onConflictDoNothing();
