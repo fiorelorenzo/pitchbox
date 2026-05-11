@@ -267,6 +267,10 @@ export async function runCampaign(
     .where(eq(schema.campaigns.id, campaignId));
   if (!campaign) throw new Error(`campaign ${campaignId} not found`);
 
+  if (campaign.status === 'draft') {
+    throw new Error(`campaign ${campaignId} is still draft — generate the profile first`);
+  }
+
   // Application-level guard: look up an existing running run and short-circuit.
   const [existing] = await db
     .select()
@@ -379,6 +383,54 @@ export async function runProjectExtraction(
     onFinish: (status) => {
       if (status === 'success') emit('project:description:updated', { projectId, runId: run.id });
     },
+  });
+
+  return { runId: run.id };
+}
+
+export async function runCampaignSkillGeneration(
+  campaignId: number,
+  scenario: 'reddit-scout' | 'reddit-commenter',
+  objective: string,
+  trigger: string = 'manual',
+): Promise<{ runId: number; alreadyRunning?: boolean }> {
+  const db = getDb();
+  const [campaign] = await db
+    .select()
+    .from(schema.campaigns)
+    .where(eq(schema.campaigns.id, campaignId));
+  if (!campaign) throw new Error(`campaign ${campaignId} not found`);
+
+  const [existing] = await db
+    .select()
+    .from(schema.runs)
+    .where(
+      and(
+        eq(schema.runs.campaignId, campaignId),
+        eq(schema.runs.kind, 'campaign_skill_generation'),
+        eq(schema.runs.status, 'running'),
+      ),
+    )
+    .limit(1);
+  if (existing) return { runId: existing.id, alreadyRunning: true };
+
+  const [run] = await db
+    .insert(schema.runs)
+    .values({
+      kind: 'campaign_skill_generation',
+      campaignId,
+      agentRunner: campaign.agentRunner,
+      trigger,
+      status: 'running',
+      params: { scenario, objective },
+    })
+    .returning();
+
+  emit('run:started', { runId: run.id, campaignId });
+
+  await dispatchRun(run, {
+    playbookSlug: 'campaign-skill-generator',
+    extraEnv: {},
   });
 
   return { runId: run.id };
