@@ -69,7 +69,10 @@
 
 <aside class="w-60 border-r border-border flex flex-col p-4">
 	<!-- Brand -->
-	<h1 class="font-semibold text-lg mb-6">Pitchbox</h1>
+	<div class="flex items-center gap-2 mb-6">
+		<img src="/favicon.svg" alt="" class="size-7 shrink-0" aria-hidden="true" />
+		<h1 class="font-semibold text-lg">Pitchbox</h1>
+	</div>
 
 	<!-- Nav links -->
 	<nav class="flex flex-col gap-1 flex-1">

@@ -1,4 +1,4 @@
-# Pitchbox
+<p align="left"><img src="assets/brand/wordmark-dark.svg#gh-dark-mode-only" alt="Pitchbox" height="64"><img src="assets/brand/wordmark-light.svg#gh-light-mode-only" alt="Pitchbox" height="64"></p>
 
 Self-hosted outreach agent for Reddit (and future platforms). You keep the human-in-the-loop; Pitchbox does the research, drafting, and bookkeeping.
 
