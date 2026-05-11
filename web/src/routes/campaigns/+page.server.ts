@@ -1,12 +1,15 @@
 import { getDb, schema } from '$lib/server/db.js';
 import { desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { listProjects } from '@pitchbox/shared/projects';
+import { resolveOrgId } from '$lib/server/auth.js';
 
-export async function load({ url }: { url: URL }) {
+export async function load(event: import('@sveltejs/kit').RequestEvent) {
+  const { url } = event;
   const db = getDb();
   const projectSlug = url.searchParams.get('project') ?? '';
 
-  const projects = await listProjects(db);
+  const orgId = await resolveOrgId(event);
+  const projects = await listProjects(db, { organizationId: orgId });
   const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
 
   const campaignRows = await db

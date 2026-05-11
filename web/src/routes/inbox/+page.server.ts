@@ -2,8 +2,10 @@ import { getDb, schema } from '$lib/server/db.js';
 import { and, eq, desc, inArray, type SQL } from 'drizzle-orm';
 import { getUsageForAccounts, loadQuotaLimits } from '@pitchbox/shared/quota';
 import { listProjects } from '@pitchbox/shared/projects';
+import { resolveOrgId } from '$lib/server/auth.js';
 
-export async function load({ url }: { url: URL }) {
+export async function load(event: import('@sveltejs/kit').RequestEvent) {
+  const { url } = event;
   const state = url.searchParams.get('state') ?? 'pending_review';
   const kind = url.searchParams.get('kind');
   const run = url.searchParams.get('run');
@@ -12,7 +14,8 @@ export async function load({ url }: { url: URL }) {
   const platformSlugFilter = url.searchParams.get('platform');
   const db = getDb();
 
-  const projects = await listProjects(db);
+  const orgId = await resolveOrgId(event);
+  const projects = await listProjects(db, { organizationId: orgId });
   const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
   const projectsForUi = projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name }));
 

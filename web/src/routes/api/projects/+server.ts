@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
+import { resolveOrgId } from '$lib/server/auth.js';
 import { listProjects, createProjectTx, ProjectSlugConflictError } from '@pitchbox/shared/projects';
 
 const slugRegex = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
@@ -28,12 +29,14 @@ function slugify(s: string): string {
     .slice(0, 64);
 }
 
-export async function GET() {
-  const rows = await listProjects(getDb());
+export async function GET(event) {
+  const orgId = await resolveOrgId(event);
+  const rows = await listProjects(getDb(), { organizationId: orgId });
   return json({ projects: rows });
 }
 
-export async function POST({ request }) {
+export async function POST(event) {
+  const { request } = event;
   const raw = await request.json().catch(() => null);
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
@@ -63,6 +66,8 @@ export async function POST({ request }) {
     };
   }
 
+  const organizationId = await resolveOrgId(event);
+
   try {
     const out = await createProjectTx(db, {
       slug,
@@ -70,6 +75,7 @@ export async function POST({ request }) {
       description: body.description,
       defaultAgentRunner: body.defaultAgentRunner,
       account: accountArg,
+      organizationId,
     });
     return json({ id: out.id }, { status: 201 });
   } catch (e) {

@@ -14,17 +14,27 @@ type Loop = {
   run: () => Promise<void>;
 };
 
-function every(ms: number, fn: () => Promise<void>): { cancel: () => void } {
+type LoopHandle = { cancel: () => void; settle: () => Promise<void> };
+
+function every(ms: number, fn: () => Promise<void>): LoopHandle {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let cancelled = false;
+  let inflight: Promise<void> | null = null;
 
   const kick = async () => {
     if (cancelled) return;
+    const run = (async () => {
+      try {
+        await fn();
+      } catch (err) {
+        log.error('loop iteration crashed', err);
+      }
+    })();
+    inflight = run;
     try {
-      await fn();
-    } catch (err) {
-      log.error('loop iteration crashed', err);
+      await run;
     } finally {
+      inflight = null;
       if (!cancelled) timer = setTimeout(kick, ms);
     }
   };
@@ -34,6 +44,9 @@ function every(ms: number, fn: () => Promise<void>): { cancel: () => void } {
     cancel() {
       cancelled = true;
       if (timer) clearTimeout(timer);
+    },
+    async settle() {
+      if (inflight) await inflight;
     },
   };
 }
@@ -74,16 +87,22 @@ async function main() {
     return every(l.intervalMs, l.run);
   });
 
-  const shutdown = (sig: string) => {
+  const shutdown = async (sig: string) => {
     if (!running) return;
     running = false;
-    log.info(`received ${sig}, shutting down`);
+    log.info(`received ${sig}, draining loops`);
     for (const c of cancels) c.cancel();
-    setTimeout(() => process.exit(0), 250);
+    // Wait up to 10s for in-flight iterations (HTTP POST to /api/run, reply
+    // polling) to finish — beats killing them mid-request.
+    const drain = Promise.all(cancels.map((c) => c.settle()));
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 10_000));
+    await Promise.race([drain, timeout]);
+    log.info('exit');
+    process.exit(0);
   };
 
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
 main().catch((err) => {
