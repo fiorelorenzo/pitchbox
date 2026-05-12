@@ -22,6 +22,21 @@ PUT /api/settings/runner-config       # { slug, config }
 
 The dispatch path loads the config via `loadRunnerConfig()` and passes it to `createAgentRunner(slug, config)`. For `claude-code`, that translates into `--model`, `--max-turns`, and any extra flags appended after `-p / --output-format stream-json`.
 
+## Failure taxonomy
+
+Whenever a run transitions to `failed`, Pitchbox classifies the failure into one of six structured reasons and writes it to `runs.failure_reason`. The classifier is `classifyFailure(events, exitCode)` in [`shared/src/runlog/classify-failure.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/shared/src/runlog/classify-failure.ts) — a pure TypeScript function so the taxonomy can grow without a DB migration. The campaigns detail page surfaces the value as a chip on each failed run and lets you filter the run history by reason.
+
+| Reason            | Heuristic                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------- |
+| `runner_missing`  | Exit non-zero with `command not found` / `ENOENT`                                                       |
+| `auth_expired`    | Any event mentioning `auth`, `401`, `403`, `token expired`                                              |
+| `quota_exhausted` | Any event mentioning `quota` or `rate limit`                                                            |
+| `playbook_error`  | Exit non-zero with a Node-style or Python stack trace                                                   |
+| `network`         | `ECONNREFUSED`, `ECONNRESET`, `ENOTFOUND`, `ETIMEDOUT`, `getaddrinfo`, `fetch failed`, `socket hang up` |
+| `unknown`         | Default — nothing else matched                                                                          |
+
+The classifier order matters: `runner_missing` wins over `playbook_error` because an `ENOENT` will otherwise look like a generic stack trace. Order beyond that is stable and covered by `shared/tests/runlog/classify-failure.test.ts`.
+
 ## Adding a runner
 
 1. Implement the `AgentRunner` interface in `shared/src/agents/<slug>.ts`.

@@ -2,6 +2,8 @@ import { createAgentRunner } from '@pitchbox/shared/agents/registry';
 import { loadRunnerConfig } from '@pitchbox/shared/agents/config';
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { notify } from '@pitchbox/shared/notifications';
+import { classifyFailure } from '@pitchbox/shared/runlog/classify-failure';
+import type { ParsedEvent, EventKind, EventPayload } from '@pitchbox/shared/runlog/types';
 import { getDb, schema } from './db.js';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
@@ -22,6 +24,51 @@ const PITCHBOX_ROOT =
 const runCancels = new Map<number, () => void>();
 
 const TERMINAL_STATUSES = new Set(['success', 'failed', 'cancelled']);
+
+/**
+ * Load every persisted run_event row for `runId` and reshape it into
+ * `ParsedEvent[]` so the failure classifier can scan it. Used only on the
+ * failure path so the cost is bounded to the events the run actually emitted.
+ */
+async function loadParsedEvents(runId: number): Promise<ParsedEvent[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      seq: schema.runEvents.seq,
+      kind: schema.runEvents.kind,
+      payload: schema.runEvents.payload,
+      raw: schema.runEvents.raw,
+    })
+    .from(schema.runEvents)
+    .where(eq(schema.runEvents.runId, runId));
+  return rows.map((r) => ({
+    seq: r.seq,
+    kind: r.kind as EventKind,
+    payload: r.payload as EventPayload,
+    raw: r.raw,
+  }));
+}
+
+/**
+ * Classify a failed run by reading its persisted events plus an extra hint
+ * (typically the runner's own error string when no events were emitted).
+ */
+async function classifyFailedRun(
+  runId: number,
+  exitCode: number | null,
+  extraHint?: string,
+): Promise<ReturnType<typeof classifyFailure>> {
+  const events = await loadParsedEvents(runId);
+  if (extraHint && extraHint.trim().length > 0) {
+    events.push({
+      seq: -1,
+      kind: 'unknown',
+      payload: { type: 'unknown', eventType: 'runner-error', raw: extraHint },
+      raw: extraHint,
+    });
+  }
+  return classifyFailure(events, exitCode);
+}
 
 /**
  * Kind-agnostic dispatcher: spawns an agent runner for a pre-inserted run row,
@@ -48,9 +95,10 @@ async function dispatchRun(
     runner = createAgentRunner(run.agentRunner, config);
   } catch (err) {
     const errMsg = String(err instanceof Error ? err.message : err);
+    const failureReason = await classifyFailedRun(run.id, 1, errMsg);
     await db
       .update(schema.runs)
-      .set({ status: 'failed', finishedAt: new Date(), error: errMsg })
+      .set({ status: 'failed', finishedAt: new Date(), error: errMsg, failureReason })
       .where(eq(schema.runs.id, run.id));
     opts.onFinish?.('failed');
     emit('run:finished', {
@@ -194,6 +242,8 @@ async function dispatchRun(
         return;
       }
       const finalStatus: 'success' | 'failed' = res.exitCode === 0 ? 'success' : 'failed';
+      const failureReason =
+        finalStatus === 'failed' ? await classifyFailedRun(run.id, res.exitCode) : null;
       await db
         .update(schema.runs)
         .set({
@@ -201,6 +251,7 @@ async function dispatchRun(
           finishedAt: new Date(),
           stdoutLogPath: res.logPath,
           tokensUsed: res.tokensUsed ?? null,
+          failureReason,
         })
         .where(eq(schema.runs.id, run.id));
       opts.onFinish?.(finalStatus);
@@ -238,9 +289,10 @@ async function dispatchRun(
         if (isCampaignRun && finalStatus === 'success') emit('drafts:changed', {});
         return;
       }
+      const failureReason = await classifyFailedRun(run.id, 1, String(err));
       await db
         .update(schema.runs)
-        .set({ status: 'failed', finishedAt: new Date(), error: String(err) })
+        .set({ status: 'failed', finishedAt: new Date(), error: String(err), failureReason })
         .where(eq(schema.runs.id, run.id));
       opts.onFinish?.('failed');
       emit('run:finished', {

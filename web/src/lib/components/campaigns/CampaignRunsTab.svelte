@@ -19,6 +19,7 @@
     draftCount: number;
     durationMs: number | null;
     tokensUsed: number | null;
+    failureReason?: string | null;
   };
   type Props = { runs: Run[] };
   let { runs }: Props = $props();
@@ -31,17 +32,60 @@
   function kindLabel(k: string): string {
     return k === 'campaign_skill_generation' ? 'skill-generation' : k;
   }
+
+  // Small filter on top of the table — only the reasons present in the
+  // current 30-run window are listed, plus an "All failures" reset entry.
+  let failureFilter = $state<string | null>(null);
+  const failureReasons = $derived(
+    Array.from(
+      new Set(
+        runs
+          .filter((r) => r.status === 'failed' && typeof r.failureReason === 'string')
+          .map((r) => r.failureReason as string),
+      ),
+    ).sort(),
+  );
+  const visibleRuns = $derived(
+    failureFilter ? runs.filter((r) => r.failureReason === failureFilter) : runs,
+  );
 </script>
 
 <Card.Root size="sm">
   <Card.Header>
     <Card.Title class="text-base">Run history</Card.Title>
     <Card.Description class="text-xs">Last {runs.length} runs (any kind)</Card.Description>
+    {#if failureReasons.length > 0}
+      <div class="flex flex-wrap items-center gap-1.5 pt-2">
+        <span class="text-xs text-muted-foreground">Filter failures:</span>
+        <button
+          type="button"
+          class="text-xs rounded px-1.5 py-0.5 border {failureFilter === null
+            ? 'bg-muted font-medium'
+            : 'text-muted-foreground'}"
+          onclick={() => (failureFilter = null)}
+        >
+          All
+        </button>
+        {#each failureReasons as reason (reason)}
+          <button
+            type="button"
+            class="text-xs rounded px-1.5 py-0.5 border font-mono {failureFilter === reason
+              ? 'bg-muted font-medium'
+              : 'text-muted-foreground'}"
+            onclick={() => (failureFilter = reason)}
+          >
+            {reason}
+          </button>
+        {/each}
+      </div>
+    {/if}
   </Card.Header>
   <Card.Content class="p-0">
-    {#if runs.length === 0}
+    {#if visibleRuns.length === 0}
       <div class="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
-        <p class="text-sm">No runs yet</p>
+        <p class="text-sm">
+          {runs.length === 0 ? 'No runs yet' : 'No runs match this filter'}
+        </p>
       </div>
     {:else}
       <Table.Root>
@@ -60,7 +104,7 @@
           </Table.Row>
         </Table.Header>
         <Table.Body>
-          {#each runs as run (run.id)}
+          {#each visibleRuns as run (run.id)}
             {@const expanded = expandedRunId === run.id}
             <Table.Row
               onclick={() => toggle(run.id)}
@@ -83,7 +127,14 @@
                 {kindLabel(run.kind)}
               </Table.Cell>
               <Table.Cell class="py-3">
-                <StatusBadge domain="run-status" value={run.status} />
+                <div class="flex items-center gap-1.5">
+                  <StatusBadge domain="run-status" value={run.status} />
+                  {#if run.status === 'failed' && run.failureReason}
+                    <Badge variant="outline" class="font-mono text-[10px] py-0 px-1.5">
+                      {run.failureReason}
+                    </Badge>
+                  {/if}
+                </div>
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3">{run.trigger}</Table.Cell>
               <Table.Cell class="text-xs py-3">

@@ -32,6 +32,7 @@
     "./edition": "./src/edition.ts",
     "./runlog": "./src/runlog/index.ts",
     "./runlog/types": "./src/runlog/types.ts",
+    "./runlog/classify-failure": "./src/runlog/classify-failure.ts",
     "./runlog/parsers": "./src/runlog/parsers/index.ts",
     "./runlog/parsers/claude-code": "./src/runlog/parsers/claude-code.ts",
     "./runlog/parsers/codex": "./src/runlog/parsers/codex.ts",

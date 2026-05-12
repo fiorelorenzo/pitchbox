@@ -186,6 +186,11 @@ export const runs = pgTable(
     stdoutLogPath: text('stdout_log_path'),
     tokensUsed: integer('tokens_used'),
     playbookBody: text('playbook_body'),
+    // Structured failure taxonomy; nullable for success/running rows. The set
+    // of valid values is enforced in TypeScript (shared/src/runlog/classify-failure.ts)
+    // rather than via a DB-level enum so future categories don't require a
+    // migration.
+    failureReason: text('failure_reason'),
   },
   (t) => ({
     byProjectKind: index('runs_project_kind_idx').on(t.projectId, t.kind, t.startedAt.desc()),

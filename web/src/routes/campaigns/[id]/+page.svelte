@@ -49,6 +49,7 @@
 				draftCount: number;
 				durationMs: number | null;
 				tokensUsed: number | null;
+				failureReason?: string | null;
 			}>;
 			skillRuns: SkillRun[];
 			readiness: { ready: boolean; issues: ReadinessIssue[] };
