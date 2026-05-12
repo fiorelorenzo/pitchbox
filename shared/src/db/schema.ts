@@ -131,6 +131,10 @@ export const accounts = pgTable('accounts', {
   isDefault: boolean('is_default').notNull().default(false),
   cookieSession: bytea('cookie_session'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // Optional per-account overrides for outreach volume. When set, they apply
+  // in addition to (and never exceed) the platform-wide quota_defaults.
+  dailyLimit: integer('daily_limit'),
+  weeklyLimit: integer('weekly_limit'),
 });
 
 export const campaigns = pgTable('campaigns', {
