@@ -4,6 +4,7 @@ import { logger } from './logger.js';
 import { beat } from './heartbeat.js';
 import { tick as schedulerTick } from './scheduler.js';
 import { tick as replyPollerTick } from './reply-poller.js';
+import { tick as webhookSenderTick } from './webhook-sender.js';
 
 const log = logger('main');
 
@@ -69,6 +70,14 @@ async function main() {
       run: schedulerTick,
     },
   ];
+
+  loops.push({
+    name: 'webhook-sender',
+    intervalMs: config.webhookSenderIntervalMs,
+    run: async () => {
+      await webhookSenderTick();
+    },
+  });
 
   if (!config.repliesDisabled) {
     loops.push({

@@ -1,6 +1,15 @@
+import { createHash } from 'node:crypto';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { desc, eq, isNull, sql } from 'drizzle-orm';
-import { notifications, appConfig } from './db/schema.js';
+import { notifications, appConfig, webhookDeliveries } from './db/schema.js';
+
+/**
+ * Stable, short identifier for a webhook target. The URL itself isn't safe to
+ * use as an id (PII, length), so we keep the first 16 chars of its sha256.
+ */
+export function webhookIdForUrl(url: string): string {
+  return createHash('sha256').update(url).digest('hex').slice(0, 16);
+}
 
 export type NotificationSeverity = 'info' | 'success' | 'warning' | 'error';
 
@@ -55,21 +64,24 @@ export async function notify(
 
   const cfg = await loadWebhooks(db);
   if (cfg.url) {
-    // Fire and forget — webhook failures must not block the producer.
-    void fetch(cfg.url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        id: row.id,
-        kind: row.kind,
-        title: row.title,
-        body: row.body,
-        severity: row.severity,
-        payload: row.payload,
-        createdAt: row.createdAt,
-      }),
-    }).catch((err) => {
-      console.error('[notify] webhook failed:', err);
+    // Enqueue for the daemon's webhook-sender worker. We never POST inline:
+    // the worker handles retries, backoff, and the dead-letter queue.
+    await db.insert(webhookDeliveries).values({
+      webhookId: webhookIdForUrl(cfg.url),
+      eventType: `notification.${row.kind}`,
+      payload: {
+        url: cfg.url,
+        body: {
+          id: row.id,
+          kind: row.kind,
+          title: row.title,
+          body: row.body,
+          severity: row.severity,
+          payload: row.payload,
+          createdAt: row.createdAt,
+        },
+      },
+      status: 'pending',
     });
   }
 }

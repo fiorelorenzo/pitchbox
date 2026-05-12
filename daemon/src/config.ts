@@ -22,6 +22,8 @@ export const config = {
   heartbeatIntervalMs: readIntEnv('PITCHBOX_DAEMON_HEARTBEAT_MS', 30_000),
   /** How often the reply poller runs. */
   replyPollIntervalMs: readIntEnv('PITCHBOX_REPLY_POLL_MS', 5 * 60_000),
+  /** How often the webhook sender drains the delivery queue. */
+  webhookSenderIntervalMs: readIntEnv('PITCHBOX_WEBHOOK_SENDER_MS', 30_000),
   /** Base URL of the web server. We POST scheduled run starts here. */
   webUrl: process.env.PITCHBOX_WEB_URL ?? 'http://127.0.0.1:5180',
   /** Skip reply-poller entirely when true. */

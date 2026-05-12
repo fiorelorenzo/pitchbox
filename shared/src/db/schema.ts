@@ -443,3 +443,30 @@ export const messages = pgTable(
     ),
   }),
 );
+
+// Outbound webhook delivery queue. The notifier enqueues a row with
+// status='pending'; the daemon's webhook-sender worker drains pending/due rows,
+// POSTs the payload, and on failure schedules a retry via computeBackoff().
+// Once attempts >= max_attempts the row flips to 'dead' (DLQ) for manual retry.
+export type WebhookDeliveryStatus = 'pending' | 'delivered' | 'dead';
+
+export const webhookDeliveries = pgTable(
+  'webhook_deliveries',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    webhookId: text('webhook_id').notNull(),
+    eventType: text('event_type').notNull(),
+    payload: jsonb('payload').notNull().default({}),
+    attempts: integer('attempts').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(8),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    status: text('status').$type<WebhookDeliveryStatus>().notNull().default('pending'),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    dueIdx: index('webhook_deliveries_due_idx').on(t.status, t.nextAttemptAt),
+    recentIdx: index('webhook_deliveries_recent_idx').on(t.createdAt),
+  }),
+);
