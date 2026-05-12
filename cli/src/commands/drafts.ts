@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { eq } from 'drizzle-orm';
 import { isBlocklisted } from '@pitchbox/shared/blocklist';
+import { regenerateDraft } from '@pitchbox/shared/draft-regenerate';
 import {
   checkContactDedup,
   parseDedupPolicy,
@@ -142,6 +143,27 @@ export function registerDraftCommands(program: Command) {
       }
 
       ok({ runId, inserted: inserted.length, skipped, dedupSkipped });
+    });
+
+  program
+    .command('drafts:regenerate')
+    .argument('<id>', 'draft id')
+    .option('--hint <text>', 'reviewer hint to bias the regeneration')
+    .action(async (idArg: string, opts: { hint?: string }) => {
+      const draftId = Number(idArg);
+      if (!Number.isInteger(draftId)) return fail('invalid draft id');
+      const db = getDb();
+      const [existing] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draftId));
+      if (!existing) return fail(`draft ${draftId} not found`);
+      // Runner invocation is stubbed; we bump the counter, persist the hint,
+      // and append a `regenerated` draft_event. The agent runner will plug in
+      // here once the `regenerate-single` mode lands in the playbook layer.
+      const res = await regenerateDraft(db, {
+        draftId,
+        hint: opts.hint ?? null,
+        actor: 'cli',
+      });
+      ok(res);
     });
 
   program

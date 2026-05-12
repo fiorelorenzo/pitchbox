@@ -26,6 +26,7 @@
     "./contact-dedup": "./src/contact-dedup.ts",
     "./templates": "./src/templates.ts",
     "./draft-send": "./src/draft-send.ts",
+    "./draft-regenerate": "./src/draft-regenerate.ts",
     "./crypto": "./src/crypto.ts",
     "./dm-sync": "./src/dm-sync.ts",
     "./comment-sync": "./src/comment-sync.ts",

@@ -267,6 +267,13 @@
       "when": 1778555000000,
       "tag": "0038_drafts_scheduled_send_after",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1778556000000,
+      "tag": "0039_drafts_regeneration",
+      "breakpoints": true
     }
   ]
 }

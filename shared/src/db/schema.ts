@@ -277,6 +277,8 @@ export const drafts = pgTable(
     // Optional scheduled send-after time: drafts are excluded from "ready to
     // send" until this timestamp is in the past.
     scheduledSendAfter: timestamp('scheduled_send_after', { withTimezone: true }),
+    // Number of times the draft body has been regenerated via the runner.
+    regenerationCount: integer('regeneration_count').notNull().default(0),
   },
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),
@@ -306,6 +308,16 @@ export const draftEvents = pgTable(
     byKindCreated: index('draft_events_kind_created_idx').on(t.event, t.createdAt),
   }),
 );
+
+export const draftRegenerationHints = pgTable('draft_regeneration_hints', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  draftId: integer('draft_id')
+    .notNull()
+    .references(() => drafts.id, { onDelete: 'cascade' }),
+  hintText: text('hint_text'),
+  authorUserId: integer('author_user_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const blocklist = pgTable('blocklist', {
   id: serial('id').primaryKey(),

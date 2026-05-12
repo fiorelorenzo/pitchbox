@@ -21,3 +21,11 @@ Read-only listing. Useful for debugging the playbook's state from a shell.
 ## Reddit helpers
 
 The `cli/src/commands/reddit.ts` module exposes Reddit-specific helpers (search subreddits, fetch a thread, etc.) that the scout playbook uses internally. Run `pitchbox --help` for the current list.
+
+## drafts:regenerate
+
+```
+pitchbox drafts:regenerate <id> [--hint "..."]
+```
+
+Bumps `drafts.regeneration_count` for the target draft, optionally records a reviewer hint into `draft_regeneration_hints`, and appends a `regenerated` draft_event. The runner invocation is currently stubbed — the helper is invoked verbatim by the dashboard's `POST /api/drafts/[id]/regenerate` so both surfaces share an audit trail until the `regenerate-single` runner mode lands.

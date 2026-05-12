@@ -68,6 +68,10 @@
 	let editing = $state(false);
 	let editText = $state('');
 	let savingEdit = $state(false);
+	// Regenerate-with-hint state (issue #22).
+	let regenerating = $state(false);
+	let regenerateOpen = $state(false);
+	let regenerateHint = $state('');
 	let events = $state<DraftEvent[]>([]);
 	let loadingEvents = $state(false);
 	let latestReply = $state<LatestReply>(null);
@@ -171,6 +175,30 @@
 			toast.error('Could not save edit', { description: (e as Error).message });
 		} finally {
 			savingEdit = false;
+		}
+	}
+
+	async function regenerate() {
+		if (!draft) return;
+		regenerating = true;
+		try {
+			const res = await fetch(`/api/drafts/${draft.id}/regenerate`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ hint: regenerateHint || undefined }),
+			});
+			if (!res.ok) {
+				const msg = await res.text();
+				throw new Error(msg || `HTTP ${res.status}`);
+			}
+			toast.success('Regeneration requested');
+			regenerateOpen = false;
+			regenerateHint = '';
+			await invalidateAll();
+		} catch (e) {
+			toast.error('Could not regenerate', { description: (e as Error).message });
+		} finally {
+			regenerating = false;
 		}
 	}
 
@@ -306,6 +334,9 @@
 				{#if draft.state === 'pending_review' || draft.state === 'proposed'}
 					{#if !editing}
 						<Button onclick={startEdit} variant="outline" size="sm">Edit</Button>
+						<Button onclick={() => (regenerateOpen = true)} variant="outline" size="sm">
+							Regenerate
+						</Button>
 					{/if}
 					<Button onclick={approve} loading={approving} variant="default" size="sm">
 						Approve
@@ -493,6 +524,33 @@
 				Cancel
 			</Button>
 			<Button onclick={confirmSent} loading={sendingNow}>Confirm sent</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Regenerate-with-hint dialog -->
+<Dialog.Root bind:open={regenerateOpen}>
+	<Dialog.Content class="max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>Regenerate draft</Dialog.Title>
+			<Dialog.Description>
+				Optional hint for the agent: what should it change in the next pass?
+			</Dialog.Description>
+		</Dialog.Header>
+		<Textarea
+			bind:value={regenerateHint}
+			rows={5}
+			placeholder="e.g. Make it shorter and reference the latest comment."
+		/>
+		<Dialog.Footer>
+			<Button
+				variant="outline"
+				onclick={() => (regenerateOpen = false)}
+				disabled={regenerating}
+			>
+				Cancel
+			</Button>
+			<Button onclick={regenerate} loading={regenerating}>Regenerate</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

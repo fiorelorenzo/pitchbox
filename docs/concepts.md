@@ -75,3 +75,7 @@ The inbox toolbar exposes two bulk endpoints that operate on the current row sel
 - `POST /api/drafts/bulk-reschedule` `{ ids, send_after }` sets `drafts.scheduled_send_after`. `evaluateDraftSend` treats a future `scheduled_send_after` as "not ready to send" so the quota path remains the single source of truth.
 
 Both endpoints return `{ results: [{ id, status, reason? }] }` so the UI can surface partial successes accurately.
+
+## Regenerating drafts with reviewer feedback
+
+The inbox detail panel offers a `Regenerate` action alongside Approve/Reject. The user can optionally supply a short hint (e.g. "shorter and warmer"); the API `POST /api/drafts/[id]/regenerate` invokes the shared helper which records the hint into `draft_regeneration_hints`, increments `drafts.regeneration_count`, and appends a `regenerated` draft_event. The same helper backs `pitchbox drafts:regenerate <id>` so CLI-triggered regenerations leave the same audit trail.
