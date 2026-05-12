@@ -10,6 +10,7 @@
 	import ExtensionCard from '$lib/components/ExtensionCard.svelte';
 	import SettingsQuotaCard from '$lib/components/SettingsQuotaCard.svelte';
 	import SettingsRunnersCard from '$lib/components/SettingsRunnersCard.svelte';
+	import SettingsAppearanceCard from '$lib/components/SettingsAppearanceCard.svelte';
 	import { daemonStatus } from '$lib/stores/daemon';
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from 'svelte-sonner';
@@ -181,7 +182,7 @@
 					</Card.Content>
 				</Card.Root>
 
-
+				<SettingsAppearanceCard />
 			</div>
 		</Tabs.Content>
 

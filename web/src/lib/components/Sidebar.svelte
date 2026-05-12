@@ -21,26 +21,27 @@
 	import { daemonStatus } from '$lib/stores/daemon';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import SseIndicator from '$lib/realtime/SseIndicator.svelte';
+	import { t } from '$lib/i18n';
 	import type { ComponentType } from 'svelte';
 
 	type NavItem = {
 		href: string;
-		label: string;
+		labelKey: string;
 		icon: ComponentType<LucideIcon>;
 		exact?: boolean;
 	};
 
 	const navItems: NavItem[] = [
-		{ href: '/', label: 'Home', icon: Home, exact: true },
-		{ href: '/inbox', label: 'Inbox', icon: Inbox },
-		{ href: '/projects', label: 'Projects', icon: FolderKanban },
-		{ href: '/campaigns', label: 'Campaigns', icon: PlayCircle },
-		{ href: '/contacts', label: 'Contacts', icon: Users },
-		{ href: '/conversations', label: 'Conversations', icon: MessagesSquare },
-		{ href: '/blocklist', label: 'Blocklist', icon: Shield },
-		{ href: '/playbooks', label: 'Playbooks', icon: BookOpen },
-		{ href: '/notifications', label: 'Notifications', icon: Bell },
-		{ href: '/settings', label: 'Settings', icon: Settings },
+		{ href: '/', labelKey: 'nav.home', icon: Home, exact: true },
+		{ href: '/inbox', labelKey: 'nav.inbox', icon: Inbox },
+		{ href: '/projects', labelKey: 'nav.projects', icon: FolderKanban },
+		{ href: '/campaigns', labelKey: 'nav.campaigns', icon: PlayCircle },
+		{ href: '/contacts', labelKey: 'nav.contacts', icon: Users },
+		{ href: '/conversations', labelKey: 'nav.conversations', icon: MessagesSquare },
+		{ href: '/blocklist', labelKey: 'nav.blocklist', icon: Shield },
+		{ href: '/playbooks', labelKey: 'nav.playbooks', icon: BookOpen },
+		{ href: '/notifications', labelKey: 'nav.notifications', icon: Bell },
+		{ href: '/settings', labelKey: 'nav.settings', icon: Settings },
 	];
 
 	let unread = $state(0);
@@ -93,7 +94,7 @@
 				)}
 			>
 				<Icon class="size-4 shrink-0" />
-				<span class="flex-1">{item.label}</span>
+				<span class="flex-1">{$t(item.labelKey)}</span>
 				{#if item.href === '/notifications' && unread > 0}
 					<span class="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300">
 						{unread > 99 ? '99+' : unread}
@@ -115,7 +116,7 @@
 			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
 		>
 			<BookOpen class="size-4 shrink-0" />
-			Docs
+			{$t('nav.docs')}
 		</a>
 		<button
 			type="button"
@@ -126,7 +127,7 @@
 			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors text-left"
 		>
 			<LogOut class="size-4 shrink-0" />
-			Sign out
+			{$t('nav.signOut')}
 		</button>
 		<div class="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
 			<span
@@ -137,13 +138,13 @@
 						: 'bg-muted-foreground/40'}"
 			></span>
 			<span>
-				Daemon:
+				{$t('nav.daemon')}:
 				{#if $daemonStatus.loading}
 					…
 				{:else if $daemonStatus.alive}
-					online
+					{$t('nav.daemon.online')}
 				{:else}
-					offline
+					{$t('nav.daemon.offline')}
 				{/if}
 			</span>
 			<span class="ml-auto font-mono opacity-50">{VERSION}</span>

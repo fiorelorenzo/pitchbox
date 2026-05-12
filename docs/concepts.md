@@ -27,3 +27,7 @@ Once a draft is sent, the row in `contact_history` becomes the per-target source
 ## Blocklist
 
 `blocklist` covers users, subreddits, and keywords. The dispatch path consults it before drafting; the send path consults it again before flipping a draft to `sent`. Scope is global or per-project.
+
+## i18n
+
+Pitchbox ships with a tiny hand-rolled i18n module at `web/src/lib/i18n/`. English (`dict-en.ts`) is the source of truth; other locales (today just `dict-it.ts`) mirror its keys and fall back to English when a key is missing. In Svelte components, use the reactive store: `import { t } from '$lib/i18n'` then `{$t('nav.inbox')}`. Templates support `{name}` placeholders interpolated by `t()`. To add a key, add it to `dict-en.ts` first, then mirror it in every other locale dictionary. To contribute a new locale, copy `dict-en.ts` to `dict-<code>.ts`, translate the values, register it in `index.ts`, and add the code to `LOCALES` in `types.ts`. The active locale is exposed via `setLocale()` / `getLocale()` and will eventually be persisted in `app_config.ui_locale`.
