@@ -96,7 +96,7 @@
   }
   const AVATAR_CLASS: Record<Tone, string> = {
     default: 'bg-muted text-foreground/70 ring-border/50',
-    replied: 'bg-violet-500/15 text-violet-300 ring-violet-500/25',
+    replied: 'bg-violet-500/15 text-violet-700 dark:text-violet-300 ring-violet-500/25',
     awaiting: 'bg-muted text-muted-foreground ring-border/50',
   };
 </script>

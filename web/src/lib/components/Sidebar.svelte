@@ -19,6 +19,7 @@
 	import { cn } from '$lib/utils';
 	import { VERSION } from '$lib/shared/version';
 	import { daemonStatus } from '$lib/stores/daemon';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import type { ComponentType } from 'svelte';
 
 	type NavItem = {
@@ -93,7 +94,7 @@
 				<Icon class="size-4 shrink-0" />
 				<span class="flex-1">{item.label}</span>
 				{#if item.href === '/notifications' && unread > 0}
-					<span class="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300">
+					<span class="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300">
 						{unread > 99 ? '99+' : unread}
 					</span>
 				{/if}
@@ -101,8 +102,11 @@
 		{/each}
 	</nav>
 
-	<!-- Bottom section: docs + version -->
+	<!-- Bottom section: theme + docs + version -->
 	<div class="flex flex-col gap-1 border-t border-border mt-4 pt-4">
+		<div class="px-1 pb-1">
+			<ThemeToggle />
+		</div>
 		<a
 			href="/README.md"
 			target="_blank"

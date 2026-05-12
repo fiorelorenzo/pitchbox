@@ -43,6 +43,10 @@ npm run dev
 
 The first user you create via `/login` becomes the admin.
 
+## Appearance
+
+The sidebar footer hosts a System/Light/Dark toggle. Your choice persists locally per browser; `System` follows the OS preference.
+
 ## Chrome extension
 
 Build and load `extension/dist/` unpacked. See [the extension page](/extension) for the token wiring.
