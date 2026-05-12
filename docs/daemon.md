@@ -12,6 +12,16 @@ A long-running Node process under `daemon/`. Start with `npm run -w daemon dev` 
 
 `SIGINT` / `SIGTERM` triggers graceful shutdown: stop the schedule loop, finalise the current poll, exit cleanly.
 
+## Testing
+
+Daemon tests live under `daemon/tests/` and hit the shared Postgres test DB (`pitchbox_test`, port 5434), same setup as the rest of the suite. Run only the daemon tests with:
+
+```bash
+npx vitest run daemon/
+```
+
+The full `npm test` picks them up automatically — no extra wiring needed.
+
 ## Operating notes
 
 - The daemon doesn't need access to the agent runner CLI — it's just a scheduler that POSTs to the dashboard.
