@@ -10,7 +10,7 @@ export const load: PageServerLoad = async ({ params }) => {
   const db = getDb();
   const project = await getProjectById(db, id);
   if (!project) throw error(404, 'project not found');
-  const [accounts, platforms, runRows, recommendations] = await Promise.all([
+  const [accounts, platforms, runRows, recommendations, templates] = await Promise.all([
     db.select().from(schema.accounts).where(eq(schema.accounts.projectId, id)),
     db.select().from(schema.platforms),
     db
@@ -24,6 +24,11 @@ export const load: PageServerLoad = async ({ params }) => {
       .from(schema.campaignRecommendations)
       .where(eq(schema.campaignRecommendations.projectId, id))
       .orderBy(desc(schema.campaignRecommendations.createdAt)),
+    db
+      .select()
+      .from(schema.templates)
+      .where(eq(schema.templates.projectId, id))
+      .orderBy(desc(schema.templates.createdAt)),
   ]);
   const extractionRuns = runRows.map((r) => {
     const startedAtMs =
@@ -57,5 +62,5 @@ export const load: PageServerLoad = async ({ params }) => {
       params: (r.params ?? null) as { source?: { kind: string; value: string } } | null,
     };
   });
-  return { project, accounts, platforms, extractionRuns, recommendations };
+  return { project, accounts, platforms, extractionRuns, recommendations, templates };
 };

@@ -474,3 +474,26 @@ export const webhookDeliveries = pgTable(
     recentIdx: index('webhook_deliveries_recent_idx').on(t.createdAt),
   }),
 );
+
+// Few-shot templates per project. Used by playbooks (injected into
+// `pitchbox run:start` output) to ground drafts with examples that match the
+// project's voice. Campaign-level overrides may land later via a jsonb field
+// on `campaigns`; V1 only supports project + kind filtering.
+export const templates = pgTable(
+  'templates',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'dm' | 'comment' | 'post'
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byProjectKind: index('templates_project_kind_idx').on(t.projectId, t.kind, t.isActive),
+  }),
+);

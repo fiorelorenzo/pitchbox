@@ -3,14 +3,18 @@
   import type { PageData } from './$types';
   import ProjectOverviewTab from '$lib/components/projects/ProjectOverviewTab.svelte';
   import ProjectAccountsTab from '$lib/components/projects/ProjectAccountsTab.svelte';
+  import ProjectTemplatesTab from '$lib/components/projects/ProjectTemplatesTab.svelte';
 
   let { data }: { data: PageData } = $props();
-  const initialTab = page.url.searchParams.get('tab') === 'accounts' ? 'accounts' : 'overview';
-  let tab = $state<'overview' | 'accounts'>(initialTab);
+  const tabParam = page.url.searchParams.get('tab');
+  const initialTab =
+    tabParam === 'accounts' ? 'accounts' : tabParam === 'templates' ? 'templates' : 'overview';
+  let tab = $state<'overview' | 'accounts' | 'templates'>(initialTab);
 
   const tabs = [
     { k: 'overview' as const, label: 'Overview' },
     { k: 'accounts' as const, label: 'Accounts' },
+    { k: 'templates' as const, label: 'Templates' },
   ];
 </script>
 
@@ -37,10 +41,12 @@
     extractionRuns={data.extractionRuns}
     recommendations={data.recommendations}
   />
-{:else}
+{:else if tab === 'accounts'}
   <ProjectAccountsTab
     projectId={data.project.id}
     accounts={data.accounts}
     platforms={data.platforms}
   />
+{:else}
+  <ProjectTemplatesTab projectId={data.project.id} templates={data.templates} />
 {/if}

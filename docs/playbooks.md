@@ -34,3 +34,9 @@ Workflow:
 4. Past tuning runs (up to the last 20) are listed in the same tab with timestamp, status, and adopted/discarded badge — a "View diff" button restores the diff view for any historical run that still has a `generatedConfig`.
 
 The legacy **Profile → Regenerate** dialog still runs in `apply` mode (auto-writes the new profile) for parity with prior releases; the Tuning tab is the recommended surface for human-in-the-loop tuning.
+
+## Templates injected into runs
+
+`pitchbox run:start` includes a `templates` array in its output containing every **active** template for the campaign's project, filtered by an inferred kind (e.g. `reddit-commenter` and `reddit-scout` request `kind = 'comment'`). Each entry has `{ id, kind, title, body }`. Playbooks can quote these in prompts to ground drafts in the project's voice; if no templates exist, the array is empty and the playbook should fall back to whatever defaults it ships.
+
+Manage templates under **Projects → [project] → Templates** in the dashboard, or via `POST /api/projects/:id/templates` and `PATCH /api/projects/:id/templates/:templateId`.

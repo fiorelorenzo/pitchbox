@@ -35,3 +35,9 @@ The `/audit` page surfaces a unified, time-ordered feed of every recorded event 
 ## i18n
 
 Pitchbox ships with a tiny hand-rolled i18n module at `web/src/lib/i18n/`. English (`dict-en.ts`) is the source of truth; other locales (today just `dict-it.ts`) mirror its keys and fall back to English when a key is missing. In Svelte components, use the reactive store: `import { t } from '$lib/i18n'` then `{$t('nav.inbox')}`. Templates support `{name}` placeholders interpolated by `t()`. To add a key, add it to `dict-en.ts` first, then mirror it in every other locale dictionary. To contribute a new locale, copy `dict-en.ts` to `dict-<code>.ts`, translate the values, register it in `index.ts`, and add the code to `LOCALES` in `types.ts`. The active locale is exposed via `setLocale()` / `getLocale()` and will eventually be persisted in `app_config.ui_locale`.
+
+## Templates (few-shot examples)
+
+Each project owns a list of **templates** — short, agent-facing examples that anchor the voice of generated drafts. A template has a `kind` (`dm`, `comment`, or `post`), a human-friendly `title`, a `body`, and an `isActive` flag for archiving without deletion. Manage them from **Projects → [project] → Templates**.
+
+Active templates are loaded by `pitchbox run:start` and surfaced to the playbook under a `templates` key, so the agent can quote them verbatim or paraphrase tone-of-voice. Archived templates are excluded. Campaign-level overrides are reserved for a future release; today templates are project-wide.
