@@ -63,6 +63,11 @@
 	let approving = $state(false);
 	let rejecting = $state(false);
 	let copied = $state(false);
+	// Inline body-edit state (issue #23). Editable while the draft is in
+	// `pending_review` or `proposed`.
+	let editing = $state(false);
+	let editText = $state('');
+	let savingEdit = $state(false);
 	let events = $state<DraftEvent[]>([]);
 	let loadingEvents = $state(false);
 	let latestReply = $state<LatestReply>(null);
@@ -132,6 +137,40 @@
 			toast.error('Action failed', { description: (e as Error).message });
 		} finally {
 			rejecting = false;
+		}
+	}
+
+	function startEdit() {
+		if (!draft) return;
+		editText = draft.body;
+		editing = true;
+	}
+
+	function cancelEdit() {
+		editing = false;
+		editText = '';
+	}
+
+	async function saveEdit() {
+		if (!draft) return;
+		savingEdit = true;
+		try {
+			const res = await fetch(`/api/drafts/${draft.id}`, {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ body: editText }),
+			});
+			if (!res.ok) {
+				const msg = await res.text();
+				throw new Error(msg || `HTTP ${res.status}`);
+			}
+			toast.success('Draft updated');
+			editing = false;
+			await invalidateAll();
+		} catch (e) {
+			toast.error('Could not save edit', { description: (e as Error).message });
+		} finally {
+			savingEdit = false;
 		}
 	}
 
@@ -264,7 +303,10 @@
 						<Clipboard class="size-3.5" />
 					{/if}
 				</Button>
-				{#if draft.state === 'pending_review'}
+				{#if draft.state === 'pending_review' || draft.state === 'proposed'}
+					{#if !editing}
+						<Button onclick={startEdit} variant="outline" size="sm">Edit</Button>
+					{/if}
 					<Button onclick={approve} loading={approving} variant="default" size="sm">
 						Approve
 					</Button>
@@ -311,6 +353,22 @@
 						</ScrollArea>
 					</Tabs.Content>
 				</Tabs.Root>
+			{:else if editing}
+				<div class="flex-1 rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
+					<Textarea
+						bind:value={editText}
+						class="flex-1 min-h-[200px] resize-none font-mono text-sm"
+						aria-label="Draft body"
+					/>
+					<div class="flex justify-end gap-2">
+						<Button onclick={cancelEdit} variant="outline" size="sm" disabled={savingEdit}>
+							Cancel
+						</Button>
+						<Button onclick={saveEdit} loading={savingEdit} variant="default" size="sm">
+							Save
+						</Button>
+					</div>
+				</div>
 			{:else}
 				<ScrollArea class="flex-1 rounded-lg border border-border/60 bg-muted/20 p-4">
 					<Markdown source={draft.body} />

@@ -253,6 +253,13 @@
       "when": 1778553000000,
       "tag": "0036_drafts_dedup_warning",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1778554000000,
+      "tag": "0037_drafts_body_edited",
+      "breakpoints": true
     }
   ]
 }

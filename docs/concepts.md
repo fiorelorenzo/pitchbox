@@ -62,3 +62,7 @@ Behaviour is governed by `app_config.dedup_policy`:
 
 - `warn` (default): the draft is still created but `drafts.dedup_warning` is set, and the inbox shows an amber `dedup` badge next to the target.
 - `skip`: the draft is not created at all, and the CLI returns it under `dedupSkipped` alongside blocklist skips.
+
+## Inline edit of draft body
+
+While a draft is in `pending_review` or `proposed`, reviewers can rewrite the body in-place from the inbox detail panel. The endpoint `PATCH /api/drafts/[id]` accepts `{ body }`, bumps the optimistic `version`, sets `drafts.body_edited = true`, and records a `body_edited` draft_event carrying the prior body for audit. Once the draft transitions out of those states the endpoint returns 409.

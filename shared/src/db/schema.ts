@@ -272,6 +272,8 @@ export const drafts = pgTable(
     // When set, a previous outreach to the same target user occurred within the
     // dedup window; surfaced as a warning badge in the inbox.
     dedupWarning: text('dedup_warning'),
+    // True once a reviewer has manually edited the draft body before approval.
+    bodyEdited: boolean('body_edited').notNull().default(false),
   },
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),
