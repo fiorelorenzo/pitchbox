@@ -43,6 +43,10 @@ npm run dev
 
 The first user you create via `/login` becomes the admin.
 
+## Command palette
+
+Press `Cmd+K` (macOS) or `Ctrl+K` (Windows/Linux) anywhere in the dashboard to open a global search palette. It matches drafts, contacts, campaigns and projects, and also exposes quick actions like "Create campaign" or "Open Settings".
+
 ## Appearance
 
 The sidebar footer hosts a System/Light/Dark toggle. Your choice persists locally per browser; `System` follows the OS preference.

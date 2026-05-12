@@ -3,6 +3,7 @@
 	import '$lib/platforms/register';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
+	import CommandPalette from '$lib/components/command-palette/CommandPalette.svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Menu, X } from 'lucide-svelte';
 	import { page } from '$app/stores';
@@ -88,3 +89,6 @@
 </div>
 
 <Toaster />
+
+<!-- Global Cmd/Ctrl-K command palette: single instance for the whole app. -->
+<CommandPalette />
