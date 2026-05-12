@@ -108,6 +108,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       sentAt: schema.drafts.sentAt,
       sentContent: schema.drafts.sentContent,
       platformCommentId: schema.drafts.platformCommentId,
+      dedupWarning: schema.drafts.dedupWarning,
       projectSlug: schema.projects.slug,
       projectName: schema.projects.name,
       platformSlug: schema.platforms.slug,

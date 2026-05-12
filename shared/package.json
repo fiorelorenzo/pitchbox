@@ -23,6 +23,7 @@
     "./agents/config": "./src/agents/config.ts",
     "./campaigns": "./src/campaigns/index.ts",
     "./blocklist": "./src/blocklist.ts",
+    "./contact-dedup": "./src/contact-dedup.ts",
     "./templates": "./src/templates.ts",
     "./draft-send": "./src/draft-send.ts",
     "./crypto": "./src/crypto.ts",

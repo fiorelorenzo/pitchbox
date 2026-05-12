@@ -269,6 +269,9 @@ export const drafts = pgTable(
     // Optimistic-locking version bumped on every state-changing update so
     // concurrent reject/send/approve writes don't silently overwrite each other.
     version: integer('version').notNull().default(0),
+    // When set, a previous outreach to the same target user occurred within the
+    // dedup window; surfaced as a warning badge in the inbox.
+    dedupWarning: text('dedup_warning'),
   },
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),

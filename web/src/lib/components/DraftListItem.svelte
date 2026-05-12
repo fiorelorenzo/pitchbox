@@ -15,6 +15,7 @@
 		state: string;
 		createdAt: string | Date | null;
 		project?: { id: number; slug: string; name: string };
+		dedupWarning?: string | null;
 	};
 
 	let {
@@ -40,8 +41,16 @@
 	{onclick}
 >
 	<div class="flex justify-between items-center gap-2">
-		<span class="font-medium text-sm truncate">
+		<span class="font-medium text-sm truncate flex items-center gap-1.5">
 			{presenter.primaryLabel(draft)}
+			{#if draft.dedupWarning}
+				<span
+					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+					title={draft.dedupWarning}
+				>
+					dedup
+				</span>
+			{/if}
 		</span>
 		<StatusBadge domain="draft-kind" value={draft.kind} class="shrink-0" />
 	</div>

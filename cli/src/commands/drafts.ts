@@ -3,6 +3,11 @@ import { z } from 'zod';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { eq } from 'drizzle-orm';
 import { isBlocklisted } from '@pitchbox/shared/blocklist';
+import {
+  checkContactDedup,
+  parseDedupPolicy,
+  DEFAULT_DEDUP_POLICY,
+} from '@pitchbox/shared/contact-dedup';
 import { notify } from '@pitchbox/shared/notifications';
 import { ok, fail } from '../lib/output.js';
 
@@ -47,8 +52,19 @@ export function registerDraftCommands(program: Command) {
       const parsed = Payload.safeParse(JSON.parse(body));
       if (!parsed.success) return fail('invalid payload', parsed.error.issues);
 
+      // Load dedup policy from app_config.dedup_policy. Defaults to a 90-day
+      // warn-only window when unset.
+      const [policyRow] = await db
+        .select()
+        .from(schema.appConfig)
+        .where(eq(schema.appConfig.key, 'dedup_policy'));
+      const dedupPolicy = policyRow
+        ? parseDedupPolicy(policyRow.value)
+        : { ...DEFAULT_DEDUP_POLICY };
+
       const skipped: Array<{ targetUser: string; reason: string | null }> = [];
-      const allowed: typeof parsed.data = [];
+      const dedupSkipped: Array<{ targetUser: string; priorContactedAt: string }> = [];
+      const allowed: Array<(typeof parsed.data)[number] & { dedupWarning?: string }> = [];
       for (const d of parsed.data) {
         if (d.targetUser) {
           const r = await isBlocklisted(db, {
@@ -58,6 +74,27 @@ export function registerDraftCommands(program: Command) {
           });
           if (r.blocked) {
             skipped.push({ targetUser: d.targetUser, reason: r.reason });
+            continue;
+          }
+          // Dedup check: warn or skip when the same target was contacted within
+          // the policy window on this platform.
+          const dedup = await checkContactDedup(db, {
+            platformId: campaign.platformId,
+            targetUser: d.targetUser,
+            windowDays: dedupPolicy.windowDays,
+          });
+          if (dedup.withinWindow && dedup.priorContactedAt) {
+            if (dedupPolicy.mode === 'skip') {
+              dedupSkipped.push({
+                targetUser: d.targetUser,
+                priorContactedAt: dedup.priorContactedAt.toISOString(),
+              });
+              continue;
+            }
+            allowed.push({
+              ...d,
+              dedupWarning: `Previously contacted on ${dedup.priorContactedAt.toISOString()} (within ${dedupPolicy.windowDays}d window).`,
+            });
             continue;
           }
         }
@@ -79,6 +116,7 @@ export function registerDraftCommands(program: Command) {
         reasoning: d.reasoning ?? null,
         sourceRef: d.sourceRef,
         metadata: d.subreddit ? { ...d.metadata, subreddit: d.subreddit } : d.metadata,
+        dedupWarning: d.dedupWarning ?? null,
       }));
 
       const inserted =
@@ -103,7 +141,7 @@ export function registerDraftCommands(program: Command) {
         });
       }
 
-      ok({ runId, inserted: inserted.length, skipped });
+      ok({ runId, inserted: inserted.length, skipped, dedupSkipped });
     });
 
   program

@@ -49,3 +49,16 @@ Each project accumulates an outreach history — drafts sent, replies recorded, 
 Insights are produced by the `project-insighter` playbook (see `playbooks.md`). The daemon's insights worker schedules one run per active project per day, skipping projects without recent activity or with a fresh insight already on file. Evidence is stored as JSON citing draft/message IDs so any claim can be audited back to the source.
 
 When a project has fewer than 5 drafts the playbook emits a "Not enough data yet" stub instead of fabricating patterns from thin air.
+
+## Contact deduplication
+
+Pitchbox tracks every successful outreach in `contact_history`. Before creating a draft, `pitchbox drafts:create` queries `shared/src/contact-dedup.ts` (`checkContactDedup`) against the same `(platform, target_user)` pair within a configurable window.
+
+Behaviour is governed by `app_config.dedup_policy`:
+
+```json
+{ "window_days": 90, "mode": "warn" }
+```
+
+- `warn` (default): the draft is still created but `drafts.dedup_warning` is set, and the inbox shows an amber `dedup` badge next to the target.
+- `skip`: the draft is not created at all, and the CLI returns it under `dedupSkipped` alongside blocklist skips.
