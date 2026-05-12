@@ -37,6 +37,10 @@ Whenever a run transitions to `failed`, Pitchbox classifies the failure into one
 
 The classifier order matters: `runner_missing` wins over `playbook_error` because an `ENOENT` will otherwise look like a generic stack trace. Order beyond that is stable and covered by `shared/tests/runlog/classify-failure.test.ts`.
 
+## Cost tracking
+
+Each `runs` row captures the runner's reported token usage and USD cost. For `claude-code`, the parser reads the `usage` block and optional `total_cost_usd` from the terminal `result` event and writes `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens`, and `cost_usd`. When the runner reports `total_cost_usd`, that value is trusted as-is; otherwise the cost is computed locally from the token columns using Claude Sonnet 4.6 list pricing (`$3 / $15` per 1M input/output, `$0.30 / $3.75` per 1M cache read/creation — see [`shared/src/runlog/usage.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/shared/src/runlog/usage.ts)). Aggregates surface on the Home page (24h / 7d spend) and in the per-run "Cost" column on the campaign detail page.
+
 ## Adding a runner
 
 1. Implement the `AgentRunner` interface in `shared/src/agents/<slug>.ts`.

@@ -19,6 +19,7 @@
     draftCount: number;
     durationMs: number | null;
     tokensUsed: number | null;
+    costUsd?: string | number | null;
     failureReason?: string | null;
   };
   type Props = { runs: Run[] };
@@ -100,6 +101,7 @@
             <Table.Head>Duration</Table.Head>
             <Table.Head>Drafts</Table.Head>
             <Table.Head>Tokens</Table.Head>
+            <Table.Head>Cost</Table.Head>
             <Table.Head class="w-8"></Table.Head>
           </Table.Row>
         </Table.Header>
@@ -158,6 +160,9 @@
               <Table.Cell class="text-xs text-muted-foreground py-3">
                 {run.tokensUsed != null ? run.tokensUsed.toLocaleString() : '—'}
               </Table.Cell>
+              <Table.Cell class="text-xs text-muted-foreground py-3 tabular-nums">
+                {run.costUsd != null ? `$${Number(run.costUsd).toFixed(2)}` : '—'}
+              </Table.Cell>
               <Table.Cell class="w-8 pl-0 py-3">
                 <span
                   class="flex items-center justify-center size-7 rounded text-muted-foreground"
@@ -170,7 +175,7 @@
 
             {#if expanded}
               <Table.Row class="hover:bg-transparent border-t-0">
-                <Table.Cell colspan={10} class="p-0 border-t border-border/50 max-w-0">
+                <Table.Cell colspan={11} class="p-0 border-t border-border/50 max-w-0">
                   <div
                     transition:slide={{ duration: 200 }}
                     class="bg-muted/10 px-6 py-3 min-w-0 overflow-hidden"

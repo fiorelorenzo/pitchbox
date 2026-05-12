@@ -1,6 +1,13 @@
 export type { EventKind, CliEnvelope, ParsedEvent, EventPayload } from './types.js';
 export { tryParseCliEnvelope, parseClaudeCodeLine } from './parsers/claude-code.js';
 export {
+  computeCostUsd,
+  extractRunUsage,
+  CLAUDE_SONNET_46_PRICING,
+  type RunUsage,
+  type RunnerPricing,
+} from './usage.js';
+export {
   classifyFailure,
   isRunFailureReason,
   RUN_FAILURE_REASONS,

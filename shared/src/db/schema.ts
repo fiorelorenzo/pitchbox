@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   index,
   customType,
+  numeric,
 } from 'drizzle-orm/pg-core';
 
 const bytea = customType<{ data: Buffer; default: false }>({
@@ -193,6 +194,16 @@ export const runs = pgTable(
     error: text('error'),
     stdoutLogPath: text('stdout_log_path'),
     tokensUsed: integer('tokens_used'),
+    // Per-run token usage breakdown captured from the runner's `usage` block.
+    // `tokensUsed` above remains the legacy aggregate (input+output) for back-compat;
+    // the columns below are the detailed split used for cost computation.
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    cacheReadTokens: integer('cache_read_tokens'),
+    cacheCreationTokens: integer('cache_creation_tokens'),
+    // USD cost reported by the runner when available, otherwise computed
+    // from the token columns above using the runner's price table.
+    costUsd: numeric('cost_usd', { precision: 10, scale: 4 }),
     playbookBody: text('playbook_body'),
     // Structured failure taxonomy; nullable for success/running rows. The set
     // of valid values is enforced in TypeScript (shared/src/runlog/classify-failure.ts)

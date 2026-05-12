@@ -224,9 +224,24 @@ async function dispatchRun(
         const finalStatus = current.status as 'success' | 'failed' | 'cancelled';
         // Backfill metadata that the CLI doesn't know (token count, stdout log path),
         // without disturbing the terminal status the playbook already committed to.
-        const patch: { tokensUsed?: number; stdoutLogPath?: string } = {};
+        const patch: {
+          tokensUsed?: number;
+          stdoutLogPath?: string;
+          inputTokens?: number;
+          outputTokens?: number;
+          cacheReadTokens?: number;
+          cacheCreationTokens?: number;
+          costUsd?: string;
+        } = {};
         if (current.tokensUsed == null && res.tokensUsed != null) patch.tokensUsed = res.tokensUsed;
         if (current.stdoutLogPath == null && res.logPath) patch.stdoutLogPath = res.logPath;
+        if (res.usage) {
+          patch.inputTokens = res.usage.inputTokens;
+          patch.outputTokens = res.usage.outputTokens;
+          patch.cacheReadTokens = res.usage.cacheReadTokens;
+          patch.cacheCreationTokens = res.usage.cacheCreationTokens;
+          patch.costUsd = res.usage.costUsd.toFixed(4);
+        }
         if (Object.keys(patch).length > 0) {
           await db.update(schema.runs).set(patch).where(eq(schema.runs.id, run.id));
         }
@@ -252,6 +267,11 @@ async function dispatchRun(
           finishedAt: new Date(),
           stdoutLogPath: res.logPath,
           tokensUsed: res.tokensUsed ?? null,
+          inputTokens: res.usage?.inputTokens ?? null,
+          outputTokens: res.usage?.outputTokens ?? null,
+          cacheReadTokens: res.usage?.cacheReadTokens ?? null,
+          cacheCreationTokens: res.usage?.cacheCreationTokens ?? null,
+          costUsd: res.usage ? res.usage.costUsd.toFixed(4) : null,
           failureReason,
         })
         .where(eq(schema.runs.id, run.id));

@@ -9,6 +9,7 @@
 		Sparkles,
 		TrendingUp,
 		AlertTriangle,
+		DollarSign,
 	} from 'lucide-svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
@@ -57,6 +58,7 @@
 			runStats7d: { total: number; success: number; failed: number; running: number };
 			recentRuns: Run[];
 			campaigns: Campaign[];
+			spend: { cost24h: number; cost7d: number };
 		};
 	} = $props();
 
@@ -139,6 +141,12 @@
 		value={data.runStats7d.failed}
 		icon={AlertTriangle}
 		hint="Last 7 days"
+	/>
+	<StatCard
+		label="Spend (24h / 7d)"
+		value={`$${data.spend.cost24h.toFixed(2)}`}
+		icon={DollarSign}
+		hint={`$${data.spend.cost7d.toFixed(2)} over the last 7 days`}
 	/>
 	<StatCard
 		label="Unique people contacted"

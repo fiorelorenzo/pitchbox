@@ -37,6 +37,7 @@
     "./runlog/parsers/claude-code": "./src/runlog/parsers/claude-code.ts",
     "./runlog/parsers/codex": "./src/runlog/parsers/codex.ts",
     "./runlog/parsers/opencode": "./src/runlog/parsers/opencode.ts",
+    "./runlog/usage": "./src/runlog/usage.ts",
     "./projects": "./src/projects/index.ts",
     "./scheduler/jitter": "./src/scheduler/jitter.ts",
     "./scheduler/backoff": "./src/scheduler/backoff.ts",
