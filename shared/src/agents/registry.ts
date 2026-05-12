@@ -1,4 +1,6 @@
 import { ClaudeCodeRunner } from './claude-code.js';
+import { CodexRunner } from './codex.js';
+import { OpenCodeRunner } from './opencode.js';
 import { CloudRunnerStub } from './cloud.js';
 import type { AgentRunner } from './base.js';
 import type { AgentRunnerSlug } from './meta.js';
@@ -8,14 +10,8 @@ export { AGENT_RUNNER_META, type AgentRunnerSlug, type AgentRunnerMeta } from '.
 
 export const AGENT_RUNNERS: Record<AgentRunnerSlug, (config?: RunnerConfig) => AgentRunner> = {
   'claude-code': (config) => new ClaudeCodeRunner({ config }),
-  codex: () => {
-    throw new Error('Codex runner not implemented yet — see shared/src/agents/codex.ts (future)');
-  },
-  opencode: () => {
-    throw new Error(
-      'OpenCode runner not implemented yet — see shared/src/agents/opencode.ts (future)',
-    );
-  },
+  codex: (config) => new CodexRunner({ config }),
+  opencode: (config) => new OpenCodeRunner({ config }),
   cloud: (config) => new CloudRunnerStub(config),
 };
 

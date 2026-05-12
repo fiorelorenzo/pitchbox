@@ -1,6 +1,16 @@
 # Agent runners
 
-Pitchbox's `AgentRunner` interface (`shared/src/agents/base.ts`) is the contract for any process that can execute a markdown playbook and stream events. Today only **claude-code** is implemented; `codex` and `opencode` exist as typed stubs.
+Pitchbox's `AgentRunner` interface (`shared/src/agents/base.ts`) is the contract for any process that can execute a markdown playbook and stream events. Today **claude-code**, **codex**, and **opencode** are implemented; **cloud** remains a stub.
+
+## CLI invocation
+
+| Runner      | Binary     | Invocation                                                   | Default model      |
+| ----------- | ---------- | ------------------------------------------------------------ | ------------------ |
+| claude-code | `claude`   | `claude -p <prompt> --output-format stream-json [--model M]` | CLI default        |
+| codex       | `codex`    | `codex exec --json <prompt> [--model M]`                     | `gpt-5-codex`      |
+| opencode    | `opencode` | `opencode run --json <prompt> [--model M]`                   | `opencode-default` |
+
+The `codex` and `opencode` flag shapes are best-effort assumptions based on the published CLIs and may drift across versions; the parsers (`shared/src/runlog/parsers/codex.ts`, `shared/src/runlog/parsers/opencode.ts`) accept several event shapes defensively and fall back to an `unknown` event so the run timeline always records the raw line.
 
 ## Detection
 
