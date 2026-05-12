@@ -269,19 +269,31 @@ export const drafts = pgTable(
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),
     byProject: index('drafts_project_idx').on(t.projectId),
+    byStateRun: index('drafts_state_run_idx').on(t.state, t.runId),
+    byStateRunCreated: index('drafts_state_campaign_created_idx').on(
+      t.state,
+      t.runId,
+      t.createdAt.desc(),
+    ),
   }),
 );
 
-export const draftEvents = pgTable('draft_events', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
-  draftId: integer('draft_id')
-    .notNull()
-    .references(() => drafts.id, { onDelete: 'cascade' }),
-  event: text('event').notNull(),
-  actor: text('actor').notNull(),
-  details: jsonb('details').notNull().default({}),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const draftEvents = pgTable(
+  'draft_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    draftId: integer('draft_id')
+      .notNull()
+      .references(() => drafts.id, { onDelete: 'cascade' }),
+    event: text('event').notNull(),
+    actor: text('actor').notNull(),
+    details: jsonb('details').notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byKindCreated: index('draft_events_kind_created_idx').on(t.event, t.createdAt),
+  }),
+);
 
 export const blocklist = pgTable('blocklist', {
   id: serial('id').primaryKey(),
@@ -314,6 +326,9 @@ export const contactHistory = pgTable(
   },
   (t) => ({
     byTarget: index('contact_history_target_idx').on(t.platformId, t.targetUser),
+    // Lookup used by dm-sync to attribute incoming Reddit DMs by
+    // (accountHandle, targetUser). Index name preserved from issue #44.
+    byAccountTarget: index('messages_account_target_idx').on(t.accountHandle, t.targetUser),
   }),
 );
 
@@ -342,6 +357,7 @@ export const runEvents = pgTable(
   },
   (t) => ({
     byRun: index('run_events_run_idx').on(t.runId, t.seq),
+    byKindCreated: index('run_events_kind_created_idx').on(t.kind, t.createdAt),
   }),
 );
 

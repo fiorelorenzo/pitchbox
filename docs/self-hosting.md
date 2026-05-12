@@ -47,3 +47,7 @@ When adding or upgrading any of the above, write the exact version (no `^`, no `
 ## Logs
 
 Stream logs land in `daemon/logs/run-*.log` (one per run). The `runs.stdout_log_path` column points at the matching file.
+
+## Performance: index audit
+
+Migration `0030_index_audit` adds composite indexes covering the hottest read paths: dm-sync `(account_handle, target_user)` lookups on `contact_history`, Inbox filters on `drafts(state, run_id, created_at DESC)`, and audit-feed scans on `draft_events(event, created_at)` / `run_events(kind, created_at)`. To benchmark against a realistic volume, run `tsx scripts/perf-seed.ts` against a throwaway DB — it inserts 100k rows into both `draft_events` and `run_events` and `ANALYZE`s the tables.
