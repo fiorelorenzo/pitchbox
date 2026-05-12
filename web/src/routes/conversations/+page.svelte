@@ -13,6 +13,7 @@
   import { cn } from '$lib/utils';
   import { replyUrl } from '$lib/utils/reply-url';
   import { getPresenter } from '$lib/platforms/presenter';
+  import { encodeThreadId } from './[id]/thread-id';
 
   type Convo = {
     contactId: number;
@@ -203,7 +204,12 @@
       </div>
     {:else}
       {#each filtered as c (c.contactId)}
-        {@const href = c.draftId != null ? `/inbox?state=all&focus=${c.draftId}` : null}
+        {@const threadId = encodeThreadId({
+          accountHandle: c.accountHandle,
+          targetUser: c.targetUser,
+          platform: c.platformSlug,
+        })}
+        {@const href = `/conversations/${threadId}`}
         {@const cp = getPresenter(c.platformSlug)}
         {@const subredditCtx =
           c.draftKind === 'post_comment' && typeof c.draftMetadata?.subreddit === 'string'
@@ -211,19 +217,18 @@
             : null}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
-          role={href ? 'button' : undefined}
-          tabindex={href ? 0 : undefined}
-          aria-label={href ? `Open draft ${c.draftId} for ${cp.userLabel(c.targetUser)}` : undefined}
-          onclick={() => href && goto(href)}
+          role="button"
+          tabindex={0}
+          aria-label={`Open conversation with ${cp.userLabel(c.targetUser)}`}
+          onclick={() => goto(href)}
           onkeydown={(e) => {
-            if (href && (e.key === 'Enter' || e.key === ' ')) {
+            if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               goto(href);
             }
           }}
           class={cn(
-            'group flex items-start gap-3 px-4 py-3 transition-colors',
-            href && 'cursor-pointer hover:bg-accent/40',
+            'group flex items-start gap-3 px-4 py-3 transition-colors cursor-pointer hover:bg-accent/40',
             c.repliedAt && 'border-l-2 border-l-violet-400/50',
           )}
         >
