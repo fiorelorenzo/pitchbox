@@ -7,6 +7,14 @@ function readIntEnv(key: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+function readFloatEnv(key: string, fallback: number, min = 0, max = 1): number {
+  const raw = process.env[key];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
 export const config = {
   /** How often the main loop fires. */
   tickIntervalMs: readIntEnv('PITCHBOX_DAEMON_TICK_MS', 30_000),
@@ -18,4 +26,9 @@ export const config = {
   webUrl: process.env.PITCHBOX_WEB_URL ?? 'http://127.0.0.1:5180',
   /** Skip reply-poller entirely when true. */
   repliesDisabled: process.env.PITCHBOX_REPLIES_DISABLED === '1',
+  /**
+   * Symmetric jitter applied to every loop's cadence, expressed as a fraction
+   * of the base interval. 0 disables jitter; 0.1 means ±10%. Clamped to [0, 1].
+   */
+  jitterPct: readFloatEnv('DAEMON_JITTER_PCT', 0.1),
 };

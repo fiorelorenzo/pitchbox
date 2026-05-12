@@ -16,3 +16,4 @@ A long-running Node process under `daemon/`. Start with `npm run -w daemon dev` 
 
 - The daemon doesn't need access to the agent runner CLI — it's just a scheduler that POSTs to the dashboard.
 - Setting `PITCHBOX_AUTH=on` does **not** affect daemon → web calls today (the daemon hits the local backend without auth). The roadmap for cloud-edition multi-tenancy will introduce service tokens; until then, run both processes on the same host.
+- Every loop's cadence is sprinkled with symmetric multiplicative jitter so concurrent loops (and multi-instance deployments) don't lock-step on the same tick. The jitter fraction is configurable via `DAEMON_JITTER_PCT` (default `0.1`, i.e. ±10%; clamped to `[0, 1]`, set to `0` to disable).
