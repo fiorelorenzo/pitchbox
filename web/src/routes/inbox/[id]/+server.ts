@@ -3,11 +3,12 @@ import { getDb, schema } from '$lib/server/db.js';
 import { eq } from 'drizzle-orm';
 import { emit } from '$lib/server/events.js';
 import { evaluateDraftSend } from '@pitchbox/shared/draft-send';
+import { updateDraftWithVersion } from '$lib/server/draft-state.js';
 
 const ALLOWED = ['approved', 'rejected', 'sent'] as const;
 type AllowedState = (typeof ALLOWED)[number];
 
-type PatchBody = { state?: string; sentContent?: string };
+type PatchBody = { state?: string; sentContent?: string; version?: number };
 
 export async function PATCH({ params, request }: { params: { id: string }; request: Request }) {
   const id = Number(params.id);
@@ -23,6 +24,12 @@ export async function PATCH({ params, request }: { params: { id: string }; reque
   const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, id));
   if (!draft) throw error(404, 'draft not found');
 
+  // Optimistic-locking: callers MAY pass the version they observed. When the
+  // client omits it we fall back to the row's current version so the dashboard
+  // (which doesn't surface the field yet) keeps working — but cross-tab races
+  // between two explicit versions still detect the conflict on the loser.
+  const expectedVersion = typeof body.version === 'number' ? body.version : draft.version;
+
   const now = new Date();
 
   if (newState === 'sent') {
@@ -34,15 +41,18 @@ export async function PATCH({ params, request }: { params: { id: string }; reque
     const edited = typeof body.sentContent === 'string' && body.sentContent.trim().length > 0;
     const sentContent = edited ? body.sentContent! : draft.body;
 
-    await db
-      .update(schema.drafts)
-      .set({
-        state: newState,
-        reviewedAt: draft.reviewedAt ?? now,
-        sentAt: now,
-        sentContent,
-      })
-      .where(eq(schema.drafts.id, id));
+    const res = await updateDraftWithVersion(id, expectedVersion, {
+      state: newState,
+      reviewedAt: draft.reviewedAt ?? now,
+      sentAt: now,
+      sentContent,
+    });
+    if (res.kind === 'conflict') {
+      return json(
+        { error: 'version_conflict', current_version: res.currentVersion },
+        { status: 409 },
+      );
+    }
 
     const details: Record<string, unknown> = {
       ...(edited && sentContent !== draft.body ? { edited: true } : {}),
@@ -70,10 +80,16 @@ export async function PATCH({ params, request }: { params: { id: string }; reque
       });
     }
   } else {
-    await db
-      .update(schema.drafts)
-      .set({ state: newState, reviewedAt: draft.reviewedAt ?? now })
-      .where(eq(schema.drafts.id, id));
+    const res = await updateDraftWithVersion(id, expectedVersion, {
+      state: newState,
+      reviewedAt: draft.reviewedAt ?? now,
+    });
+    if (res.kind === 'conflict') {
+      return json(
+        { error: 'version_conflict', current_version: res.currentVersion },
+        { status: 409 },
+      );
+    }
     await db.insert(schema.draftEvents).values({
       draftId: id,
       event: newState,

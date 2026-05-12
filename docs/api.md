@@ -68,6 +68,15 @@ attachment filename (e.g. `drafts-2026-05-12.csv`).
 
 See [`web/src/routes/api/`](https://github.com/fiorelorenzo/pitchbox/tree/development/web/src/routes/api) for the full surface — every route file is the source of truth.
 
+## Optimistic locking on draft state transitions
+
+Every state-changing draft endpoint (`PATCH /inbox/[id]`, `POST /api/extension/draft/[id]/sent`) reads the `drafts.version` column, bumps it inside the same `UPDATE … WHERE id = $1 AND version = $2`, and returns one of two outcomes:
+
+- **`200 OK`** — the update committed; the new row's `version` is the previous one plus one.
+- **`409 Conflict`** with body `{ "error": "version_conflict", "current_version": <int> }` — another writer beat us to it. Callers should re-fetch the draft (the `current_version` hint is purely advisory) and retry once with the fresh version.
+
+Clients MAY include `"version": <int>` in their request body to opt in to strict checking. When omitted, the server falls back to the row's current version — the contract is still safe under cross-tab races where at least one writer supplies an explicit version, and the extension auto-retries once after re-fetching `GET /api/extension/draft/[id]`.
+
 ## Live updates: `/api/stream`
 
 `GET /api/stream` is a Server-Sent Events endpoint the dashboard uses to refresh in real time after runs and draft changes.

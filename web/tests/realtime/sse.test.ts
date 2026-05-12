@@ -46,7 +46,9 @@ beforeEach(() => {
 
 describe('createSseManager', () => {
   it('connects, fires status live on first event, and dispatches to subscribers', () => {
-    const m = createSseManager({ EventSourceCtor: FakeEventSource as unknown as typeof EventSource });
+    const m = createSseManager({
+      EventSourceCtor: FakeEventSource as unknown as typeof EventSource,
+    });
     const got: unknown[] = [];
     const states: string[] = [];
     m.subscribeStatus((s) => states.push(s));
@@ -62,7 +64,9 @@ describe('createSseManager', () => {
   });
 
   it('reconnects with backoff after staleness', () => {
-    const m = createSseManager({ EventSourceCtor: FakeEventSource as unknown as typeof EventSource });
+    const m = createSseManager({
+      EventSourceCtor: FakeEventSource as unknown as typeof EventSource,
+    });
     m.on('hello', () => {});
     const first = FakeEventSource.instances[0];
     first.emit('hello');
@@ -80,14 +84,18 @@ describe('createSseManager', () => {
   });
 
   it('reconnects on EventSource error', () => {
-    const m = createSseManager({ EventSourceCtor: FakeEventSource as unknown as typeof EventSource });
+    const m = createSseManager({
+      EventSourceCtor: FakeEventSource as unknown as typeof EventSource,
+    });
     FakeEventSource.instances[0].triggerError();
     expect(m.getStatus()).toBe('reconnecting');
     m.close();
   });
 
   it('unsubscribe stops delivery for that handler', () => {
-    const m = createSseManager({ EventSourceCtor: FakeEventSource as unknown as typeof EventSource });
+    const m = createSseManager({
+      EventSourceCtor: FakeEventSource as unknown as typeof EventSource,
+    });
     let count = 0;
     const off = m.on('x', () => (count += 1));
     FakeEventSource.instances[0].emit('x');
@@ -99,7 +107,9 @@ describe('createSseManager', () => {
   });
 
   it('close transitions to closed and stops reconnecting', () => {
-    const m = createSseManager({ EventSourceCtor: FakeEventSource as unknown as typeof EventSource });
+    const m = createSseManager({
+      EventSourceCtor: FakeEventSource as unknown as typeof EventSource,
+    });
     m.close();
     expect(m.getStatus()).toBe('closed');
     vi.advanceTimersByTime(STALE_MS * 2);
