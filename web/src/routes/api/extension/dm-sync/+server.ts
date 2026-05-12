@@ -4,6 +4,7 @@ import { getDb, schema } from '$lib/server/db.js';
 import { requireExtensionAuth } from '$lib/server/extension-auth.js';
 import { emit } from '$lib/server/events.js';
 import { notify } from '@pitchbox/shared/notifications';
+import { enqueueReplyDraft } from '@pitchbox/shared/reply-drafter';
 import { matchIncomingDms, type ContactRow, type IncomingDm } from '@pitchbox/shared/dm-sync';
 import {
   matchIncomingCommentReplies,
@@ -293,6 +294,62 @@ export async function POST({ request }: { request: Request }) {
   }
   for (const ev of commentMatch.draftRepliedEvents) {
     emit('drafts:changed', { id: ev.draftId, state: 'replied' });
+  }
+
+  // Reply drafting (issue #49). For each draft we just flipped to `replied`,
+  // enqueue a continuation draft pointing at the newest inbound message.
+  // Failures are non-fatal — the original sync result must still return.
+  const insertedKeys = new Set<string>([
+    ...inserts.map((i) => `${i.platformId}:${i.platformMessageId}`),
+    ...commentMatch.messageInserts.map((m) => `${m.platformId}:${m.platformMessageId}`),
+  ]);
+  if (insertedKeys.size > 0) {
+    const newlyInsertedRows = await db
+      .select({
+        id: schema.messages.id,
+        draftId: schema.messages.draftId,
+        platformMessageId: schema.messages.platformMessageId,
+        platformId: schema.messages.platformId,
+        isFromUs: schema.messages.isFromUs,
+      })
+      .from(schema.messages)
+      .where(eq(schema.messages.platformId, platform.id));
+    for (const u of updates) {
+      if (u.draftId == null) continue;
+      const newest = newlyInsertedRows
+        .filter(
+          (m) =>
+            !m.isFromUs &&
+            m.draftId === u.draftId &&
+            insertedKeys.has(`${m.platformId}:${m.platformMessageId}`),
+        )
+        .sort((a, b) => b.id - a.id)[0];
+      if (!newest) continue;
+      try {
+        await enqueueReplyDraft(db, {
+          parentDraftId: u.draftId,
+          parentMessageId: newest.id,
+          replyKind: 'reply_dm',
+        });
+      } catch {
+        // swallow — non-fatal
+      }
+    }
+    for (const ev of commentMatch.draftRepliedEvents) {
+      const newest = newlyInsertedRows
+        .filter((m) => !m.isFromUs && m.draftId === ev.draftId)
+        .sort((a, b) => b.id - a.id)[0];
+      if (!newest) continue;
+      try {
+        await enqueueReplyDraft(db, {
+          parentDraftId: ev.draftId,
+          parentMessageId: newest.id,
+          replyKind: 'reply_comment',
+        });
+      } catch {
+        // swallow — non-fatal
+      }
+    }
   }
 
   const repliedCount =

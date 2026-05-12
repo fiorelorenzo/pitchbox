@@ -288,6 +288,13 @@
       "when": 1778558000000,
       "tag": "0041_drafts_variant_group",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1778559000000,
+      "tag": "0042_drafts_reply_drafting",
+      "breakpoints": true
     }
   ]
 }

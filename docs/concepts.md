@@ -101,3 +101,9 @@ V1 ships with a deterministic stub runner so the persistence path can be tested 
 A playbook may surface multiple alternative bodies for the same target by including a `variants: ["...", "..."]` array in each `drafts:create` entry (the primary `body` is variant A, each entry of `variants` becomes B, C, ...). The CLI persists every sibling with a shared `variant_group_id` and an alphabetical `variant_label`.
 
 Approving (or sending) one variant cascade-rejects every still-pending sibling in the same group through `shared/src/draft-variants.ts:cascadeRejectSiblings`, which appends a `rejected` draft_event with `details.reason = "variant_lost"` and the winning draft id. The inbox renders each variant with its label badge so reviewers can compare them side-by-side.
+
+## Reply drafting
+
+When the extension's dm-sync flips an outbound draft to `replied`, Pitchbox automatically enqueues a continuation draft via `shared/src/reply-drafter.ts:enqueueReplyDraft`. The new draft uses `kind = 'reply_dm'` (or `'reply_comment'`) and stores the inbound message's id on `drafts.parent_message_id` so the runner / reviewer can rebuild the full conversation history.
+
+V1 inserts a placeholder body and a `reply_drafting_enqueued` draft_event; a future iteration will spawn an agent runner with `playbooks/reply-drafter.md` to fill in the real body. The Conversations page surfaces the pending reply with Approve / Reject buttons.

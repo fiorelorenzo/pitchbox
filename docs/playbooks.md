@@ -68,3 +68,7 @@ Playbooks may emit multiple bodies for a single target by adding a `variants` ar
 ```
 
 Pitchbox materialises each body as a separate draft sharing a `variant_group_id` and an alphabetical label (`A`, `B`, `C`, …). Approving one variant flips the others to `rejected` with reason `variant_lost`.
+
+## reply-drafter (#49)
+
+`playbooks/reply-drafter.md` is invoked once per incoming reply that matches a previously-sent draft. It reads `$PITCHBOX_REPLY_DRAFT_ID` (a placeholder draft row already inserted by `enqueueReplyDraft`) and `$PITCHBOX_PARENT_MESSAGE_ID` (the inbound `messages` row), loads the full thread history, and rewrites the draft body with a single short continuation. It never sends.

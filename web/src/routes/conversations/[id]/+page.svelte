@@ -42,6 +42,13 @@
       platformContextUrl: string | null;
       chatRoomId: string | null;
     };
+    replyDraft: {
+      id: number;
+      kind: string;
+      body: string;
+      state: string;
+      parentMessageId: number | null;
+    } | null;
   };
 
   let { data }: { data: Data } = $props();
@@ -132,17 +139,64 @@
   </Card.Content>
 </Card.Root>
 
-<Card.Root size="sm" class="mt-4">
-  <Card.Content class="flex flex-col gap-2 p-4">
-    <Textarea
-      placeholder="Write a reply…"
-      rows={3}
-      disabled
-      class="resize-none bg-background"
-    />
-    <div class="flex items-center justify-between">
-      <span class="text-[11px] text-muted-foreground">Reply drafting coming soon</span>
-      <Button size="sm" disabled>Send</Button>
-    </div>
-  </Card.Content>
-</Card.Root>
+{#if data.replyDraft}
+  <Card.Root size="sm" class="mt-4 border-emerald-500/40">
+    <Card.Content class="flex flex-col gap-2 p-4">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-medium text-emerald-700 dark:text-emerald-300"
+          >Suggested reply (auto-drafted)</span
+        >
+        <StatusBadge domain="draft-kind" value={data.replyDraft.kind} />
+      </div>
+      <Textarea
+        value={data.replyDraft.body}
+        rows={4}
+        readonly
+        class="resize-none bg-background"
+      />
+      <div class="flex items-center justify-end gap-2">
+        <form method="POST" action="/inbox/{data.replyDraft.id}?_method=PATCH">
+          <Button
+            size="sm"
+            variant="outline"
+            onclick={async (e: MouseEvent) => {
+              e.preventDefault();
+              await fetch(`/inbox/${data.replyDraft!.id}`, {
+                method: 'PATCH',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ state: 'rejected' }),
+              });
+              location.reload();
+            }}>Reject</Button
+          >
+        </form>
+        <Button
+          size="sm"
+          onclick={async () => {
+            await fetch(`/inbox/${data.replyDraft!.id}`, {
+              method: 'PATCH',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ state: 'approved' }),
+            });
+            location.reload();
+          }}>Approve</Button
+        >
+      </div>
+    </Card.Content>
+  </Card.Root>
+{:else}
+  <Card.Root size="sm" class="mt-4">
+    <Card.Content class="flex flex-col gap-2 p-4">
+      <Textarea
+        placeholder="Write a reply…"
+        rows={3}
+        disabled
+        class="resize-none bg-background"
+      />
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] text-muted-foreground">No auto-drafted reply yet</span>
+        <Button size="sm" disabled>Send</Button>
+      </div>
+    </Card.Content>
+  </Card.Root>
+{/if}

@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { decodeThreadId } from './thread-id.js';
+import { loadPendingReplyDraft } from '@pitchbox/shared/reply-drafter';
 
 export async function load({ params }: { params: { id: string } }) {
   let key;
@@ -97,7 +98,19 @@ export async function load({ params }: { params: { id: string } }) {
     rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   }
 
+  // Reply drafting (issue #49): show the pending auto-drafted reply (if any)
+  // attached to one of this thread's inbound messages.
+  let replyDraft = null as Awaited<ReturnType<typeof loadPendingReplyDraft>> | null;
+  for (const cid of contactIds) {
+    const found = await loadPendingReplyDraft(db, cid);
+    if (found) {
+      replyDraft = found;
+      break;
+    }
+  }
+
   return {
+    replyDraft,
     thread: {
       id: params.id,
       accountHandle: key.accountHandle,

@@ -290,6 +290,11 @@ export const drafts = pgTable(
     // text (UUID-shaped) rather than uuid to keep migrations cheap.
     variantGroupId: text('variant_group_id'),
     variantLabel: text('variant_label'),
+    // Reply drafting (issue #49). When a draft is a continuation in an existing
+    // thread, `parent_message_id` points at the inbound `messages` row that
+    // triggered drafting. `drafts.kind` accepts 'reply_dm' / 'reply_comment'
+    // alongside the existing outbound kinds.
+    parentMessageId: bigint('parent_message_id', { mode: 'number' }),
   },
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),
