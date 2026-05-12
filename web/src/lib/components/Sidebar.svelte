@@ -20,6 +20,7 @@
 	import { VERSION } from '$lib/shared/version';
 	import { daemonStatus } from '$lib/stores/daemon';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import SseIndicator from '$lib/realtime/SseIndicator.svelte';
 	import type { ComponentType } from 'svelte';
 
 	type NavItem = {
@@ -146,6 +147,9 @@
 				{/if}
 			</span>
 			<span class="ml-auto font-mono opacity-50">{VERSION}</span>
+		</div>
+		<div class="px-3 pb-2">
+			<SseIndicator />
 		</div>
 	</div>
 </aside>
