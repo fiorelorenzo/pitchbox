@@ -45,7 +45,26 @@ POST /api/auth/logout
 # Extension (Bearer-token only)
 POST /api/extension/dm-sync                  # inbox + chat poll → match drafts
 POST /api/extension/draft/[id]/sent          # auto-flip a draft to sent
+
+# Export
+GET /api/export/[resource]?format=csv        # resource ∈ { drafts, contacts, conversations }
 ```
+
+### `GET /api/export/[resource]`
+
+Streams a UTF-8 CSV download (RFC 4180 quoting) for the given resource. The
+endpoint mirrors the filters used on the matching dashboard page so the export
+reflects exactly what the user sees.
+
+| Resource        | Honored query params                                                      | Columns                                                                                                     |
+| --------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `drafts`        | `state`, `kind`, `run`, `campaign`, `project`, `platform`                 | `id, created_at, state, platform, account_handle, target_user, target_subreddit, campaign_id, run_id, body` |
+| `contacts`      | `platform`, `q`                                                           | `id, platform, account_handle, target_user, first_contacted_at, last_contacted_at, outcome`                 |
+| `conversations` | `filter` (`all`/`replied`/`awaiting`), `kind` (`all`/`dm`/`post_comment`) | `thread_id, account_handle, target_user, kind, last_message_at, message_count`                              |
+
+The only supported `format` today is `csv`. Response headers set
+`Content-Type: text/csv; charset=utf-8` and a dated `Content-Disposition`
+attachment filename (e.g. `drafts-2026-05-12.csv`).
 
 See [`web/src/routes/api/`](https://github.com/fiorelorenzo/pitchbox/tree/development/web/src/routes/api) for the full surface — every route file is the source of truth.
 
