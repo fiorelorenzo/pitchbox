@@ -79,3 +79,19 @@ Both endpoints return `{ results: [{ id, status, reason? }] }` so the UI can sur
 ## Regenerating drafts with reviewer feedback
 
 The inbox detail panel offers a `Regenerate` action alongside Approve/Reject. The user can optionally supply a short hint (e.g. "shorter and warmer"); the API `POST /api/drafts/[id]/regenerate` invokes the shared helper which records the hint into `draft_regeneration_hints`, increments `drafts.regeneration_count`, and appends a `regenerated` draft_event. The same helper backs `pitchbox drafts:regenerate <id>` so CLI-triggered regenerations leave the same audit trail.
+
+## LLM-judge quality scoring
+
+New drafts can be scored 0-100 by an LLM judge invoked from `shared/src/quality-judge.ts`. The rubric and thresholds live in `app_config.quality_rubric`:
+
+```json
+{
+  "rubric_template": "Score the draft 0-100 on clarity, relevance, personalization, tone. Return JSON.",
+  "threshold_red": 40,
+  "threshold_green": 75
+}
+```
+
+The score, reason and judge model are persisted on `drafts.quality_score`, `drafts.quality_reason`, `drafts.quality_model`. The inbox renders a colour-coded `Q<score>` badge next to each draft (red `< threshold_red`, green `>= threshold_green`, amber in between) and exposes a `?minQuality=<n>` filter on the URL.
+
+V1 ships with a deterministic stub runner so the persistence path can be tested without an LLM round-trip; `pitchbox drafts:score <id>` runs the stub. A future iteration will swap in a real agent-runner invocation that consumes `rubric_template`.

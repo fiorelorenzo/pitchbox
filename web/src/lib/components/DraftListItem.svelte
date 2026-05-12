@@ -16,7 +16,17 @@
 		createdAt: string | Date | null;
 		project?: { id: number; slug: string; name: string };
 		dedupWarning?: string | null;
+		qualityScore?: number | null;
 	};
+
+	// Color band for the LLM-judge quality score (issue #41). Thresholds mirror
+	// the defaults in shared/src/quality-judge.ts (red <40, green >=75).
+	function qualityBand(score: number | null | undefined): 'red' | 'amber' | 'green' | null {
+		if (score == null) return null;
+		if (score < 40) return 'red';
+		if (score >= 75) return 'green';
+		return 'amber';
+	}
 
 	let {
 		draft,
@@ -31,6 +41,7 @@
 	} = $props();
 
 	const presenter = $derived(getPresenter(draft.platformSlug));
+	const band = $derived(qualityBand(draft.qualityScore));
 </script>
 
 <button
@@ -43,6 +54,21 @@
 	<div class="flex justify-between items-center gap-2">
 		<span class="font-medium text-sm truncate flex items-center gap-1.5">
 			{presenter.primaryLabel(draft)}
+			{#if band}
+				<span
+					class={cn(
+						'inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium',
+						band === 'red' && 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200',
+						band === 'amber' &&
+							'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
+						band === 'green' &&
+							'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
+					)}
+					title="Quality score (LLM judge)"
+				>
+					Q{draft.qualityScore}
+				</span>
+			{/if}
 			{#if draft.dedupWarning}
 				<span
 					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"

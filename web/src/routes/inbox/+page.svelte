@@ -37,6 +37,7 @@
 				kind: string;
 				targetUser: string | null;
 				fitScore: number | null;
+				qualityScore?: number | null;
 				state: string;
 				body: string;
 				composeUrl: string | null;

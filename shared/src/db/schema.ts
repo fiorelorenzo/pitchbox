@@ -279,6 +279,11 @@ export const drafts = pgTable(
     scheduledSendAfter: timestamp('scheduled_send_after', { withTimezone: true }),
     // Number of times the draft body has been regenerated via the runner.
     regenerationCount: integer('regeneration_count').notNull().default(0),
+    // LLM-judge quality scoring (issue #41). Score is 0-100; reason and model
+    // are recorded for audit. Nullable when scoring is disabled or pending.
+    qualityScore: smallint('quality_score'),
+    qualityReason: text('quality_reason'),
+    qualityModel: text('quality_model'),
   },
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),

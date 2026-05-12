@@ -1,5 +1,5 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { and, eq, desc, inArray, type SQL } from 'drizzle-orm';
+import { and, eq, desc, gte, inArray, type SQL } from 'drizzle-orm';
 import { getUsageForAccounts, loadQuotaLimits } from '@pitchbox/shared/quota';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
@@ -13,6 +13,11 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const campaign = url.searchParams.get('campaign');
   const projectSlug = url.searchParams.get('project') ?? '';
   const platformSlugFilter = url.searchParams.get('platform');
+  const minQualityRaw = url.searchParams.get('minQuality');
+  const minQuality =
+    minQualityRaw != null && minQualityRaw !== '' && Number.isFinite(Number(minQualityRaw))
+      ? Math.max(0, Math.min(100, Number(minQualityRaw)))
+      : null;
   const db = getDb();
 
   const orgId = await resolveOrgId(event);
@@ -51,6 +56,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   if (kind) filters.push(eq(schema.drafts.kind, kind));
   if (activeProject) filters.push(eq(schema.drafts.projectId, activeProject.id));
   if (activePlatform) filters.push(eq(schema.drafts.platformId, activePlatform.id));
+  if (minQuality != null) filters.push(gte(schema.drafts.qualityScore, minQuality));
 
   if (run) {
     filters.push(eq(schema.drafts.runId, Number(run)));
@@ -109,6 +115,8 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       sentContent: schema.drafts.sentContent,
       platformCommentId: schema.drafts.platformCommentId,
       dedupWarning: schema.drafts.dedupWarning,
+      qualityScore: schema.drafts.qualityScore,
+      qualityReason: schema.drafts.qualityReason,
       projectSlug: schema.projects.slug,
       projectName: schema.projects.name,
       platformSlug: schema.platforms.slug,

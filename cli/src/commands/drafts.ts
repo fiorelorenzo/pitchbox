@@ -4,6 +4,7 @@ import { getDb, schema } from '@pitchbox/shared/db';
 import { eq } from 'drizzle-orm';
 import { isBlocklisted } from '@pitchbox/shared/blocklist';
 import { regenerateDraft } from '@pitchbox/shared/draft-regenerate';
+import { scoreDraft } from '@pitchbox/shared/quality-judge';
 import {
   checkContactDedup,
   parseDedupPolicy,
@@ -164,6 +165,22 @@ export function registerDraftCommands(program: Command) {
         actor: 'cli',
       });
       ok(res);
+    });
+
+  program
+    .command('drafts:score')
+    .argument('<id>', 'draft id')
+    .description('Run the LLM-judge quality scorer against a draft (stub V1).')
+    .action(async (idArg: string) => {
+      const draftId = Number(idArg);
+      if (!Number.isInteger(draftId)) return fail('invalid draft id');
+      const db = getDb();
+      try {
+        const res = await scoreDraft(db, draftId);
+        ok(res);
+      } catch (err) {
+        return fail(String((err as Error).message ?? err));
+      }
     });
 
   program
