@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { emit } from '$lib/server/events.js';
 import { evaluateDraftSend } from '@pitchbox/shared/draft-send';
 import { updateDraftWithVersion } from '$lib/server/draft-state.js';
+import { cascadeRejectSiblings } from '@pitchbox/shared/draft-variants';
 
 const ALLOWED = ['approved', 'rejected', 'sent'] as const;
 type AllowedState = (typeof ALLOWED)[number];
@@ -99,6 +100,12 @@ export async function PATCH({ params, request }: { params: { id: string }; reque
       actor: 'user',
       details: {},
     });
+  }
+
+  // A/B variant cascade (issue #20): when the winner is approved or sent,
+  // reject every still-pending sibling in the same `variant_group_id`.
+  if ((newState === 'approved' || newState === 'sent') && draft.variantGroupId) {
+    await cascadeRejectSiblings(db, draft.variantGroupId, id, 'user');
   }
 
   emit('drafts:changed', { id, state: newState });

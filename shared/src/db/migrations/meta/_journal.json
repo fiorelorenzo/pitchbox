@@ -281,6 +281,13 @@
       "when": 1778557000000,
       "tag": "0040_drafts_quality_score",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1778558000000,
+      "tag": "0041_drafts_variant_group",
+      "breakpoints": true
     }
   ]
 }

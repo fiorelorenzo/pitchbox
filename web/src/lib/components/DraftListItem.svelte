@@ -17,6 +17,8 @@
 		project?: { id: number; slug: string; name: string };
 		dedupWarning?: string | null;
 		qualityScore?: number | null;
+		variantGroupId?: string | null;
+		variantLabel?: string | null;
 	};
 
 	// Color band for the LLM-judge quality score (issue #41). Thresholds mirror
@@ -54,6 +56,14 @@
 	<div class="flex justify-between items-center gap-2">
 		<span class="font-medium text-sm truncate flex items-center gap-1.5">
 			{presenter.primaryLabel(draft)}
+			{#if draft.variantLabel}
+				<span
+					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-200"
+					title="A/B variant {draft.variantLabel}"
+				>
+					{draft.variantLabel}
+				</span>
+			{/if}
 			{#if band}
 				<span
 					class={cn(

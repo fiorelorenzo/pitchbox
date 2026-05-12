@@ -284,6 +284,12 @@ export const drafts = pgTable(
     qualityScore: smallint('quality_score'),
     qualityReason: text('quality_reason'),
     qualityModel: text('quality_model'),
+    // A/B variant grouping (issue #20). Drafts sharing the same
+    // `variant_group_id` are sibling variants for the same target; approving
+    // one cascade-rejects the others with reason `variant_lost`. Stored as
+    // text (UUID-shaped) rather than uuid to keep migrations cheap.
+    variantGroupId: text('variant_group_id'),
+    variantLabel: text('variant_label'),
   },
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),
@@ -294,6 +300,7 @@ export const drafts = pgTable(
       t.runId,
       t.createdAt.desc(),
     ),
+    byVariantGroup: index('drafts_variant_group_idx').on(t.variantGroupId),
   }),
 );
 

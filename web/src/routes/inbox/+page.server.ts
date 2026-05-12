@@ -117,6 +117,8 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       dedupWarning: schema.drafts.dedupWarning,
       qualityScore: schema.drafts.qualityScore,
       qualityReason: schema.drafts.qualityReason,
+      variantGroupId: schema.drafts.variantGroupId,
+      variantLabel: schema.drafts.variantLabel,
       projectSlug: schema.projects.slug,
       projectName: schema.projects.name,
       platformSlug: schema.platforms.slug,

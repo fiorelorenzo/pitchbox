@@ -50,3 +50,21 @@ Reads a project's drafts, messages and recent runs, and emits a short Markdown s
 - **Gate:** if `draftCount < 5` the playbook emits a "Not enough data yet" stub instead of speculating.
 - **Cadence:** the daemon's insights worker schedules at most one run per active project per 24h (and only if the project saw draft/message activity in that window).
 - **Rendering:** the latest row is shown verbatim under **Projects → [project] → Insights** via the dashboard's Markdown component.
+
+## A/B variant drafts (#20)
+
+Playbooks may emit multiple bodies for a single target by adding a `variants` array to each `drafts:create` entry, alongside the primary `body`. Example payload:
+
+```json
+[
+  {
+    "accountId": 1,
+    "kind": "dm",
+    "targetUser": "bob",
+    "body": "Variant A body…",
+    "variants": ["Variant B body…", "Variant C body…"]
+  }
+]
+```
+
+Pitchbox materialises each body as a separate draft sharing a `variant_group_id` and an alphabetical label (`A`, `B`, `C`, …). Approving one variant flips the others to `rejected` with reason `variant_lost`.

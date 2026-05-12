@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { isBlocklisted } from '@pitchbox/shared/blocklist';
 import { regenerateDraft } from '@pitchbox/shared/draft-regenerate';
 import { scoreDraft } from '@pitchbox/shared/quality-judge';
+import { groupVariants } from '@pitchbox/shared/draft-variants';
 import {
   checkContactDedup,
   parseDedupPolicy,
@@ -25,6 +26,10 @@ const DraftInput = z.object({
   reasoning: z.string().optional(),
   sourceRef: z.record(z.unknown()).default({}),
   metadata: z.record(z.unknown()).default({}),
+  // Optional A/B variant bodies (issue #20). When provided, `body` is treated
+  // as the primary (variant A) and `variants` supplies B, C, ... Each entry
+  // produces a sibling draft sharing a `variant_group_id`.
+  variants: z.array(z.string().min(1)).optional(),
 });
 
 const Payload = z.array(DraftInput).min(1).max(200);
@@ -103,23 +108,53 @@ export function registerDraftCommands(program: Command) {
         allowed.push(d);
       }
 
-      const rows = allowed.map((d) => ({
-        runId,
-        projectId: campaign.projectId,
-        platformId: campaign.platformId,
-        accountId: d.accountId,
-        kind: d.kind,
-        state: 'pending_review' as const,
-        fitScore: d.fitScore ?? null,
-        targetUser: d.targetUser ?? null,
-        title: d.title ?? null,
-        body: d.body,
-        composeUrl: d.composeUrl ?? null,
-        reasoning: d.reasoning ?? null,
-        sourceRef: d.sourceRef,
-        metadata: d.subreddit ? { ...d.metadata, subreddit: d.subreddit } : d.metadata,
-        dedupWarning: d.dedupWarning ?? null,
-      }));
+      const rows = allowed.flatMap((d) => {
+        const baseMeta = d.subreddit ? { ...d.metadata, subreddit: d.subreddit } : d.metadata;
+        const variantBodies = d.variants && d.variants.length > 0 ? [d.body, ...d.variants] : null;
+        if (!variantBodies) {
+          return [
+            {
+              runId,
+              projectId: campaign.projectId,
+              platformId: campaign.platformId,
+              accountId: d.accountId,
+              kind: d.kind,
+              state: 'pending_review' as const,
+              fitScore: d.fitScore ?? null,
+              targetUser: d.targetUser ?? null,
+              title: d.title ?? null,
+              body: d.body,
+              composeUrl: d.composeUrl ?? null,
+              reasoning: d.reasoning ?? null,
+              sourceRef: d.sourceRef,
+              metadata: baseMeta,
+              dedupWarning: d.dedupWarning ?? null,
+              variantGroupId: null as string | null,
+              variantLabel: null as string | null,
+            },
+          ];
+        }
+        const grouped = groupVariants(variantBodies.map((b) => ({ body: b })));
+        return grouped.rows.map((r) => ({
+          runId,
+          projectId: campaign.projectId,
+          platformId: campaign.platformId,
+          accountId: d.accountId,
+          kind: d.kind,
+          state: 'pending_review' as const,
+          fitScore: d.fitScore ?? null,
+          targetUser: d.targetUser ?? null,
+          title: d.title ?? null,
+          body: r.body,
+          composeUrl: d.composeUrl ?? null,
+          reasoning: d.reasoning ?? null,
+          sourceRef: d.sourceRef,
+          metadata: baseMeta,
+          dedupWarning: d.dedupWarning ?? null,
+          variantGroupId: r.variantGroupId,
+          variantLabel: r.variantLabel,
+        }));
+      });
 
       const inserted =
         rows.length > 0

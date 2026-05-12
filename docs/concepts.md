@@ -95,3 +95,9 @@ New drafts can be scored 0-100 by an LLM judge invoked from `shared/src/quality-
 The score, reason and judge model are persisted on `drafts.quality_score`, `drafts.quality_reason`, `drafts.quality_model`. The inbox renders a colour-coded `Q<score>` badge next to each draft (red `< threshold_red`, green `>= threshold_green`, amber in between) and exposes a `?minQuality=<n>` filter on the URL.
 
 V1 ships with a deterministic stub runner so the persistence path can be tested without an LLM round-trip; `pitchbox drafts:score <id>` runs the stub. A future iteration will swap in a real agent-runner invocation that consumes `rubric_template`.
+
+## A/B variant drafts
+
+A playbook may surface multiple alternative bodies for the same target by including a `variants: ["...", "..."]` array in each `drafts:create` entry (the primary `body` is variant A, each entry of `variants` becomes B, C, ...). The CLI persists every sibling with a shared `variant_group_id` and an alphabetical `variant_label`.
+
+Approving (or sending) one variant cascade-rejects every still-pending sibling in the same group through `shared/src/draft-variants.ts:cascadeRejectSiblings`, which appends a `rejected` draft_event with `details.reason = "variant_lost"` and the winning draft id. The inbox renders each variant with its label badge so reviewers can compare them side-by-side.
