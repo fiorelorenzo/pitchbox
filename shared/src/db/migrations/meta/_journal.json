@@ -260,6 +260,13 @@
       "when": 1778554000000,
       "tag": "0037_drafts_body_edited",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1778555000000,
+      "tag": "0038_drafts_scheduled_send_after",
+      "breakpoints": true
     }
   ]
 }

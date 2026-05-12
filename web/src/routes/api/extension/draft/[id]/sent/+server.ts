@@ -37,6 +37,9 @@ export async function POST({ params, request }: { params: { id: string }; reques
   if (evald.kind === 'blocked') {
     throw error(409, `blocklisted: ${evald.reason ?? 'no reason'}`);
   }
+  if (evald.kind === 'scheduled') {
+    throw error(409, `scheduled_send_after:${evald.sendAfter.toISOString()}`);
+  }
 
   const edited = typeof body.sentContent === 'string' && body.sentContent.trim().length > 0;
   const sentContent = edited ? body.sentContent! : draft.body;

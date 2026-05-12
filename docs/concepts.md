@@ -66,3 +66,12 @@ Behaviour is governed by `app_config.dedup_policy`:
 ## Inline edit of draft body
 
 While a draft is in `pending_review` or `proposed`, reviewers can rewrite the body in-place from the inbox detail panel. The endpoint `PATCH /api/drafts/[id]` accepts `{ body }`, bumps the optimistic `version`, sets `drafts.body_edited = true`, and records a `body_edited` draft_event carrying the prior body for audit. Once the draft transitions out of those states the endpoint returns 409.
+
+## Bulk inbox actions
+
+The inbox toolbar exposes two bulk endpoints that operate on the current row selection:
+
+- `POST /api/drafts/bulk-approve` `{ ids: number[] }` flips eligible drafts to `approved`. Drafts already past review (or with a stale `version`) are returned as `{ status: 'skipped', reason }`.
+- `POST /api/drafts/bulk-reschedule` `{ ids, send_after }` sets `drafts.scheduled_send_after`. `evaluateDraftSend` treats a future `scheduled_send_after` as "not ready to send" so the quota path remains the single source of truth.
+
+Both endpoints return `{ results: [{ id, status, reason? }] }` so the UI can surface partial successes accurately.

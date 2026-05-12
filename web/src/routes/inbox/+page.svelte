@@ -199,20 +199,71 @@
 		bulkApproving = true;
 		try {
 			const ids = [...checkedIds];
-			let ok = 0;
-			let fail = 0;
-			await Promise.all(
-				ids.map((id) =>
-					patchDraft(id, { state: 'approved' })
-						.then(() => ok++)
-						.catch(() => fail++)
-				)
-			);
-			toast.success(`${ok} approved${fail > 0 ? `, ${fail} failed` : ''}`);
+			const res = await fetch('/api/drafts/bulk-approve', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ids }),
+			});
+			if (!res.ok) {
+				const msg = await res.text();
+				throw new Error(msg || `HTTP ${res.status}`);
+			}
+			const data = (await res.json()) as {
+				results: Array<{ id: number; status: 'ok' | 'skipped'; reason?: string }>;
+			};
+			const ok = data.results.filter((r) => r.status === 'ok').length;
+			const skipped = data.results.length - ok;
+			toast.success(`${ok} approved${skipped > 0 ? `, ${skipped} skipped` : ''}`);
 			checkedIds = new Set();
 			await invalidateAll();
+		} catch (e) {
+			toast.error('Bulk approve failed', { description: (e as Error).message });
 		} finally {
 			bulkApproving = false;
+		}
+	}
+
+	// Bulk reschedule state
+	let bulkRescheduling = $state(false);
+	let rescheduleDialogOpen = $state(false);
+	let rescheduleValue = $state('');
+
+	function openRescheduleDialog() {
+		// Default to 1 hour from now, formatted for <input type="datetime-local">.
+		const d = new Date(Date.now() + 60 * 60 * 1000);
+		const pad = (n: number) => String(n).padStart(2, '0');
+		rescheduleValue = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+		rescheduleDialogOpen = true;
+	}
+
+	async function bulkReschedule() {
+		if (!rescheduleValue) return;
+		bulkRescheduling = true;
+		try {
+			const ids = [...checkedIds];
+			const sendAfter = new Date(rescheduleValue).toISOString();
+			const res = await fetch('/api/drafts/bulk-reschedule', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ids, send_after: sendAfter }),
+			});
+			if (!res.ok) {
+				const msg = await res.text();
+				throw new Error(msg || `HTTP ${res.status}`);
+			}
+			const data = (await res.json()) as {
+				results: Array<{ id: number; status: 'ok' | 'skipped'; reason?: string }>;
+			};
+			const ok = data.results.filter((r) => r.status === 'ok').length;
+			const skipped = data.results.length - ok;
+			toast.success(`${ok} rescheduled${skipped > 0 ? `, ${skipped} skipped` : ''}`);
+			rescheduleDialogOpen = false;
+			checkedIds = new Set();
+			await invalidateAll();
+		} catch (e) {
+			toast.error('Bulk reschedule failed', { description: (e as Error).message });
+		} finally {
+			bulkRescheduling = false;
 		}
 	}
 
@@ -624,6 +675,7 @@
 		<Button size="sm" variant="destructive" loading={bulkRejecting} onclick={confirmAndReject}>
 			Reject all
 		</Button>
+		<Button size="sm" variant="outline" onclick={openRescheduleDialog}>Reschedule</Button>
 		<Button
 			size="sm"
 			variant="ghost"
@@ -635,6 +687,33 @@
 		</Button>
 	</div>
 {/if}
+
+<!-- Bulk reschedule dialog -->
+<AlertDialog.Root bind:open={rescheduleDialogOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Reschedule selected drafts</AlertDialog.Title>
+			<AlertDialog.Description>
+				Hold {checkedIds.size} draft{checkedIds.size === 1 ? '' : 's'} back from "ready to send" until the chosen time.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<div class="mt-2">
+			<label for="reschedule-input" class="text-xs text-muted-foreground">Send after</label>
+			<input
+				id="reschedule-input"
+				type="datetime-local"
+				bind:value={rescheduleValue}
+				class="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+			/>
+		</div>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={bulkReschedule} disabled={bulkRescheduling}>
+				{bulkRescheduling ? 'Saving…' : 'Reschedule'}
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
 
 <!-- Reject confirmation dialog -->
 <AlertDialog.Root bind:open={rejectConfirmOpen}>

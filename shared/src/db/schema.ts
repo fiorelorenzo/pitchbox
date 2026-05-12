@@ -274,6 +274,9 @@ export const drafts = pgTable(
     dedupWarning: text('dedup_warning'),
     // True once a reviewer has manually edited the draft body before approval.
     bodyEdited: boolean('body_edited').notNull().default(false),
+    // Optional scheduled send-after time: drafts are excluded from "ready to
+    // send" until this timestamp is in the past.
+    scheduledSendAfter: timestamp('scheduled_send_after', { withTimezone: true }),
   },
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),
