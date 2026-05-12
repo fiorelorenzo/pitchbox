@@ -56,6 +56,14 @@ The schema already carries `organizations` + `memberships`. On a fresh install a
 
 A `cloud` agent-runner adapter is already registered alongside `claude-code` / `codex` / `opencode`. In the OSS build it throws on instantiation with an actionable message; the real implementation ships from the private submodule.
 
+## Phase 2: tenant isolation, invites, members
+
+Phase 2 wires the multi-tenant model into the request pipeline:
+
+- **Org middleware.** `web/src/hooks.server.ts` resolves the caller's primary org from `memberships` and stashes it on `event.locals.org = { id, slug, role }`. Authenticated requests with no membership return **404** (not 403) for any route outside `/login`, `/api/auth/*`, `/invite/*`, `/api/orgs/*`, and static. Returning 404 avoids leaking the existence of orgs the user can't see.
+- **Scoped queries.** Server routes resolve `resolveOrgId(event)` and either filter directly (`projects.organization_id = $org`) or check via `projectBelongsToOrg` / `campaignBelongsToOrg` / `draftBelongsToOrg` from `@pitchbox/shared/orgs` before returning a row. The membership-aware helpers live in `shared/src/orgs.ts`.
+- **Invites.** See [orgs.md](./orgs.md). `POST /api/orgs/[slug]/invites` (admin only) mints a single-use token; the invitee follows `/invite/<token>` (login if necessary) and a membership is created.
+
 ## What's deferred
 
 Provider adapters beyond the local username/password flow (Google, magic-link, SSO), billing hooks, observability, and the per-org runner-quota layer are tracked as separate phases. Strict tenant scoping on every server route is in progress — today, scope is enforced where projects already mediate the query (most paths); a follow-up tightens the remaining edges.

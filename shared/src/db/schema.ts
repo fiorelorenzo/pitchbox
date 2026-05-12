@@ -59,6 +59,28 @@ export const memberships = pgTable(
   }),
 );
 
+export const orgInvites = pgTable(
+  'org_invites',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    token: text('token').notNull().unique(),
+    email: text('email'),
+    role: text('role').notNull().default('member'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    createdByUserId: integer('created_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (t) => ({
+    byOrg: index('org_invites_org_idx').on(t.organizationId),
+  }),
+);
+
 export const sessions = pgTable(
   'sessions',
   {

@@ -1,6 +1,6 @@
 import { getDb, schema } from '$lib/server/db.js';
 import { eq } from 'drizzle-orm';
-import { loadSession } from '@pitchbox/shared/auth';
+import { loadSession, loadOrganizationForUser } from '@pitchbox/shared/auth';
 
 /**
  * One-shot cleanup on server boot.
@@ -120,6 +120,26 @@ export const handle = async ({ event, resolve }) => {
       return new Response(null, { status: 302, headers: { location: `/login?next=${next}` } });
     }
     event.locals.user = { id: session.userId, username: session.username };
+
+    // Resolve active organization. Multi-tenant phase 2: every authenticated
+    // request must map to a membership. If the user has none, return 404 to
+    // avoid leaking the existence of unrelated orgs. The `/invite/*` and
+    // `/api/orgs/*/invites/*/accept` routes are exempt — a brand-new user
+    // accepting an invite has no membership yet.
+    const path = event.url.pathname;
+    const orgExempt = path.startsWith('/invite/') || path.startsWith('/api/orgs/');
+    const org = await loadOrganizationForUser(getDb(), session.userId);
+    if (org) {
+      event.locals.org = org;
+    } else if (!orgExempt) {
+      if (event.url.pathname.startsWith('/api/')) {
+        return new Response(JSON.stringify({ error: 'not_found' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('Not Found', { status: 404 });
+    }
   }
 
   const response = await resolve(event);

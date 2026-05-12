@@ -36,6 +36,7 @@
     "./extension-token": "./src/extension-token.ts",
     "./notifications": "./src/notifications.ts",
     "./auth": "./src/auth.ts",
+    "./orgs": "./src/orgs.ts",
     "./edition": "./src/edition.ts",
     "./retention": "./src/retention.ts",
     "./runlog": "./src/runlog/index.ts",
