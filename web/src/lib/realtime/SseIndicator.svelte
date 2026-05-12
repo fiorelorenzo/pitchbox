@@ -2,7 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { getSseManager, type SseStatus } from './sse';
 
-  let status: SseStatus = $state('connecting');
+  let status = $state<SseStatus>('connecting');
   let unsub: (() => void) | null = null;
 
   onMount(() => {

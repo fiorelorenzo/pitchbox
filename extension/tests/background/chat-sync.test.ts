@@ -14,6 +14,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
       },
     },
   },
+  action: {
+    setBadgeText: () => undefined,
+    setBadgeBackgroundColor: () => undefined,
+  },
 };
 
 beforeEach(() => {
@@ -79,14 +83,43 @@ describe('runChatSync', () => {
     expect(r).toEqual({ ok: false, reason: 'no-matrix-creds' });
   });
 
-  it('returns matrix-token-invalid on 401', async () => {
+  it('returns matrix-token-invalid on 401 from /whoami probe', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('', { status: 401 })),
     );
     const { runChatSync } = await importModule();
     const r = await runChatSync();
-    expect(r).toEqual({ ok: false, reason: 'matrix-token-invalid' });
+    expect(r).toMatchObject({
+      ok: false,
+      reason: 'matrix-token-invalid',
+      chatStatus: 'unauthorized',
+    });
+  });
+
+  it('exposes probeMatrixToken as a pure helper', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(JSON.stringify({ user_id: '@me:reddit.com' }), { status: 200 }),
+      ),
+    );
+    const { probeMatrixToken } = await importModule();
+    expect(await probeMatrixToken('tok')).toBe('ok');
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 403 })),
+    );
+    expect(await probeMatrixToken('tok')).toBe('unauthorized');
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('boom');
+      }),
+    );
+    expect(await probeMatrixToken('tok')).toBe('error');
   });
 
   it('extracts inbound + outbound DMs from a 2-person room and posts to backend', async () => {
@@ -103,7 +136,13 @@ describe('runChatSync', () => {
     });
 
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.includes('matrix.redditspace.com')) {
+      if (String(url).includes('/whoami')) {
+        return new Response(JSON.stringify({ user_id: ME }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (String(url).includes('matrix.redditspace.com')) {
         return new Response(JSON.stringify(sync), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -198,7 +237,7 @@ describe('runChatSync', () => {
 
     const { runChatSync } = await importModule();
     const r = await runChatSync();
-    expect(r).toEqual({ ok: true, inserted: 0, replied: 0 });
+    expect(r).toMatchObject({ ok: true, inserted: 0, replied: 0 });
     expect(
       (fetchMock.mock.calls as unknown as unknown[][]).find((c) =>
         String(c[0]).endsWith('/dm-sync'),
@@ -289,7 +328,11 @@ describe('runChatSync', () => {
     vi.stubGlobal('fetch', fetchMock);
     const { runChatSync } = await importModule();
     await runChatSync();
-    const url = String((fetchMock.mock.calls as unknown as unknown[][])[0][0]);
+    const syncCall = (fetchMock.mock.calls as unknown as unknown[][]).find(
+      (c) => String(c[0]).includes('/sync') && !String(c[0]).includes('/whoami'),
+    );
+    expect(syncCall).toBeTruthy();
+    const url = String(syncCall![0]);
     expect(url).toContain('since=s_prev_999');
     expect(url).not.toContain('full_state=true');
   });

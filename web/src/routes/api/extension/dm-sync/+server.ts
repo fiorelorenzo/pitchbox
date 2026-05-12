@@ -17,25 +17,75 @@ import {
 // so no over-quota logging happens here. If a future change starts writing
 // `sent_at` from this route, also wire `evaluateDraftSend` like the
 // /inbox/[id] and /api/extension/draft/[id]/sent routes do.
+type SyncChannelStatus = 'ok' | 'unauthorized' | 'error' | 'unknown';
+
+type IncomingStatus = {
+  chat?: SyncChannelStatus;
+  legacy?: SyncChannelStatus;
+  captured_at?: string;
+};
+
 type Body = {
   platform: string;
   items: IncomingDm[];
   comments?: IncomingCommentReply[];
+  status?: IncomingStatus;
 };
 
+const ALLOWED_STATUS: ReadonlySet<SyncChannelStatus> = new Set([
+  'ok',
+  'unauthorized',
+  'error',
+  'unknown',
+]);
+
+function normaliseChannel(value: unknown): SyncChannelStatus {
+  return typeof value === 'string' && ALLOWED_STATUS.has(value as SyncChannelStatus)
+    ? (value as SyncChannelStatus)
+    : 'unknown';
+}
+
+async function persistDeviceSyncStatus(
+  db: ReturnType<typeof getDb>,
+  deviceId: number,
+  status: IncomingStatus,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const captured =
+    typeof status.captured_at === 'string' && !Number.isNaN(Date.parse(status.captured_at))
+      ? status.captured_at
+      : now;
+  const payload = {
+    chat: normaliseChannel(status.chat),
+    legacy: normaliseChannel(status.legacy),
+    captured_at: captured,
+    updated_at: now,
+  };
+  await db
+    .update(schema.extensionDevices)
+    .set({ lastSyncStatus: payload })
+    .where(eq(schema.extensionDevices.id, deviceId));
+}
+
 export async function POST({ request }: { request: Request }) {
-  await requireExtensionAuth(request);
+  const auth = await requireExtensionAuth(request);
   const body = (await request.json().catch(() => null)) as Body | null;
   if (!body || !Array.isArray(body.items) || typeof body.platform !== 'string') {
     throw error(400, 'invalid body');
+  }
+
+  const db = getDb();
+
+  // Persist liveness payload before anything else so the dashboard banner
+  // reacts even when the sync had zero items.
+  if (auth.deviceId != null && body.status && typeof body.status === 'object') {
+    await persistDeviceSyncStatus(db, auth.deviceId, body.status);
   }
 
   const comments: IncomingCommentReply[] = Array.isArray(body.comments) ? body.comments : [];
   if (body.items.length === 0 && comments.length === 0) {
     return json({ ok: true, inserted: 0, replied: 0, commentsInserted: 0, commentsReplied: 0 });
   }
-
-  const db = getDb();
   const [platform] = await db
     .select()
     .from(schema.platforms)

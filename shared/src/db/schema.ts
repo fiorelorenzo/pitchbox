@@ -73,6 +73,23 @@ export const sessions = pgTable(
   }),
 );
 
+export const authFailures = pgTable(
+  'auth_failures',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    // Either the IP address or the submitted username — both buckets are
+    // tracked together so the rate-limit check can look them up identically.
+    identifier: text('identifier').notNull(),
+    failedAt: timestamp('failed_at', { withTimezone: true }).notNull().defaultNow(),
+    // 'login_attempt' for now; future kinds (e.g. extension pairing) can reuse
+    // the same table.
+    kind: text('kind').notNull().default('login_attempt'),
+  },
+  (t) => ({
+    byIdentifier: index('auth_failures_identifier_idx').on(t.identifier, t.failedAt),
+  }),
+);
+
 export const playbooks = pgTable('playbooks', {
   id: serial('id').primaryKey(),
   slug: text('slug').notNull().unique(),
@@ -325,11 +342,21 @@ export const extensionDevices = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    lastSyncStatus: jsonb('last_sync_status'),
   },
   (t) => ({
     byHash: uniqueIndex('extension_devices_token_hash_unique').on(t.tokenHash),
   }),
 );
+
+export type ExtensionSyncChannelStatus = 'ok' | 'unauthorized' | 'error' | 'unknown';
+
+export type ExtensionDeviceSyncStatus = {
+  chat: ExtensionSyncChannelStatus;
+  legacy: ExtensionSyncChannelStatus;
+  captured_at: string;
+  updated_at: string;
+};
 
 export const extensionPairings = pgTable('extension_pairings', {
   code: text('code').primaryKey(),

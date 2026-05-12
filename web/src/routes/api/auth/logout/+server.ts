@@ -1,5 +1,5 @@
 import { json, type Cookies } from '@sveltejs/kit';
-import { getDb } from '$lib/server/db.js';
+import { getDb } from '../../../../lib/server/db.js';
 import { deleteSession } from '@pitchbox/shared/auth';
 
 const COOKIE = 'pitchbox_session';

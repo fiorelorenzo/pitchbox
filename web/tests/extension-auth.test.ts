@@ -46,7 +46,7 @@ describe('extension auth', () => {
       .values({ label: 'test device', tokenHash: hashToken(token) })
       .returning();
 
-    await expect(requireExtensionAuth(authedRequest(token))).resolves.toBeUndefined();
+    await expect(requireExtensionAuth(authedRequest(token))).resolves.toEqual({ deviceId: row.id });
 
     const [fresh] = await getDb()
       .select({ lastSeenAt: schema.extensionDevices.lastSeenAt })
@@ -72,7 +72,7 @@ describe('extension auth', () => {
 
   it('falls back to the legacy shared app_config token', async () => {
     const token = await rotateExtensionToken();
-    await expect(requireExtensionAuth(authedRequest(token))).resolves.toBeUndefined();
+    await expect(requireExtensionAuth(authedRequest(token))).resolves.toEqual({ deviceId: null });
   });
 });
 

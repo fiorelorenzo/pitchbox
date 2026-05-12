@@ -1,3 +1,11 @@
+export type SyncChannelStatus = 'ok' | 'unauthorized' | 'error' | 'unknown';
+
+export type SyncStatus = {
+  chat: SyncChannelStatus;
+  legacy: SyncChannelStatus;
+  capturedAt: string;
+};
+
 export type Settings = {
   backendUrl: string;
   token: string;
@@ -9,6 +17,7 @@ export type Settings = {
   matrixSince?: string;
   matrixDisplayNames?: Record<string, string>;
   matrixRoomMembers?: Record<string, string[]>;
+  syncStatus?: SyncStatus;
 };
 
 const DEFAULTS: Partial<Settings> = { backendUrl: 'http://127.0.0.1:5180' };
@@ -24,6 +33,7 @@ const KEYS = [
   'matrixSince',
   'matrixDisplayNames',
   'matrixRoomMembers',
+  'syncStatus',
 ];
 
 export async function getSettings(): Promise<Partial<Settings>> {

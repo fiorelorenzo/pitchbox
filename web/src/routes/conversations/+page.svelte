@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import ChatSyncStalledBanner from '$lib/components/ChatSyncStalledBanner.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import * as Card from '$lib/components/ui/card';
@@ -34,7 +35,7 @@
     } | null;
   };
 
-  let { data }: { data: { conversations: Convo[] } } = $props();
+  let { data }: { data: { conversations: Convo[]; chatSyncUnauthorized?: boolean } } = $props();
 
   type Filter = 'all' | 'replied' | 'awaiting';
   let filter = $derived(($page.url.searchParams.get('filter') as Filter) ?? 'all');
@@ -110,6 +111,8 @@
   title="Conversations"
   description="Every outreach you've sent plus replies captured by the browser extension."
 />
+
+<ChatSyncStalledBanner show={!!data.chatSyncUnauthorized} />
 
 <div class="mb-4 flex flex-wrap items-center gap-2">
   {#each [{ key: 'all', label: 'All' }, { key: 'awaiting', label: 'Awaiting reply' }, { key: 'replied', label: 'Replied' }] as f (f.key)}

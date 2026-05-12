@@ -71,13 +71,29 @@ export const api = {
       commentLookup,
       platformPostId,
     }),
-  dmSync: (platform: string, items: unknown[], comments: unknown[] = []) =>
-    postJson<{
+  dmSync: async (
+    platform: string,
+    items: unknown[],
+    comments: unknown[] = [],
+    status?: {
+      chat: 'ok' | 'unauthorized' | 'error' | 'unknown';
+      legacy: 'ok' | 'unauthorized' | 'error' | 'unknown';
+      captured_at: string;
+    },
+  ) => {
+    const stored = !status ? (await getSettings()).syncStatus : null;
+    const payloadStatus =
+      status ??
+      (stored
+        ? { chat: stored.chat, legacy: stored.legacy, captured_at: stored.capturedAt }
+        : undefined);
+    return postJson<{
       ok: true;
       inserted: number;
       replied: number;
       commentsInserted?: number;
       commentsReplied?: number;
-    }>('/api/extension/dm-sync', { platform, items, comments }),
+    }>('/api/extension/dm-sync', { platform, items, comments, status: payloadStatus });
+  },
   dmSyncStatus: () => getJson<{ lastSyncAt: string | null }>('/api/extension/dm-sync/status'),
 };

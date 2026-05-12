@@ -54,7 +54,7 @@ export default defineManifest({
       run_at: 'document_idle',
     },
   ],
-  permissions: ['storage', 'alarms'],
+  permissions: ['storage', 'alarms', 'tabs'],
   host_permissions: [
     'https://www.reddit.com/*',
     'https://old.reddit.com/*',

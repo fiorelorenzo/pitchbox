@@ -162,6 +162,20 @@
       "when": 1778528000000,
       "tag": "0022_perf_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1778540000000,
+      "tag": "0023_auth_failures",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1778541000000,
+      "tag": "0024_extension_sync_status",
+      "breakpoints": true
     }
   ]
 }

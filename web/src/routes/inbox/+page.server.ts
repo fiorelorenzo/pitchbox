@@ -3,6 +3,7 @@ import { and, eq, desc, inArray, type SQL } from 'drizzle-orm';
 import { getUsageForAccounts, loadQuotaLimits } from '@pitchbox/shared/quota';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
+import { hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
 
 export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const { url } = event;
@@ -16,6 +17,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
 
   const orgId = await resolveOrgId(event);
   const projects = await listProjects(db, { organizationId: orgId });
+  const chatSyncUnauthorized = await hasChatUnauthorizedDevice();
   const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
   const projectsForUi = projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name }));
 
@@ -41,6 +43,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       activeProject,
       platforms: allPlatforms,
       activePlatform: null,
+      chatSyncUnauthorized,
     };
   }
 
@@ -71,6 +74,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
         activeProject,
         platforms: allPlatforms,
         activePlatform,
+        chatSyncUnauthorized,
       };
     }
     filters.push(
@@ -186,5 +190,6 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     activeProject,
     platforms: allPlatforms,
     activePlatform,
+    chatSyncUnauthorized,
   };
 }
