@@ -30,6 +30,8 @@ Pitchbox is designed to run on a single VPS or a beefy laptop. The architecture 
 
 `ENCRYPTION_KEY` is **not** in Postgres — keep it in `.env` or a secret store, and snapshot it alongside backups or you'll lose access to encrypted columns.
 
+The daemon prunes ageing event logs and terminal drafts on a configurable schedule — see [retention](./retention.md). Contact history is never pruned automatically.
+
 ## Upgrades
 
 `git pull && npm install && npm run migrate && npm run -w @pitchbox/shared seed:core`. The seed step refreshes built-in playbooks but leaves user-created rows alone.

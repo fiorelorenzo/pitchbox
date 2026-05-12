@@ -5,6 +5,7 @@ import { beat } from './heartbeat.js';
 import { tick as schedulerTick } from './scheduler.js';
 import { tick as replyPollerTick } from './reply-poller.js';
 import { tick as webhookSenderTick } from './webhook-sender.js';
+import { tick as retentionTick } from './retention.js';
 
 const log = logger('main');
 
@@ -70,6 +71,19 @@ async function main() {
       run: schedulerTick,
     },
   ];
+
+  loops.push({
+    name: 'retention',
+    intervalMs: config.retentionIntervalMs,
+    run: async () => {
+      const res = await retentionTick();
+      if (res.runEventsDeleted + res.draftEventsDeleted + res.draftsDeleted > 0) {
+        logger('retention').info(
+          `pruned run_events=${res.runEventsDeleted} draft_events=${res.draftEventsDeleted} drafts=${res.draftsDeleted}`,
+        );
+      }
+    },
+  });
 
   loops.push({
     name: 'webhook-sender',
