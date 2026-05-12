@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { invalidateAll, goto } from '$app/navigation';
 	import { navigating, page } from '$app/stores';
-	import { ChevronDown, X, Inbox, Keyboard } from 'lucide-svelte';
+	import { ChevronDown, X, Inbox, Keyboard, ArrowLeft, SlidersHorizontal } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -90,6 +90,11 @@
 	// Shortcuts dialog
 	let shortcutsOpen = $state(false);
 
+	// On < lg the list and detail share the same column; selecting a draft
+	// switches the visible pane. Larger viewports ignore this flag because
+	// both panes are always shown side-by-side.
+	let mobileDetailOpen = $state(false);
+
 	const KINDS = [
 		{ value: null, label: 'All' },
 		{ value: 'dm', label: 'DMs' },
@@ -147,6 +152,23 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify(body),
 		});
+		// TODO(#39): the dashboard currently does not surface the row's
+		// `version` in PATCH bodies, so the server falls back to the latest
+		// version and the optimistic-locking check only fires when two callers
+		// supply explicit versions (e.g. extension vs dashboard). Plumbing the
+		// version through the inbox state and reloading on 409 is left as a
+		// follow-up; for now we surface the server's error message via toast.
+		if (res.status === 409) {
+			let msg = 'Draft changed in another tab — reload and try again.';
+			try {
+				const j = (await res.json()) as { error?: string };
+				if (j.error && j.error !== 'version_conflict') msg = j.error;
+			} catch {
+				// ignore JSON parse errors and use the default message
+			}
+			await invalidateAll();
+			throw new Error(msg);
+		}
 		if (!res.ok) throw new Error(await res.text());
 	}
 
@@ -355,7 +377,7 @@
 	<Tabs.Root
 		value={data.state}
 		onValueChange={(v) => setState(v)}
-		class="w-auto"
+		class="w-auto max-w-full overflow-x-auto"
 	>
 		<Tabs.List>
 			{#each STATES as s (s.value)}
@@ -364,7 +386,66 @@
 		</Tabs.List>
 	</Tabs.Root>
 
-	<div class="flex items-center gap-2">
+	<!--
+	  On < md the secondary controls collapse into a <details> popover so the
+	  filter bar fits in one row on phones. On md+ they render inline as before.
+	  Using <details>/<summary> as a no-dep fallback keeps a11y + keyboard nav.
+	-->
+	<details class="md:hidden relative">
+		<summary
+			class="list-none inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border bg-background text-xs font-medium cursor-pointer hover:bg-accent/50 transition-colors [&::-webkit-details-marker]:hidden"
+		>
+			<SlidersHorizontal class="size-3.5" />
+			Filters
+		</summary>
+		<div
+			class="absolute right-0 mt-2 z-30 w-64 rounded-md border border-border bg-popover p-3 shadow-lg flex flex-col gap-2"
+		>
+			<SelectField
+				value={data.activeProject?.slug ?? ''}
+				onValueChange={(v) => navigate({ project: v || null })}
+				options={[
+					{ value: '', label: 'All projects' },
+					...data.projects.map((p) => ({ value: p.slug, label: p.name })),
+				]}
+				size="sm"
+				placeholder="All projects"
+				fullWidth
+			/>
+			{#if data.platforms.length > 1}
+				<SelectField
+					value={data.activePlatform?.slug ?? ''}
+					onValueChange={(v) => navigate({ platform: v || null })}
+					options={[
+						{ value: '', label: 'All platforms' },
+						...data.platforms.map((p) => ({ value: p.slug, label: p.slug })),
+					]}
+					size="sm"
+					placeholder="All platforms"
+					fullWidth
+				/>
+			{/if}
+			<SelectField
+				value={data.kind ?? ''}
+				onValueChange={(v) => setKind(v || null)}
+				options={KINDS.map((k) => ({ value: k.value ?? '', label: k.label }))}
+				size="sm"
+				placeholder="Kind"
+				fullWidth
+			/>
+			<Button
+				variant="ghost"
+				size="sm"
+				onclick={() => (shortcutsOpen = true)}
+				class="justify-start"
+			>
+				<Keyboard class="size-4" />
+				Shortcuts
+			</Button>
+		</div>
+	</details>
+
+	<div class="hidden md:flex items-center gap-2">
 		<SelectField
 			value={data.activeProject?.slug ?? ''}
 			onValueChange={(v) => navigate({ project: v || null })}
@@ -415,11 +496,32 @@
 		>
 			<Keyboard class="size-4" />
 		</Button>
+
+		<Button
+			variant="outline"
+			size="sm"
+			onclick={() => {
+				// Mirror the current page filters into the export URL.
+				const qs = new URLSearchParams($page.url.searchParams);
+				qs.set('format', 'csv');
+				window.location.href = `/api/export/drafts?${qs.toString()}`;
+			}}
+		>
+			Export CSV
+		</Button>
 	</div>
 </div>
 
-<Card.Root class="grid grid-cols-[360px_1fr] h-[calc(100vh-11rem)] overflow-hidden">
-	<aside class="border-r border-border overflow-auto relative">
+<Card.Root
+	class="grid grid-cols-1 lg:grid-cols-[360px_1fr] h-[calc(100vh-11rem)] min-h-[28rem] overflow-hidden"
+>
+	<aside
+		class={[
+			'border-b lg:border-b-0 lg:border-r border-border overflow-auto relative',
+			// On < lg, hide the list when a draft is opened on the small screen.
+			mobileDetailOpen ? 'hidden lg:block' : 'block',
+		].join(' ')}
+	>
 		{#if isNavigating}
 			<div class="p-3 space-y-2">
 				{#each Array(6) as _, i (i)}
@@ -474,14 +576,33 @@
 							{draft}
 							selected={isSelected}
 							runId={draft.runId}
-							onclick={() => (selectedId = draft.id)}
+							onclick={() => {
+								selectedId = draft.id;
+								mobileDetailOpen = true;
+							}}
 						/>
 					</div>
 				</div>
 			{/each}
 		{/if}
 	</aside>
-	<section class="p-4 overflow-auto">
+	<section
+		class={[
+			'p-4 overflow-auto',
+			// Inverse of the list: visible on small screens only when opened.
+			mobileDetailOpen ? 'block' : 'hidden lg:block',
+		].join(' ')}
+	>
+		<!-- Back button: only on < lg when a draft is open -->
+		<button
+			type="button"
+			onclick={() => (mobileDetailOpen = false)}
+			class="lg:hidden mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+			aria-label="Back to draft list"
+		>
+			<ArrowLeft class="size-4" />
+			Back to drafts
+		</button>
 		<DraftDetail
 			draft={selected}
 			usage={selected != null ? data.usage[selected.accountId] : undefined}

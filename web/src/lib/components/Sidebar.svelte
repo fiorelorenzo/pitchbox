@@ -69,7 +69,7 @@
 	});
 </script>
 
-<aside class="w-60 border-r border-border flex flex-col p-4">
+<aside class="w-60 h-full bg-background border-r border-border flex flex-col p-4 overflow-y-auto">
 	<!-- Brand -->
 	<div class="flex items-center gap-2 mb-6">
 		<img src="/favicon.svg" alt="" class="size-7 shrink-0" aria-hidden="true" />

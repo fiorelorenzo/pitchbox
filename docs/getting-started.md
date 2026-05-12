@@ -47,6 +47,8 @@ The first user you create via `/login` becomes the admin.
 
 The sidebar footer hosts a System/Light/Dark toggle. Your choice persists locally per browser; `System` follows the OS preference.
 
+The dashboard is responsive down to roughly 375 px wide: on tablet and phone widths the sidebar collapses behind a hamburger button at top-left, the Inbox stacks the draft list and detail panel vertically with a back button, and filters fold into a popover.
+
 ## Chrome extension
 
 Build and load `extension/dist/` unpacked. See [the extension page](/extension) for the token wiring.

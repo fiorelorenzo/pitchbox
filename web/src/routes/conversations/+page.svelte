@@ -7,6 +7,7 @@
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import * as Card from '$lib/components/ui/card';
   import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   import { Search, Inbox, MessageSquare } from 'lucide-svelte';
   import { relativeTime } from '$lib/utils/time';
   import { cn } from '$lib/utils';
@@ -139,7 +140,7 @@
     </button>
   {/each}
 
-  <div class="relative ml-auto w-64">
+  <div class="relative w-full sm:ml-auto sm:w-64">
     <Search
       class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
     />
@@ -149,6 +150,19 @@
       class="h-8 pl-8 text-xs"
     />
   </div>
+
+  <Button
+    variant="outline"
+    size="sm"
+    onclick={() => {
+      // Mirror the current conversations filters into the export URL.
+      const qs = new URLSearchParams($page.url.searchParams);
+      qs.set('format', 'csv');
+      window.location.href = `/api/export/conversations?${qs.toString()}`;
+    }}
+  >
+    Export CSV
+  </Button>
 </div>
 
 <div class="mb-4 flex flex-wrap items-center gap-2">
