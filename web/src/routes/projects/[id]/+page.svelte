@@ -4,17 +4,25 @@
   import ProjectOverviewTab from '$lib/components/projects/ProjectOverviewTab.svelte';
   import ProjectAccountsTab from '$lib/components/projects/ProjectAccountsTab.svelte';
   import ProjectTemplatesTab from '$lib/components/projects/ProjectTemplatesTab.svelte';
+  import ProjectInsightsTab from '$lib/components/projects/ProjectInsightsTab.svelte';
 
   let { data }: { data: PageData } = $props();
   const tabParam = page.url.searchParams.get('tab');
   const initialTab =
-    tabParam === 'accounts' ? 'accounts' : tabParam === 'templates' ? 'templates' : 'overview';
-  let tab = $state<'overview' | 'accounts' | 'templates'>(initialTab);
+    tabParam === 'accounts'
+      ? 'accounts'
+      : tabParam === 'templates'
+        ? 'templates'
+        : tabParam === 'insights'
+          ? 'insights'
+          : 'overview';
+  let tab = $state<'overview' | 'accounts' | 'templates' | 'insights'>(initialTab);
 
   const tabs = [
     { k: 'overview' as const, label: 'Overview' },
     { k: 'accounts' as const, label: 'Accounts' },
     { k: 'templates' as const, label: 'Templates' },
+    { k: 'insights' as const, label: 'Insights' },
   ];
 </script>
 
@@ -47,6 +55,8 @@
     accounts={data.accounts}
     platforms={data.platforms}
   />
-{:else}
+{:else if tab === 'templates'}
   <ProjectTemplatesTab projectId={data.project.id} templates={data.templates} />
+{:else}
+  <ProjectInsightsTab projectId={data.project.id} latestInsight={data.latestInsight} />
 {/if}

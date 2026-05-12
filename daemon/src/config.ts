@@ -26,6 +26,8 @@ export const config = {
   webhookSenderIntervalMs: readIntEnv('PITCHBOX_WEBHOOK_SENDER_MS', 30_000),
   /** How often the retention worker prunes ageing rows. */
   retentionIntervalMs: readIntEnv('PITCHBOX_RETENTION_MS', 60 * 60_000),
+  /** How often the keyword watcher polls subreddits for matching posts. */
+  keywordWatcherIntervalMs: readIntEnv('PITCHBOX_KEYWORD_WATCHER_MS', 5 * 60_000),
   /** Base URL of the web server. We POST scheduled run starts here. */
   webUrl: process.env.PITCHBOX_WEB_URL ?? 'http://127.0.0.1:5180',
   /** Skip reply-poller entirely when true. */

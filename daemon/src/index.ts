@@ -6,6 +6,7 @@ import { tick as schedulerTick } from './scheduler.js';
 import { tick as replyPollerTick } from './reply-poller.js';
 import { tick as webhookSenderTick } from './webhook-sender.js';
 import { tick as retentionTick } from './retention.js';
+import { tick as keywordWatcherTick } from './keyword-watcher.js';
 
 const log = logger('main');
 
@@ -80,6 +81,19 @@ async function main() {
       if (res.runEventsDeleted + res.draftEventsDeleted + res.draftsDeleted > 0) {
         logger('retention').info(
           `pruned run_events=${res.runEventsDeleted} draft_events=${res.draftEventsDeleted} drafts=${res.draftsDeleted}`,
+        );
+      }
+    },
+  });
+
+  loops.push({
+    name: 'keyword-watcher',
+    intervalMs: config.keywordWatcherIntervalMs,
+    run: async () => {
+      const res = await keywordWatcherTick();
+      if (res.checked > 0) {
+        logger('keyword-watcher').info(
+          `checked ${res.checked} watches → ${res.dispatched} dispatched`,
         );
       }
     },

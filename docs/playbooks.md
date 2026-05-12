@@ -40,3 +40,13 @@ The legacy **Profile → Regenerate** dialog still runs in `apply` mode (auto-wr
 `pitchbox run:start` includes a `templates` array in its output containing every **active** template for the campaign's project, filtered by an inferred kind (e.g. `reddit-commenter` and `reddit-scout` request `kind = 'comment'`). Each entry has `{ id, kind, title, body }`. Playbooks can quote these in prompts to ground drafts in the project's voice; if no templates exist, the array is empty and the playbook should fall back to whatever defaults it ships.
 
 Manage templates under **Projects → [project] → Templates** in the dashboard, or via `POST /api/projects/:id/templates` and `PATCH /api/projects/:id/templates/:templateId`.
+
+## project-insighter
+
+Reads a project's drafts, messages and recent runs, and emits a short Markdown summary citing draft/message IDs as evidence.
+
+- **CLI inputs:** `pitchbox project:insights:context --project <id>` returns project name, draft/reply counts, sampled drafts and messages.
+- **CLI output:** the playbook writes a single JSON line `{summaryMd, evidence}` and pipes it into `pitchbox project:insights --project <id>`, which inserts one row into `project_insights`.
+- **Gate:** if `draftCount < 5` the playbook emits a "Not enough data yet" stub instead of speculating.
+- **Cadence:** the daemon's insights worker schedules at most one run per active project per 24h (and only if the project saw draft/message activity in that window).
+- **Rendering:** the latest row is shown verbatim under **Projects → [project] → Insights** via the dashboard's Markdown component.

@@ -41,3 +41,11 @@ Pitchbox ships with a tiny hand-rolled i18n module at `web/src/lib/i18n/`. Engli
 Each project owns a list of **templates** — short, agent-facing examples that anchor the voice of generated drafts. A template has a `kind` (`dm`, `comment`, or `post`), a human-friendly `title`, a `body`, and an `isActive` flag for archiving without deletion. Manage them from **Projects → [project] → Templates**.
 
 Active templates are loaded by `pitchbox run:start` and surfaced to the playbook under a `templates` key, so the agent can quote them verbatim or paraphrase tone-of-voice. Archived templates are excluded. Campaign-level overrides are reserved for a future release; today templates are project-wide.
+
+## Project insights
+
+Each project accumulates an outreach history — drafts sent, replies recorded, runs executed. **Project insights** ask an LLM to read that history once a day and write a short Markdown brief: which subreddits convert, which opening lines correlate with replies, what to stop doing. The brief lives in the `project_insights` table; the dashboard's **Projects → [project] → Insights** tab renders the latest row, with a **Regenerate now** button for ad-hoc refresh.
+
+Insights are produced by the `project-insighter` playbook (see `playbooks.md`). The daemon's insights worker schedules one run per active project per day, skipping projects without recent activity or with a fresh insight already on file. Evidence is stored as JSON citing draft/message IDs so any claim can be audited back to the source.
+
+When a project has fewer than 5 drafts the playbook emits a "Not enough data yet" stub instead of fabricating patterns from thin air.
