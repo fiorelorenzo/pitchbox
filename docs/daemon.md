@@ -22,6 +22,14 @@ npx vitest run daemon/
 
 The full `npm test` picks them up automatically — no extra wiring needed.
 
+## Backoff and circuit breaker
+
+When a scheduled dispatch fails (the web `/api/run` call returns non-2xx or throws), the scheduler increments `campaigns.failure_attempts` and stamps `campaigns.next_attempt_after` with `now + computeBackoff(failure_attempts)`. The backoff helper lives in [`shared/src/scheduler/backoff.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/shared/src/scheduler/backoff.ts) and follows the schedule `60s → 2m → 4m → 8m → … → 1h cap` (factor 2, max 1 hour).
+
+While `next_attempt_after` is in the future the campaign is skipped on every tick — `next_attempt_after` takes precedence over the cron tick. On the first successful dispatch after a failure streak, `failure_attempts` resets to 0 and `next_attempt_after` is cleared, so the campaign returns to its normal cron cadence immediately.
+
+After **10 consecutive failures** the circuit breaker trips: `paused_due_to_failures` is set to `true`, the scheduler stops considering the campaign on subsequent ticks, and a `campaign.paused` notification is emitted (visible in the dashboard's notification panel and forwarded to any configured webhook). Resuming requires an operator to clear `paused_due_to_failures` once the underlying issue is fixed.
+
 ## Operating notes
 
 - The daemon doesn't need access to the agent runner CLI — it's just a scheduler that POSTs to the dashboard.

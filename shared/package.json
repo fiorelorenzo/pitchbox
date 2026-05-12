@@ -39,6 +39,7 @@
     "./runlog/parsers/opencode": "./src/runlog/parsers/opencode.ts",
     "./projects": "./src/projects/index.ts",
     "./scheduler/jitter": "./src/scheduler/jitter.ts",
+    "./scheduler/backoff": "./src/scheduler/backoff.ts",
     "./project-extraction": "./src/project-extraction/index.ts"
   },
   "scripts": {

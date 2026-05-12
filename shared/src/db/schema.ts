@@ -150,6 +150,14 @@ export const campaigns = pgTable('campaigns', {
   lastRunAt: timestamp('last_run_at', { withTimezone: true }),
   nextRunAt: timestamp('next_run_at', { withTimezone: true }),
   consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+  // Exponential-backoff state for the daemon scheduler. `failureAttempts`
+  // counts consecutive dispatch failures (reset to 0 on success), and
+  // `nextAttemptAfter` overrides the cron tick whenever the campaign is in
+  // backoff. After 10 consecutive failures the campaign is paused via
+  // `pausedDueToFailures` and a `campaign.paused` notification is emitted.
+  failureAttempts: integer('failure_attempts').notNull().default(0),
+  nextAttemptAfter: timestamp('next_attempt_after', { withTimezone: true }),
+  pausedDueToFailures: boolean('paused_due_to_failures').notNull().default(false),
 });
 
 export const campaignRecommendations = pgTable(
