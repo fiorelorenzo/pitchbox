@@ -554,6 +554,7 @@ export async function runCampaignSkillGeneration(
   scenario: 'reddit-scout' | 'reddit-commenter',
   objective: string,
   trigger: string = 'manual',
+  mode: 'apply' | 'preview' = 'apply',
 ): Promise<{ runId: number; alreadyRunning?: boolean }> {
   const db = getDb();
   const [campaign] = await db
@@ -583,7 +584,7 @@ export async function runCampaignSkillGeneration(
       agentRunner: campaign.agentRunner,
       trigger,
       status: 'running',
-      params: { scenario, objective },
+      params: { scenario, objective, mode },
     })
     .returning();
 

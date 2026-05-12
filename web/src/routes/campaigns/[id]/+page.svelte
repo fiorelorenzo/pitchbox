@@ -10,6 +10,7 @@
 	import Seo from '$lib/components/Seo.svelte';
 	import CampaignProfileTab from '$lib/components/campaigns/CampaignProfileTab.svelte';
 	import CampaignRunsTab from '$lib/components/campaigns/CampaignRunsTab.svelte';
+	import CampaignTuningTab from '$lib/components/campaigns/CampaignTuningTab.svelte';
 	import RegenerateProfileDialog from '$lib/components/campaigns/RegenerateProfileDialog.svelte';
 	import type { ScenarioSlug } from '@pitchbox/shared/campaigns';
 
@@ -52,17 +53,25 @@
 				failureReason?: string | null;
 			}>;
 			skillRuns: SkillRun[];
+			tuningRuns: Array<{
+				id: number;
+				status: string;
+				startedAt: string | Date;
+				finishedAt: string | Date | null;
+				params: Record<string, unknown> | null;
+			}>;
 			readiness: { ready: boolean; issues: ReadinessIssue[] };
 		};
 	} = $props();
 
 	let isStarting = $state(false);
-	let tab = $state<'overview' | 'profile' | 'runs'>('overview');
+	let tab = $state<'overview' | 'profile' | 'tuning' | 'runs'>('overview');
 	let regenOpen = $state(false);
 
 	const tabs = [
 		{ k: 'overview' as const, label: 'Overview' },
 		{ k: 'profile' as const, label: 'Profile' },
+		{ k: 'tuning' as const, label: 'Tuning' },
 		{ k: 'runs' as const, label: 'Runs' },
 	];
 
@@ -305,6 +314,8 @@
 		initialConfig={data.campaign.config ?? {}}
 		skillRuns={data.skillRuns}
 	/>
+{:else if tab === 'tuning'}
+	<CampaignTuningTab campaignId={data.campaign.id} tuningRuns={data.tuningRuns} />
 {:else}
 	<CampaignRunsTab runs={data.runs} />
 {/if}

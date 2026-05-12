@@ -101,16 +101,40 @@ export function registerSkillCommands(program: Command) {
         return fail(`profile failed validation: ${issues}`);
       }
 
+      // Preview mode: stash the generated profile + previous config on the run
+      // (params.generatedConfig / params.previousConfig) and let the user
+      // adopt/discard it from the UI. Apply mode (default) writes it straight
+      // into campaigns.config — preserves the legacy behaviour used by the
+      // "Regenerate profile" dialog.
+      const mode = (run.params as { mode?: string } | null)?.mode ?? 'apply';
       await db.transaction(async (tx) => {
-        const nextStatus = campaign.status === 'draft' ? 'active' : campaign.status;
-        await tx
-          .update(schema.campaigns)
-          .set({ config: result.data, status: nextStatus })
-          .where(eq(schema.campaigns.id, run.campaignId!));
-        await tx
-          .update(schema.runs)
-          .set({ status: 'success', finishedAt: new Date() })
-          .where(eq(schema.runs.id, runId));
+        if (mode === 'preview') {
+          const nextParams = {
+            ...(run.params as Record<string, unknown> | null),
+            generatedConfig: result.data,
+            previousConfig: campaign.config ?? null,
+          };
+          await tx
+            .update(schema.runs)
+            .set({ status: 'success', finishedAt: new Date(), params: nextParams })
+            .where(eq(schema.runs.id, runId));
+        } else {
+          const nextStatus = campaign.status === 'draft' ? 'active' : campaign.status;
+          await tx
+            .update(schema.campaigns)
+            .set({ config: result.data, status: nextStatus })
+            .where(eq(schema.campaigns.id, run.campaignId!));
+          const nextParams = {
+            ...(run.params as Record<string, unknown> | null),
+            generatedConfig: result.data,
+            previousConfig: campaign.config ?? null,
+            adopted: true,
+          };
+          await tx
+            .update(schema.runs)
+            .set({ status: 'success', finishedAt: new Date(), params: nextParams })
+            .where(eq(schema.runs.id, runId));
+        }
       });
 
       ok({ runId, campaignId: run.campaignId, status: 'success' });

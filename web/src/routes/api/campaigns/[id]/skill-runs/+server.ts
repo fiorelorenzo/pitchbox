@@ -4,7 +4,10 @@ import { and, desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { runCampaignSkillGeneration } from '$lib/server/runner.js';
 
-const PostBody = z.object({ objective: z.string().min(1).max(2000) });
+const PostBody = z.object({
+  objective: z.string().min(1).max(2000),
+  mode: z.enum(['apply', 'preview']).default('apply'),
+});
 
 function parseId(idParam: string): number | null {
   const n = Number(idParam);
@@ -28,6 +31,8 @@ export async function POST({ params, request }) {
       id,
       campaign.skillSlug as 'reddit-scout' | 'reddit-commenter',
       parsed.data.objective,
+      'manual',
+      parsed.data.mode,
     );
     if (out.alreadyRunning) {
       return json({ error: 'already_running', runId: out.runId }, { status: 409 });

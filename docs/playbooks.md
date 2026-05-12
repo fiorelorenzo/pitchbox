@@ -19,3 +19,18 @@ Playbooks shell out to the `pitchbox` CLI (`bin/pitchbox`) for all DB reads/writ
 - `pitchbox run:start --campaign <id>` — bootstrap a run and surface campaign / accounts / blocklist context.
 - `pitchbox drafts:create --run <id>` — bulk-insert drafts from JSON on stdin.
 - `pitchbox run:finish --run <id> --status success | failed` — commit terminal state.
+
+## Tuning a campaign (campaign-skill-generator)
+
+Each campaign exposes a **Tuning** tab that runs the `campaign-skill-generator` playbook in **preview** mode. The agent drafts a fresh JSON profile (matching the scenario schema) but does NOT touch `campaigns.config`. Instead, both the previous config and the freshly generated config are stashed on the run row (`runs.params.previousConfig` and `runs.params.generatedConfig`).
+
+Workflow:
+
+1. Open the campaign, switch to **Tuning**, describe the change in natural language ("tighten the tone, add r/foo, drop the disclosure line"), and click **Tune this campaign**.
+2. The dashboard subscribes to the `run:finished` SSE event. When the run completes, the UI renders a unified line diff (red = removed, green = added) between `previousConfig` and `generatedConfig`.
+3. Review the diff and either:
+   - **Adopt** → `POST /api/campaigns/:id/skill-runs/:runId/adopt` copies `generatedConfig` into `campaigns.config`, flips a `draft` campaign to `active`, and marks the run `params.adopted = true`.
+   - **Discard** → `POST /api/campaigns/:id/skill-runs/:runId/discard` leaves `campaigns.config` untouched and marks the run `params.discarded = true` for audit.
+4. Past tuning runs (up to the last 20) are listed in the same tab with timestamp, status, and adopted/discarded badge — a "View diff" button restores the diff view for any historical run that still has a `generatedConfig`.
+
+The legacy **Profile → Regenerate** dialog still runs in `apply` mode (auto-writes the new profile) for parity with prior releases; the Tuning tab is the recommended surface for human-in-the-loop tuning.
