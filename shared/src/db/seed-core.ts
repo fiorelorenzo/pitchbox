@@ -29,6 +29,11 @@ const BUILTIN_PLAYBOOKS = [
     name: 'Reddit poster',
     description: 'Draft proactive top-level posts (title + body) for target subreddits.',
   },
+  {
+    slug: 'hn-commenter',
+    name: 'Hacker News commenter',
+    description: 'Draft helpful comment-replies on Hacker News stories that match the project.',
+  },
 ];
 
 function repoRoot(): string {
@@ -51,6 +56,10 @@ function readPlaybookBody(slug: string): string | null {
 export async function seedCore() {
   const db = getDb();
   await db.insert(schema.platforms).values({ slug: 'reddit', enabled: true }).onConflictDoNothing();
+  await db
+    .insert(schema.platforms)
+    .values({ slug: 'hackernews', enabled: true })
+    .onConflictDoNothing();
   await db
     .insert(schema.organizations)
     .values({ slug: 'default', name: 'Default' })
