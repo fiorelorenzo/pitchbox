@@ -40,6 +40,7 @@
     "./projects": "./src/projects/index.ts",
     "./scheduler/jitter": "./src/scheduler/jitter.ts",
     "./scheduler/backoff": "./src/scheduler/backoff.ts",
+    "./scheduler/dispatch-lock": "./src/scheduler/dispatch-lock.ts",
     "./project-extraction": "./src/project-extraction/index.ts"
   },
   "scripts": {

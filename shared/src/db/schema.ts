@@ -199,6 +199,11 @@ export const runs = pgTable(
     // rather than via a DB-level enum so future categories don't require a
     // migration.
     failureReason: text('failure_reason'),
+    // Set when the daemon scheduler dispatches the run; nullable for
+    // manually-triggered runs. Combined with `campaignId`, this powers a
+    // partial UNIQUE index that prevents the same scheduled tick from
+    // turning into two `runs` rows under contention.
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
   },
   (t) => ({
     byProjectKind: index('runs_project_kind_idx').on(t.projectId, t.kind, t.startedAt.desc()),

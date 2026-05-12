@@ -16,14 +16,24 @@ const log = logger('scheduler');
  */
 async function triggerRun(
   campaignId: number,
-): Promise<{ ok: boolean; runId?: number; error?: string }> {
+  scheduledFor: Date,
+): Promise<{ ok: boolean; runId?: number; error?: string; alreadyDispatched?: boolean }> {
   const url = `${config.webUrl}/api/run`;
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ campaignId, trigger: 'scheduled' }),
+      body: JSON.stringify({
+        campaignId,
+        trigger: 'scheduled',
+        scheduledFor: scheduledFor.toISOString(),
+      }),
     });
+    if (res.status === 409) {
+      // Another scheduler instance (or the user) already dispatched this
+      // tick. Treat as success for backoff purposes — the work is happening.
+      return { ok: true, alreadyDispatched: true };
+    }
     if (!res.ok) {
       return { ok: false, error: `${res.status} ${await res.text().catch(() => '')}` };
     }
@@ -99,7 +109,12 @@ export async function tick(): Promise<void> {
       continue;
     }
 
-    const res = await triggerRun(c.id);
+    // `scheduled_for` is the cron tick this dispatch belongs to. Use the
+    // campaign's `nextRunAt` when set (the cron value we computed last tick),
+    // falling back to `nextAttemptAfter` for backoff retries and finally to
+    // `now` for the seed case.
+    const scheduledFor = c.nextRunAt ?? c.nextAttemptAfter ?? now;
+    const res = await triggerRun(c.id, scheduledFor);
     const nextRun = computeNextRun(c.cronExpression, now);
 
     if (res.ok) {

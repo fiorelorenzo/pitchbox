@@ -86,7 +86,9 @@ describe('scheduler tick', () => {
     expect(String(url)).toMatch(/\/api\/run$/);
     expect(init?.method).toBe('POST');
     const body = JSON.parse(String(init?.body));
-    expect(body).toEqual({ campaignId: campaign.id, trigger: 'scheduled' });
+    expect(body.campaignId).toBe(campaign.id);
+    expect(body.trigger).toBe('scheduled');
+    expect(typeof body.scheduledFor).toBe('string');
 
     const [row] = await getDb()
       .select()

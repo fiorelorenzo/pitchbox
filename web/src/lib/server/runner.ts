@@ -4,6 +4,7 @@ import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { notify } from '@pitchbox/shared/notifications';
 import { classifyFailure } from '@pitchbox/shared/runlog/classify-failure';
 import type { ParsedEvent, EventKind, EventPayload } from '@pitchbox/shared/runlog/types';
+import { withCampaignLock } from '@pitchbox/shared/scheduler/dispatch-lock';
 import { getDb, schema } from './db.js';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
@@ -338,6 +339,7 @@ async function dispatchRun(
 export async function runCampaign(
   campaignId: number,
   trigger: string = 'manual',
+  scheduledFor: Date | null = null,
 ): Promise<{ runId: number; alreadyRunning?: boolean }> {
   const db = getDb();
   const [campaign] = await db
@@ -350,66 +352,117 @@ export async function runCampaign(
     throw new Error(`campaign ${campaignId} is still draft — generate the profile first`);
   }
 
-  // Application-level guard: look up an existing running run and short-circuit.
-  const [existing] = await db
-    .select()
-    .from(schema.runs)
-    .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
-    .limit(1);
-  if (existing) {
-    return { runId: existing.id, alreadyRunning: true };
-  }
-
-  // DB-level safety net: a partial unique index on (campaign_id) WHERE status='running'
-  // prevents two concurrent INSERTs from both succeeding if they race past the SELECT above.
-  // Snapshot the playbook body at run-creation time so later edits to the
-  // playbook never retroactively change past runs. Missing rows fall back to
-  // the on-disk file at dispatch.
   const [pb] = await db
     .select({ body: schema.playbooks.body })
     .from(schema.playbooks)
     .where(eq(schema.playbooks.slug, campaign.skillSlug));
 
-  let run: typeof schema.runs.$inferSelect;
-  try {
-    [run] = await db
-      .insert(schema.runs)
-      .values({
-        campaignId,
-        agentRunner: campaign.agentRunner,
-        trigger,
-        status: 'running',
-        playbookBody: pb?.body ?? null,
-      })
-      .returning();
-  } catch (err) {
-    // Unique violation on the partial index → someone else just inserted a running run.
-    // Drizzle wraps the underlying pg error; check code in a few places and fall back
-    // to matching the constraint name in the message.
-    const e = err as {
-      code?: string;
-      constraint?: string;
-      cause?: { code?: string; constraint?: string };
-      message?: string;
-    };
-    const code = e?.code ?? e?.cause?.code;
-    const constraint = e?.constraint ?? e?.cause?.constraint;
-    const message = e?.message ?? String(err);
-    const isUniqueViolation =
-      code === '23505' ||
-      constraint === 'runs_one_running_per_campaign' ||
-      message.includes('runs_one_running_per_campaign');
+  // Wrap the read-modify-write in a Postgres transaction-scoped advisory lock
+  // keyed on `campaign:<id>`. Concurrent dispatches for the same campaign
+  // serialise behind the lock; the loser sees the winner's `running` row and
+  // short-circuits with `alreadyRunning: true`. The DB-level partial UNIQUE
+  // index (status='running') and the new `(campaign_id, scheduled_for)`
+  // partial UNIQUE index are the safety net if the lock is bypassed.
+  const locked = await withCampaignLock(db, campaignId, async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(schema.runs)
+      .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
+      .limit(1);
+    if (existing) {
+      return { runId: existing.id, alreadyRunning: true } as const;
+    }
 
-    if (isUniqueViolation) {
-      const [raced] = await db
+    // If this is a scheduled dispatch, an idempotency check on
+    // (campaign_id, scheduled_for) catches a concurrent scheduler that
+    // already created the row for this tick.
+    if (scheduledFor) {
+      const [dup] = await tx
         .select()
         .from(schema.runs)
-        .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
+        .where(
+          and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.scheduledFor, scheduledFor)),
+        )
         .limit(1);
-      if (raced) return { runId: raced.id, alreadyRunning: true };
+      if (dup) {
+        return { runId: dup.id, alreadyRunning: true } as const;
+      }
     }
+
+    try {
+      const [inserted] = await tx
+        .insert(schema.runs)
+        .values({
+          campaignId,
+          agentRunner: campaign.agentRunner,
+          trigger,
+          status: 'running',
+          playbookBody: pb?.body ?? null,
+          scheduledFor,
+        })
+        .returning();
+      return { run: inserted } as const;
+    } catch (err) {
+      const e = err as {
+        code?: string;
+        constraint?: string;
+        cause?: { code?: string; constraint?: string };
+        message?: string;
+      };
+      const code = e?.code ?? e?.cause?.code;
+      const constraint = e?.constraint ?? e?.cause?.constraint;
+      const message = e?.message ?? String(err);
+      const isUniqueViolation = code === '23505';
+      const isScheduledForViolation =
+        isUniqueViolation &&
+        (constraint === 'runs_campaign_scheduled_for_unique' ||
+          message.includes('runs_campaign_scheduled_for_unique'));
+      const isRunningViolation =
+        isUniqueViolation &&
+        (constraint === 'runs_one_running_per_campaign' ||
+          message.includes('runs_one_running_per_campaign'));
+
+      if (isScheduledForViolation) {
+        // Tagged so the /api/run route can map it to a clean 409.
+        const tagged = new Error('already_dispatched') as Error & { code: string };
+        tagged.code = 'already_dispatched';
+        throw tagged;
+      }
+      if (isRunningViolation) {
+        const [raced] = await tx
+          .select()
+          .from(schema.runs)
+          .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
+          .limit(1);
+        if (raced) return { runId: raced.id, alreadyRunning: true } as const;
+      }
+      throw err;
+    }
+  });
+
+  // Lock unavailable → another writer is mid-RMW for this campaign. Treat as
+  // already-running so the caller doesn't double-fire.
+  if (locked == null) {
+    const [existing] = await db
+      .select()
+      .from(schema.runs)
+      .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
+      .limit(1);
+    if (existing) return { runId: existing.id, alreadyRunning: true };
+    // Lost the lock AND no running row yet — surface the same 409 contract.
+    const err = new Error('already_dispatched') as Error & { code: string };
+    err.code = 'already_dispatched';
     throw err;
   }
+
+  if ('runId' in locked && locked.runId != null) {
+    return { runId: locked.runId, alreadyRunning: locked.alreadyRunning };
+  }
+  if (!('run' in locked) || !locked.run) {
+    // Should be unreachable — the lock callback always returns one branch.
+    throw new Error('dispatch returned no run');
+  }
+  const run = locked.run;
 
   emit('run:started', { runId: run.id, campaignId });
 

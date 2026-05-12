@@ -22,6 +22,12 @@ npx vitest run daemon/
 
 The full `npm test` picks them up automatically — no extra wiring needed.
 
+## Dispatch is exactly-once per cron tick
+
+Every scheduled dispatch is bracketed by a Postgres transaction-scoped advisory lock keyed on `campaign:<id>` ([`shared/src/scheduler/dispatch-lock.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/shared/src/scheduler/dispatch-lock.ts)) and a partial UNIQUE index on `runs(campaign_id, scheduled_for)`. The lock serialises concurrent writers; the index is the final arbiter when the lock is bypassed (e.g. multi-instance multi-host deployments). Concurrent calls to `POST /api/run` for the same `{campaignId, scheduledFor}` collapse to exactly one `runs` row — the loser sees `409 { "error": "already_dispatched" }`, which the daemon scheduler treats as a successful dispatch for backoff purposes.
+
+`scheduled_for` is supplied by the daemon scheduler from the cron tick it's executing. Manual runs from the dashboard leave it `NULL` and skip the uniqueness check.
+
 ## Backoff and circuit breaker
 
 When a scheduled dispatch fails (the web `/api/run` call returns non-2xx or throws), the scheduler increments `campaigns.failure_attempts` and stamps `campaigns.next_attempt_after` with `now + computeBackoff(failure_attempts)`. The backoff helper lives in [`shared/src/scheduler/backoff.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/shared/src/scheduler/backoff.ts) and follows the schedule `60s → 2m → 4m → 8m → … → 1h cap` (factor 2, max 1 hour).
