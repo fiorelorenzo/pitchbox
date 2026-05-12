@@ -12,6 +12,7 @@ export const en: Dict = {
   'nav.blocklist': 'Blocklist',
   'nav.playbooks': 'Playbooks',
   'nav.notifications': 'Notifications',
+  'nav.audit': 'Audit',
   'nav.settings': 'Settings',
   'nav.docs': 'Docs',
   'nav.signOut': 'Sign out',

@@ -24,6 +24,10 @@ A **draft** is the agent's proposed outreach — DM, post, post comment, or comm
 
 Once a draft is sent, the row in `contact_history` becomes the per-target source of truth. The Chrome extension picks up replies (DMs and comment-replies) and the **Conversations** page lists every thread; clicking a row opens `/conversations/<thread-id>`, a Matrix/iMessage-style transcript that renders the parent draft and every captured message, with outgoing bubbles right-aligned in the primary color and incoming bubbles left-aligned in muted styling. A composer placeholder is shown at the bottom — reply drafting from the dashboard is coming next.
 
+## Audit feed
+
+The `/audit` page surfaces a unified, time-ordered feed of every recorded event in the system. It unions `draft_events` (state transitions, approvals, rejections, sends — each tagged with an `actor`) with `run_events` (agent runner stream output and lifecycle markers) via a single `UNION ALL` query, discriminating each row by a synthetic `kind` column (`draft` or `run`). Rows are ordered newest first by `(created_at, id)` and the page exposes filters for event name, draft id, run id, actor, and a date range. Each leg is filtered before the union so the indexes on `draft_events_kind_created_idx` and `run_events_kind_created_idx` stay usable. Keyset pagination on `(created_at, id)` powers the "Load more" button.
+
 ## Blocklist
 
 `blocklist` covers users, subreddits, and keywords. The dispatch path consults it before drafting; the send path consults it again before flipping a draft to `sent`. Scope is global or per-project.

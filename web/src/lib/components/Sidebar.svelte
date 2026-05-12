@@ -11,6 +11,7 @@
 		Settings,
 		BookOpen,
 		Bell,
+		History,
 		LogOut,
 		type Icon as LucideIcon,
 	} from 'lucide-svelte';
@@ -41,6 +42,7 @@
 		{ href: '/blocklist', labelKey: 'nav.blocklist', icon: Shield },
 		{ href: '/playbooks', labelKey: 'nav.playbooks', icon: BookOpen },
 		{ href: '/notifications', labelKey: 'nav.notifications', icon: Bell },
+		{ href: '/audit', labelKey: 'nav.audit', icon: History },
 		{ href: '/settings', labelKey: 'nav.settings', icon: Settings },
 	];
 
