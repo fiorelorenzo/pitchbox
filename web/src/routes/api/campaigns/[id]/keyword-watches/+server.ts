@@ -12,7 +12,12 @@ const PostBody = z.object({
   pattern: z.string().min(1).max(500),
   matchField: z.enum(['title', 'selftext', 'comment']).default('title'),
   isActive: z.boolean().optional(),
-  cooldownMinutes: z.number().int().min(1).max(24 * 60).optional(),
+  cooldownMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60)
+    .optional(),
 });
 
 function parseId(idParam: string): number | null {
@@ -64,7 +69,12 @@ const PatchBody = z.object({
   isActive: z.boolean().optional(),
   pattern: z.string().min(1).max(500).optional(),
   matchField: z.enum(['title', 'selftext', 'comment']).optional(),
-  cooldownMinutes: z.number().int().min(1).max(24 * 60).optional(),
+  cooldownMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60)
+    .optional(),
 });
 
 export async function PATCH({ params, request }) {
@@ -80,9 +90,7 @@ export async function PATCH({ params, request }) {
   const [row] = await db
     .update(schema.keywordWatches)
     .set(rest)
-    .where(
-      and(eq(schema.keywordWatches.id, watchId), eq(schema.keywordWatches.campaignId, id)),
-    )
+    .where(and(eq(schema.keywordWatches.id, watchId), eq(schema.keywordWatches.campaignId, id)))
     .returning();
   if (!row) return json({ error: 'not_found' }, { status: 404 });
   return json({ watch: row });
@@ -98,9 +106,7 @@ export async function DELETE({ params, url }) {
   const db = getDb();
   const [row] = await db
     .delete(schema.keywordWatches)
-    .where(
-      and(eq(schema.keywordWatches.id, watchId), eq(schema.keywordWatches.campaignId, id)),
-    )
+    .where(and(eq(schema.keywordWatches.id, watchId), eq(schema.keywordWatches.campaignId, id)))
     .returning();
   if (!row) return json({ error: 'not_found' }, { status: 404 });
   return json({ ok: true });
