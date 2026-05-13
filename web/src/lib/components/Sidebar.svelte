@@ -76,15 +76,17 @@
 	const authOn = $derived(($page.data?.authOn ?? true) as boolean);
 </script>
 
-<aside class="w-60 h-full bg-background border-r border-border flex flex-col p-4 overflow-hidden">
+<aside class="w-60 h-full bg-background border-r border-border flex flex-col p-4 overflow-hidden min-h-0">
 	<!-- Brand -->
 	<div class="flex items-center gap-2 mb-6">
 		<img src="/favicon.svg" alt="" class="size-7 shrink-0" aria-hidden="true" />
 		<h1 class="font-semibold text-lg">Pitchbox</h1>
 	</div>
 
-	<!-- Nav links -->
-	<nav class="flex flex-col gap-1 flex-1">
+	<!-- Nav links. min-h-0 lets nav shrink under flex pressure so the footer
+	     status card always stays visible; only the nav itself can scroll if a
+	     viewport is too short for all entries. -->
+	<nav class="flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto">
 		{#each navItems as item (item.href)}
 			{@const active = item.exact
 				? $page.url.pathname === item.href
