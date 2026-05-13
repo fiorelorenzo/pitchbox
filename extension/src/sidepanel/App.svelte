@@ -1,6 +1,7 @@
 <!-- Side panel app shell: header + tabs nav + placeholder panels. -->
 <script lang="ts">
   import { t } from '$ext/i18n';
+  import Dashboard from './routes/Dashboard.svelte';
 
   let tab = $state<'dashboard' | 'activity' | 'settings'>('dashboard');
 </script>
@@ -28,7 +29,7 @@
 
   <section class="flex-1 overflow-auto p-4">
     {#if tab === 'dashboard'}
-      <p class="text-sm text-muted-foreground">Dashboard placeholder</p>
+      <Dashboard />
     {:else if tab === 'activity'}
       <p class="text-sm text-muted-foreground">Activity placeholder</p>
     {:else}
