@@ -10,6 +10,8 @@ export default defineConfig({
   resolve: {
     alias: {
       $ext: path.resolve(__dirname, 'src/lib'),
+      $lib: path.resolve(__dirname, 'src/lib'),
+      $ui: path.resolve(__dirname, 'src/lib/components/ui'),
     },
   },
   build: {
