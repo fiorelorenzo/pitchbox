@@ -27,7 +27,7 @@ export async function PATCH({ params, request }: { params: { id: string }; reque
 
   // Optimistic-locking: callers MAY pass the version they observed. When the
   // client omits it we fall back to the row's current version so the dashboard
-  // (which doesn't surface the field yet) keeps working — but cross-tab races
+  // (which doesn't surface the field yet) keeps working - but cross-tab races
   // between two explicit versions still detect the conflict on the loser.
   const expectedVersion = typeof body.version === 'number' ? body.version : draft.version;
 

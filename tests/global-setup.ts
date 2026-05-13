@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 
 /**
- * Vitest global setup — runs once before any test file.
+ * Vitest global setup - runs once before any test file.
  * Applies migrations to the test database and seeds the reddit platform row.
  *
  * The `env` set in vitest.config.ts is already in process.env here, so child
@@ -21,6 +21,6 @@ export async function setup() {
 }
 
 export async function teardown() {
-  // Nothing to do — the test DB persists between runs so developers can
+  // Nothing to do - the test DB persists between runs so developers can
   // inspect state. It's separate from the real DB.
 }

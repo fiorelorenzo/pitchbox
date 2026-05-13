@@ -1,4 +1,4 @@
-// Edition flag — single source of truth for whether the running process is
+// Edition flag - single source of truth for whether the running process is
 // the OSS self-hosted build or the cloud build. Cloud-only code lives in a
 // private submodule under `cloud/` (gitignored in this repo). Build tooling
 // is expected to discover that path and wire it in; this helper is the

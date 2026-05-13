@@ -17,7 +17,7 @@ const BINARY_BY_SLUG: Partial<Record<AgentRunnerSlug, string>> = {
   'claude-code': 'claude',
   codex: 'codex',
   opencode: 'opencode',
-  // 'cloud' has no local binary — detection is meaningless. The loader returns
+  // 'cloud' has no local binary - detection is meaningless. The loader returns
   // a synthetic "unavailable" result so the Settings UI still renders it.
 };
 
@@ -71,7 +71,7 @@ export function detectRunner(slug: AgentRunnerSlug): Promise<DetectResult> {
         available: false,
         version: null,
         path: null,
-        error: 'No local binary — managed by the runtime.',
+        error: 'No local binary - managed by the runtime.',
         detectedAt: new Date().toISOString(),
       });
     } else {

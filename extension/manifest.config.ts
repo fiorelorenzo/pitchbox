@@ -14,13 +14,15 @@ export default defineManifest({
   },
   action: {
     default_title: 'Pitchbox',
-    default_popup: 'src/popup/index.html',
     default_icon: {
       16: 'public/icons/icon-16.png',
       32: 'public/icons/icon-32.png',
       48: 'public/icons/icon-48.png',
       128: 'public/icons/icon-128.png',
     },
+  },
+  side_panel: {
+    default_path: 'src/sidepanel/index.html',
   },
   background: {
     service_worker: 'src/background.ts',
@@ -47,7 +49,7 @@ export default defineManifest({
     },
     {
       // The Matrix token lives in reddit.com's localStorage (per-origin), so any
-      // reddit.com page works — no need to be on /chat. The chat also appears as
+      // reddit.com page works - no need to be on /chat. The chat also appears as
       // a side-panel widget from any reddit.com page.
       matches: ['https://www.reddit.com/*'],
       js: ['src/content/chat-token.ts'],
@@ -63,7 +65,7 @@ export default defineManifest({
       run_at: 'document_idle',
     },
   ],
-  permissions: ['storage', 'alarms', 'tabs', 'scripting'],
+  permissions: ['storage', 'alarms', 'tabs', 'scripting', 'sidePanel'],
   optional_host_permissions: ['<all_urls>'],
   host_permissions: [
     'https://www.reddit.com/*',

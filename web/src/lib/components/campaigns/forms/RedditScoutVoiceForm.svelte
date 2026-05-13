@@ -53,7 +53,7 @@
       value={value.hardBans}
       onChange={(v) => patch({ hardBans: v })}
       {disabled}
-      placeholder="—"
+      placeholder="-"
     />
   </label>
   <label class="flex flex-col gap-1 text-xs">

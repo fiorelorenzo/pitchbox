@@ -234,7 +234,7 @@ async function* contactRows(
       schema.contactHistory.targetUser,
     );
   for (const r of firstRows) {
-    // `min()` returns a raw timestamp string from pg — coerce to Date so the
+    // `min()` returns a raw timestamp string from pg - coerce to Date so the
     // CSV emitter formats it as ISO consistently with column-typed columns.
     const first = r.firstAt instanceof Date ? r.firstAt : new Date(r.firstAt as unknown as string);
     firstByKey.set(`${r.platformId}|${r.accountHandle}|${r.targetUser}`, first);
@@ -289,7 +289,7 @@ async function* conversationRows(
       .where(inArray(schema.messages.contactId, contactIds))
       .groupBy(schema.messages.contactId);
     for (const a of aggs) {
-      // `max()` returns a raw timestamp string from pg — coerce to Date.
+      // `max()` returns a raw timestamp string from pg - coerce to Date.
       const last = a.last instanceof Date ? a.last : new Date(a.last as unknown as string);
       counts.set(a.contactId, { count: a.count, last });
     }

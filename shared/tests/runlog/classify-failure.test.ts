@@ -24,7 +24,7 @@ describe('classifyFailure', () => {
   it('detects auth_expired on 401/403/auth markers', () => {
     expect(classifyFailure([ev('HTTP 401 Unauthorized from upstream')], 1)).toBe('auth_expired');
     expect(classifyFailure([ev('Reddit returned 403 Forbidden')], 1)).toBe('auth_expired');
-    expect(classifyFailure([ev('token expired — please re-authenticate')], 1)).toBe('auth_expired');
+    expect(classifyFailure([ev('token expired - please re-authenticate')], 1)).toBe('auth_expired');
   });
 
   it('detects quota_exhausted on quota / rate-limit text', () => {
@@ -47,7 +47,7 @@ describe('classifyFailure', () => {
   });
 
   it('prefers runner_missing over later patterns when both match', () => {
-    // Bash sometimes prints both — make sure precedence is stable.
+    // Bash sometimes prints both - make sure precedence is stable.
     expect(classifyFailure([ev('command not found\nHTTP 401')], 127)).toBe('runner_missing');
   });
 

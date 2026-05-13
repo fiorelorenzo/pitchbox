@@ -166,10 +166,10 @@
 									>run #{r.runId}</a
 								>
 							{:else}
-								<span class="text-muted-foreground">—</span>
+								<span class="text-muted-foreground">-</span>
 							{/if}
 						</Table.Cell>
-						<Table.Cell class="text-xs">{r.actor ?? '—'}</Table.Cell>
+						<Table.Cell class="text-xs">{r.actor ?? '-'}</Table.Cell>
 					</Table.Row>
 				{/each}
 				{#if data.rows.length === 0}

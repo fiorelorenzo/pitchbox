@@ -46,7 +46,7 @@ export async function loadAuthPolicy(db: Db): Promise<AuthPolicy> {
 }
 
 export async function recordAuthFailure(db: Db, identifier: string): Promise<void> {
-  // Two rows per failed attempt — one keyed by IP, one by username — so the
+  // Two rows per failed attempt - one keyed by IP, one by username - so the
   // counter can check either bucket independently.
   await db.insert(authFailures).values({ identifier, kind: 'login_attempt' });
 }
@@ -65,7 +65,7 @@ export async function countAuthFailuresSince(
 
 /**
  * Returns the lockout expiry (in ms since epoch) if `identifier` is currently
- * locked out — i.e. has at least `maxAttempts` failures in the rolling window
+ * locked out - i.e. has at least `maxAttempts` failures in the rolling window
  * and the most recent failure is within `lockoutMinutes`. Otherwise null.
  */
 export async function getLockoutUntil(

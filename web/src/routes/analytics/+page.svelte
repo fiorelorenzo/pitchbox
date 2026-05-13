@@ -39,7 +39,7 @@
   const max = $derived(stages.length > 0 ? Math.max(...stages.map((s) => s.count), 1) : 1);
 
   function pct(curr: number, prev: number | undefined): string {
-    if (prev === undefined || prev === 0) return '—';
+    if (prev === undefined || prev === 0) return '-';
     return `${Math.round((curr / prev) * 100)}%`;
   }
 </script>

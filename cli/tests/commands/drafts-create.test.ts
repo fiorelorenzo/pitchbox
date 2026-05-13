@@ -111,7 +111,7 @@ describe('pitchbox drafts:create', () => {
       .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
       .returning();
 
-    // Insert blocklist entry for 'Bob' (mixed case) — should block 'bob' (lowercase) in the input
+    // Insert blocklist entry for 'Bob' (mixed case) - should block 'bob' (lowercase) in the input
     await db.insert(schema.blocklist).values({
       platformId: platform.id,
       projectId: project.id,

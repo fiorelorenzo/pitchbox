@@ -6,7 +6,7 @@ export interface AgentRunOptions {
   env: Record<string, string>;
   cwd: string;
   timeoutMs: number;
-  /** Called with the raw original line for each stdout/stderr chunk — optional, for forensic logging. */
+  /** Called with the raw original line for each stdout/stderr chunk - optional, for forensic logging. */
   onRawLine?: (line: string) => void;
   /** Called with one or more normalized ParsedEvents extracted from that line. */
   onParsedEvents?: (events: ParsedEvent[]) => void | Promise<void>;

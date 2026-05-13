@@ -31,7 +31,7 @@ async function triggerRun(
     });
     if (res.status === 409) {
       // Another scheduler instance (or the user) already dispatched this
-      // tick. Treat as success for backoff purposes — the work is happening.
+      // tick. Treat as success for backoff purposes - the work is happening.
       return { ok: true, alreadyDispatched: true };
     }
     if (!res.ok) {

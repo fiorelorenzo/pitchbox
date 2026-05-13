@@ -34,7 +34,7 @@ The dispatch path loads the config via `loadRunnerConfig()` and passes it to `cr
 
 ## Failure taxonomy
 
-Whenever a run transitions to `failed`, Pitchbox classifies the failure into one of six structured reasons and writes it to `runs.failure_reason`. The classifier is `classifyFailure(events, exitCode)` in [`shared/src/runlog/classify-failure.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/shared/src/runlog/classify-failure.ts) — a pure TypeScript function so the taxonomy can grow without a DB migration. The campaigns detail page surfaces the value as a chip on each failed run and lets you filter the run history by reason.
+Whenever a run transitions to `failed`, Pitchbox classifies the failure into one of six structured reasons and writes it to `runs.failure_reason`. The classifier is `classifyFailure(events, exitCode)` in [`shared/src/runlog/classify-failure.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/shared/src/runlog/classify-failure.ts) - a pure TypeScript function so the taxonomy can grow without a DB migration. The campaigns detail page surfaces the value as a chip on each failed run and lets you filter the run history by reason.
 
 | Reason            | Heuristic                                                                                               |
 | ----------------- | ------------------------------------------------------------------------------------------------------- |
@@ -43,17 +43,17 @@ Whenever a run transitions to `failed`, Pitchbox classifies the failure into one
 | `quota_exhausted` | Any event mentioning `quota` or `rate limit`                                                            |
 | `playbook_error`  | Exit non-zero with a Node-style or Python stack trace                                                   |
 | `network`         | `ECONNREFUSED`, `ECONNRESET`, `ENOTFOUND`, `ETIMEDOUT`, `getaddrinfo`, `fetch failed`, `socket hang up` |
-| `unknown`         | Default — nothing else matched                                                                          |
+| `unknown`         | Default - nothing else matched                                                                          |
 
 The classifier order matters: `runner_missing` wins over `playbook_error` because an `ENOENT` will otherwise look like a generic stack trace. Order beyond that is stable and covered by `shared/tests/runlog/classify-failure.test.ts`.
 
 ## Cost tracking
 
-Each `runs` row captures the runner's reported token usage and USD cost. For `claude-code`, the parser reads the `usage` block and optional `total_cost_usd` from the terminal `result` event and writes `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens`, and `cost_usd`. When the runner reports `total_cost_usd`, that value is trusted as-is; otherwise the cost is computed locally from the token columns using Claude Sonnet 4.6 list pricing (`$3 / $15` per 1M input/output, `$0.30 / $3.75` per 1M cache read/creation — see [`shared/src/runlog/usage.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/shared/src/runlog/usage.ts)). Aggregates surface on the Home page (24h / 7d spend) and in the per-run "Cost" column on the campaign detail page.
+Each `runs` row captures the runner's reported token usage and USD cost. For `claude-code`, the parser reads the `usage` block and optional `total_cost_usd` from the terminal `result` event and writes `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens`, and `cost_usd`. When the runner reports `total_cost_usd`, that value is trusted as-is; otherwise the cost is computed locally from the token columns using Claude Sonnet 4.6 list pricing (`$3 / $15` per 1M input/output, `$0.30 / $3.75` per 1M cache read/creation - see [`shared/src/runlog/usage.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/shared/src/runlog/usage.ts)). Aggregates surface on the Home page (24h / 7d spend) and in the per-run "Cost" column on the campaign detail page.
 
 ## Adding a runner
 
 1. Implement the `AgentRunner` interface in `shared/src/agents/<slug>.ts`.
 2. Register it in `shared/src/agents/registry.ts` and add the meta in `shared/src/agents/meta.ts` (`implemented: true`).
 3. Add a parser in `shared/src/runlog/parsers/<slug>.ts` if the runner's stream format isn't a passthrough.
-4. Run the dashboard — detection picks the binary up automatically.
+4. Run the dashboard - detection picks the binary up automatically.

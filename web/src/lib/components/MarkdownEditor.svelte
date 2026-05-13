@@ -157,7 +157,7 @@
     color: var(--muted-foreground);
   }
 
-  /* Hide bytemd's "Source code" GitHub icon — last item in the right toolbar. */
+  /* Hide bytemd's "Source code" GitHub icon - last item in the right toolbar. */
   .md-host :global(.bytemd-toolbar-right > .bytemd-toolbar-icon:last-child) {
     display: none !important;
   }
@@ -168,7 +168,7 @@
 
   .md-host :global(.bytemd-body) {
     background: var(--background);
-    /* Prevent the wrapper from scrolling — force scroll into the inner panes
+    /* Prevent the wrapper from scrolling - force scroll into the inner panes
        so bytemd's scroll-sync handler on .bytemd-preview actually fires. */
     overflow: hidden;
   }
@@ -380,7 +380,7 @@
     background: var(--muted);
   }
 
-  /* Hide bytemd's native status bar entirely — we render our own footer below. */
+  /* Hide bytemd's native status bar entirely - we render our own footer below. */
   .md-host :global(.bytemd-status) {
     display: none !important;
   }

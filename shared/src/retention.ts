@@ -5,7 +5,7 @@
 //   { drafts_days: 90, run_events_days: 30, draft_events_days: 90 }
 //
 // A floor of 7 days is enforced server-side so an accidental low value can't
-// nuke recent data. Contact history is never touched by this policy — it is
+// nuke recent data. Contact history is never touched by this policy - it is
 // the long-term record used by the blocklist / quota systems.
 
 import { eq } from 'drizzle-orm';

@@ -22,7 +22,7 @@ export async function load({ params }: { params: { id: string } }) {
 
   // contact_history is the per-(account_handle, target_user, platform) source of
   // truth; we may have several rows for the same pair if the agent contacted
-  // the user multiple times — pick the most recent for first/last/outcome.
+  // the user multiple times - pick the most recent for first/last/outcome.
   const contacts = await db
     .select()
     .from(schema.contactHistory)
@@ -68,7 +68,7 @@ export async function load({ params }: { params: { id: string } }) {
     .where(
       contactIds.length === 1
         ? eq(schema.messages.contactId, contactIds[0])
-        : // drizzle has no `inArray` import here; rebuild with OR if needed —
+        : // drizzle has no `inArray` import here; rebuild with OR if needed -
           // contactIds is small (one tuple, usually 1 row), so keep it simple.
           eq(schema.messages.contactId, contactIds[0]),
     )

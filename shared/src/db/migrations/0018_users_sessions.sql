@@ -1,5 +1,5 @@
 -- Phase-1 auth: local username/password sessions guarded by PITCHBOX_AUTH=on.
--- Multi-tenant orgs/memberships and SSO are intentionally deferred — they
+-- Multi-tenant orgs/memberships and SSO are intentionally deferred - they
 -- bolt on top of this table without a breaking schema change.
 CREATE TABLE "users" (
   "id" serial PRIMARY KEY,

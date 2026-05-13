@@ -7,7 +7,7 @@ export type HnListing = 'top' | 'new' | 'best' | 'ask' | 'show';
 
 export type HnItem = {
   id: number;
-  /** "story" | "comment" | "job" | "poll" | "pollopt" — we only normalize stories. */
+  /** "story" | "comment" | "job" | "poll" | "pollopt" - we only normalize stories. */
   type: string;
   by: string;
   time: number;

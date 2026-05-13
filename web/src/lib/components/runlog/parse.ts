@@ -228,7 +228,7 @@ export function pairToolEvents(events: TimelineEvent[]): TimelineEvent[] {
           },
         };
       } else {
-        // Orphan tool-result — keep as standalone
+        // Orphan tool-result - keep as standalone
         output.push(ev);
       }
     } else {

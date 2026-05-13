@@ -161,7 +161,7 @@ describe('scheduler tick', () => {
     expect(row.failureAttempts).toBe(1);
     expect(row.pausedDueToFailures).toBe(false);
     expect(row.nextAttemptAfter).not.toBeNull();
-    // First-failure backoff is 60s — give a generous tolerance for clock skew.
+    // First-failure backoff is 60s - give a generous tolerance for clock skew.
     const delta = row.nextAttemptAfter!.getTime() - before;
     expect(delta).toBeGreaterThanOrEqual(50_000);
     expect(delta).toBeLessThanOrEqual(120_000);

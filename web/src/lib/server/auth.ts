@@ -7,7 +7,7 @@ import { getDb, schema } from './db.js';
  * Resolve the organization id for the current request.
  *
  * - When auth is on and the caller is signed in, return their primary org
- *   (we ship a single membership per user — multi-org follows later).
+ *   (we ship a single membership per user - multi-org follows later).
  * - When auth is off (single-user self-host) or no membership exists yet,
  *   fall back to the default org seeded by `seed-core`.
  *

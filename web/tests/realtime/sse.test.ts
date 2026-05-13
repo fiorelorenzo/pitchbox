@@ -72,7 +72,7 @@ describe('createSseManager', () => {
     first.emit('hello');
     expect(m.getStatus()).toBe('live');
 
-    // Advance past staleness threshold — should drop and schedule reconnect.
+    // Advance past staleness threshold - should drop and schedule reconnect.
     vi.advanceTimersByTime(STALE_MS + 1);
     expect(first.closed).toBe(true);
     expect(m.getStatus()).toBe('reconnecting');

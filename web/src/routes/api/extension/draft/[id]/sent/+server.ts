@@ -83,7 +83,7 @@ export async function POST({ params, request }: { params: { id: string }; reques
         });
         if (commentId) {
           // platform_comment_id is a side-channel attribute, not a state
-          // transition — leave the version untouched here.
+          // transition - leave the version untouched here.
           await db
             .update(schema.drafts)
             .set({ platformCommentId: commentId })

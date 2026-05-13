@@ -100,7 +100,7 @@ export const authFailures = pgTable(
   'auth_failures',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    // Either the IP address or the submitted username — both buckets are
+    // Either the IP address or the submitted username - both buckets are
     // tracked together so the rate-limit check can look them up identically.
     identifier: text('identifier').notNull(),
     failedAt: timestamp('failed_at', { withTimezone: true }).notNull().defaultNow(),

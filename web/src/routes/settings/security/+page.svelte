@@ -54,7 +54,7 @@
 	}
 </script>
 
-<Seo title="Settings — Security" description="Recent failed logins and account lockout controls." />
+<Seo title="Settings - Security" description="Recent failed logins and account lockout controls." />
 
 <PageHeader
 	title="Security"

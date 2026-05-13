@@ -1,17 +1,18 @@
 import { parseDraftId } from '../lib/draft-param.js';
 import { api } from '../lib/api.js';
+import { logFromContent } from '../lib/log-from-content.js';
 import { findCommentTextarea, findCommentSubmitButton } from './shared/reddit-dom.js';
 
 const draftId = parseDraftId(location.href);
 
 function derivePostId(pathname: string): string | null {
-  // /r/<sub>/comments/<postId>/<slug>/...   — Reddit's canonical pattern.
+  // /r/<sub>/comments/<postId>/<slug>/...   - Reddit's canonical pattern.
   const m = /\/comments\/([a-z0-9]+)\b/i.exec(pathname);
   return m ? m[1] : null;
 }
 
 async function fetchAccountHandle(draftId: number): Promise<string | null> {
-  // Reddit-issued cookies authenticate /api/me.json — works uniformly on old and
+  // Reddit-issued cookies authenticate /api/me.json - works uniformly on old and
   // new Reddit, regardless of which user link happens to be first in the DOM
   // (often the post author, not the logged-in user).
   void draftId;
@@ -91,7 +92,22 @@ if (draftId !== null) {
       postId && handle
         ? { postId, accountHandle: handle, postedAt: new Date().toISOString() }
         : undefined;
-    await api.sent(draftId!, sentContent, commentLookup);
+    const res = await api.sent(draftId!, sentContent, commentLookup);
+    if (res.ok) {
+      logFromContent({
+        level: 'info',
+        source: 'reddit-action',
+        message: 'activity.reddit-action.comment-sent',
+        meta: { draftId },
+      });
+    } else {
+      logFromContent({
+        level: 'error',
+        source: 'reddit-action',
+        message: 'activity.reddit-action.fail',
+        meta: { draftId, reason: res.error || String(res.status), status: res.status },
+      });
+    }
   }
 
   function wireSubmit(): boolean {

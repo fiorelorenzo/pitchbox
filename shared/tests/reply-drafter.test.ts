@@ -63,7 +63,7 @@ async function setup() {
       platformId: platform.id,
       author: 'bob',
       isFromUs: false,
-      body: 'thanks, interesting — can you say more?',
+      body: 'thanks, interesting - can you say more?',
       platformMessageId: 't1_inbound_1',
       createdAtPlatform: new Date(),
       source: 'legacy',

@@ -23,7 +23,7 @@ function isLocale(value: unknown): value is Locale {
   return typeof value === 'string' && (LOCALES as readonly string[]).includes(value);
 }
 
-// Reactive active locale. Initialised to the default — server-rendered pages
+// Reactive active locale. Initialised to the default - server-rendered pages
 // can call `setLocale()` from a layout load with the value from
 // `app_config.ui_locale`.
 export const locale = writable<Locale>(DEFAULT_LOCALE);

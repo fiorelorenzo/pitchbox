@@ -8,7 +8,7 @@
 		data: { sessionId?: string; model?: string; cwd?: string };
 	} = $props();
 
-	let shortId = $derived(data.sessionId?.slice(0, 8) ?? '—');
+	let shortId = $derived(data.sessionId?.slice(0, 8) ?? '-');
 
 	let cwdSegments = $derived(
 		data.cwd

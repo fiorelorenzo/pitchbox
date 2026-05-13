@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitepress';
 
 export default defineConfig({
-  // Served from https://fiorelorenzo.github.io/pitchbox/ — without this prefix
+  // Served from https://fiorelorenzo.github.io/pitchbox/ - without this prefix
   // the built site requests assets from the apex domain and renders unstyled.
   base: '/pitchbox/',
   title: 'Pitchbox',

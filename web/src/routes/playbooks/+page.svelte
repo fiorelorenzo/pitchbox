@@ -67,7 +67,7 @@
 
 <PageHeader
 	title="Playbooks"
-	description="Markdown instructions the agent runner executes. Built-in entries are read-only — duplicate to customise."
+	description="Markdown instructions the agent runner executes. Built-in entries are read-only - duplicate to customise."
 >
 	{#snippet actions()}
 		<Button onclick={() => (createOpen = true)}>New playbook</Button>

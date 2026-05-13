@@ -5,7 +5,7 @@ import { getDb, schema } from '$lib/server/db.js';
 /**
  * Manual retry for a dead-letter webhook delivery. Resets attempts/last_error
  * and flips status back to 'pending' so the daemon worker picks it up on the
- * next tick. Idempotent — already-pending rows just have their counters reset.
+ * next tick. Idempotent - already-pending rows just have their counters reset.
  */
 export async function POST({ params }: { params: { id: string } }) {
   const id = Number(params.id);

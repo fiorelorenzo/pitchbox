@@ -20,7 +20,7 @@ export type SendEvaluation =
 /**
  * Decide whether a draft can transition to `sent`, and (if yes) compute the
  * `draft_events.details` payload describing any quota breach. The function
- * does not write anything — callers own DB mutations.
+ * does not write anything - callers own DB mutations.
  *
  * NOTE on the +1: `getAccountUsage` reads `drafts.sent_at` from the DB.
  * Callers invoke this helper BEFORE writing the new `sent_at`, so the count
@@ -59,7 +59,7 @@ export async function evaluateDraftSend(
   const limits = await loadQuotaLimits(db, platform?.slug ?? 'reddit');
 
   if (!isDraftKind(draft.kind)) {
-    // Unknown kind — no quota applies; treat as unrestricted
+    // Unknown kind - no quota applies; treat as unrestricted
     return { kind: 'ok', quotaEventDetails: null };
   }
   const qk = mapDraftKindToQuotaKind(draft.kind);

@@ -1,6 +1,6 @@
 # CLI reference
 
-`bin/pitchbox` is a bash wrapper that runs `cli/src/index.ts` under `tsx`. No build step — playbooks call it directly.
+`bin/pitchbox` is a bash wrapper that runs `cli/src/index.ts` under `tsx`. No build step - playbooks call it directly.
 
 ## `pitchbox run:start --campaign <id>`
 
@@ -12,7 +12,7 @@ Commits terminal state for a run. The dispatcher's `then/catch` blocks tolerate 
 
 ## `pitchbox drafts:create --run <id>`
 
-Reads a JSON payload from stdin (an array of up to 200 draft inputs) and bulk-inserts the rows. Blocklisted targets are skipped and reported back in the JSON response. Reddit's `subreddit` lives under `metadata.subreddit` — the column itself was dropped in migration 0014.
+Reads a JSON payload from stdin (an array of up to 200 draft inputs) and bulk-inserts the rows. Blocklisted targets are skipped and reported back in the JSON response. Reddit's `subreddit` lives under `metadata.subreddit` - the column itself was dropped in migration 0014.
 
 ## `pitchbox drafts:get [--state <state>] [--project <slug>]`
 
@@ -28,4 +28,4 @@ The `cli/src/commands/reddit.ts` module exposes Reddit-specific helpers (search 
 pitchbox drafts:regenerate <id> [--hint "..."]
 ```
 
-Bumps `drafts.regeneration_count` for the target draft, optionally records a reviewer hint into `draft_regeneration_hints`, and appends a `regenerated` draft_event. The runner invocation is currently stubbed — the helper is invoked verbatim by the dashboard's `POST /api/drafts/[id]/regenerate` so both surfaces share an audit trail until the `regenerate-single` runner mode lands.
+Bumps `drafts.regeneration_count` for the target draft, optionally records a reviewer hint into `draft_regeneration_hints`, and appends a `regenerated` draft_event. The runner invocation is currently stubbed - the helper is invoked verbatim by the dashboard's `POST /api/drafts/[id]/regenerate` so both surfaces share an audit trail until the `regenerate-single` runner mode lands.

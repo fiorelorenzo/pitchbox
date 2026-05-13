@@ -33,7 +33,6 @@
     "./crypto": "./src/crypto.ts",
     "./dm-sync": "./src/dm-sync.ts",
     "./comment-sync": "./src/comment-sync.ts",
-    "./extension-token": "./src/extension-token.ts",
     "./notifications": "./src/notifications.ts",
     "./auth": "./src/auth.ts",
     "./orgs": "./src/orgs.ts",

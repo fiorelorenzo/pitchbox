@@ -16,7 +16,7 @@
 	let { data }: { data: PageData } = $props();
 
 	// Seed every form-field state from `data` exactly once. Wrapping in
-	// untrack() silences state_referenced_locally — the initial value should
+	// untrack() silences state_referenced_locally - the initial value should
 	// not re-fire if SvelteKit reruns the load function.
 	let projectId = $state<number | null>(
 		untrack(() => data.preselected?.projectId ?? data.projects[0]?.id ?? null),
@@ -91,7 +91,7 @@
 				toast.error(body.message ?? body.error ?? 'Failed to create campaign');
 				return;
 			}
-			toast.success('Campaign created — generating profile');
+			toast.success('Campaign created - generating profile');
 			if (preselectedRecId !== null) {
 				fetch(`/api/projects/${projectId}/recommendations/${preselectedRecId}`, {
 					method: 'DELETE',

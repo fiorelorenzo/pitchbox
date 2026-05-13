@@ -1,3 +1,5 @@
+import { logFromContent } from '../lib/log-from-content.js';
+
 /**
  * Auto-pair content script.
  *
@@ -36,7 +38,7 @@
   }
   if (!res.ok) {
     if (res.status === 401) {
-      // User isn't signed in yet — quietly skip, we'll retry on next reload.
+      // User isn't signed in yet - quietly skip, we'll retry on next reload.
       return;
     }
     console.warn('[pitchbox] auto-pair non-200', res.status);
@@ -54,8 +56,16 @@
   chrome.runtime.sendMessage(
     { type: 'pitchbox:auto-pair', backendUrl, token: body.token },
     (ack) => {
-      if (ack?.ok) console.log('[pitchbox] paired with', backendUrl);
-      else console.warn('[pitchbox] auto-pair save failed', ack);
+      if (ack?.ok) {
+        console.log('[pitchbox] paired with', backendUrl);
+        logFromContent({
+          level: 'info',
+          source: 'pairing',
+          message: 'activity.pairing.added',
+          messageParams: { host: location.host },
+          backendUrl: location.origin,
+        });
+      } else console.warn('[pitchbox] auto-pair save failed', ack);
     },
   );
 })();

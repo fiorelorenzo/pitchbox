@@ -3,15 +3,15 @@
  *
  * Every status that appears as a coloured pill in the UI is defined here so
  * the look stays identical everywhere it shows up. Tones follow a single
- * semantic palette — hue maps to meaning, not to a specific value:
+ * semantic palette - hue maps to meaning, not to a specific value:
  *
- *   amber   — needs user attention        (pending_review, cancelled)
- *   sky     — in progress, in flight      (approved, running, queued-in-progress)
- *   emerald — delivered / completed ok    (sent, success, active)
- *   violet  — positive outcome / reward   (replied)
- *   rose    — rejected / failed           (rejected, failed)
- *   slate   — idle, disabled              (queued, paused)
- *   orange  — platform / category accent  (subreddit, reddit, post_comment)
+ *   amber   - needs user attention        (pending_review, cancelled)
+ *   sky     - in progress, in flight      (approved, running, queued-in-progress)
+ *   emerald - delivered / completed ok    (sent, success, active)
+ *   violet  - positive outcome / reward   (replied)
+ *   rose    - rejected / failed           (rejected, failed)
+ *   slate   - idle, disabled              (queued, paused)
+ *   orange  - platform / category accent  (subreddit, reddit, post_comment)
  *
  * Pulsing is reserved for *transient* states (running). Always-on states like
  * "active" or "sent" stay static so the UI doesn't throb.
@@ -99,7 +99,7 @@ export const CAMPAIGN_STATUS: Record<string, BadgeStyle> = {
   safety_braked: { label: 'Safety brake', tone: 'rose' },
 };
 
-// Contact history per-row status — `replied` gets its own violet so it stands
+// Contact history per-row status - `replied` gets its own violet so it stands
 // out from merely "sent" (the ultimate goal, not just delivery).
 export const CONTACT_STATUS: Record<string, BadgeStyle> = {
   replied: { label: 'Replied', tone: 'violet' },
@@ -144,7 +144,7 @@ export const BADGE_DOMAIN: Record<BadgeDomain, Record<string, BadgeStyle>> = {
   'daemon-status': DAEMON_STATUS,
 };
 
-/** Fallback for an unknown value — the raw string with neutral styling. */
+/** Fallback for an unknown value - the raw string with neutral styling. */
 export function resolveBadge(domain: BadgeDomain, value: string): BadgeStyle {
   return BADGE_DOMAIN[domain]?.[value] ?? { label: value, tone: 'muted' };
 }

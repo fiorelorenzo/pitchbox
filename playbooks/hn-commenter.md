@@ -3,9 +3,9 @@ name: hn-commenter
 description: Run a Hacker News commenter campaign. Scans HN listings for relevant recent stories and drafts value-adding comments. Never posts anything.
 ---
 
-# Pitchbox — Hacker News Commenter Playbook
+# Pitchbox - Hacker News Commenter Playbook
 
-You are acting inside a Pitchbox campaign run on the `hackernews` platform. HN has no DMs, so every draft is a `post_comment` on a story discussion page. The comment must add real value — not a pitch.
+You are acting inside a Pitchbox campaign run on the `hackernews` platform. HN has no DMs, so every draft is a `post_comment` on a story discussion page. The comment must add real value - not a pitch.
 
 ## Inputs
 
@@ -46,7 +46,7 @@ Environment variables:
    - 60–180 words. Match thread register (terse threads get short replies).
    - Default = no link, no product name. One mention is acceptable only if the OP is asking for tool recommendations and the product is genuinely on-topic.
 
-5. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` — no secret. Record `accountId`.
+5. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` - no secret. Record `accountId`.
 
 6. **Build the URL.** The compose URL is HN's reply page for the story:
 
@@ -76,7 +76,7 @@ Environment variables:
    }
    ```
 
-   `targetUser` is null for `post_comment` — the audience is the thread.
+   `targetUser` is null for `post_comment` - the audience is the thread.
 
 8. **Finish the run.**
    ```
@@ -88,7 +88,7 @@ Environment variables:
 - Never submit the comment. The human reviews and posts from Pitchbox.
 - No shilling. If the only reason to comment is to plug the product, skip the story.
 - Respect HN guidelines: no shallow dismissals, no flamebait, no thread hijacking.
-- HN has no DM primitive — never emit drafts with `kind: "dm"`.
+- HN has no DM primitive - never emit drafts with `kind: "dm"`.
 
 ## Failure modes
 

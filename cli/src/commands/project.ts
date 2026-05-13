@@ -105,7 +105,7 @@ export function registerProjectCommands(program: Command) {
           description = raw;
         }
       } catch {
-        // Not JSON — treat as legacy markdown.
+        // Not JSON - treat as legacy markdown.
         description = raw;
       }
 

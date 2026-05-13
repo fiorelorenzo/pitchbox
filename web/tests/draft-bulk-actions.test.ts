@@ -63,7 +63,7 @@ function makeRequest(path: string, body: unknown): Request {
 describe('POST /api/drafts/bulk-approve', () => {
   beforeEach(reset);
 
-  it('returns per-id outcomes — eligible drafts approved, others skipped', async () => {
+  it('returns per-id outcomes - eligible drafts approved, others skipped', async () => {
     const drafts = await seedMany();
     const ids = drafts.map((d) => d.id);
     const res = await bulkApprove({

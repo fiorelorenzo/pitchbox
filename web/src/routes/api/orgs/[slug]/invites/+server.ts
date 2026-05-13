@@ -14,7 +14,7 @@ export async function POST(event) {
   const slug = event.params.slug as string;
   const db = getDb();
   const org = await findOrgBySlug(db, slug);
-  // 404 if org doesn't exist or the caller isn't an admin of it — avoid
+  // 404 if org doesn't exist or the caller isn't an admin of it - avoid
   // leaking existence of orgs the user can't see.
   if (!org) return json({ error: 'not_found' }, { status: 404 });
   if (!(await isOrgAdmin(db, user.id, org.id))) {

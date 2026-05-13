@@ -15,7 +15,7 @@ features:
   - title: Human in the loop
     details: The agent researches, drafts, and bookkeeps. The dashboard lets you approve, edit, or reject before anything goes out.
   - title: Reddit today, more later
-    details: First-class Reddit support (DMs and comment-replies). The platform layer is decoupled — new adapters drop in.
+    details: First-class Reddit support (DMs and comment-replies). The platform layer is decoupled - new adapters drop in.
   - title: Agent-runner agnostic
-    details: Built around the AgentRunner interface — claude-code today, codex/opencode adapters when their ergonomics catch up.
+    details: Built around the AgentRunner interface - claude-code today, codex/opencode adapters when their ergonomics catch up.
 ---
