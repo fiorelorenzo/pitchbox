@@ -10,7 +10,7 @@ When on, `hooks.server.ts` checks the `pitchbox_session` cookie on every non-exe
 
 - HTML navigations without a valid session → redirect to `/login?next=<path>`.
 - `/api/*` calls without a valid session → `401 unauthenticated`.
-- `/api/extension/*` and `/api/auth/*` remain exempt by design (the extension uses its own token).
+- `/api/extension/*` and `/api/auth/*` remain exempt by design. The extension authenticates with a per-device bearer token minted via `POST /api/extension/auto-pair` (which itself reads the dashboard session cookie).
 
 ## First-run bootstrap
 

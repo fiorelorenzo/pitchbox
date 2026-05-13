@@ -5,8 +5,8 @@ The dashboard's `/api/*` routes power the UI and the extension. Authentication d
 ## Auth
 
 - **Cookie session** (`pitchbox_session`) when `PITCHBOX_AUTH=on` - covers everything **except** the two prefixes below.
-- **Extension token** (`Authorization: Bearer <token>`) - required for every `/api/extension/*` call.
-- **Public** - `/api/auth/login` and `/api/auth/logout` (the very routes that establish a session).
+- **Extension per-device token** (`Authorization: Bearer <token>`) - required for every `/api/extension/*` call. Each paired device gets its own token in `extension_devices`; the side panel mints one via `POST /api/extension/auto-pair` using the dashboard session cookie. There is no shared singleton token.
+- **Public** - `/api/auth/login`, `/api/auth/logout`, and `/api/extension/auto-pair` (which authenticates with the dashboard session cookie, not a bearer token).
 
 ## Selected endpoints
 
@@ -42,9 +42,18 @@ DELETE /api/playbooks/[id]
 POST /api/auth/login                         # { username, password }
 POST /api/auth/logout
 
-# Extension (Bearer-token only)
-POST /api/extension/dm-sync                  # inbox + chat poll → match drafts
-POST /api/extension/draft/[id]/sent          # auto-flip a draft to sent
+# Extension - pairing
+POST /api/extension/auto-pair                # cookie-auth → mints a per-device token
+POST /api/extension/handshake                # bearer-auth → liveness ping
+
+# Extension - drafts (bearer-auth, per-device)
+GET  /api/extension/draft/[id]               # fetch draft for the compose UI
+POST /api/extension/draft/[id]/armed         # flip to 'armed' (compose page opened)
+POST /api/extension/draft/[id]/sent          # flip to 'sent' (user submitted on Reddit)
+
+# Extension - reply sync (bearer-auth, per-device)
+POST /api/extension/dm-sync                  # inbox + chat poll → match drafts + status heartbeat
+GET  /api/extension/dm-sync/status           # last sync stamp + per-channel liveness
 
 # Export
 GET /api/export/[resource]?format=csv        # resource ∈ { drafts, contacts, conversations }

@@ -25,7 +25,7 @@ Pitchbox is designed to run on a single VPS or a beefy laptop. The architecture 
 
 - Campaigns, runs, drafts, contact history, blocklist, messages.
 - Encrypted account credentials (`accounts.cookie_session`).
-- App config (`app_config`) - extension token, quota defaults, runner configs, notification webhooks.
+- App config (`app_config`) - quota defaults, runner configs, default runner, retention policy, notification webhooks. Extension auth uses per-device tokens in `extension_devices`, not a singleton here.
 - Built-in and user playbooks.
 
 `ENCRYPTION_KEY` is **not** in Postgres - keep it in `.env` or a secret store, and snapshot it alongside backups or you'll lose access to encrypted columns.
