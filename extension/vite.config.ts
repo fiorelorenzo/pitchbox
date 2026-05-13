@@ -11,6 +11,8 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    port: 5175,
+    strictPort: true,
     cors: { origin: [/chrome-extension:\/\//] },
   },
 });
