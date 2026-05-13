@@ -8,7 +8,9 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-export async function requireExtensionAuth(request: Request): Promise<void> {
+export type ExtensionAuthContext = { deviceId: number | null };
+
+export async function requireExtensionAuth(request: Request): Promise<ExtensionAuthContext> {
   const header = request.headers.get('authorization') ?? '';
   const match = /^Bearer\s+(.+)$/.exec(header);
   if (!match) throw error(401, 'missing bearer token');
@@ -32,10 +34,11 @@ export async function requireExtensionAuth(request: Request): Promise<void> {
       .update(schema.extensionDevices)
       .set({ lastSeenAt: new Date() })
       .where(eq(schema.extensionDevices.id, device.id));
-    return;
+    return { deviceId: device.id };
   }
 
   // 2) Fall back to the legacy shared token in app_config.
   const ok = await verifyExtensionToken(token);
   if (!ok) throw error(401, 'invalid token');
+  return { deviceId: null };
 }

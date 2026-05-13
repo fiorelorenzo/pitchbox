@@ -162,6 +162,146 @@
       "when": 1778528000000,
       "tag": "0022_perf_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1778540000000,
+      "tag": "0023_auth_failures",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1778541000000,
+      "tag": "0024_extension_sync_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1778542000000,
+      "tag": "0025_drafts_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1778543000000,
+      "tag": "0026_runs_failure_reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1778544000000,
+      "tag": "0027_campaigns_backoff",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1778545000000,
+      "tag": "0028_runs_scheduled_for_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1778546000000,
+      "tag": "0029_runs_cost_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1778547000000,
+      "tag": "0030_index_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1778548000000,
+      "tag": "0031_webhook_deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1778549000000,
+      "tag": "0032_account_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1778550000000,
+      "tag": "0033_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1778552000000,
+      "tag": "0035_project_insights",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1778553000000,
+      "tag": "0036_drafts_dedup_warning",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1778554000000,
+      "tag": "0037_drafts_body_edited",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1778555000000,
+      "tag": "0038_drafts_scheduled_send_after",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1778556000000,
+      "tag": "0039_drafts_regeneration",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1778557000000,
+      "tag": "0040_drafts_quality_score",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1778558000000,
+      "tag": "0041_drafts_variant_group",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1778559000000,
+      "tag": "0042_drafts_reply_drafting",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1778560000000,
+      "tag": "0043_org_invites",
+      "breakpoints": true
     }
   ]
 }

@@ -46,6 +46,16 @@ export async function load({ params }: { params: { id: string } }) {
         : null,
   }));
   const skillRuns = enrichedRuns.filter((r) => r.kind === 'campaign_skill_generation').slice(0, 5);
+  // Tuning runs include the raw run rows (with params.generatedConfig and
+  // params.previousConfig) so the Tuning tab can diff before/after.
+  const tuningRunsRaw = runs.filter((r) => r.kind === 'campaign_skill_generation').slice(0, 20);
+  const tuningRuns = tuningRunsRaw.map((r) => ({
+    id: r.id,
+    status: r.status,
+    startedAt: r.startedAt ? new Date(r.startedAt).toISOString() : r.startedAt,
+    finishedAt: r.finishedAt ? new Date(r.finishedAt).toISOString() : r.finishedAt,
+    params: r.params as Record<string, unknown> | null,
+  }));
   const readiness = await getCampaignReadiness(id);
   return {
     campaign,
@@ -53,6 +63,7 @@ export async function load({ params }: { params: { id: string } }) {
     platform: platform ?? null,
     runs: enrichedRuns,
     skillRuns,
+    tuningRuns,
     readiness,
   };
 }

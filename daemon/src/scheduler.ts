@@ -1,6 +1,8 @@
 import { getDb, schema } from '@pitchbox/shared/db';
 import { and, eq, isNotNull, isNull, lte, or } from 'drizzle-orm';
 import cronParser from 'cron-parser';
+import { computeBackoff, FAILURE_PAUSE_THRESHOLD } from '@pitchbox/shared/scheduler/backoff';
+import { notify } from '@pitchbox/shared/notifications';
 import { config } from './config.js';
 import { logger } from './logger.js';
 
@@ -14,14 +16,24 @@ const log = logger('scheduler');
  */
 async function triggerRun(
   campaignId: number,
-): Promise<{ ok: boolean; runId?: number; error?: string }> {
+  scheduledFor: Date,
+): Promise<{ ok: boolean; runId?: number; error?: string; alreadyDispatched?: boolean }> {
   const url = `${config.webUrl}/api/run`;
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ campaignId, trigger: 'scheduled' }),
+      body: JSON.stringify({
+        campaignId,
+        trigger: 'scheduled',
+        scheduledFor: scheduledFor.toISOString(),
+      }),
     });
+    if (res.status === 409) {
+      // Another scheduler instance (or the user) already dispatched this
+      // tick. Treat as success for backoff purposes — the work is happening.
+      return { ok: true, alreadyDispatched: true };
+    }
     if (!res.ok) {
       return { ok: false, error: `${res.status} ${await res.text().catch(() => '')}` };
     }
@@ -44,9 +56,12 @@ function computeNextRun(cronExpression: string, from: Date): Date | null {
 
 /**
  * One scheduler tick:
- *  - fetch active campaigns with cron_expression set
- *  - for each: if next_run_at is null, seed it from the cron expression
- *  - for each: if next_run_at <= now, trigger a run and advance next_run_at
+ *  - fetch active campaigns with cron_expression set that aren't paused by
+ *    the circuit breaker;
+ *  - for each: if next_run_at is null, seed it from the cron expression;
+ *  - for each due campaign: dispatch via the web HTTP endpoint; on failure,
+ *    increment the failure counter, set next_attempt_after via exponential
+ *    backoff, and pause the campaign once the threshold is reached.
  */
 export async function tick(): Promise<void> {
   const db = getDb();
@@ -58,8 +73,20 @@ export async function tick(): Promise<void> {
     .where(
       and(
         eq(schema.campaigns.status, 'active'),
+        eq(schema.campaigns.pausedDueToFailures, false),
         isNotNull(schema.campaigns.cronExpression),
-        or(isNull(schema.campaigns.nextRunAt), lte(schema.campaigns.nextRunAt, now)),
+        // Due if either the cron tick or the backoff timer has elapsed.
+        // Backoff (next_attempt_after) takes precedence when present.
+        or(
+          and(
+            isNotNull(schema.campaigns.nextAttemptAfter),
+            lte(schema.campaigns.nextAttemptAfter, now),
+          ),
+          and(
+            isNull(schema.campaigns.nextAttemptAfter),
+            or(isNull(schema.campaigns.nextRunAt), lte(schema.campaigns.nextRunAt, now)),
+          ),
+        ),
       ),
     );
 
@@ -68,9 +95,9 @@ export async function tick(): Promise<void> {
   for (const c of campaigns) {
     if (!c.cronExpression) continue;
 
-    // If next_run_at is still null, seed it without triggering; we only trigger
-    // on subsequent ticks where the threshold has been crossed.
-    if (c.nextRunAt == null) {
+    // If next_run_at is still null and we're not already in backoff, seed it
+    // from the cron expression without dispatching this tick.
+    if (c.nextRunAt == null && c.nextAttemptAfter == null) {
       const seeded = computeNextRun(c.cronExpression, now);
       if (seeded) {
         await db
@@ -82,26 +109,63 @@ export async function tick(): Promise<void> {
       continue;
     }
 
-    const res = await triggerRun(c.id);
+    // `scheduled_for` is the cron tick this dispatch belongs to. Use the
+    // campaign's `nextRunAt` when set (the cron value we computed last tick),
+    // falling back to `nextAttemptAfter` for backoff retries and finally to
+    // `now` for the seed case.
+    const scheduledFor = c.nextRunAt ?? c.nextAttemptAfter ?? now;
+    const res = await triggerRun(c.id, scheduledFor);
     const nextRun = computeNextRun(c.cronExpression, now);
 
     if (res.ok) {
+      // Reset backoff state on success and resume the cron schedule.
       await db
         .update(schema.campaigns)
-        .set({ lastRunAt: now, nextRunAt: nextRun ?? null, consecutiveFailures: 0 })
+        .set({
+          lastRunAt: now,
+          nextRunAt: nextRun ?? null,
+          nextAttemptAfter: null,
+          consecutiveFailures: 0,
+          failureAttempts: 0,
+        })
         .where(eq(schema.campaigns.id, c.id));
       log.info(
         `triggered campaign #${c.id} (${c.name}) → run #${res.runId ?? '?'}, next=${nextRun?.toISOString() ?? 'n/a'}`,
       );
     } else {
-      // Advance next_run_at anyway so we don't hammer a broken endpoint, but bump the failure counter.
+      const newAttempts = c.failureAttempts + 1;
+      const shouldPause = newAttempts >= FAILURE_PAUSE_THRESHOLD;
+      const delayMs = computeBackoff(newAttempts);
+      const nextAttempt = new Date(now.getTime() + delayMs);
       await db
         .update(schema.campaigns)
-        .set({ nextRunAt: nextRun ?? null, consecutiveFailures: c.consecutiveFailures + 1 })
+        .set({
+          // Keep the cron tick advancing so resuming after a pause picks up
+          // an up-to-date next_run_at (we still honour next_attempt_after
+          // first while in backoff).
+          nextRunAt: nextRun ?? null,
+          nextAttemptAfter: shouldPause ? null : nextAttempt,
+          failureAttempts: newAttempts,
+          consecutiveFailures: c.consecutiveFailures + 1,
+          pausedDueToFailures: shouldPause,
+        })
         .where(eq(schema.campaigns.id, c.id));
-      log.warn(
-        `failed to trigger campaign #${c.id}: ${res.error}. retry at ${nextRun?.toISOString() ?? 'n/a'}`,
-      );
+      if (shouldPause) {
+        log.warn(
+          `paused campaign #${c.id} after ${newAttempts} consecutive failures: ${res.error}`,
+        );
+        await notify(db, {
+          kind: 'campaign.paused',
+          title: `Campaign #${c.id} paused`,
+          body: `Pitchbox stopped dispatching after ${newAttempts} consecutive failures. Last error: ${res.error}`,
+          payload: { campaignId: c.id, attempts: newAttempts, lastError: res.error },
+          severity: 'error',
+        });
+      } else {
+        log.warn(
+          `failed to trigger campaign #${c.id}: ${res.error}. retry at ${nextAttempt.toISOString()} (attempt ${newAttempts})`,
+        );
+      }
     }
   }
 }

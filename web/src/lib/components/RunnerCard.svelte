@@ -77,7 +77,7 @@
 				{/if}
 				{#if isDefault}
 					<span
-						class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-300"
+						class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
 					>
 						default
 					</span>
@@ -93,9 +93,9 @@
 				</p>
 			{/if}
 			{#if !runner.implemented}
-				<p class="text-[11px] text-amber-300 mt-1.5">Coming soon — adapter not implemented yet.</p>
+				<p class="text-[11px] text-amber-700 dark:text-amber-300 mt-1.5">Coming soon — adapter not implemented yet.</p>
 			{:else if runner.error && !runner.available}
-				<p class="text-[11px] text-rose-300 mt-1.5">{runner.error}</p>
+				<p class="text-[11px] text-rose-700 dark:text-rose-300 mt-1.5">{runner.error}</p>
 			{/if}
 		</div>
 		{#if runner.implemented && runner.available && !isDefault}

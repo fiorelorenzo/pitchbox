@@ -29,6 +29,23 @@ The dashboard's `hooks.server.ts` exempts `/api/extension/*` from cookie auth. R
 ## What the background workers do
 
 - `src/background/inbox-sync.ts` — polls `reddit.com/message/inbox.json`. Splits items into the `items[]` (PMs) and `comments[]` (`t1` items) arrays of the dm-sync request body.
-- `src/background/chat-sync.ts` — polls `matrix.redditspace.com/_matrix/client/v3/sync` for Reddit Chat.
+- `src/background/chat-sync.ts` — polls `matrix.redditspace.com/_matrix/client/v3/sync` for Reddit Chat. Before each tick it sends a cheap `GET /_matrix/client/v3/account/whoami` probe; if the Matrix token has expired (401/403) the heavier `/sync` call is skipped, the action badge turns red with `!`, and the popup displays a "Reddit Chat sync paused — please open reddit.com and refresh" notice with a one-click button to open reddit.com.
 
-Both call the same `POST /api/extension/dm-sync` endpoint.
+Both call the same `POST /api/extension/dm-sync` endpoint. The request body now also includes a `status` field summarising channel liveness:
+
+```jsonc
+{
+  "platform": "reddit",
+  "items": [...],
+  "comments": [...],
+  "status": {
+    "chat": "ok" | "unauthorized" | "error" | "unknown",
+    "legacy": "ok" | "unauthorized" | "error" | "unknown",
+    "captured_at": "2026-05-12T10:00:00Z"
+  }
+}
+```
+
+The server persists the payload into `extension_devices.last_sync_status`. When **any** non-revoked device most recently reported `chat=unauthorized`, the dashboard renders a small banner at the top of **Inbox** and **Conversations** prompting the user to open reddit.com and refresh so the extension can capture a fresh Matrix token.
+
+After every alarm tick the background worker also fires a status-only `dm-sync` heartbeat (with empty `items[]`/`comments[]`) so the dashboard banner reflects current liveness even when no replies came in.

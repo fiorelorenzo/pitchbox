@@ -10,6 +10,7 @@
 	let token = $state('');
 	let lastHandshakeAt = $state<string | null>(null);
 	let lastDmSyncAt = $state<string | null>(null);
+	let chatSyncStatus = $state<'ok' | 'unauthorized' | 'error' | 'unknown' | null>(null);
 	let status = $state<Status>({ kind: 'idle' });
 	let busy = $state(false);
 	let syncing = $state(false);
@@ -21,8 +22,17 @@
 		token = s.token ?? '';
 		lastHandshakeAt = s.lastHandshakeAt ?? null;
 		lastDmSyncAt = s.lastDmSyncAt ?? null;
+		chatSyncStatus = s.syncStatus?.chat ?? null;
 		if (token) status = { kind: 'ok', msg: 'Connected' };
 	});
+
+	function openReddit() {
+		try {
+			chrome.tabs?.create?.({ url: 'https://www.reddit.com/' });
+		} catch {
+			// noop — tabs API unavailable in this context.
+		}
+	}
 
 	function fmtAgo(iso: string | null): string {
 		if (!iso) return 'never';
@@ -118,6 +128,7 @@
 			}
 			const s = await getSettings();
 			lastDmSyncAt = s.lastDmSyncAt ?? null;
+			chatSyncStatus = s.syncStatus?.chat ?? null;
 		} finally {
 			syncing = false;
 		}
@@ -241,6 +252,21 @@
 		>
 			{syncing ? 'Syncing…' : 'Sync now'}
 		</button>
+
+		{#if chatSyncStatus === 'unauthorized'}
+			<div class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+				<div class="font-medium text-amber-200">Reddit Chat sync paused</div>
+				<div class="mt-0.5">
+					Please open reddit.com and refresh so the extension can capture a fresh Matrix token.
+				</div>
+				<button
+					onclick={openReddit}
+					class="mt-1.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 px-2 py-1 text-[11px] font-medium text-amber-100"
+				>
+					Open reddit.com
+				</button>
+			</div>
+		{/if}
 	{/if}
 
 	{#if status.kind !== 'idle' && status.msg}

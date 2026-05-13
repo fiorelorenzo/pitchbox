@@ -1,8 +1,12 @@
+import { applyJitter } from '@pitchbox/shared/scheduler/jitter';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { beat } from './heartbeat.js';
 import { tick as schedulerTick } from './scheduler.js';
 import { tick as replyPollerTick } from './reply-poller.js';
+import { tick as webhookSenderTick } from './webhook-sender.js';
+import { tick as retentionTick } from './retention.js';
+import { tick as keywordWatcherTick } from './keyword-watcher.js';
 
 const log = logger('main');
 
@@ -35,7 +39,9 @@ function every(ms: number, fn: () => Promise<void>): LoopHandle {
       await run;
     } finally {
       inflight = null;
-      if (!cancelled) timer = setTimeout(kick, ms);
+      // Apply symmetric jitter so concurrent loops (and multi-instance daemons)
+      // don't lock-step on the same tick.
+      if (!cancelled) timer = setTimeout(kick, applyJitter(ms, config.jitterPct));
     }
   };
 
@@ -66,6 +72,40 @@ async function main() {
       run: schedulerTick,
     },
   ];
+
+  loops.push({
+    name: 'retention',
+    intervalMs: config.retentionIntervalMs,
+    run: async () => {
+      const res = await retentionTick();
+      if (res.runEventsDeleted + res.draftEventsDeleted + res.draftsDeleted > 0) {
+        logger('retention').info(
+          `pruned run_events=${res.runEventsDeleted} draft_events=${res.draftEventsDeleted} drafts=${res.draftsDeleted}`,
+        );
+      }
+    },
+  });
+
+  loops.push({
+    name: 'keyword-watcher',
+    intervalMs: config.keywordWatcherIntervalMs,
+    run: async () => {
+      const res = await keywordWatcherTick();
+      if (res.checked > 0) {
+        logger('keyword-watcher').info(
+          `checked ${res.checked} watches → ${res.dispatched} dispatched`,
+        );
+      }
+    },
+  });
+
+  loops.push({
+    name: 'webhook-sender',
+    intervalMs: config.webhookSenderIntervalMs,
+    run: async () => {
+      await webhookSenderTick();
+    },
+  });
 
   if (!config.repliesDisabled) {
     loops.push({

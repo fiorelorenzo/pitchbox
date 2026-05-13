@@ -210,7 +210,7 @@
 </div>
 
 <Card.Root size="sm">
-	<Card.Content class="p-0">
+	<Card.Content class="p-0 overflow-x-auto">
 		<Table.Root>
 			<Table.Header>
 				<Table.Row class="border-b">

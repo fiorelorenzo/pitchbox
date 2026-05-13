@@ -10,6 +10,7 @@ type DraftSummary = {
   state: string;
   body: string;
   targetUser: string | null;
+  version?: number;
 };
 
 async function authHeaders(): Promise<{ backendUrl: string; headers: HeadersInit } | null> {
@@ -59,25 +60,60 @@ export const api = {
     postJson<{ ok: true }>(`/api/extension/draft/${draftId}/armed`, {
       composedAt: new Date().toISOString(),
     }),
-  sent: (
+  sent: async (
     draftId: number,
     sentContent?: string,
     commentLookup?: { postId: string; accountHandle: string; postedAt: string },
     platformPostId?: string,
-  ) =>
-    postJson<{ ok: true }>(`/api/extension/draft/${draftId}/sent`, {
+    version?: number,
+  ): Promise<ApiResult<{ ok: true }>> => {
+    const payload = {
       sentContent,
       sentAt: new Date().toISOString(),
       commentLookup,
       platformPostId,
-    }),
-  dmSync: (platform: string, items: unknown[], comments: unknown[] = []) =>
-    postJson<{
+      version,
+    };
+    const first = await postJson<{ ok: true }>(`/api/extension/draft/${draftId}/sent`, payload);
+    if (first.ok || first.status !== 409) return first;
+    // Re-fetch the draft to read the latest version, then retry exactly once.
+    let parsed: { error?: string; current_version?: number } | null = null;
+    try {
+      parsed = JSON.parse(first.error) as { error?: string; current_version?: number };
+    } catch {
+      // Body wasn't JSON — bail out with the original failure.
+    }
+    if (!parsed || parsed.error !== 'version_conflict') return first;
+    const fresh = await getJson<DraftSummary>(`/api/extension/draft/${draftId}`);
+    if (!fresh.ok) return first;
+    return postJson<{ ok: true }>(`/api/extension/draft/${draftId}/sent`, {
+      ...payload,
+      version: fresh.data.version ?? parsed.current_version,
+    });
+  },
+  dmSync: async (
+    platform: string,
+    items: unknown[],
+    comments: unknown[] = [],
+    status?: {
+      chat: 'ok' | 'unauthorized' | 'error' | 'unknown';
+      legacy: 'ok' | 'unauthorized' | 'error' | 'unknown';
+      captured_at: string;
+    },
+  ) => {
+    const stored = !status ? (await getSettings()).syncStatus : null;
+    const payloadStatus =
+      status ??
+      (stored
+        ? { chat: stored.chat, legacy: stored.legacy, captured_at: stored.capturedAt }
+        : undefined);
+    return postJson<{
       ok: true;
       inserted: number;
       replied: number;
       commentsInserted?: number;
       commentsReplied?: number;
-    }>('/api/extension/dm-sync', { platform, items, comments }),
+    }>('/api/extension/dm-sync', { platform, items, comments, status: payloadStatus });
+  },
   dmSyncStatus: () => getJson<{ lastSyncAt: string | null }>('/api/extension/dm-sync/status'),
 };

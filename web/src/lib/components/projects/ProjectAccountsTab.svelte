@@ -11,10 +11,18 @@
     role: string;
     platformId: number;
     isDefault: boolean;
+    dailyLimit: number | null;
+    weeklyLimit: number | null;
   };
   type Platform = { id: number; slug: string };
-  type Props = { projectId: number; accounts: Account[]; platforms: Platform[] };
-  let { projectId, accounts, platforms }: Props = $props();
+  type PlatformDefaults = { daily: number; weekly: number };
+  type Props = {
+    projectId: number;
+    accounts: Account[];
+    platforms: Platform[];
+    platformDefaults?: Record<number, PlatformDefaults>;
+  };
+  let { projectId, accounts, platforms, platformDefaults = {} }: Props = $props();
 
   let addOpen = $state(false);
   let newHandle = $state('');

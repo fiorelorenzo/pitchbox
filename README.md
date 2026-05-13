@@ -112,7 +112,7 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.3
 - **`shared/`** — Drizzle schema + migrations, platform adapters (Reddit), `AgentRunner` + `ReplyReader` interfaces, run-log parsers (claude-code + stubs for codex/opencode).
 - **`cli/`** — the `pitchbox` CLI that playbooks call to read/write DB (`run:start`, `run:finish`, `reddit:scout`, `drafts:create`, …).
 - **`web/`** — SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte dashboard. Routes: `/` (home), `/inbox`, `/campaigns`, `/campaigns/[id]`, `/contacts`, `/conversations`, `/blocklist`, `/settings`.
-- **`daemon/`** — heartbeat + scheduler + reply poller (real DM reader still pending).
+- **`daemon/`** — heartbeat + scheduler + reply poller. Reply ingestion is handled by the Chrome extension; the daemon's `ReplyReader` slot stays in place for future server-side readers.
 - **`extension/`** — Chrome MV3 companion (Vite + `@crxjs/vite-plugin`) that auto-marks drafts as `sent` when you submit on Reddit and polls your DM inbox to flip drafts to `replied` once the target user writes back.
 - **`playbooks/`** — agent-agnostic markdown instructions. The on-disk files are the source for the **built-in** rows in the `playbooks` table; once seeded, the dashboard becomes the editor. Each run snapshots the body of the chosen playbook into `runs.playbook_body` at creation time so future edits never retroactively change past runs. The disk file remains a fallback for legacy runs and for project extraction / skill generation.
 
@@ -124,7 +124,7 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.3
 - ✅ **M3** — Chrome extension, auto mark-as-sent for DM compose + post-comment drafts
 - ✅ **M4** — DM reply tracking via the extension's inbox poller, Conversations UI (post-comment reply tracking deferred to M4.5)
 - ✅ **M4.5** — comment-reply tracking via the extension's inbox poller
-- ✅ **M5** — blocklist enforcement (creation + send) + advisory rate-limiting (Inbox badge + over-quota warning); safety brake deferred
+- ✅ **M5** — blocklist enforcement (creation + send) + advisory rate-limiting (Inbox badge + over-quota warning)
 - ✅ **M6.1** — full project CRUD (UI + API; basic fields + versioned configs + accounts)
 - ⏳ **M6.2** — templates (few-shot examples + reusable snippets, scoped to project, override per campaign)
 - ⏳ **M6.x** — keyword watches, analytics, A/B tests

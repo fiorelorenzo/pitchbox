@@ -20,14 +20,48 @@
 		payload: Record<string, unknown>;
 	};
 
+	type WebhookDelivery = {
+		id: number;
+		webhookId: string;
+		eventType: string;
+		attempts: number;
+		maxAttempts: number;
+		status: 'pending' | 'delivered' | 'dead';
+		lastError: string | null;
+		nextAttemptAt: string | Date;
+		createdAt: string | Date;
+	};
+
 	type PageData = {
 		notifications: Notification[];
 		webhooks: { url?: string };
+		deliveries: WebhookDelivery[];
 	};
 
 	let { data }: { data: PageData } = $props();
 	let webhookUrl = $state(untrack(() => data.webhooks.url ?? ''));
 	let savingWebhook = $state(false);
+	let retrying = $state<Record<number, boolean>>({});
+
+	async function retryDelivery(id: number) {
+		retrying[id] = true;
+		try {
+			const res = await fetch(`/api/webhooks/deliveries/${id}/retry`, { method: 'POST' });
+			if (!res.ok) toast.error('Retry failed');
+			else {
+				toast.success('Re-queued');
+				await invalidateAll();
+			}
+		} finally {
+			retrying[id] = false;
+		}
+	}
+
+	const STATUS_TONE: Record<string, string> = {
+		pending: 'text-amber-300',
+		delivered: 'text-emerald-300',
+		dead: 'text-rose-300',
+	};
 
 	async function markAllRead() {
 		const res = await fetch('/api/notifications', { method: 'POST' });
@@ -107,6 +141,47 @@
 				</p>
 				<Input bind:value={webhookUrl} placeholder="https://hooks.example.com/..." />
 				<Button onclick={saveWebhook} disabled={savingWebhook}>Save</Button>
+			</Card.Content>
+		</Card.Root>
+
+		<Card.Root size="sm" class="mt-4">
+			<Card.Header>
+				<Card.Title class="text-base">Recent deliveries</Card.Title>
+			</Card.Header>
+			<Card.Content class="flex flex-col gap-2">
+				{#if data.deliveries.length === 0}
+					<p class="text-xs text-muted-foreground">No deliveries yet.</p>
+				{:else}
+					<div class="flex flex-col divide-y divide-border/60">
+						{#each data.deliveries as d (d.id)}
+							<div class="py-2 flex items-start gap-2 text-xs">
+								<div class="min-w-0 flex-1">
+									<p class="font-medium {STATUS_TONE[d.status] ?? ''}">
+										{d.status} · <span class="font-mono">{d.eventType}</span>
+									</p>
+									<p class="text-muted-foreground/80 mt-0.5">
+										attempt {d.attempts}/{d.maxAttempts} · {relativeTime(d.createdAt)}
+									</p>
+									{#if d.lastError}
+										<p class="text-rose-300/80 mt-0.5 truncate" title={d.lastError}>
+											{d.lastError}
+										</p>
+									{/if}
+								</div>
+								{#if d.status === 'dead'}
+									<Button
+										size="sm"
+										variant="outline"
+										disabled={retrying[d.id]}
+										onclick={() => retryDelivery(d.id)}
+									>
+										Retry
+									</Button>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
 			</Card.Content>
 		</Card.Root>
 	</div>

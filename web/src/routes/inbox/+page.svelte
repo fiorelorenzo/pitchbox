@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { invalidateAll, goto } from '$app/navigation';
 	import { navigating, page } from '$app/stores';
-	import { ChevronDown, X, Inbox, Keyboard } from 'lucide-svelte';
+	import { ChevronDown, X, Inbox, Keyboard, ArrowLeft, SlidersHorizontal } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -17,6 +17,7 @@
 	import { toast } from 'svelte-sonner';
 	import { relativeTime } from '$lib/utils/time';
 	import PageHeader from '$lib/components/PageHeader.svelte';
+	import ChatSyncStalledBanner from '$lib/components/ChatSyncStalledBanner.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import { SelectField } from '$lib/components/ui/select-field';
 
@@ -36,6 +37,7 @@
 				kind: string;
 				targetUser: string | null;
 				fitScore: number | null;
+				qualityScore?: number | null;
 				state: string;
 				body: string;
 				composeUrl: string | null;
@@ -57,6 +59,7 @@
 			activeProject: { id: number; slug: string; name: string } | null;
 			platforms: Array<{ id: number; slug: string }>;
 			activePlatform: { id: number; slug: string } | null;
+			chatSyncUnauthorized?: boolean;
 		};
 	} = $props();
 
@@ -87,6 +90,11 @@
 
 	// Shortcuts dialog
 	let shortcutsOpen = $state(false);
+
+	// On < lg the list and detail share the same column; selecting a draft
+	// switches the visible pane. Larger viewports ignore this flag because
+	// both panes are always shown side-by-side.
+	let mobileDetailOpen = $state(false);
 
 	const KINDS = [
 		{ value: null, label: 'All' },
@@ -145,6 +153,23 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify(body),
 		});
+		// TODO(#39): the dashboard currently does not surface the row's
+		// `version` in PATCH bodies, so the server falls back to the latest
+		// version and the optimistic-locking check only fires when two callers
+		// supply explicit versions (e.g. extension vs dashboard). Plumbing the
+		// version through the inbox state and reloading on 409 is left as a
+		// follow-up; for now we surface the server's error message via toast.
+		if (res.status === 409) {
+			let msg = 'Draft changed in another tab — reload and try again.';
+			try {
+				const j = (await res.json()) as { error?: string };
+				if (j.error && j.error !== 'version_conflict') msg = j.error;
+			} catch {
+				// ignore JSON parse errors and use the default message
+			}
+			await invalidateAll();
+			throw new Error(msg);
+		}
 		if (!res.ok) throw new Error(await res.text());
 	}
 
@@ -175,20 +200,71 @@
 		bulkApproving = true;
 		try {
 			const ids = [...checkedIds];
-			let ok = 0;
-			let fail = 0;
-			await Promise.all(
-				ids.map((id) =>
-					patchDraft(id, { state: 'approved' })
-						.then(() => ok++)
-						.catch(() => fail++)
-				)
-			);
-			toast.success(`${ok} approved${fail > 0 ? `, ${fail} failed` : ''}`);
+			const res = await fetch('/api/drafts/bulk-approve', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ids }),
+			});
+			if (!res.ok) {
+				const msg = await res.text();
+				throw new Error(msg || `HTTP ${res.status}`);
+			}
+			const data = (await res.json()) as {
+				results: Array<{ id: number; status: 'ok' | 'skipped'; reason?: string }>;
+			};
+			const ok = data.results.filter((r) => r.status === 'ok').length;
+			const skipped = data.results.length - ok;
+			toast.success(`${ok} approved${skipped > 0 ? `, ${skipped} skipped` : ''}`);
 			checkedIds = new Set();
 			await invalidateAll();
+		} catch (e) {
+			toast.error('Bulk approve failed', { description: (e as Error).message });
 		} finally {
 			bulkApproving = false;
+		}
+	}
+
+	// Bulk reschedule state
+	let bulkRescheduling = $state(false);
+	let rescheduleDialogOpen = $state(false);
+	let rescheduleValue = $state('');
+
+	function openRescheduleDialog() {
+		// Default to 1 hour from now, formatted for <input type="datetime-local">.
+		const d = new Date(Date.now() + 60 * 60 * 1000);
+		const pad = (n: number) => String(n).padStart(2, '0');
+		rescheduleValue = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+		rescheduleDialogOpen = true;
+	}
+
+	async function bulkReschedule() {
+		if (!rescheduleValue) return;
+		bulkRescheduling = true;
+		try {
+			const ids = [...checkedIds];
+			const sendAfter = new Date(rescheduleValue).toISOString();
+			const res = await fetch('/api/drafts/bulk-reschedule', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ids, send_after: sendAfter }),
+			});
+			if (!res.ok) {
+				const msg = await res.text();
+				throw new Error(msg || `HTTP ${res.status}`);
+			}
+			const data = (await res.json()) as {
+				results: Array<{ id: number; status: 'ok' | 'skipped'; reason?: string }>;
+			};
+			const ok = data.results.filter((r) => r.status === 'ok').length;
+			const skipped = data.results.length - ok;
+			toast.success(`${ok} rescheduled${skipped > 0 ? `, ${skipped} skipped` : ''}`);
+			rescheduleDialogOpen = false;
+			checkedIds = new Set();
+			await invalidateAll();
+		} catch (e) {
+			toast.error('Bulk reschedule failed', { description: (e as Error).message });
+		} finally {
+			bulkRescheduling = false;
 		}
 	}
 
@@ -294,6 +370,8 @@
 	description="Review drafts generated by campaign runs. Approve to unlock the compose URL, reject to dismiss. Nothing is ever sent automatically — every action goes through you."
 />
 
+<ChatSyncStalledBanner show={!!data.chatSyncUnauthorized} />
+
 <!-- Filter pills -->
 {#if data.run || data.campaign || data.activeProject}
 	<div class="flex items-center gap-2 mb-3 flex-wrap">
@@ -351,7 +429,7 @@
 	<Tabs.Root
 		value={data.state}
 		onValueChange={(v) => setState(v)}
-		class="w-auto"
+		class="w-auto max-w-full overflow-x-auto"
 	>
 		<Tabs.List>
 			{#each STATES as s (s.value)}
@@ -360,7 +438,66 @@
 		</Tabs.List>
 	</Tabs.Root>
 
-	<div class="flex items-center gap-2">
+	<!--
+	  On < md the secondary controls collapse into a <details> popover so the
+	  filter bar fits in one row on phones. On md+ they render inline as before.
+	  Using <details>/<summary> as a no-dep fallback keeps a11y + keyboard nav.
+	-->
+	<details class="md:hidden relative">
+		<summary
+			class="list-none inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border bg-background text-xs font-medium cursor-pointer hover:bg-accent/50 transition-colors [&::-webkit-details-marker]:hidden"
+		>
+			<SlidersHorizontal class="size-3.5" />
+			Filters
+		</summary>
+		<div
+			class="absolute right-0 mt-2 z-30 w-64 rounded-md border border-border bg-popover p-3 shadow-lg flex flex-col gap-2"
+		>
+			<SelectField
+				value={data.activeProject?.slug ?? ''}
+				onValueChange={(v) => navigate({ project: v || null })}
+				options={[
+					{ value: '', label: 'All projects' },
+					...data.projects.map((p) => ({ value: p.slug, label: p.name })),
+				]}
+				size="sm"
+				placeholder="All projects"
+				fullWidth
+			/>
+			{#if data.platforms.length > 1}
+				<SelectField
+					value={data.activePlatform?.slug ?? ''}
+					onValueChange={(v) => navigate({ platform: v || null })}
+					options={[
+						{ value: '', label: 'All platforms' },
+						...data.platforms.map((p) => ({ value: p.slug, label: p.slug })),
+					]}
+					size="sm"
+					placeholder="All platforms"
+					fullWidth
+				/>
+			{/if}
+			<SelectField
+				value={data.kind ?? ''}
+				onValueChange={(v) => setKind(v || null)}
+				options={KINDS.map((k) => ({ value: k.value ?? '', label: k.label }))}
+				size="sm"
+				placeholder="Kind"
+				fullWidth
+			/>
+			<Button
+				variant="ghost"
+				size="sm"
+				onclick={() => (shortcutsOpen = true)}
+				class="justify-start"
+			>
+				<Keyboard class="size-4" />
+				Shortcuts
+			</Button>
+		</div>
+	</details>
+
+	<div class="hidden md:flex items-center gap-2">
 		<SelectField
 			value={data.activeProject?.slug ?? ''}
 			onValueChange={(v) => navigate({ project: v || null })}
@@ -411,11 +548,32 @@
 		>
 			<Keyboard class="size-4" />
 		</Button>
+
+		<Button
+			variant="outline"
+			size="sm"
+			onclick={() => {
+				// Mirror the current page filters into the export URL.
+				const qs = new URLSearchParams($page.url.searchParams);
+				qs.set('format', 'csv');
+				window.location.href = `/api/export/drafts?${qs.toString()}`;
+			}}
+		>
+			Export CSV
+		</Button>
 	</div>
 </div>
 
-<Card.Root class="grid grid-cols-[360px_1fr] h-[calc(100vh-11rem)] overflow-hidden">
-	<aside class="border-r border-border overflow-auto relative">
+<Card.Root
+	class="grid grid-cols-1 lg:grid-cols-[360px_1fr] h-[calc(100vh-11rem)] min-h-[28rem] overflow-hidden"
+>
+	<aside
+		class={[
+			'border-b lg:border-b-0 lg:border-r border-border overflow-auto relative',
+			// On < lg, hide the list when a draft is opened on the small screen.
+			mobileDetailOpen ? 'hidden lg:block' : 'block',
+		].join(' ')}
+	>
 		{#if isNavigating}
 			<div class="p-3 space-y-2">
 				{#each Array(6) as _, i (i)}
@@ -470,14 +628,33 @@
 							{draft}
 							selected={isSelected}
 							runId={draft.runId}
-							onclick={() => (selectedId = draft.id)}
+							onclick={() => {
+								selectedId = draft.id;
+								mobileDetailOpen = true;
+							}}
 						/>
 					</div>
 				</div>
 			{/each}
 		{/if}
 	</aside>
-	<section class="p-4 overflow-auto">
+	<section
+		class={[
+			'p-4 overflow-auto',
+			// Inverse of the list: visible on small screens only when opened.
+			mobileDetailOpen ? 'block' : 'hidden lg:block',
+		].join(' ')}
+	>
+		<!-- Back button: only on < lg when a draft is open -->
+		<button
+			type="button"
+			onclick={() => (mobileDetailOpen = false)}
+			class="lg:hidden mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+			aria-label="Back to draft list"
+		>
+			<ArrowLeft class="size-4" />
+			Back to drafts
+		</button>
 		<DraftDetail
 			draft={selected}
 			usage={selected != null ? data.usage[selected.accountId] : undefined}
@@ -499,6 +676,7 @@
 		<Button size="sm" variant="destructive" loading={bulkRejecting} onclick={confirmAndReject}>
 			Reject all
 		</Button>
+		<Button size="sm" variant="outline" onclick={openRescheduleDialog}>Reschedule</Button>
 		<Button
 			size="sm"
 			variant="ghost"
@@ -510,6 +688,33 @@
 		</Button>
 	</div>
 {/if}
+
+<!-- Bulk reschedule dialog -->
+<AlertDialog.Root bind:open={rescheduleDialogOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Reschedule selected drafts</AlertDialog.Title>
+			<AlertDialog.Description>
+				Hold {checkedIds.size} draft{checkedIds.size === 1 ? '' : 's'} back from "ready to send" until the chosen time.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<div class="mt-2">
+			<label for="reschedule-input" class="text-xs text-muted-foreground">Send after</label>
+			<input
+				id="reschedule-input"
+				type="datetime-local"
+				bind:value={rescheduleValue}
+				class="mt-1 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+			/>
+		</div>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={bulkReschedule} disabled={bulkRescheduling}>
+				{bulkRescheduling ? 'Saving…' : 'Reschedule'}
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
 
 <!-- Reject confirmation dialog -->
 <AlertDialog.Root bind:open={rejectConfirmOpen}>

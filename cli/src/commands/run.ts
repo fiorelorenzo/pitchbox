@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { getSchema, SCENARIO_META } from '@pitchbox/shared/campaigns';
+import { loadActiveTemplates, type TemplateKind } from '@pitchbox/shared/templates';
 import { eq } from 'drizzle-orm';
 import { ok, fail } from '../lib/output.js';
 
@@ -52,6 +53,20 @@ export function registerRunCommands(program: Command) {
         .from(schema.contactHistory)
         .where(eq(schema.contactHistory.platformId, campaign.platformId));
 
+      // Few-shot templates (project-scoped). Filter by kind when the scenario
+      // implies one — scout/commenter both produce comments, but DM-style
+      // scenarios will read 'dm'. Keep it simple: load all active and let
+      // the playbook pick.
+      const inferredKind: TemplateKind | undefined =
+        campaign.skillSlug === 'reddit-commenter' || campaign.skillSlug === 'reddit-scout'
+          ? 'comment'
+          : undefined;
+      const templates = await loadActiveTemplates(db, {
+        projectId: campaign.projectId,
+        kind: inferredKind,
+        campaignId: campaign.id,
+      });
+
       // If PITCHBOX_RUN_ID is set, we're running inside an already-created run
       // (e.g., invoked by the web server / daemon). Use that row instead of
       // creating a second one — the DB partial unique index would reject it,
@@ -94,6 +109,12 @@ export function registerRunCommands(program: Command) {
           })),
         blocklist: blocks.map((b) => ({ kind: b.kind, value: b.value })),
         contactedRecently: contacted.map((c) => c.target),
+        templates: templates.map((t) => ({
+          id: t.id,
+          kind: t.kind,
+          title: t.title,
+          body: t.body,
+        })),
       });
     });
 

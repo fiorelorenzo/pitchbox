@@ -1,8 +1,9 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { and, eq, desc, inArray, type SQL } from 'drizzle-orm';
+import { and, eq, desc, gte, inArray, type SQL } from 'drizzle-orm';
 import { getUsageForAccounts, loadQuotaLimits } from '@pitchbox/shared/quota';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
+import { hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
 
 export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const { url } = event;
@@ -12,10 +13,16 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const campaign = url.searchParams.get('campaign');
   const projectSlug = url.searchParams.get('project') ?? '';
   const platformSlugFilter = url.searchParams.get('platform');
+  const minQualityRaw = url.searchParams.get('minQuality');
+  const minQuality =
+    minQualityRaw != null && minQualityRaw !== '' && Number.isFinite(Number(minQualityRaw))
+      ? Math.max(0, Math.min(100, Number(minQualityRaw)))
+      : null;
   const db = getDb();
 
   const orgId = await resolveOrgId(event);
   const projects = await listProjects(db, { organizationId: orgId });
+  const chatSyncUnauthorized = await hasChatUnauthorizedDevice();
   const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
   const projectsForUi = projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name }));
 
@@ -41,6 +48,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       activeProject,
       platforms: allPlatforms,
       activePlatform: null,
+      chatSyncUnauthorized,
     };
   }
 
@@ -48,6 +56,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   if (kind) filters.push(eq(schema.drafts.kind, kind));
   if (activeProject) filters.push(eq(schema.drafts.projectId, activeProject.id));
   if (activePlatform) filters.push(eq(schema.drafts.platformId, activePlatform.id));
+  if (minQuality != null) filters.push(gte(schema.drafts.qualityScore, minQuality));
 
   if (run) {
     filters.push(eq(schema.drafts.runId, Number(run)));
@@ -71,6 +80,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
         activeProject,
         platforms: allPlatforms,
         activePlatform,
+        chatSyncUnauthorized,
       };
     }
     filters.push(
@@ -104,6 +114,11 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       sentAt: schema.drafts.sentAt,
       sentContent: schema.drafts.sentContent,
       platformCommentId: schema.drafts.platformCommentId,
+      dedupWarning: schema.drafts.dedupWarning,
+      qualityScore: schema.drafts.qualityScore,
+      qualityReason: schema.drafts.qualityReason,
+      variantGroupId: schema.drafts.variantGroupId,
+      variantLabel: schema.drafts.variantLabel,
       projectSlug: schema.projects.slug,
       projectName: schema.projects.name,
       platformSlug: schema.platforms.slug,
@@ -186,5 +201,6 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     activeProject,
     platforms: allPlatforms,
     activePlatform,
+    chatSyncUnauthorized,
   };
 }

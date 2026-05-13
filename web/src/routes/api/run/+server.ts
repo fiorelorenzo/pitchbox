@@ -5,7 +5,11 @@ import { getCampaignReadiness } from '$lib/server/campaign-readiness.js';
 const ALLOWED_TRIGGERS = new Set(['manual', 'scheduled', 'api']);
 
 export async function POST({ request }) {
-  const body = (await request.json()) as { campaignId?: number; trigger?: string };
+  const body = (await request.json()) as {
+    campaignId?: number;
+    trigger?: string;
+    scheduledFor?: string;
+  };
   if (!body.campaignId) throw error(400, 'campaignId required');
   const trigger = body.trigger && ALLOWED_TRIGGERS.has(body.trigger) ? body.trigger : 'manual';
 
@@ -14,6 +18,16 @@ export async function POST({ request }) {
     return json({ error: 'not_ready', issues: readiness.issues }, { status: 422 });
   }
 
-  const { runId, alreadyRunning } = await runCampaign(body.campaignId, trigger);
-  return json({ runId, alreadyRunning: alreadyRunning ?? false });
+  const scheduledFor = body.scheduledFor ? new Date(body.scheduledFor) : null;
+  try {
+    const { runId, alreadyRunning } = await runCampaign(body.campaignId, trigger, scheduledFor);
+    return json({ runId, alreadyRunning: alreadyRunning ?? false });
+  } catch (err) {
+    // The runner converts a UNIQUE violation on (campaign_id, scheduled_for)
+    // into a tagged error so the route can return 409 cleanly.
+    if ((err as { code?: string } | null)?.code === 'already_dispatched') {
+      return json({ error: 'already_dispatched' }, { status: 409 });
+    }
+    throw err;
+  }
 }

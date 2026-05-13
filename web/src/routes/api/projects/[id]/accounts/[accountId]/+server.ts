@@ -7,6 +7,8 @@ const PatchBody = z.object({
   handle: z.string().min(1).max(64).optional(),
   role: z.enum(['personal', 'brand']).optional(),
   isDefault: z.boolean().optional(),
+  dailyLimit: z.number().int().positive().nullable().optional(),
+  weeklyLimit: z.number().int().positive().nullable().optional(),
 });
 
 function parseId(p: string): number | null {
