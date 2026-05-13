@@ -9,7 +9,17 @@
 </script>
 
 <main class="flex flex-col h-screen bg-background text-foreground">
-  <header class="flex items-center gap-2 px-4 py-3 border-b border-border">
+  <header class="flex items-center gap-2.5 px-4 py-3 border-b border-border">
+    <svg
+      viewBox="0 0 512 512"
+      class="size-6 shrink-0 rounded-md"
+      aria-hidden="true"
+    >
+      <rect width="512" height="512" rx="112" class="fill-foreground" />
+      <rect x="168" y="112" width="72" height="288" rx="12" class="fill-background" />
+      <circle cx="272" cy="200" r="104" class="fill-background" />
+      <circle cx="272" cy="200" r="44" class="fill-foreground" />
+    </svg>
     <span class="text-sm font-semibold">{$t('app.name')}</span>
     <span class="text-xs text-muted-foreground">{$t('app.tagline')}</span>
   </header>
