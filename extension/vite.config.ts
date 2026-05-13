@@ -11,6 +11,9 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    // Default Vite port (5173) is left free for the user's other projects.
+    port: 5175,
+    strictPort: true,
     cors: { origin: [/chrome-extension:\/\//] },
   },
 });
