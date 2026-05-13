@@ -22,7 +22,7 @@
   async function rotate() {
     if (
       !confirm(
-        'Rotate the extension token? The extension will stop working until you paste the new one into the popup.',
+        'Rotate the extension token? Every paired device will stop syncing until it re-pairs from the side panel.',
       )
     )
       return;
@@ -53,21 +53,6 @@
     copied = true;
     setTimeout(() => (copied = false), 1500);
   }
-
-  let pairingCode = $state<string | null>(null);
-  let pairingBusy = $state(false);
-
-  async function generatePairingCode() {
-    pairingBusy = true;
-    try {
-      const res = await fetch('/api/settings/extension-pairing', { method: 'POST' });
-      if (!res.ok) return;
-      const body = (await res.json()) as { code: string };
-      pairingCode = body.code;
-    } finally {
-      pairingBusy = false;
-    }
-  }
 </script>
 
 <Card.Root size="sm">
@@ -84,9 +69,10 @@
   </Card.Header>
   <Card.Content class="flex flex-col gap-3 text-sm">
     <p class="text-xs text-muted-foreground">
-      Pairs a Chrome companion extension with this dashboard. After approving a draft and clicking
-      <em>Open compose</em>, the extension auto-flips the draft to
-      <code class="text-xs">sent</code> when you submit on Reddit.
+      Pairs the Pitchbox Chrome extension with this dashboard. The extension lives in a persistent
+      side panel: it auto-flips drafts to <code class="text-xs">sent</code> when you submit on
+      Reddit, polls Reddit inbox + Chat for replies, and surfaces every operation in a real-time
+      activity log.
     </p>
 
     {#if !token}
@@ -134,27 +120,23 @@
       {/if}
     {/if}
 
-    <div class="rounded-md border border-border/60 px-3 py-2">
-      <div class="flex items-center justify-between gap-2">
-        <p class="text-xs">
-          <strong>Pair a new device</strong> (recommended over the shared token).
-        </p>
-        <Button size="sm" variant="outline" onclick={generatePairingCode} disabled={pairingBusy}>
-          {pairingBusy ? '…' : 'Generate code'}
-        </Button>
-      </div>
-      {#if pairingCode}
-        <p class="mt-2 text-xs text-muted-foreground">
-          Paste this in the extension popup. Single-use, expires in 10 minutes.
-        </p>
-        <code class="mt-1 block rounded border bg-muted px-2 py-1 font-mono text-sm tracking-widest">
-          {pairingCode}
-        </code>
-      {/if}
+    <div class="rounded-md border border-border/60 px-3 py-2 text-xs">
+      <p class="font-medium">Pair this dashboard</p>
+      <ol class="mt-1.5 list-inside list-decimal space-y-1 text-muted-foreground">
+        <li>Click the Pitchbox icon in the Chrome toolbar to open the side panel.</li>
+        <li>
+          Open the <strong>Dashboard</strong> tab, then click <em>Pair with this tab</em>.
+        </li>
+        <li>Approve the one-time host permission prompt for this origin.</li>
+      </ol>
+      <p class="mt-2 text-muted-foreground">
+        The extension reads your session cookie to mint a device token automatically. No code to
+        copy.
+      </p>
     </div>
 
     <details class="text-xs text-muted-foreground">
-      <summary class="cursor-pointer select-none">Install instructions</summary>
+      <summary class="cursor-pointer select-none">Install the extension</summary>
       <ol class="mt-2 list-inside list-decimal space-y-1">
         <li>From the repo root: <code>npm run build:extension</code>.</li>
         <li>
@@ -163,7 +145,7 @@
         <li>
           Click <em>Load unpacked</em> and choose <code>extension/dist/</code>.
         </li>
-        <li>Click the Pitchbox icon in the toolbar, paste the URL + pairing code, Pair.</li>
+        <li>Click the Pitchbox icon to open the side panel, then pair as above.</li>
       </ol>
       <div class="mt-2 font-mono">
         <div>Backend URL: <code>{backendUrl}</code></div>
