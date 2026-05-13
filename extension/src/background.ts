@@ -8,9 +8,10 @@ import {
   type SyncChannelStatus,
 } from './lib/storage.js';
 import { api } from './lib/api.js';
+import { logEvent } from './lib/activity.js';
+import { getSettings as getExtensionSettings } from './lib/settings.js';
 
 const ALARM = 'pitchbox:dm-sync';
-const PERIOD_MIN = 10;
 
 type Result = {
   ok: boolean;
@@ -36,8 +37,17 @@ function classifyChat(r: Result): SyncChannelStatus {
 }
 
 async function runAllSyncs() {
-  const inbox = await runInboxSync();
-  const chat = await runChatSync();
+  const s = await getExtensionSettings();
+
+  // Short-circuit disabled pollers — treat their slot as a no-op success so
+  // the heartbeat still fires and the dashboard sees fresh status.
+  const inbox: Result = s.legacyPollerEnabled
+    ? await runInboxSync()
+    : { ok: true, inserted: 0, replied: 0 };
+  const chat: Result = s.chatPollerEnabled
+    ? await runChatSync()
+    : { ok: true, inserted: 0, replied: 0 };
+
   const status = {
     chat: classifyChat(chat),
     legacy: classifyInbox(inbox),
@@ -60,6 +70,65 @@ async function runAllSyncs() {
   } catch {
     // ignored
   }
+
+  // Activity log entries — one per poller that actually ran this cycle.
+  if (s.legacyPollerEnabled) {
+    if (inbox.ok) {
+      await logEvent({
+        level: 'info',
+        source: 'dm-sync',
+        message: 'activity.dm-sync.ok',
+        messageParams: {
+          inserted: inbox.inserted ?? 0,
+          replied: inbox.replied ?? 0,
+        },
+      });
+    } else if (inbox.reason === 'not-logged-in') {
+      await logEvent({
+        level: 'warn',
+        source: 'dm-sync',
+        message: 'activity.dm-sync.unauthorized',
+        messageParams: { reason: inbox.reason ?? 'unknown' },
+      });
+    } else {
+      await logEvent({
+        level: 'error',
+        source: 'dm-sync',
+        message: 'activity.dm-sync.error',
+        messageParams: { reason: inbox.reason ?? 'unknown' },
+      });
+    }
+  }
+  if (s.chatPollerEnabled) {
+    if (chat.ok) {
+      await logEvent({
+        level: 'info',
+        source: 'chat-sync',
+        message: 'activity.chat-sync.ok',
+        messageParams: {
+          messages: chat.inserted ?? 0,
+          inserted: chat.inserted ?? 0,
+        },
+      });
+    } else if (chat.reason === 'matrix-token-invalid') {
+      await logEvent({
+        level: 'warn',
+        source: 'chat-sync',
+        message: 'activity.chat-sync.unauthorized',
+        messageParams: { reason: chat.reason ?? 'unknown' },
+      });
+    } else if (chat.reason === 'no-matrix-creds') {
+      // Quietly skip — no creds yet means the user has not paired Reddit Chat.
+    } else {
+      await logEvent({
+        level: 'error',
+        source: 'chat-sync',
+        message: 'activity.chat-sync.error',
+        messageParams: { reason: chat.reason ?? 'unknown' },
+      });
+    }
+  }
+
   return { inbox, chat };
 }
 
@@ -79,13 +148,47 @@ function aggregate(r: { inbox: Result; chat: Result }): Result {
   };
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+/**
+ * Re-apply the sync alarm from current extension settings. Clears the alarm
+ * first so the new period takes effect immediately rather than waiting out
+ * the old interval. If both pollers are disabled, the alarm stays cleared.
+ */
+async function applyAlarms(): Promise<void> {
+  const s = await getExtensionSettings();
+  await chrome.alarms.clear(ALARM);
+  if (s.legacyPollerEnabled || s.chatPollerEnabled) {
+    chrome.alarms.create(ALARM, { periodInMinutes: s.syncIntervalMin });
+  }
+  await logEvent({
+    level: 'info',
+    source: 'system',
+    message: 'activity.system.alarms-applied',
+    messageParams: { interval: s.syncIntervalMin },
+  });
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
   console.log('[pitchbox] extension installed');
-  chrome.alarms.create(ALARM, { periodInMinutes: PERIOD_MIN });
+  // Register side panel behaviour — guarded for older Chrome builds without
+  // the sidePanel API.
+  try {
+    await chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true });
+  } catch (err) {
+    console.warn('[pitchbox] sidePanel.setPanelBehavior failed:', err);
+  }
+  await applyAlarms();
+  await logEvent({ level: 'info', source: 'system', message: 'activity.system.boot' });
 });
 
-chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create(ALARM, { periodInMinutes: PERIOD_MIN });
+chrome.runtime.onStartup.addListener(async () => {
+  await logEvent({ level: 'info', source: 'system', message: 'activity.system.boot' });
+  await applyAlarms();
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (!('extensionSettings' in changes)) return;
+  void applyAlarms();
 });
 
 chrome.alarms.onAlarm.addListener(async (a) => {
@@ -122,6 +225,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       token,
       lastHandshakeAt: new Date().toISOString(),
     }).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg?.type === 'pitchbox:log') {
+    // Centralised log dispatcher — UI surfaces (side panel, content scripts)
+    // POST events here so the service worker is the single writer.
+    logEvent(msg.event).then(() => sendResponse({ ok: true }));
     return true;
   }
   return false;
