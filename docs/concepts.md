@@ -22,7 +22,7 @@ A **draft** is the agent's proposed outreach - DM, post, post comment, or commen
 
 ## Contact history & conversations
 
-Once a draft is sent, the row in `contact_history` becomes the per-target source of truth. The Chrome extension picks up replies (DMs and comment-replies) and the **Conversations** page lists every thread; clicking a row opens `/conversations/<thread-id>`, a Matrix/iMessage-style transcript that renders the parent draft and every captured message, with outgoing bubbles right-aligned in the primary color and incoming bubbles left-aligned in muted styling. A composer placeholder is shown at the bottom - reply drafting from the dashboard is coming next.
+Once a draft is sent, the row in `contact_history` becomes the per-target source of truth. The Chrome extension picks up replies (DMs and comment-replies) and the **Conversations** page lists every thread; clicking a row opens `/conversations/<thread-id>`, a Matrix/iMessage-style transcript that renders the parent draft and every captured message, with outgoing bubbles right-aligned in the primary color and incoming bubbles left-aligned in muted styling. When an inbound reply lands, `enqueueReplyDraft` materialises an auto-drafted reply (V1 ships a placeholder body) that surfaces at the bottom of the thread with Approve / Reject actions; a textarea lets reviewers edit or override the suggested body before sending.
 
 ## Audit feed
 
