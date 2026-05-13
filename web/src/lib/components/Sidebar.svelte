@@ -19,10 +19,15 @@
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { dev } from '$app/environment';
 	import { cn } from '$lib/utils';
 	import SystemStatusCard from '$lib/components/SystemStatusCard.svelte';
 	import { t } from '$lib/i18n';
 	import type { ComponentType } from 'svelte';
+
+	// VitePress dev server runs on :5181 with base /pitchbox/. In production
+	// the published Pages site is the source of truth.
+	const DOCS_URL = dev ? 'http://localhost:5181/pitchbox/' : 'https://fiorelorenzo.github.io/pitchbox/';
 
 	type NavItem = {
 		href: string;
@@ -115,7 +120,7 @@
 	<!-- Bottom section: docs + auth + system status -->
 	<div class="flex flex-col gap-1 border-t border-border mt-4 pt-4">
 		<a
-			href="https://fiorelorenzo.github.io/pitchbox/"
+			href={DOCS_URL}
 			target="_blank"
 			rel="noopener"
 			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
