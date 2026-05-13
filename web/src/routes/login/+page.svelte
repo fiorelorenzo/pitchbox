@@ -41,7 +41,7 @@
 		<Card.Header>
 			<Card.Title>{data.firstUser ? 'Create the first user' : 'Sign in to Pitchbox'}</Card.Title>
 			{#if !data.authOn}
-				<p class="text-xs text-amber-300">Authentication is disabled — set PITCHBOX_AUTH=on in your environment.</p>
+				<p class="text-xs text-amber-700 dark:text-amber-300">Authentication is disabled — set PITCHBOX_AUTH=on in your environment.</p>
 			{:else if data.firstUser}
 				<p class="text-xs text-muted-foreground">
 					No user exists yet. The credentials you enter below will create the admin account.
