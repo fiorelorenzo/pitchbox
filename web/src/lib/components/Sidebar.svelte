@@ -14,12 +14,12 @@
 		History,
 		BarChart3,
 		LogOut,
+		LogIn,
 		type Icon as LucideIcon,
 	} from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { cn } from '$lib/utils';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import SystemStatusCard from '$lib/components/SystemStatusCard.svelte';
 	import { t } from '$lib/i18n';
 	import type { ComponentType } from 'svelte';
@@ -70,17 +70,23 @@
 		void $page.url.pathname;
 		refreshUnread();
 	});
+
+	// Surfaced by web/src/routes/+layout.server.ts; falls back to `true` so
+	// nothing breaks if the loader hasn't run yet.
+	const authOn = $derived(($page.data?.authOn ?? true) as boolean);
 </script>
 
-<aside class="w-60 h-full bg-background border-r border-border flex flex-col p-4 overflow-y-auto">
+<aside class="w-60 h-full bg-background border-r border-border flex flex-col p-4 overflow-hidden min-h-0">
 	<!-- Brand -->
 	<div class="flex items-center gap-2 mb-6">
 		<img src="/favicon.svg" alt="" class="size-7 shrink-0" aria-hidden="true" />
 		<h1 class="font-semibold text-lg">Pitchbox</h1>
 	</div>
 
-	<!-- Nav links -->
-	<nav class="flex flex-col gap-1 flex-1">
+	<!-- Nav links. min-h-0 lets nav shrink under flex pressure so the footer
+	     status card always stays visible; only the nav itself can scroll if a
+	     viewport is too short for all entries. -->
+	<nav class="flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto">
 		{#each navItems as item (item.href)}
 			{@const active = item.exact
 				? $page.url.pathname === item.href
@@ -106,13 +112,10 @@
 		{/each}
 	</nav>
 
-	<!-- Bottom section: theme + docs + version -->
+	<!-- Bottom section: docs + auth + system status -->
 	<div class="flex flex-col gap-1 border-t border-border mt-4 pt-4">
-		<div class="px-1 pb-1">
-			<ThemeToggle />
-		</div>
 		<a
-			href="/README.md"
+			href="https://github.com/fiorelorenzo/pitchbox#readme"
 			target="_blank"
 			rel="noopener"
 			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
@@ -120,17 +123,27 @@
 			<BookOpen class="size-4 shrink-0" />
 			{$t('nav.docs')}
 		</a>
-		<button
-			type="button"
-			onclick={async () => {
-				await fetch('/api/auth/logout', { method: 'POST' });
-				await goto('/login');
-			}}
-			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors text-left"
-		>
-			<LogOut class="size-4 shrink-0" />
-			{$t('nav.signOut')}
-		</button>
+		{#if authOn}
+			<button
+				type="button"
+				onclick={async () => {
+					await fetch('/api/auth/logout', { method: 'POST' });
+					await goto('/login');
+				}}
+				class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors text-left"
+			>
+				<LogOut class="size-4 shrink-0" />
+				{$t('nav.signOut')}
+			</button>
+		{:else}
+			<a
+				href="/login"
+				class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+			>
+				<LogIn class="size-4 shrink-0" />
+				{$t('nav.signIn')}
+			</a>
+		{/if}
 		<div class="px-1 pt-1">
 			<SystemStatusCard />
 		</div>

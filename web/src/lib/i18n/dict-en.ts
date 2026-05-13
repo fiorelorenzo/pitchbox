@@ -17,6 +17,7 @@ export const en: Dict = {
   'nav.settings': 'Settings',
   'nav.docs': 'Docs',
   'nav.signOut': 'Sign out',
+  'nav.signIn': 'Sign in',
   'nav.daemon': 'Daemon',
   'nav.daemon.online': 'online',
   'nav.daemon.offline': 'offline',
@@ -39,6 +40,8 @@ export const en: Dict = {
   'settings.appearance.locale.label': 'Language',
   'settings.appearance.locale.help':
     'Interface language. English is the default; Italian is a seed translation.',
+  'settings.appearance.theme.label': 'Theme',
+  'settings.appearance.theme.help': 'Follow system or pick light or dark explicitly.',
 
   // Login page
   'login.title': 'Sign in',

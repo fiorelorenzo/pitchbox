@@ -75,6 +75,6 @@
     <span class="font-medium {valueClass(sseRow.tone)}">{sseRow.label}</span>
   </div>
   <div class="mt-1 pt-1 border-t border-border/60 text-[10px] text-muted-foreground/70 font-mono">
-    pitchbox v{VERSION}
+    pitchbox {VERSION}
   </div>
 </div>
