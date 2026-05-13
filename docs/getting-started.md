@@ -4,7 +4,7 @@ Pitchbox is a Node monorepo. You need:
 
 - Node ≥ 22
 - Docker (for the Postgres dev DB)
-- The `claude` CLI logged into a Claude subscription (the default agent runner)
+- The `claude` CLI logged into a Claude subscription (the default agent runner; `codex` and `opencode` are also supported)
 
 ## Install
 
@@ -15,7 +15,7 @@ npm install
 cp .env.example .env  # then set ENCRYPTION_KEY (32-byte hex) and PITCHBOX_ROOT
 ```
 
-`ENCRYPTION_KEY` protects account secrets at rest — generate one with `openssl rand -hex 32`.
+`ENCRYPTION_KEY` protects account secrets at rest — generate one with `openssl rand -hex 32`. `PITCHBOX_ROOT` must be the absolute path to the repo root.
 
 ## Database
 
@@ -29,8 +29,15 @@ npm run -w @pitchbox/shared seed:core         # seeds platforms, default playboo
 
 ```bash
 npm run dev                # web dashboard on http://127.0.0.1:5180
-npm run -w daemon dev      # optional: scheduler + reply poller
 ```
+
+By default the dashboard runs on its own and you start the background daemon as a second process:
+
+```bash
+npm run -w daemon dev      # scheduler + reply poller + retention + webhook DLQ
+```
+
+For single-host installs you can skip the second process and run everything in one — set `PITCHBOX_EMBED_DAEMON=1` in your `.env` and the same loops boot inside the web server. See [Daemon](/daemon) for when each mode makes sense.
 
 ## Optional: turn on authentication
 
@@ -49,10 +56,10 @@ Press `Cmd+K` (macOS) or `Ctrl+K` (Windows/Linux) anywhere in the dashboard to o
 
 ## Appearance
 
-The sidebar footer hosts a System/Light/Dark toggle. Your choice persists locally per browser; `System` follows the OS preference.
+Theme (System/Light/Dark) and interface language (EN/IT) live under **Settings → Appearance**. Your choice persists locally per browser; `System` follows the OS preference.
 
 The dashboard is responsive down to roughly 375 px wide: on tablet and phone widths the sidebar collapses behind a hamburger button at top-left, the Inbox stacks the draft list and detail panel vertically with a back button, and filters fold into a popover.
 
 ## Chrome extension
 
-Build and load `extension/dist/` unpacked. See [the extension page](/extension) for the token wiring.
+Build and load `extension/dist/` unpacked, then open your dashboard in any tab and click **Pair with this tab** in the extension popup. Cloud users on `app.pitchbox.io` are paired automatically the first time they visit while signed in. Details: [the extension page](/extension).

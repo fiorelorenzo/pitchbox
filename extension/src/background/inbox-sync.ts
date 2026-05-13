@@ -33,8 +33,14 @@ export async function runInboxSync(): Promise<{
     const data = (await res.json()) as InboxResponse;
     const children = data?.data?.children ?? [];
 
-    const { lastDmSyncAt } = await getSettings();
-    const lastMs = lastDmSyncAt ? new Date(lastDmSyncAt).getTime() : 0;
+    // Multi-pairing: poll back as far as the OLDEST pairing's last sync,
+    // so each backend sees every reply it's missed. api.dmSync de-dupes
+    // by (account_handle, target_user, threadId) on the server.
+    const { pairings } = await getSettings();
+    const lastTimes = pairings
+      .map((p) => (p.lastDmSyncAt ? new Date(p.lastDmSyncAt).getTime() : 0))
+      .filter((t) => t > 0);
+    const lastMs = lastTimes.length === pairings.length ? Math.min(...lastTimes) : 0;
 
     const items: Array<{
       fromUser: string;
@@ -76,18 +82,30 @@ export async function runInboxSync(): Promise<{
     }
 
     if (items.length === 0 && comments.length === 0) {
-      await setSettings({ lastDmSyncAt: new Date().toISOString() });
+      // Bump every pairing's lastDmSyncAt so the next poll narrows again.
+      const now = new Date().toISOString();
+      const { pairings: ps } = await getSettings();
+      await setSettings({ pairings: ps.map((p) => ({ ...p, lastDmSyncAt: now })) });
       return { ok: true, inserted: 0, replied: 0 };
     }
 
-    const r = await api.dmSync('reddit', items, comments);
-    await setSettings({ lastDmSyncAt: new Date().toISOString() });
-    if (!r.ok) return { ok: false, reason: r.error };
-    return {
-      ok: true,
-      inserted: r.data.inserted + (r.data.commentsInserted ?? 0),
-      replied: r.data.replied + (r.data.commentsReplied ?? 0),
-    };
+    // api.dmSync fans out and stamps each pairing's lastDmSyncAt on success.
+    const results = await api.dmSync('reddit', items, comments);
+    if (results.length === 0) return { ok: false, reason: 'not configured' };
+    const successes = results.filter((r) => r.ok);
+    if (successes.length === 0) {
+      const first = results[0];
+      return { ok: false, reason: !first.ok ? first.error : 'unknown' };
+    }
+    const inserted = successes.reduce(
+      (acc, r) => acc + (r.ok ? r.data.inserted + (r.data.commentsInserted ?? 0) : 0),
+      0,
+    );
+    const replied = successes.reduce(
+      (acc, r) => acc + (r.ok ? r.data.replied + (r.data.commentsReplied ?? 0) : 0),
+      0,
+    );
+    return { ok: true, inserted, replied };
   } catch (e) {
     return { ok: false, reason: (e as Error).message };
   }

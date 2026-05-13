@@ -53,12 +53,23 @@ export default defineManifest({
       js: ['src/content/chat-token.ts'],
       run_at: 'document_idle',
     },
+    {
+      // Auto-pair on the cloud edition. Self-hosted instances trigger the
+      // same script on demand via the popup's "Pair with this tab" button,
+      // which uses chrome.scripting.executeScript after a one-shot
+      // permission grant.
+      matches: ['https://app.pitchbox.io/*', 'http://127.0.0.1:5180/*', 'http://localhost:5180/*'],
+      js: ['src/content/auto-pair.ts'],
+      run_at: 'document_idle',
+    },
   ],
-  permissions: ['storage', 'alarms', 'tabs'],
+  permissions: ['storage', 'alarms', 'tabs', 'scripting'],
+  optional_host_permissions: ['<all_urls>'],
   host_permissions: [
     'https://www.reddit.com/*',
     'https://old.reddit.com/*',
     'https://matrix.redditspace.com/*',
+    'https://app.pitchbox.io/*',
     'http://127.0.0.1/*',
     'http://localhost/*',
   ],
