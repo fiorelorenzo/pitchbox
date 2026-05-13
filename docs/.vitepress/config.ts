@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitepress';
 
 export default defineConfig({
+  // Served from https://fiorelorenzo.github.io/pitchbox/ — without this prefix
+  // the built site requests assets from the apex domain and renders unstyled.
+  base: '/pitchbox/',
   title: 'Pitchbox',
   description: 'Self-hosted, human-in-the-loop outreach agent for Reddit (and beyond).',
   cleanUrls: true,
