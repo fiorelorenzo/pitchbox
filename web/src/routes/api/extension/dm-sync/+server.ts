@@ -79,7 +79,7 @@ export async function POST({ request }: { request: Request }) {
 
   // Persist liveness payload before anything else so the dashboard banner
   // reacts even when the sync had zero items.
-  if (auth.deviceId != null && body.status && typeof body.status === 'object') {
+  if (body.status && typeof body.status === 'object') {
     await persistDeviceSyncStatus(db, auth.deviceId, body.status);
   }
 

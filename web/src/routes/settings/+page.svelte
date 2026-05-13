@@ -196,11 +196,7 @@
 		<!-- Integrations tab -->
 		<Tabs.Content value="integrations" class="mt-4">
 			<div class="max-w-2xl">
-				<ExtensionCard
-					token={data.extension.token}
-					createdAt={data.extension.createdAt}
-					backendUrl={data.extension.backendUrl}
-				/>
+				<ExtensionCard backendUrl={data.extension.backendUrl} />
 			</div>
 		</Tabs.Content>
 

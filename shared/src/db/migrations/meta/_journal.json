@@ -302,6 +302,13 @@
       "when": 1778560000000,
       "tag": "0043_org_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1778561000000,
+      "tag": "0044_drop_legacy_extension_token",
+      "breakpoints": true
     }
   ]
 }

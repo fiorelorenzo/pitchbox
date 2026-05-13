@@ -1,4 +1,3 @@
-import { getExtensionToken, getExtensionTokenCreatedAt } from '@pitchbox/shared/extension-token';
 import { loadQuotaLimits } from '@pitchbox/shared/quota';
 import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 import { detectAllRunners } from '@pitchbox/shared/agents/detect';
@@ -39,8 +38,6 @@ export async function load() {
 
   return {
     extension: {
-      token: await getExtensionToken(),
-      createdAt: await getExtensionTokenCreatedAt(),
       backendUrl: process.env.PITCHBOX_BACKEND_URL ?? 'http://127.0.0.1:5180',
     },
     quota,
