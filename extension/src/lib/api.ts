@@ -1,4 +1,4 @@
-import { getSettings } from './storage.js';
+import { getSettings, patchPairing, type Pairing } from './storage.js';
 
 export type ApiResult<T = unknown> =
   | { ok: true; data: T }
@@ -13,25 +13,34 @@ type DraftSummary = {
   version?: number;
 };
 
-async function authHeaders(): Promise<{ backendUrl: string; headers: HeadersInit } | null> {
-  const { backendUrl, token } = await getSettings();
-  if (!backendUrl || !token) return null;
+/**
+ * Resolve which pairing a single-backend op should target. Compose-time
+ * content scripts can pass an explicit `backendUrl` (the dashboard injects
+ * it as a query param into compose URLs). When omitted we fall back to the
+ * first pairing — keeps single-backend installs working without changes.
+ */
+async function pickPairing(backendUrl?: string): Promise<Pairing | null> {
+  const { pairings } = await getSettings();
+  if (pairings.length === 0) return null;
+  if (backendUrl) {
+    const url = backendUrl.replace(/\/$/, '');
+    return pairings.find((p) => p.backendUrl === url) ?? null;
+  }
+  return pairings[0];
+}
+
+function authHeaders(p: Pairing): HeadersInit {
   return {
-    backendUrl,
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${token}`,
-    },
+    'content-type': 'application/json',
+    authorization: `Bearer ${p.token}`,
   };
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
-  const auth = await authHeaders();
-  if (!auth) return { ok: false, status: 0, error: 'not configured' };
+async function postJson<T>(p: Pairing, path: string, body: unknown): Promise<ApiResult<T>> {
   try {
-    const res = await fetch(`${auth.backendUrl}${path}`, {
+    const res = await fetch(`${p.backendUrl}${path}`, {
       method: 'POST',
-      headers: auth.headers,
+      headers: authHeaders(p),
       body: JSON.stringify(body),
     });
     if (!res.ok) return { ok: false, status: res.status, error: await res.text() };
@@ -41,11 +50,9 @@ async function postJson<T>(path: string, body: unknown): Promise<ApiResult<T>> {
   }
 }
 
-async function getJson<T>(path: string): Promise<ApiResult<T>> {
-  const auth = await authHeaders();
-  if (!auth) return { ok: false, status: 0, error: 'not configured' };
+async function getJson<T>(p: Pairing, path: string): Promise<ApiResult<T>> {
   try {
-    const res = await fetch(`${auth.backendUrl}${path}`, { headers: auth.headers });
+    const res = await fetch(`${p.backendUrl}${path}`, { headers: authHeaders(p) });
     if (!res.ok) return { ok: false, status: res.status, error: await res.text() };
     return { ok: true, data: (await res.json()) as T };
   } catch (e) {
@@ -53,44 +60,21 @@ async function getJson<T>(path: string): Promise<ApiResult<T>> {
   }
 }
 
+export type DmSyncResult = ApiResult<{
+  ok: true;
+  inserted: number;
+  replied: number;
+  commentsInserted?: number;
+  commentsReplied?: number;
+}>;
+
+export type DmSyncFanout = Array<DmSyncResult & { backendUrl: string }>;
+
 export const api = {
-  handshake: () => postJson<{ ok: true; version: string }>('/api/extension/handshake', {}),
-  getDraft: (draftId: number) => getJson<DraftSummary>(`/api/extension/draft/${draftId}`),
-  armed: (draftId: number) =>
-    postJson<{ ok: true }>(`/api/extension/draft/${draftId}/armed`, {
-      composedAt: new Date().toISOString(),
-    }),
-  sent: async (
-    draftId: number,
-    sentContent?: string,
-    commentLookup?: { postId: string; accountHandle: string; postedAt: string },
-    platformPostId?: string,
-    version?: number,
-  ): Promise<ApiResult<{ ok: true }>> => {
-    const payload = {
-      sentContent,
-      sentAt: new Date().toISOString(),
-      commentLookup,
-      platformPostId,
-      version,
-    };
-    const first = await postJson<{ ok: true }>(`/api/extension/draft/${draftId}/sent`, payload);
-    if (first.ok || first.status !== 409) return first;
-    // Re-fetch the draft to read the latest version, then retry exactly once.
-    let parsed: { error?: string; current_version?: number } | null = null;
-    try {
-      parsed = JSON.parse(first.error) as { error?: string; current_version?: number };
-    } catch {
-      // Body wasn't JSON — bail out with the original failure.
-    }
-    if (!parsed || parsed.error !== 'version_conflict') return first;
-    const fresh = await getJson<DraftSummary>(`/api/extension/draft/${draftId}`);
-    if (!fresh.ok) return first;
-    return postJson<{ ok: true }>(`/api/extension/draft/${draftId}/sent`, {
-      ...payload,
-      version: fresh.data.version ?? parsed.current_version,
-    });
-  },
+  /**
+   * Fan-out: every paired backend gets the same Reddit traffic so each
+   * Pitchbox instance sees the user's full activity.
+   */
   dmSync: async (
     platform: string,
     items: unknown[],
@@ -100,20 +84,92 @@ export const api = {
       legacy: 'ok' | 'unauthorized' | 'error' | 'unknown';
       captured_at: string;
     },
-  ) => {
-    const stored = !status ? (await getSettings()).syncStatus : null;
-    const payloadStatus =
-      status ??
-      (stored
-        ? { chat: stored.chat, legacy: stored.legacy, captured_at: stored.capturedAt }
-        : undefined);
-    return postJson<{
-      ok: true;
-      inserted: number;
-      replied: number;
-      commentsInserted?: number;
-      commentsReplied?: number;
-    }>('/api/extension/dm-sync', { platform, items, comments, status: payloadStatus });
+  ): Promise<DmSyncFanout> => {
+    const { pairings } = await getSettings();
+    const out: DmSyncFanout = [];
+    for (const p of pairings) {
+      const payloadStatus =
+        status ??
+        (p.syncStatus
+          ? {
+              chat: p.syncStatus.chat,
+              legacy: p.syncStatus.legacy,
+              captured_at: p.syncStatus.capturedAt,
+            }
+          : undefined);
+      const r = await postJson<{
+        ok: true;
+        inserted: number;
+        replied: number;
+        commentsInserted?: number;
+        commentsReplied?: number;
+      }>(p, '/api/extension/dm-sync', { platform, items, comments, status: payloadStatus });
+      out.push({ ...r, backendUrl: p.backendUrl });
+      if (r.ok) await patchPairing(p.backendUrl, { lastDmSyncAt: new Date().toISOString() });
+    }
+    return out;
   },
-  dmSyncStatus: () => getJson<{ lastSyncAt: string | null }>('/api/extension/dm-sync/status'),
+
+  // Single-backend ops below. Compose-time content scripts pass the
+  // backendUrl from the URL query param; everything else uses the first
+  // pairing.
+  handshake: async (backendUrl?: string): Promise<ApiResult<{ ok: true; version: string }>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    return postJson(p, '/api/extension/handshake', {});
+  },
+
+  getDraft: async (draftId: number, backendUrl?: string): Promise<ApiResult<DraftSummary>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    return getJson(p, `/api/extension/draft/${draftId}`);
+  },
+
+  armed: async (draftId: number, backendUrl?: string): Promise<ApiResult<{ ok: true }>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    return postJson(p, `/api/extension/draft/${draftId}/armed`, {
+      composedAt: new Date().toISOString(),
+    });
+  },
+
+  sent: async (
+    draftId: number,
+    sentContent?: string,
+    commentLookup?: { postId: string; accountHandle: string; postedAt: string },
+    platformPostId?: string,
+    version?: number,
+    backendUrl?: string,
+  ): Promise<ApiResult<{ ok: true }>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    const payload = {
+      sentContent,
+      sentAt: new Date().toISOString(),
+      commentLookup,
+      platformPostId,
+      version,
+    };
+    const first = await postJson<{ ok: true }>(p, `/api/extension/draft/${draftId}/sent`, payload);
+    if (first.ok || first.status !== 409) return first;
+    let parsed: { error?: string; current_version?: number } | null = null;
+    try {
+      parsed = JSON.parse(first.error) as { error?: string; current_version?: number };
+    } catch {
+      // body wasn't JSON — bail out
+    }
+    if (!parsed || parsed.error !== 'version_conflict') return first;
+    const fresh = await getJson<DraftSummary>(p, `/api/extension/draft/${draftId}`);
+    if (!fresh.ok) return first;
+    return postJson<{ ok: true }>(p, `/api/extension/draft/${draftId}/sent`, {
+      ...payload,
+      version: fresh.data.version ?? parsed.current_version,
+    });
+  },
+
+  dmSyncStatus: async (backendUrl?: string): Promise<ApiResult<{ lastSyncAt: string | null }>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    return getJson(p, '/api/extension/dm-sync/status');
+  },
 };

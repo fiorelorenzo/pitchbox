@@ -1,6 +1,12 @@
 import { runInboxSync } from './background/inbox-sync.js';
 import { runChatSync } from './background/chat-sync.js';
-import { setSettings, type SyncChannelStatus } from './lib/storage.js';
+import {
+  getSettings,
+  patchPairing,
+  setSettings,
+  upsertPairing,
+  type SyncChannelStatus,
+} from './lib/storage.js';
 import { api } from './lib/api.js';
 
 const ALARM = 'pitchbox:dm-sync';
@@ -37,7 +43,11 @@ async function runAllSyncs() {
     legacy: classifyInbox(inbox),
     capturedAt: new Date().toISOString(),
   };
-  await setSettings({ syncStatus: status });
+  // Per-pairing status — every paired backend gets the same observation.
+  const { pairings } = await getSettings();
+  for (const p of pairings) {
+    await patchPairing(p.backendUrl, { syncStatus: status });
+  }
   // Heartbeat: report current channel status to the dashboard even when no
   // items moved. Fire-and-forget — failures here are non-fatal and the next
   // alarm tick will retry.
@@ -96,6 +106,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       matrixUserId: msg.matrixUserId,
       matrixDeviceId: msg.matrixDeviceId,
       matrixToken: msg.matrixToken,
+    }).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg?.type === 'pitchbox:auto-pair') {
+    // Persist token captured from the dashboard auto-pair handshake. Stored
+    // alongside any other pairings so cloud + self-hosted can coexist.
+    const { backendUrl, token } = msg as { backendUrl: string; token: string };
+    if (typeof backendUrl !== 'string' || typeof token !== 'string') {
+      sendResponse({ ok: false, reason: 'invalid_payload' });
+      return false;
+    }
+    upsertPairing({
+      backendUrl: backendUrl.replace(/\/$/, ''),
+      token,
+      lastHandshakeAt: new Date().toISOString(),
     }).then(() => sendResponse({ ok: true }));
     return true;
   }
