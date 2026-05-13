@@ -115,7 +115,7 @@
 	<!-- Bottom section: docs + auth + system status -->
 	<div class="flex flex-col gap-1 border-t border-border mt-4 pt-4">
 		<a
-			href="https://github.com/fiorelorenzo/pitchbox#readme"
+			href="https://fiorelorenzo.github.io/pitchbox/"
 			target="_blank"
 			rel="noopener"
 			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
