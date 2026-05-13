@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 /**
  * Hacker News doesn't have an official auth API for outreach. Pitchbox only
- * tracks the username — the human signs in to HN in their browser and the
+ * tracks the username - the human signs in to HN in their browser and the
  * extension/CLI never needs a secret. No DM support: HN provides no private
  * messaging primitive, so comment outreach is the only mode.
  */

@@ -2,12 +2,12 @@
 
 The companion extension lives in `extension/` (MV3, Vite + `@crxjs/vite-plugin`). It does two jobs:
 
-1. **Auto mark-as-sent** — when you submit a draft on Reddit, the extension picks up the `pitchbox_draft=<id>` query parameter the dashboard appended to the compose URL and flips the draft to `sent` on the linked backend.
-2. **Reply ingestion** — a background service worker polls Reddit's inbox (legacy PMs + comment-replies) and Reddit Chat (Matrix) every 10 min via `chrome.alarms`, posting matches to `POST /api/extension/dm-sync` on every paired backend.
+1. **Auto mark-as-sent** - when you submit a draft on Reddit, the extension picks up the `pitchbox_draft=<id>` query parameter the dashboard appended to the compose URL and flips the draft to `sent` on the linked backend.
+2. **Reply ingestion** - a background service worker polls Reddit's inbox (legacy PMs + comment-replies) and Reddit Chat (Matrix) every 10 min via `chrome.alarms`, posting matches to `POST /api/extension/dm-sync` on every paired backend.
 
 ## Stack
 
-The popup is a Svelte 5 app (runes mode) bundled with `@crxjs/vite-plugin` and styled with Tailwind 4 (theme tokens mirror the dashboard). Content scripts stay as plain TypeScript — they inject directly into Reddit's DOM and don't need a UI framework.
+The popup is a Svelte 5 app (runes mode) bundled with `@crxjs/vite-plugin` and styled with Tailwind 4 (theme tokens mirror the dashboard). Content scripts stay as plain TypeScript - they inject directly into Reddit's DOM and don't need a UI framework.
 
 ## Install
 
@@ -29,7 +29,7 @@ For the **cloud edition** (`https://app.pitchbox.io/*`) the same script runs aut
 
 ### Pair multiple backends
 
-You can pair both cloud and self-hosted at once — the popup lists every paired backend with a per-row **Disconnect** button. Reddit DM/comment syncs fan out: every paired backend receives the same traffic, so each Pitchbox instance sees every reply. The "auto mark-as-sent" path uses the backend the dashboard linked into the compose URL when the draft was opened, so drafts always flip on the correct backend.
+You can pair both cloud and self-hosted at once - the popup lists every paired backend with a per-row **Disconnect** button. Reddit DM/comment syncs fan out: every paired backend receives the same traffic, so each Pitchbox instance sees every reply. The "auto mark-as-sent" path uses the backend the dashboard linked into the compose URL when the draft was opened, so drafts always flip on the correct backend.
 
 ## Auth & CORS
 
@@ -39,8 +39,8 @@ The auto-pair endpoint is the one exception: it reads the dashboard session cook
 
 ## What the background workers do
 
-- `src/background/inbox-sync.ts` — polls `reddit.com/message/inbox.json`. Splits items into the `items[]` (PMs) and `comments[]` (`t1` items) arrays of the dm-sync request body.
-- `src/background/chat-sync.ts` — polls `matrix.redditspace.com/_matrix/client/v3/sync` for Reddit Chat. Before each tick it sends a cheap `GET /_matrix/client/v3/account/whoami` probe; if the Matrix token has expired (401/403) the heavier `/sync` call is skipped, the action badge turns red with `!`, and the popup displays a "Reddit Chat sync paused — please open reddit.com and refresh" notice with a one-click button to open reddit.com.
+- `src/background/inbox-sync.ts` - polls `reddit.com/message/inbox.json`. Splits items into the `items[]` (PMs) and `comments[]` (`t1` items) arrays of the dm-sync request body.
+- `src/background/chat-sync.ts` - polls `matrix.redditspace.com/_matrix/client/v3/sync` for Reddit Chat. Before each tick it sends a cheap `GET /_matrix/client/v3/account/whoami` probe; if the Matrix token has expired (401/403) the heavier `/sync` call is skipped, the action badge turns red with `!`, and the popup displays a "Reddit Chat sync paused - please open reddit.com and refresh" notice with a one-click button to open reddit.com.
 
 Both call `POST /api/extension/dm-sync` once per paired backend. The request body includes a `status` field summarising channel liveness:
 

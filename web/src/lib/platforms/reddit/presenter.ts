@@ -7,8 +7,8 @@ function subredditOf(d: DraftLike): string | null {
 
 export const redditPresenter: Presenter = {
   primaryLabel(d) {
-    if (d.kind === 'dm') return `u/${d.targetUser ?? '—'}`;
-    return `r/${subredditOf(d) ?? '—'}`;
+    if (d.kind === 'dm') return `u/${d.targetUser ?? '-'}`;
+    return `r/${subredditOf(d) ?? '-'}`;
   },
   userLabel: (handle) => `u/${handle}`,
   eventLabel(event) {

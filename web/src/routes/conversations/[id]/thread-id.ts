@@ -7,7 +7,7 @@
  *
  * We encode that tuple into a URL-safe base64 string so the dashboard can
  * deep-link to a thread without exposing punctuation that would otherwise need
- * percent-encoding. The encoding is intentionally stable + reversible — the
+ * percent-encoding. The encoding is intentionally stable + reversible - the
  * loader decodes it back to the original three fields.
  *
  * Format: base64url(`${accountHandle}|${targetUser}|${platformSlug}`)

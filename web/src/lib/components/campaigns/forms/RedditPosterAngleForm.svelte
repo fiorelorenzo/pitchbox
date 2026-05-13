@@ -13,7 +13,7 @@
   <header>
     <h3 class="text-sm font-semibold">Post angle</h3>
     <p class="text-xs text-muted-foreground">
-      The framing the agent applies to every drafted post — e.g. "lessons learned from building X",
+      The framing the agent applies to every drafted post - e.g. "lessons learned from building X",
       "comparison: tool A vs tool B", "show: I shipped a small thing that solves Y". Keep it concrete.
     </p>
   </header>

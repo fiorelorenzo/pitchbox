@@ -6,13 +6,13 @@ import { findCommentTextarea, findCommentSubmitButton } from './shared/reddit-do
 const draftId = parseDraftId(location.href);
 
 function derivePostId(pathname: string): string | null {
-  // /r/<sub>/comments/<postId>/<slug>/...   — Reddit's canonical pattern.
+  // /r/<sub>/comments/<postId>/<slug>/...   - Reddit's canonical pattern.
   const m = /\/comments\/([a-z0-9]+)\b/i.exec(pathname);
   return m ? m[1] : null;
 }
 
 async function fetchAccountHandle(draftId: number): Promise<string | null> {
-  // Reddit-issued cookies authenticate /api/me.json — works uniformly on old and
+  // Reddit-issued cookies authenticate /api/me.json - works uniformly on old and
   // new Reddit, regardless of which user link happens to be first in the DOM
   // (often the post author, not the logged-in user).
   void draftId;

@@ -24,7 +24,7 @@
     }
   }
   function fmtAgo(iso: string | undefined) {
-    if (!iso) return '—';
+    if (!iso) return '-';
     const ms = Date.now() - new Date(iso).getTime();
     if (ms < 60_000) return `${Math.floor(ms / 1000)}s`;
     if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m`;

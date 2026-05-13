@@ -8,7 +8,7 @@ function parseId(idParam: string): number | null {
 }
 
 /**
- * Discard a tuning run — sets `run.params.discarded = true`. The campaign's
+ * Discard a tuning run - sets `run.params.discarded = true`. The campaign's
  * current config is left untouched. The run row is preserved for audit.
  */
 export async function POST({ params }) {

@@ -8,7 +8,7 @@ export type SyncStatus = {
 
 /**
  * One paired backend. Users can be paired with multiple at the same time
- * (e.g. cloud + self-hosted) — every DM/comment sync fans out to all of them
+ * (e.g. cloud + self-hosted) - every DM/comment sync fans out to all of them
  * so each Pitchbox instance sees the same Reddit traffic.
  */
 export type Pairing = {

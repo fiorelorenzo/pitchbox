@@ -62,7 +62,7 @@
   function diffLines(a: string, b: string): DiffLine[] {
     const A = a.split('\n');
     const B = b.split('\n');
-    // Greedy LCS using DP — fine for a few hundred lines.
+    // Greedy LCS using DP - fine for a few hundred lines.
     const m = A.length;
     const n = B.length;
     const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
@@ -165,7 +165,7 @@
         runningRunId = null;
         selectedRunId = payload.runId ?? selectedRunId;
         await invalidateAll();
-        toast.success('Tuning finished — review the diff');
+        toast.success('Tuning finished - review the diff');
       }
     });
   });
@@ -205,7 +205,7 @@
       <Card.Header>
         <div class="flex items-center justify-between gap-3">
           <div>
-            <Card.Title class="text-base">Proposed profile — run #{selectedRun.id}</Card.Title>
+            <Card.Title class="text-base">Proposed profile - run #{selectedRun.id}</Card.Title>
             <Card.Description>
               {#if selectedRun.params.adopted}
                 <Badge variant="secondary">Adopted</Badge>
@@ -281,7 +281,7 @@
                   {:else if r.params?.discarded}
                     <Badge variant="outline">Discarded</Badge>
                   {:else}
-                    <span class="text-muted-foreground">—</span>
+                    <span class="text-muted-foreground">-</span>
                   {/if}
                 </td>
                 <td class="py-2 text-right">

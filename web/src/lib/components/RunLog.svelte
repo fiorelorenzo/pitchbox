@@ -156,7 +156,7 @@
 			if (runId !== null && rid !== runId) return;
 
 			if (!event) {
-				// Null event (blank/comment line) — nothing to display.
+				// Null event (blank/comment line) - nothing to display.
 				return;
 			}
 
@@ -276,7 +276,7 @@
 					</div>
 				{:else}
 					<p class="text-xs text-muted-foreground/50 text-center py-10 italic">
-						Idle — start a run to see events here.
+						Idle - start a run to see events here.
 					</p>
 				{/if}
 			{:else}

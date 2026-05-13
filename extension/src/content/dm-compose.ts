@@ -13,7 +13,7 @@ if (draftId !== null) {
   async function onSendIntent() {
     if (armed) return;
     armed = true;
-    // Capture the textarea content at click time — Reddit clears it on success.
+    // Capture the textarea content at click time - Reddit clears it on success.
     capturedBody = findComposeTextarea()?.value || undefined;
     await api.armed(draftId!);
   }

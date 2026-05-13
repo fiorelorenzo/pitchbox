@@ -6,7 +6,7 @@ A **project** is a single product, brand, or initiative you're doing outreach fo
 
 ## Accounts
 
-An **account** is a platform identity (e.g. `u/myhandle` on Reddit) tied to a project. Accounts carry a `platformId` plus optional encrypted credentials. Each `(project, platform)` pair can have one **default** account — the dispatch path surfaces it first to the playbook.
+An **account** is a platform identity (e.g. `u/myhandle` on Reddit) tied to a project. Accounts carry a `platformId` plus optional encrypted credentials. Each `(project, platform)` pair can have one **default** account - the dispatch path surfaces it first to the playbook.
 
 ## Campaigns
 
@@ -18,15 +18,15 @@ A **run** is one execution of a campaign or background task. The dashboard strea
 
 ## Drafts
 
-A **draft** is the agent's proposed outreach — DM, post, post comment, or comment reply. Drafts live in `pending_review` until a human approves, rejects, or sends them. Edits made in the dashboard are saved on the draft for future reference.
+A **draft** is the agent's proposed outreach - DM, post, post comment, or comment reply. Drafts live in `pending_review` until a human approves, rejects, or sends them. Edits made in the dashboard are saved on the draft for future reference.
 
 ## Contact history & conversations
 
-Once a draft is sent, the row in `contact_history` becomes the per-target source of truth. The Chrome extension picks up replies (DMs and comment-replies) and the **Conversations** page lists every thread; clicking a row opens `/conversations/<thread-id>`, a Matrix/iMessage-style transcript that renders the parent draft and every captured message, with outgoing bubbles right-aligned in the primary color and incoming bubbles left-aligned in muted styling. A composer placeholder is shown at the bottom — reply drafting from the dashboard is coming next.
+Once a draft is sent, the row in `contact_history` becomes the per-target source of truth. The Chrome extension picks up replies (DMs and comment-replies) and the **Conversations** page lists every thread; clicking a row opens `/conversations/<thread-id>`, a Matrix/iMessage-style transcript that renders the parent draft and every captured message, with outgoing bubbles right-aligned in the primary color and incoming bubbles left-aligned in muted styling. A composer placeholder is shown at the bottom - reply drafting from the dashboard is coming next.
 
 ## Audit feed
 
-The `/audit` page surfaces a unified, time-ordered feed of every recorded event in the system. It unions `draft_events` (state transitions, approvals, rejections, sends — each tagged with an `actor`) with `run_events` (agent runner stream output and lifecycle markers) via a single `UNION ALL` query, discriminating each row by a synthetic `kind` column (`draft` or `run`). Rows are ordered newest first by `(created_at, id)` and the page exposes filters for event name, draft id, run id, actor, and a date range. Each leg is filtered before the union so the indexes on `draft_events_kind_created_idx` and `run_events_kind_created_idx` stay usable. Keyset pagination on `(created_at, id)` powers the "Load more" button.
+The `/audit` page surfaces a unified, time-ordered feed of every recorded event in the system. It unions `draft_events` (state transitions, approvals, rejections, sends - each tagged with an `actor`) with `run_events` (agent runner stream output and lifecycle markers) via a single `UNION ALL` query, discriminating each row by a synthetic `kind` column (`draft` or `run`). Rows are ordered newest first by `(created_at, id)` and the page exposes filters for event name, draft id, run id, actor, and a date range. Each leg is filtered before the union so the indexes on `draft_events_kind_created_idx` and `run_events_kind_created_idx` stay usable. Keyset pagination on `(created_at, id)` powers the "Load more" button.
 
 ## Blocklist
 
@@ -38,13 +38,13 @@ Pitchbox ships with a tiny hand-rolled i18n module at `web/src/lib/i18n/`. Engli
 
 ## Templates (few-shot examples)
 
-Each project owns a list of **templates** — short, agent-facing examples that anchor the voice of generated drafts. A template has a `kind` (`dm`, `comment`, or `post`), a human-friendly `title`, a `body`, and an `isActive` flag for archiving without deletion. Manage them from **Projects → [project] → Templates**.
+Each project owns a list of **templates** - short, agent-facing examples that anchor the voice of generated drafts. A template has a `kind` (`dm`, `comment`, or `post`), a human-friendly `title`, a `body`, and an `isActive` flag for archiving without deletion. Manage them from **Projects → [project] → Templates**.
 
 Active templates are loaded by `pitchbox run:start` and surfaced to the playbook under a `templates` key, so the agent can quote them verbatim or paraphrase tone-of-voice. Archived templates are excluded. Campaign-level overrides are reserved for a future release; today templates are project-wide.
 
 ## Project insights
 
-Each project accumulates an outreach history — drafts sent, replies recorded, runs executed. **Project insights** ask an LLM to read that history once a day and write a short Markdown brief: which subreddits convert, which opening lines correlate with replies, what to stop doing. The brief lives in the `project_insights` table; the dashboard's **Projects → [project] → Insights** tab renders the latest row, with a **Regenerate now** button for ad-hoc refresh.
+Each project accumulates an outreach history - drafts sent, replies recorded, runs executed. **Project insights** ask an LLM to read that history once a day and write a short Markdown brief: which subreddits convert, which opening lines correlate with replies, what to stop doing. The brief lives in the `project_insights` table; the dashboard's **Projects → [project] → Insights** tab renders the latest row, with a **Regenerate now** button for ad-hoc refresh.
 
 Insights are produced by the `project-insighter` playbook (see `playbooks.md`). The daemon's insights worker schedules one run per active project per day, skipping projects without recent activity or with a fresh insight already on file. Evidence is stored as JSON citing draft/message IDs so any claim can be audited back to the source.
 

@@ -79,7 +79,7 @@
 			if (!res.ok) throw new Error(await res.text());
 			const { runId, alreadyRunning } = await res.json();
 			if (alreadyRunning) {
-				toast.info(`Already running — showing live log`);
+				toast.info(`Already running - showing live log`);
 			}
 			runIdByCampaign = new Map([...runIdByCampaign, [id, runId]]);
 		} catch {
@@ -180,7 +180,7 @@
 
 <Seo
 	title="Campaigns"
-	description="Manage outreach campaigns — trigger manual runs, review recent activity, edit cron schedules."
+	description="Manage outreach campaigns - trigger manual runs, review recent activity, edit cron schedules."
 />
 
 <PageHeader
@@ -316,7 +316,7 @@
 										{/if}
 									</div>
 								{:else}
-									<span class="text-muted-foreground/50">—</span>
+									<span class="text-muted-foreground/50">-</span>
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="py-3">
@@ -338,7 +338,7 @@
 										0 drafts
 									</Badge>
 								{:else}
-									<span class="text-muted-foreground/50 text-xs">—</span>
+									<span class="text-muted-foreground/50 text-xs">-</span>
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-right py-3">

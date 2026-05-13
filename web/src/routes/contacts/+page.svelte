@@ -67,12 +67,12 @@
 
 <Seo
 	title="Contacts"
-	description="All outreach contacts — who you messaged, when, and who replied."
+	description="All outreach contacts - who you messaged, when, and who replied."
 />
 
 <PageHeader
 	title="Contacts"
-	description="Everyone your campaigns have messaged, posted to, or commented on. {data.totals.unique} unique across {data.totals.total} contacts — {data.totals.replied} replied."
+	description="Everyone your campaigns have messaged, posted to, or commented on. {data.totals.unique} unique across {data.totals.total} contacts - {data.totals.replied} replied."
 />
 
 <Card.Root size="sm">
@@ -148,7 +148,7 @@
 								{#if c.draftKind}
 									<StatusBadge domain="draft-kind" value={c.draftKind} />
 								{:else}
-									<span class="text-xs text-muted-foreground italic">—</span>
+									<span class="text-xs text-muted-foreground italic">-</span>
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-xs text-muted-foreground" title={String(c.lastContactedAt)}>
@@ -181,7 +181,7 @@
 										#{c.draftId}
 									</a>
 								{:else}
-									<span class="text-xs text-muted-foreground">—</span>
+									<span class="text-xs text-muted-foreground">-</span>
 								{/if}
 							</Table.Cell>
 						</Table.Row>

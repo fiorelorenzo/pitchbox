@@ -23,7 +23,7 @@ export async function load({ params }: { params: { id: string } }) {
     .where(eq(schema.runs.campaignId, id))
     .orderBy(desc(schema.runs.startedAt))
     .limit(30);
-  // Only count drafts for regular campaign runs — skill-generation runs never produce drafts.
+  // Only count drafts for regular campaign runs - skill-generation runs never produce drafts.
   const campaignRunIds = runs.filter((r) => r.kind === 'campaign').map((r) => r.id);
   const draftCounts =
     campaignRunIds.length > 0

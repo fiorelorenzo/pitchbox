@@ -111,7 +111,7 @@ export async function POST({ params, request }) {
       );
     }
     if (!isAcceptableName(v.normalized)) {
-      // Silently skip files outside the allowlist — server matches the client filter.
+      // Silently skip files outside the allowlist - server matches the client filter.
       continue;
     }
     accepted.push({ rel: v.normalized, file: p.file });

@@ -39,7 +39,7 @@ function classifyChat(r: Result): SyncChannelStatus {
 async function runAllSyncs() {
   const s = await getExtensionSettings();
 
-  // Short-circuit disabled pollers — treat their slot as a no-op success so
+  // Short-circuit disabled pollers - treat their slot as a no-op success so
   // the heartbeat still fires and the dashboard sees fresh status.
   const inbox: Result = s.legacyPollerEnabled
     ? await runInboxSync()
@@ -53,13 +53,13 @@ async function runAllSyncs() {
     legacy: classifyInbox(inbox),
     capturedAt: new Date().toISOString(),
   };
-  // Per-pairing status — every paired backend gets the same observation.
+  // Per-pairing status - every paired backend gets the same observation.
   const { pairings } = await getSettings();
   for (const p of pairings) {
     await patchPairing(p.backendUrl, { syncStatus: status });
   }
   // Heartbeat: report current channel status to the dashboard even when no
-  // items moved. Fire-and-forget — failures here are non-fatal and the next
+  // items moved. Fire-and-forget - failures here are non-fatal and the next
   // alarm tick will retry.
   try {
     await api.dmSync('reddit', [], [], {
@@ -71,7 +71,7 @@ async function runAllSyncs() {
     // ignored
   }
 
-  // Activity log entries — one per poller that actually ran this cycle.
+  // Activity log entries - one per poller that actually ran this cycle.
   if (s.legacyPollerEnabled) {
     if (inbox.ok) {
       await logEvent({
@@ -118,7 +118,7 @@ async function runAllSyncs() {
         messageParams: { reason: chat.reason ?? 'unknown' },
       });
     } else if (chat.reason === 'no-matrix-creds') {
-      // Quietly skip — no creds yet means the user has not paired Reddit Chat.
+      // Quietly skip - no creds yet means the user has not paired Reddit Chat.
     } else {
       await logEvent({
         level: 'error',
@@ -169,7 +169,7 @@ async function applyAlarms(): Promise<void> {
 
 chrome.runtime.onInstalled.addListener(async () => {
   console.log('[pitchbox] extension installed');
-  // Register side panel behaviour — guarded for older Chrome builds without
+  // Register side panel behaviour - guarded for older Chrome builds without
   // the sidePanel API.
   try {
     await chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true });
@@ -228,7 +228,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
   if (msg?.type === 'pitchbox:log') {
-    // Centralised log dispatcher — UI surfaces (side panel, content scripts)
+    // Centralised log dispatcher - UI surfaces (side panel, content scripts)
     // POST events here so the service worker is the single writer.
     logEvent(msg.event).then(() => sendResponse({ ok: true }));
     return true;

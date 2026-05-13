@@ -15,7 +15,7 @@ Pitchbox supports multi-tenant orgs. On a fresh install a `default` org is seede
 The hook `handle` in `web/src/hooks.server.ts` runs `loadOrganizationForUser` on every authenticated request and either:
 
 1. Sets `event.locals.org = { id, slug, role }` and continues, or
-2. Returns **404** if the user has no membership (not 403 — we don't leak existence).
+2. Returns **404** if the user has no membership (not 403 - we don't leak existence).
 
 `/invite/*` and `/api/orgs/*` are exempt because a newly registered user with no membership still needs to accept an invite.
 

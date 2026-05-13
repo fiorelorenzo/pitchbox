@@ -5,7 +5,7 @@
  * tracking, automatic reconnect on silence (no event for > STALE_MS), and a
  * reactive `status` consumers can render.
  *
- * Server emits `:ping` SSE comments every 15 s — see
+ * Server emits `:ping` SSE comments every 15 s - see
  * web/src/routes/api/stream/+server.ts. Browsers' EventSource does not surface
  * comments as events, so we rely on named events to land regularly; if none
  * arrives in STALE_MS we drop and reconnect.

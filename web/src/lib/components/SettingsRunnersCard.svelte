@@ -89,8 +89,8 @@
 			<Inbox class="mx-auto size-6 text-muted-foreground" />
 			<p class="mt-2 text-sm font-medium">No agent runner installed</p>
 			<p class="mt-1 text-xs text-muted-foreground">
-				Install one of the supported CLIs — e.g.
-				<code class="rounded bg-muted px-1.5 py-0.5">claude</code> — and click <em>Re-detect</em>.
+				Install one of the supported CLIs - e.g.
+				<code class="rounded bg-muted px-1.5 py-0.5">claude</code> - and click <em>Re-detect</em>.
 			</p>
 		</div>
 	{:else}

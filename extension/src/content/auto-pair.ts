@@ -38,7 +38,7 @@ import { logFromContent } from '../lib/log-from-content.js';
   }
   if (!res.ok) {
     if (res.status === 401) {
-      // User isn't signed in yet — quietly skip, we'll retry on next reload.
+      // User isn't signed in yet - quietly skip, we'll retry on next reload.
       return;
     }
     console.warn('[pitchbox] auto-pair non-200', res.status);

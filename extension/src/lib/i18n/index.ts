@@ -48,7 +48,7 @@ export const t: Readable<(key: string, params?: TParams) => string> = derived(
 /**
  * Resolve the initial locale at boot:
  *   1. user preference in chrome.storage.local.extensionSettings.locale, then
- *   2. chrome.i18n.getUILanguage() — `it*` → 'it', else 'en'.
+ *   2. chrome.i18n.getUILanguage() - `it*` → 'it', else 'en'.
  */
 export async function resolveInitialLocale(): Promise<Locale> {
   try {

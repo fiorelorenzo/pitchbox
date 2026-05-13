@@ -50,7 +50,7 @@ export async function getCampaignReadiness(campaignId: number): Promise<Campaign
         issues.push({
           id: 'profile_invalid',
           title: 'Campaign profile is invalid',
-          hint: `${where}: ${first?.message ?? 'schema mismatch'} — regenerate the profile.`,
+          hint: `${where}: ${first?.message ?? 'schema mismatch'} - regenerate the profile.`,
           fix: { label: 'Regenerate profile', kind: 'profile' },
         });
       }
@@ -62,7 +62,7 @@ export async function getCampaignReadiness(campaignId: number): Promise<Campaign
     issues.push({
       id: 'runner_unavailable',
       title: 'Agent runner not implemented',
-      hint: `${campaign.agentRunner} does not have a runner adapter yet — pick claude-code or wait for the adapter.`,
+      hint: `${campaign.agentRunner} does not have a runner adapter yet - pick claude-code or wait for the adapter.`,
       fix: { label: 'Open settings', kind: 'runner', href: '/settings' },
     });
   } else {

@@ -28,7 +28,7 @@ export async function updateDraftWithVersion(
   if (updated.length === 1) {
     return { kind: 'ok', newVersion: updated[0].version };
   }
-  // No row matched the version predicate — re-read so the caller can surface
+  // No row matched the version predicate - re-read so the caller can surface
   // the current version to clients (purely advisory; they should still
   // re-fetch the full row before retrying).
   const [fresh] = await db

@@ -9,7 +9,7 @@ function storyIdOf(d: DraftLike): string | null {
 
 export const hackernewsPresenter: Presenter = {
   primaryLabel(d) {
-    // HN has no DMs — every draft is a comment on a story.
+    // HN has no DMs - every draft is a comment on a story.
     const id = storyIdOf(d);
     return id ? `HN #${id}` : 'HN story';
   },

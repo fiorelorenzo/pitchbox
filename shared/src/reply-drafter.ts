@@ -33,7 +33,7 @@ export interface EnqueuedReplyDraft {
   kind: ReplyKind;
 }
 
-const PLACEHOLDER_BODY = '[reply pending — agent run not yet executed]';
+const PLACEHOLDER_BODY = '[reply pending - agent run not yet executed]';
 
 export async function enqueueReplyDraft(
   db: Db,

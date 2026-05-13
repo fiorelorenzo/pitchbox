@@ -17,7 +17,7 @@ export type DaemonStatus = {
 const initial: DaemonStatus = { alive: false, modules: [], loading: true };
 
 /**
- * Polls the daemon status endpoint. We use a small interval (15s) — the daemon
+ * Polls the daemon status endpoint. We use a small interval (15s) - the daemon
  * heartbeat cadence is 30s, and the web's staleness threshold is 2 minutes, so
  * 15s polling is sufficient for users to see it flip online/offline quickly.
  */

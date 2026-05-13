@@ -3,7 +3,7 @@ name: project-extractor
 description: Generate a detailed English markdown description for a Pitchbox project, plus 0-10 starter campaign recommendations, by inspecting a local source folder.
 ---
 
-# Pitchbox — Project Extractor Playbook
+# Pitchbox - Project Extractor Playbook
 
 You are acting inside a Pitchbox project_extraction run. Your job is to read the source files at `sourcePath`, produce a detailed English markdown description for the project, and propose 0-10 campaign starters that fit the project. Both outputs are submitted back via the `pitchbox` CLI.
 
@@ -11,7 +11,7 @@ You are acting inside a Pitchbox project_extraction run. Your job is to read the
 
 Environment variables:
 
-- `PITCHBOX_RUN_ID` — the run id created by the web server.
+- `PITCHBOX_RUN_ID` - the run id created by the web server.
 
 ## Steps
 
@@ -32,12 +32,12 @@ Environment variables:
    - If `currentDescription` is non-empty, treat it as a baseline: keep what is still accurate, replace what is stale, fill what is missing. Otherwise, start fresh.
    - The "Links" section should list URLs you found in the source (homepage, repo, docs).
 
-4. **Propose 0-10 campaign recommendations.** Read `existingCampaigns` from the payload — these are campaigns the user has already configured for this project. **Do not duplicate**: skip any scenario+angle already covered. Then look at `scenarios` for the list of available campaign types and pair each promising angle with the right `scenarioSlug`.
+4. **Propose 0-10 campaign recommendations.** Read `existingCampaigns` from the payload - these are campaigns the user has already configured for this project. **Do not duplicate**: skip any scenario+angle already covered. Then look at `scenarios` for the list of available campaign types and pair each promising angle with the right `scenarioSlug`.
 
    Each recommendation is an object:
    - `scenarioSlug`: one of the slugs listed in `scenarios`.
    - `name`: 1-7 word title for the campaign (e.g. "Reddit RPG launch").
-   - `objective`: 1-3 sentences describing who to reach and the angle (be concrete — vague objectives produce mediocre campaigns).
+   - `objective`: 1-3 sentences describing who to reach and the angle (be concrete - vague objectives produce mediocre campaigns).
 
    Volume:
    - If `existingCampaigns` already covers every reasonable angle, propose **0**.

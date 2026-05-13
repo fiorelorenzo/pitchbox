@@ -15,7 +15,7 @@ npm install
 cp .env.example .env  # then set ENCRYPTION_KEY (32-byte hex) and PITCHBOX_ROOT
 ```
 
-`ENCRYPTION_KEY` protects account secrets at rest — generate one with `openssl rand -hex 32`. `PITCHBOX_ROOT` must be the absolute path to the repo root.
+`ENCRYPTION_KEY` protects account secrets at rest - generate one with `openssl rand -hex 32`. `PITCHBOX_ROOT` must be the absolute path to the repo root.
 
 ## Database
 
@@ -37,7 +37,7 @@ By default the dashboard runs on its own and you start the background daemon as 
 npm run -w daemon dev      # scheduler + reply poller + retention + webhook DLQ
 ```
 
-For single-host installs you can skip the second process and run everything in one — set `PITCHBOX_EMBED_DAEMON=1` in your `.env` and the same loops boot inside the web server. See [Daemon](/daemon) for when each mode makes sense.
+For single-host installs you can skip the second process and run everything in one - set `PITCHBOX_EMBED_DAEMON=1` in your `.env` and the same loops boot inside the web server. See [Daemon](/daemon) for when each mode makes sense.
 
 ## Optional: turn on authentication
 

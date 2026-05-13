@@ -150,7 +150,7 @@
 						<span class="font-mono">$ {commandPreview}</span>
 					{/if}
 					{#if description}
-						<span class="text-muted-foreground/50 italic ml-2">— {description.slice(0, 50)}</span>
+						<span class="text-muted-foreground/50 italic ml-2">- {description.slice(0, 50)}</span>
 					{/if}
 				{:else if data.name.toLowerCase() === 'read'}
 					<span class="font-mono text-muted-foreground/80">{fileName}</span>
@@ -170,7 +170,7 @@
 						<span class="text-muted-foreground/50 ml-1">{data.input.path}</span>
 					{/if}
 				{:else if data.name.toLowerCase() === 'skill'}
-					Launching <span class="font-semibold">{data.input.skill ?? '—'}</span>
+					Launching <span class="font-semibold">{data.input.skill ?? '-'}</span>
 				{:else if isTodoWrite}
 					<TodoWriteCard todos={data.input.todos as { status: string; content: string; activeForm: string }[]} inline />
 				{:else}
@@ -211,7 +211,7 @@
 			</span>
 		</button>
 
-		<!-- Copy button for Bash — outside the toggle button to avoid nesting -->
+		<!-- Copy button for Bash - outside the toggle button to avoid nesting -->
 		{#if isBashTool && command}
 			<button
 				onclick={copyCommand}

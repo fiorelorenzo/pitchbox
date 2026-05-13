@@ -4,21 +4,21 @@ A **playbook** is the markdown the agent runner executes. Built-in playbooks shi
 
 ## Snapshot at dispatch
 
-Each run snapshots the playbook body into `runs.playbook_body` at creation time. Editing a playbook later never retroactively changes past runs — the dispatch path always writes the snapshot to a temp file and points the runner there.
+Each run snapshots the playbook body into `runs.playbook_body` at creation time. Editing a playbook later never retroactively changes past runs - the dispatch path always writes the snapshot to a temp file and points the runner there.
 
 If a run has no snapshot (legacy data, or non-campaign kinds like project extraction), the dispatch path falls back to the on-disk file at `playbooks/<slug>.md`.
 
 ## Editing
 
-Built-in rows are read-only by design — duplicate them to customise. The editor lives at `/playbooks/[id]` and posts back to `PATCH /api/playbooks/[id]`.
+Built-in rows are read-only by design - duplicate them to customise. The editor lives at `/playbooks/[id]` and posts back to `PATCH /api/playbooks/[id]`.
 
 ## CLI contract
 
-Playbooks shell out to the `pitchbox` CLI (`bin/pitchbox`) for all DB reads/writes. The CLI is the only place that talks to Postgres from inside a run — playbooks never reach in directly. Useful commands:
+Playbooks shell out to the `pitchbox` CLI (`bin/pitchbox`) for all DB reads/writes. The CLI is the only place that talks to Postgres from inside a run - playbooks never reach in directly. Useful commands:
 
-- `pitchbox run:start --campaign <id>` — bootstrap a run and surface campaign / accounts / blocklist context.
-- `pitchbox drafts:create --run <id>` — bulk-insert drafts from JSON on stdin.
-- `pitchbox run:finish --run <id> --status success | failed` — commit terminal state.
+- `pitchbox run:start --campaign <id>` - bootstrap a run and surface campaign / accounts / blocklist context.
+- `pitchbox drafts:create --run <id>` - bulk-insert drafts from JSON on stdin.
+- `pitchbox run:finish --run <id> --status success | failed` - commit terminal state.
 
 ## Tuning a campaign (campaign-skill-generator)
 
@@ -31,7 +31,7 @@ Workflow:
 3. Review the diff and either:
    - **Adopt** → `POST /api/campaigns/:id/skill-runs/:runId/adopt` copies `generatedConfig` into `campaigns.config`, flips a `draft` campaign to `active`, and marks the run `params.adopted = true`.
    - **Discard** → `POST /api/campaigns/:id/skill-runs/:runId/discard` leaves `campaigns.config` untouched and marks the run `params.discarded = true` for audit.
-4. Past tuning runs (up to the last 20) are listed in the same tab with timestamp, status, and adopted/discarded badge — a "View diff" button restores the diff view for any historical run that still has a `generatedConfig`.
+4. Past tuning runs (up to the last 20) are listed in the same tab with timestamp, status, and adopted/discarded badge - a "View diff" button restores the diff view for any historical run that still has a `generatedConfig`.
 
 The legacy **Profile → Regenerate** dialog still runs in `apply` mode (auto-writes the new profile) for parity with prior releases; the Tuning tab is the recommended surface for human-in-the-loop tuning.
 

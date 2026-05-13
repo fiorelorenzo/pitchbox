@@ -18,8 +18,8 @@ describe('i18n', () => {
     expect(translate('en', 'no.such.key')).toBe('no.such.key');
   });
   it('interpolates {name} placeholders', () => {
-    expect(translate('en', 'activity.dm-sync.run-ok', { inserted: 3, replied: 1 })).toBe(
-      'Sync OK — 3 new, 1 replied.',
+    expect(translate('en', 'activity.dm-sync.ok', { inserted: 3, replied: 1 })).toBe(
+      'Reddit inbox sync - 3 new, 1 replied.',
     );
   });
 });
