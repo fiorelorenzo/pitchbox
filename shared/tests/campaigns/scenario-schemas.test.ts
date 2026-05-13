@@ -10,7 +10,7 @@ describe('reddit-scout schema', () => {
     fitScoreThreshold: 3,
     voice: {
       tone: 'casual' as const,
-      hardBans: ['—'],
+      hardBans: ['-'],
       dos: ['use lowercase opener'],
       openerStyle: 'lowercase-casual' as const,
       disclosure: 'i build this',

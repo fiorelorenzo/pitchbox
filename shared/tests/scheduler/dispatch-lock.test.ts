@@ -78,7 +78,7 @@ describe('withCampaignLock', () => {
         });
         return 'inserted' as const;
       });
-      // Lock unavailable counts as "skipped" too — both losers are equivalent
+      // Lock unavailable counts as "skipped" too - both losers are equivalent
       // for the caller.
       return got ?? 'skipped';
     }

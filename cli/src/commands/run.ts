@@ -27,7 +27,7 @@ export function registerRunCommands(program: Command) {
         ).safeParse(campaign.config);
         if (!validation.success) {
           return fail(
-            'campaign profile is not in the structured format — regenerate it from the dashboard',
+            'campaign profile is not in the structured format - regenerate it from the dashboard',
           );
         }
       }
@@ -54,7 +54,7 @@ export function registerRunCommands(program: Command) {
         .where(eq(schema.contactHistory.platformId, campaign.platformId));
 
       // Few-shot templates (project-scoped). Filter by kind when the scenario
-      // implies one — scout/commenter both produce comments, but DM-style
+      // implies one - scout/commenter both produce comments, but DM-style
       // scenarios will read 'dm'. Keep it simple: load all active and let
       // the playbook pick.
       const inferredKind: TemplateKind | undefined =
@@ -69,7 +69,7 @@ export function registerRunCommands(program: Command) {
 
       // If PITCHBOX_RUN_ID is set, we're running inside an already-created run
       // (e.g., invoked by the web server / daemon). Use that row instead of
-      // creating a second one — the DB partial unique index would reject it,
+      // creating a second one - the DB partial unique index would reject it,
       // and logically the run-start CLI should be idempotent in that case.
       let run: typeof schema.runs.$inferSelect | undefined;
       const envRunId = process.env.PITCHBOX_RUN_ID ? Number(process.env.PITCHBOX_RUN_ID) : null;

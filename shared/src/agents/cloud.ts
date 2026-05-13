@@ -3,8 +3,8 @@ import type { RunnerConfig } from './config.js';
 
 // Stub `cloud` runner. The real implementation dispatches runs to a managed
 // backend and lives in the private `cloud/` submodule (see docs/auth.md for
-// the repo-strategy section). On the OSS build the stub stays — registered
-// but throws if instantiated — so the dashboard can show the runner in the
+// the repo-strategy section). On the OSS build the stub stays - registered
+// but throws if instantiated - so the dashboard can show the runner in the
 // detection table and gate selection behind the `cloud` edition.
 
 export class CloudRunnerStub implements AgentRunner {

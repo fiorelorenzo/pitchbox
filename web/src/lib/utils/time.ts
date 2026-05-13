@@ -1,6 +1,6 @@
 /** Formats a date as a human-readable relative time string, e.g. "5 min ago" */
 export function relativeTime(date: Date | string | null | undefined): string {
-  if (!date) return '—';
+  if (!date) return '-';
   const d = typeof date === 'string' ? new Date(date) : date;
   const diffMs = Date.now() - d.getTime();
   const diffSec = Math.floor(diffMs / 1000);
@@ -16,7 +16,7 @@ export function relativeTime(date: Date | string | null | undefined): string {
 
 /** Formats a duration in ms as a human-readable string, e.g. "1m 14s" */
 export function formatDuration(ms: number | null | undefined): string {
-  if (ms == null) return '—';
+  if (ms == null) return '-';
   const totalSec = Math.floor(ms / 1000);
   if (totalSec < 60) return `${totalSec}s`;
   const min = Math.floor(totalSec / 60);

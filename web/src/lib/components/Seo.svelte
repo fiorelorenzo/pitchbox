@@ -8,7 +8,7 @@
 		description,
 		noindex = true,
 	}: {
-		/** Page title — rendered as `<title>` and joined with the app name. */
+		/** Page title - rendered as `<title>` and joined with the app name. */
 		title: string;
 		/** One-sentence description for <meta name="description"> and OG. */
 		description: string;

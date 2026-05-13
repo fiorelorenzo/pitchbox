@@ -17,7 +17,7 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-// Public endpoint — no auth required. The pairing code itself is the
+// Public endpoint - no auth required. The pairing code itself is the
 // short-lived secret. Each code can be consumed exactly once.
 export async function POST({ request }: { request: Request }) {
   const raw = await request.json().catch(() => null);

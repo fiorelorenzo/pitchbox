@@ -119,7 +119,7 @@
 			if (!res.ok) throw new Error(body?.message ?? `HTTP ${res.status}`);
 			const { runId, alreadyRunning } = body;
 			if (alreadyRunning) {
-				toast.info(`Already running — showing live log`);
+				toast.info(`Already running - showing live log`);
 			} else {
 				toast.success(`Run #${runId} started`);
 			}
@@ -150,7 +150,7 @@
 
 <Seo
 	title={data.campaign.name}
-	description="Campaign detail — cron schedule, recent runs, agent configuration."
+	description="Campaign detail - cron schedule, recent runs, agent configuration."
 />
 
 <!-- Breadcrumb -->

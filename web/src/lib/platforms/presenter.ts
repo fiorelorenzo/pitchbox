@@ -12,7 +12,7 @@ export type Presenter = {
 };
 
 const generic: Presenter = {
-  primaryLabel: (d) => (d.targetUser ? `@${d.targetUser}` : '—'),
+  primaryLabel: (d) => (d.targetUser ? `@${d.targetUser}` : '-'),
   userLabel: (handle) => `@${handle}`,
   eventLabel: () => null,
   replyActionLabel: () => 'Reply',

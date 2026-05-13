@@ -23,7 +23,7 @@ export interface ReplyReader {
   readonly platform: string;
   /**
    * Return all replies matching the query. May throw if the account is not
-   * logged in or the platform is unreachable — the poller catches and logs.
+   * logged in or the platform is unreachable - the poller catches and logs.
    */
   readReplies(q: ReplyReaderQuery): Promise<Reply[]>;
 }

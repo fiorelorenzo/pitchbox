@@ -104,7 +104,7 @@ export function registerSkillCommands(program: Command) {
       // Preview mode: stash the generated profile + previous config on the run
       // (params.generatedConfig / params.previousConfig) and let the user
       // adopt/discard it from the UI. Apply mode (default) writes it straight
-      // into campaigns.config — preserves the legacy behaviour used by the
+      // into campaigns.config - preserves the legacy behaviour used by the
       // "Regenerate profile" dialog.
       const mode = (run.params as { mode?: string } | null)?.mode ?? 'apply';
       await db.transaction(async (tx) => {

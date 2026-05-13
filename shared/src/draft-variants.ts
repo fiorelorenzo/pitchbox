@@ -45,7 +45,7 @@ export function groupVariants(bodies: VariantSeed[], groupId?: string): GroupedV
 function cryptoRandomUUID(): string {
   const g = globalThis as unknown as { crypto?: { randomUUID?: () => string } };
   if (g.crypto?.randomUUID) return g.crypto.randomUUID();
-  // Fallback — only hit in environments without WebCrypto.
+  // Fallback - only hit in environments without WebCrypto.
   const hex = (n: number) =>
     Math.floor(Math.random() * 16 ** n)
       .toString(16)

@@ -29,8 +29,8 @@
 
   function sourceLabel(p: Run['params']): { kind: string; detail: string | null } {
     const s = p?.source;
-    if (!s) return { kind: '—', detail: null };
-    // Upload paths are internal tmp dirs (e.g. /tmp/pitchbox-upload-<uuid>) — useless to expose.
+    if (!s) return { kind: '-', detail: null };
+    // Upload paths are internal tmp dirs (e.g. /tmp/pitchbox-upload-<uuid>) - useless to expose.
     if (s.kind === 'upload') return { kind: 'uploaded folder', detail: null };
     const v = s.value ?? '';
     const max = 64;
@@ -112,7 +112,7 @@
                 >{formatDuration(run.durationMs)}</Table.Cell
               >
               <Table.Cell class="text-xs text-muted-foreground py-3">
-                {run.tokensUsed != null ? run.tokensUsed.toLocaleString() : '—'}
+                {run.tokensUsed != null ? run.tokensUsed.toLocaleString() : '-'}
               </Table.Cell>
               <Table.Cell class="w-8 pl-0 py-3">
                 <span

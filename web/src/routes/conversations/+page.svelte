@@ -106,7 +106,7 @@
 
 <Seo
   title="Conversations"
-  description="Every outreach and its reply — DMs and comment threads in one place."
+  description="Every outreach and its reply - DMs and comment threads in one place."
 />
 
 <PageHeader
@@ -298,7 +298,7 @@
               </p>
             {:else}
               <p class="mt-1 text-xs text-muted-foreground">
-                Sent {relativeTime(c.lastContactedAt)} — no reply yet.
+                Sent {relativeTime(c.lastContactedAt)} - no reply yet.
               </p>
             {/if}
           </div>

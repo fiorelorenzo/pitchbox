@@ -20,7 +20,7 @@
     "test:watch": "vitest",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p cli && tsc --noEmit -p daemon && tsc --noEmit -p extension && npm run -w web check",
+    "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p cli && tsc --noEmit -p daemon && npm run -w @pitchbox/extension check && npm run -w web check",
     "migrate": "npm run -w shared migrate",
     "migrate:generate": "npm run -w shared migrate:generate",
     "db:up": "docker compose up -d postgres",

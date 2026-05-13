@@ -18,7 +18,7 @@
 	} = $props();
 
 	function formatTokens(n: number | undefined): string {
-		if (n == null) return '—';
+		if (n == null) return '-';
 		return n.toLocaleString();
 	}
 

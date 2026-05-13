@@ -55,7 +55,7 @@ export function parseOpenCodeLine(line: string, seqStart = 0): ParsedEvent[] {
       return results;
     }
     case 'message.start':
-      // No content yet — skip; message.delta/message.end will emit.
+      // No content yet - skip; message.delta/message.end will emit.
       return results;
     case 'message.delta':
     case 'message.end':

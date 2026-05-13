@@ -245,7 +245,7 @@ async function dispatchRun(
         if (Object.keys(patch).length > 0) {
           await db.update(schema.runs).set(patch).where(eq(schema.runs.id, run.id));
         }
-        // Skip onFinish in the cancellation path — cancelRun handles its own emit.
+        // Skip onFinish in the cancellation path - cancelRun handles its own emit.
         if (finalStatus !== 'cancelled') opts.onFinish?.(finalStatus);
         emit('run:finished', {
           runId: run.id,
@@ -340,7 +340,7 @@ async function dispatchRun(
           params?.source?.kind === 'upload' &&
           typeof params.source.value === 'string'
         ) {
-          // Re-read the run row to check terminal status — the CLI's `extract:finish`
+          // Re-read the run row to check terminal status - the CLI's `extract:finish`
           // handles cleanup on success; we only own the failure/cancellation path.
           const [latest] = await db
             .select({ status: schema.runs.status })
@@ -369,7 +369,7 @@ export async function runCampaign(
   if (!campaign) throw new Error(`campaign ${campaignId} not found`);
 
   if (campaign.status === 'draft') {
-    throw new Error(`campaign ${campaignId} is still draft — generate the profile first`);
+    throw new Error(`campaign ${campaignId} is still draft - generate the profile first`);
   }
 
   const [pb] = await db
@@ -469,7 +469,7 @@ export async function runCampaign(
       .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
       .limit(1);
     if (existing) return { runId: existing.id, alreadyRunning: true };
-    // Lost the lock AND no running row yet — surface the same 409 contract.
+    // Lost the lock AND no running row yet - surface the same 409 contract.
     const err = new Error('already_dispatched') as Error & { code: string };
     err.code = 'already_dispatched';
     throw err;
@@ -479,7 +479,7 @@ export async function runCampaign(
     return { runId: locked.runId, alreadyRunning: locked.alreadyRunning };
   }
   if (!('run' in locked) || !locked.run) {
-    // Should be unreachable — the lock callback always returns one branch.
+    // Should be unreachable - the lock callback always returns one branch.
     throw new Error('dispatch returned no run');
   }
   const run = locked.run;

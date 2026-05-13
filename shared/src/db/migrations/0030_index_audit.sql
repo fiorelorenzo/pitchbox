@@ -1,15 +1,15 @@
 -- Index audit (issue #44): dm-sync matching, Inbox filters, audit feed.
---   contact_history (account_handle, target_user) — dm-sync looks up the
+--   contact_history (account_handle, target_user) - dm-sync looks up the
 --     `(accountHandle, targetUser)` pair when attributing incoming Reddit DMs
 --     to a contact row (see shared/src/dm-sync.ts). Indexed via the name
 --     called out in #44; the columns live on contact_history, not messages.
---   drafts (state, run_id) — campaign-run draft listings filter by state per run.
---   drafts (state, campaign_id, created_at DESC) — Inbox per-campaign filter
+--   drafts (state, run_id) - campaign-run draft listings filter by state per run.
+--   drafts (state, campaign_id, created_at DESC) - Inbox per-campaign filter
 --     sorted by createdAt. `campaign_id` is reached through `run_id`, so we
 --     index `(state, run_id, created_at DESC)`.
---   draft_events (kind, created_at) — audit feed groups draft events by kind.
+--   draft_events (kind, created_at) - audit feed groups draft events by kind.
 --     The column is named `event` on draft_events.
---   run_events (kind, created_at) — audit feed groups run events by kind.
+--   run_events (kind, created_at) - audit feed groups run events by kind.
 CREATE INDEX IF NOT EXISTS "messages_account_target_idx"
   ON "contact_history" ("account_handle", "target_user");
 

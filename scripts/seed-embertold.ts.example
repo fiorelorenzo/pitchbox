@@ -65,12 +65,12 @@ async function main() {
       projectId: project.id,
       key: 'voice.dm_rules',
       value: {
-        hardBans: ['em-dash (—)', 'AI-tell vocabulary'],
+        hardBans: ['em-dash (-)', 'AI-tell vocabulary'],
         dos: ['contractions', 'lowercase casual opener'],
         disclosure: "lorenzo btw, i'm the one making it",
         examples: [
           {
-            bad: 'Hey Alex, saw your r/Forgotten_Realms post — natural fit.',
+            bad: 'Hey Alex, saw your r/Forgotten_Realms post - natural fit.',
             good: "hey alex, saw your post about narrative recaps. i've been building something adjacent.",
           },
         ],
@@ -80,7 +80,7 @@ async function main() {
       projectId: project.id,
       key: 'voice.post_rules',
       value: {
-        hardBans: ['em-dash (—)', 'AI-tell vocabulary', 'Great post!', 'Hope this helps'],
+        hardBans: ['em-dash (-)', 'AI-tell vocabulary', 'Great post!', 'Hope this helps'],
         dos: ['direct opening', 'proper capitalization', 'one concrete question at the end'],
         lengthRange: [60, 150],
       },

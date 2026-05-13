@@ -73,7 +73,7 @@ describe('reply-poller', () => {
     expect(res.checked).toBe(1);
     expect(res.newReplies).toBe(0);
     // The reddit reader is registered as a NullReplyReader, which returns [].
-    // It is NOT counted as "skipped" — that counter is for missing readers.
+    // It is NOT counted as "skipped" - that counter is for missing readers.
     expect(res.skipped).toBe(0);
 
     const [row] = await db

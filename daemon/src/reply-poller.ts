@@ -5,7 +5,7 @@ import { getReplyReader } from './reply-readers.js';
 
 const log = logger('reply-poller');
 
-/** Only poll DMs sent in the last N days — nothing older is worth checking. */
+/** Only poll DMs sent in the last N days - nothing older is worth checking. */
 const LOOKBACK_DAYS = 14;
 /** Wait at least this long between re-checks of the same contact. */
 const RECHECK_SECONDS = 15 * 60;
@@ -92,7 +92,7 @@ export async function tick(): Promise<{ checked: number; newReplies: number; ski
     const [platformSlug, accountHandle] = key.split('::');
     const reader = getReplyReader(platformSlug);
     if (!reader) {
-      log.debug(`no reply reader for platform "${platformSlug}" — skipping ${group.length}`);
+      log.debug(`no reply reader for platform "${platformSlug}" - skipping ${group.length}`);
       skipped += group.length;
       for (const c of group) await markReplyChecked(c.id);
       continue;
@@ -104,7 +104,7 @@ export async function tick(): Promise<{ checked: number; newReplies: number; ski
     try {
       replies = await reader.readReplies({ accountHandle, since });
     } catch (err) {
-      log.warn(`reader ${platformSlug}:${accountHandle} threw — skipping group`, err);
+      log.warn(`reader ${platformSlug}:${accountHandle} threw - skipping group`, err);
       continue;
     }
 

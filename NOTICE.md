@@ -1,11 +1,11 @@
-# Pitchbox — Licensing Notice
+# Pitchbox - Licensing Notice
 
 Pitchbox is **copyright © 2026 Lorenzo Fiore**, all rights reserved.
 
 ## Open-source edition (this repository)
 
 This source code is distributed under the **GNU Affero General Public License,
-version 3 or later (AGPL-3.0-or-later)** — see [LICENSE](./LICENSE) for the
+version 3 or later (AGPL-3.0-or-later)** - see [LICENSE](./LICENSE) for the
 full text. In short:
 
 - You may run, study, modify, and share Pitchbox freely.
@@ -19,7 +19,7 @@ full text. In short:
 
 Lorenzo Fiore, as the sole original author, retains full copyright of all
 Pitchbox code and **reserves the right to offer the same code (in whole or in
-part) under alternative, non-AGPL terms** — specifically a commercial licence
+part) under alternative, non-AGPL terms** - specifically a commercial licence
 that will power a hosted "Pitchbox Cloud" edition with additional features
 (multi-user authentication, team/workspace management, hosted infrastructure,
 managed integrations).

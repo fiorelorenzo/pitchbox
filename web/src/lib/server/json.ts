@@ -7,7 +7,7 @@ import type { z } from 'zod';
  *   { error: 'invalid_body', issues: [...] }
  *
  * Use this instead of `await request.json()` followed by an ad-hoc
- * `safeParse` block — the response shape stays the same across every API
+ * `safeParse` block - the response shape stays the same across every API
  * endpoint, so clients can rely on it.
  */
 export async function parseJson<T>(request: Request, schema: z.ZodType<T>): Promise<T> {

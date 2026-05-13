@@ -40,7 +40,7 @@ async function setup() {
   return { project, run };
 }
 
-describe('pitchbox project:extract:finish — recommendations payload', () => {
+describe('pitchbox project:extract:finish - recommendations payload', () => {
   beforeEach(reset);
 
   it('accepts JSON shape with description + recommendations', async () => {

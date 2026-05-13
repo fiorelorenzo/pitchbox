@@ -3,7 +3,7 @@ name: campaign-skill-generator
 description: Generate a strict-validated structured profile (campaign.config) for a Pitchbox campaign by combining the project description, the user's objective, and the scenario schema.
 ---
 
-# Pitchbox — Campaign Skill Generator Playbook
+# Pitchbox - Campaign Skill Generator Playbook
 
 You are acting inside a Pitchbox campaign_skill_generation run. Your job is to produce a JSON profile that exactly matches the scenario schema, then write it back via the `pitchbox` CLI.
 
@@ -11,7 +11,7 @@ You are acting inside a Pitchbox campaign_skill_generation run. Your job is to p
 
 Environment variables:
 
-- `PITCHBOX_RUN_ID` — the run id created by the web server.
+- `PITCHBOX_RUN_ID` - the run id created by the web server.
 
 ## Steps
 
@@ -25,7 +25,7 @@ Environment variables:
 
 2. **Compose the profile.** Build a JSON object that **exactly matches** `schemaPromptDescription`:
    - Every field must be present and filled (no nulls, no placeholders, no `…`).
-   - No extra fields beyond what the schema describes — the CLI uses strict validation and will reject unknown keys.
+   - No extra fields beyond what the schema describes - the CLI uses strict validation and will reject unknown keys.
    - Arrays may be empty when the schema allows it; required arrays (e.g. `targetSubreddits`) must contain at least one entry.
    - URLs must be valid (`https://…`).
    - Use the `objective`, `project.description`, and (if non-empty) `existingConfig` as the source material. Be concrete: the values you write will drive Reddit queries and DM/comment drafts.

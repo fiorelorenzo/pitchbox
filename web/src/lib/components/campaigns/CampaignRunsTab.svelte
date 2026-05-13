@@ -34,7 +34,7 @@
     return k === 'campaign_skill_generation' ? 'skill-generation' : k;
   }
 
-  // Small filter on top of the table — only the reasons present in the
+  // Small filter on top of the table - only the reasons present in the
   // current 30-run window are listed, plus an "All failures" reset entry.
   let failureFilter = $state<string | null>(null);
   const failureReasons = $derived(
@@ -154,14 +154,14 @@
                 {#if run.kind === 'campaign' && run.draftCount > 0}
                   <Badge variant="secondary" class="text-xs">{run.draftCount}</Badge>
                 {:else}
-                  <span class="text-xs text-muted-foreground">—</span>
+                  <span class="text-xs text-muted-foreground">-</span>
                 {/if}
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3">
-                {run.tokensUsed != null ? run.tokensUsed.toLocaleString() : '—'}
+                {run.tokensUsed != null ? run.tokensUsed.toLocaleString() : '-'}
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3 tabular-nums">
-                {run.costUsd != null ? `$${Number(run.costUsd).toFixed(2)}` : '—'}
+                {run.costUsd != null ? `$${Number(run.costUsd).toFixed(2)}` : '-'}
               </Table.Cell>
               <Table.Cell class="w-8 pl-0 py-3">
                 <span

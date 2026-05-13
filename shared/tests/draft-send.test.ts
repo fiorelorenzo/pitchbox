@@ -239,7 +239,7 @@ describe('evaluateDraftSend', () => {
     const db = getDb();
     const { proj, platform, account } = await setup();
 
-    // Add a blocklist entry for some other user — should not affect null targetUser
+    // Add a blocklist entry for some other user - should not affect null targetUser
     await db.insert(schema.blocklist).values({
       platformId: platform.id,
       kind: 'user',

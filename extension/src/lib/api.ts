@@ -17,7 +17,7 @@ type DraftSummary = {
  * Resolve which pairing a single-backend op should target. Compose-time
  * content scripts can pass an explicit `backendUrl` (the dashboard injects
  * it as a query param into compose URLs). When omitted we fall back to the
- * first pairing — keeps single-backend installs working without changes.
+ * first pairing - keeps single-backend installs working without changes.
  */
 async function pickPairing(backendUrl?: string): Promise<Pairing | null> {
   const { pairings } = await getSettings();
@@ -156,7 +156,7 @@ export const api = {
     try {
       parsed = JSON.parse(first.error) as { error?: string; current_version?: number };
     } catch {
-      // body wasn't JSON — bail out
+      // body wasn't JSON - bail out
     }
     if (!parsed || parsed.error !== 'version_conflict') return first;
     const fresh = await getJson<DraftSummary>(p, `/api/extension/draft/${draftId}`);

@@ -18,8 +18,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 beforeEach(() => {
   ((globalThis as any).chrome.storage.local as any)._s = {
-    backendUrl: 'http://127.0.0.1:5180',
-    token: 'x'.repeat(64),
+    pairings: [{ backendUrl: 'http://127.0.0.1:5180', token: 'x'.repeat(64) }],
   };
   vi.restoreAllMocks();
 });
@@ -40,7 +39,7 @@ describe('runInboxSync', () => {
   });
 
   it('filters t1 items and items older than lastDmSyncAt', async () => {
-    ((globalThis as any).chrome.storage.local as any)._s.lastDmSyncAt = new Date(
+    ((globalThis as any).chrome.storage.local as any)._s.pairings[0].lastDmSyncAt = new Date(
       '2026-04-24T10:00:00Z',
     ).toISOString();
     vi.stubGlobal(
@@ -120,7 +119,7 @@ describe('runInboxSync', () => {
     const r = await runInboxSync();
     expect(r).toMatchObject({ ok: true, inserted: 0 });
     const stored = ((globalThis as any).chrome.storage.local as any)._s;
-    expect(stored.lastDmSyncAt).toBeTruthy();
+    expect(stored.pairings[0].lastDmSyncAt).toBeTruthy();
   });
 
   it('extracts t1 comment_reply items into the comments array', async () => {

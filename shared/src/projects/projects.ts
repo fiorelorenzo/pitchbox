@@ -32,7 +32,7 @@ export async function listProjects(
   db: Db,
   opts: { organizationId?: number | null } = {},
 ): Promise<ProjectListRow[]> {
-  // Single query — LEFT JOIN both children, GROUP BY the project. Faster than
+  // Single query - LEFT JOIN both children, GROUP BY the project. Faster than
   // the previous per-row correlated subqueries once the project count grows.
   const orgFilter =
     opts.organizationId != null ? sql`WHERE p.organization_id = ${opts.organizationId}` : sql``;

@@ -20,7 +20,7 @@ export interface LoadActiveTemplatesOpts {
 
 /**
  * Returns active (non-archived) templates for a project, optionally filtered
- * by `kind`. Campaign-level overrides are not yet wired in V1 — when the
+ * by `kind`. Campaign-level overrides are not yet wired in V1 - when the
  * `campaign_overrides` jsonb column lands on `campaigns`, this loader will
  * prefer those over the project-level rows.
  */

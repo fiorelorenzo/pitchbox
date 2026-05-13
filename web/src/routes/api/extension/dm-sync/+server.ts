@@ -79,7 +79,7 @@ export async function POST({ request }: { request: Request }) {
 
   // Persist liveness payload before anything else so the dashboard banner
   // reacts even when the sync had zero items.
-  if (auth.deviceId != null && body.status && typeof body.status === 'object') {
+  if (body.status && typeof body.status === 'object') {
     await persistDeviceSyncStatus(db, auth.deviceId, body.status);
   }
 
@@ -298,7 +298,7 @@ export async function POST({ request }: { request: Request }) {
 
   // Reply drafting (issue #49). For each draft we just flipped to `replied`,
   // enqueue a continuation draft pointing at the newest inbound message.
-  // Failures are non-fatal — the original sync result must still return.
+  // Failures are non-fatal - the original sync result must still return.
   const insertedKeys = new Set<string>([
     ...inserts.map((i) => `${i.platformId}:${i.platformMessageId}`),
     ...commentMatch.messageInserts.map((m) => `${m.platformId}:${m.platformMessageId}`),
@@ -332,7 +332,7 @@ export async function POST({ request }: { request: Request }) {
           replyKind: 'reply_dm',
         });
       } catch {
-        // swallow — non-fatal
+        // swallow - non-fatal
       }
     }
     for (const ev of commentMatch.draftRepliedEvents) {
@@ -347,7 +347,7 @@ export async function POST({ request }: { request: Request }) {
           replyKind: 'reply_comment',
         });
       } catch {
-        // swallow — non-fatal
+        // swallow - non-fatal
       }
     }
   }

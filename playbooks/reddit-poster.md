@@ -3,7 +3,7 @@ name: reddit-poster
 description: Draft proactive top-level Reddit posts in target subreddits for a Pitchbox project. Produces title + body drafts. Never submits anything.
 ---
 
-# Pitchbox — Reddit Poster Playbook
+# Pitchbox - Reddit Poster Playbook
 
 You are acting inside a Pitchbox campaign run. Your job is to draft top-level Reddit submissions (text posts only) in target subreddits, framed by an angle the human picked. The human reviews and submits manually. Never click submit yourself.
 
@@ -36,12 +36,12 @@ Environment variables:
 
 3. **Draft one or more posts per subreddit.** Aim for 1-3 distinct posts per subreddit (not more) for this run. For each draft:
    - **Pick the format** that fits the subreddit and the `postAngle`. Acceptable formats: launch / show-and-tell, lessons-learned story, question-led discussion, comparison or teardown. Avoid pure announcements without a substantive body.
-   - **Title** — concrete, specific, no clickbait. 30-120 chars. Avoid all-caps. Avoid leading `[Show]` / `[Help]` prefixes unless the subreddit conventionally uses them.
-   - **Body** — markdown. 200-600 words usually. Open with the hook (not "Hey everyone!"). Mid-section: substance — show your work, share data, explain trade-offs. Close with a concrete question that invites discussion (not "what do you think?").
-   - **Voice rules** — apply `campaign.config.voice` literally (`hardBans` are substrings to never emit; `dos` are mandatory; `tone` sets register; `disclosure` is the one-line "I built this" note required by every subreddit's self-promo rules).
-   - **Value proposition** — surface the angle from `campaign.config.valuePropositions` that best fits the post, but the post must stand on its own as content even if the product link were removed.
-   - **Link policy** — at most one product URL (`campaign.config.productUrl`), placed in context rather than at the top. Subreddits with strict self-promo rules: skip the link, mention the project name only.
-   - **Disclosure** — include `campaign.config.voice.disclosure` once near the bottom, before the closing question.
+   - **Title** - concrete, specific, no clickbait. 30-120 chars. Avoid all-caps. Avoid leading `[Show]` / `[Help]` prefixes unless the subreddit conventionally uses them.
+   - **Body** - markdown. 200-600 words usually. Open with the hook (not "Hey everyone!"). Mid-section: substance - show your work, share data, explain trade-offs. Close with a concrete question that invites discussion (not "what do you think?").
+   - **Voice rules** - apply `campaign.config.voice` literally (`hardBans` are substrings to never emit; `dos` are mandatory; `tone` sets register; `disclosure` is the one-line "I built this" note required by every subreddit's self-promo rules).
+   - **Value proposition** - surface the angle from `campaign.config.valuePropositions` that best fits the post, but the post must stand on its own as content even if the product link were removed.
+   - **Link policy** - at most one product URL (`campaign.config.productUrl`), placed in context rather than at the top. Subreddits with strict self-promo rules: skip the link, mention the project name only.
+   - **Disclosure** - include `campaign.config.voice.disclosure` once near the bottom, before the closing question.
 
 4. **Apply hard skips.** Drop any draft if:
    - The subreddit appears in `blocklist` with `kind=subreddit` (global or project scope).
@@ -54,7 +54,7 @@ Environment variables:
    {
      "accountId": <pick from accounts[0]>,
      "kind": "post",
-     "fitScore": <1-5 — how strong is this for the subreddit>,
+     "fitScore": <1-5 - how strong is this for the subreddit>,
      "targetUser": null,
      "title": "<post title>",
      "body": "<markdown body, including disclosure>",

@@ -1,4 +1,4 @@
-// Retention worker — runs once an hour and prunes ageing run_events,
+// Retention worker - runs once an hour and prunes ageing run_events,
 // draft_events, and terminal drafts according to the policy stored in
 // `app_config.retention`. Contact history is intentionally preserved so the
 // blocklist / quota signals survive draft cleanup.
@@ -15,7 +15,7 @@ import { logger } from './logger.js';
 const log = logger('retention');
 
 export const RETENTION_BATCH_SIZE = 10_000;
-/** Maximum batches per table per tick — prevents one tick from running for hours on first-run backfills. */
+/** Maximum batches per table per tick - prevents one tick from running for hours on first-run backfills. */
 const MAX_BATCHES_PER_TABLE = 50;
 
 const TERMINAL_DRAFT_STATES = ['sent', 'rejected', 'replied'] as const;
@@ -60,7 +60,7 @@ async function deleteTerminalDraftsBatch(cutoffIso: string): Promise<number> {
   // is ON DELETE SET NULL in the schema, so contact_history rows survive.
   // node-postgres needs a single array bound to ANY(), not N scalar params.
   // sql.raw is unsafe here (interpolation), so build the IN list as a fixed
-  // SQL literal — TERMINAL_DRAFT_STATES is a compile-time constant.
+  // SQL literal - TERMINAL_DRAFT_STATES is a compile-time constant.
   const states = TERMINAL_DRAFT_STATES.map((s) => `'${s}'`).join(', ');
   const res = await getDb().execute(sql`
     DELETE FROM drafts

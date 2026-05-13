@@ -79,7 +79,7 @@ describe('webhook-sender.tick', () => {
     expect(after.status).toBe('pending');
     expect(after.attempts).toBe(1);
     expect(after.lastError).toContain('503');
-    // First-failure backoff defaults to ~60s — must be strictly in the future.
+    // First-failure backoff defaults to ~60s - must be strictly in the future.
     expect(after.nextAttemptAt.getTime()).toBeGreaterThan(before);
   });
 
@@ -104,7 +104,7 @@ describe('webhook-sender.tick', () => {
     await tick();
     expect((await getRow(row.id)).status).toBe('dead');
 
-    // 2) "Retry" — same shape as the /api/webhooks/deliveries/[id]/retry route.
+    // 2) "Retry" - same shape as the /api/webhooks/deliveries/[id]/retry route.
     await getDb()
       .update(schema.webhookDeliveries)
       .set({

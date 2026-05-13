@@ -50,7 +50,7 @@
     '.svg',
   ]);
   const EXTLESS_ALLOW = /^(README|LICENSE|CHANGELOG|NOTICE|AUTHORS)([._-].*)?$/i;
-  // Skipped during the File System Access API walk — huge, noisy, irrelevant to a product description.
+  // Skipped during the File System Access API walk - huge, noisy, irrelevant to a product description.
   const SKIP_DIRS = new Set([
     'node_modules',
     '.git',
@@ -208,7 +208,7 @@
       if (!w.showDirectoryPicker) return;
       handle = await w.showDirectoryPicker({ mode: 'read' });
     } catch (e) {
-      // User cancelled — leave state untouched.
+      // User cancelled - leave state untouched.
       if ((e as DOMException)?.name === 'AbortError') return;
       throw e;
     }
@@ -231,7 +231,7 @@
     }
     if (acc.truncated) {
       toast.warning(
-        `Reached cap — stopped at ${acc.kept.length} files / ${fmtBytes(acc.totalBytes)}`,
+        `Reached cap - stopped at ${acc.kept.length} files / ${fmtBytes(acc.totalBytes)}`,
       );
     }
     picked = acc.kept;
@@ -349,7 +349,7 @@
         {#if picked.length > 0}
           <p class="text-xs text-muted-foreground">
             <span class="text-foreground font-medium">{folderName}</span>
-            — {picked.length} file{picked.length === 1 ? '' : 's'} ({fmtBytes(totalBytes)}){#if skipped > 0}, {skipped} skipped{/if}.
+            - {picked.length} file{picked.length === 1 ? '' : 's'} ({fmtBytes(totalBytes)}){#if skipped > 0}, {skipped} skipped{/if}.
           </p>
         {:else}
           <p class="text-xs text-muted-foreground">

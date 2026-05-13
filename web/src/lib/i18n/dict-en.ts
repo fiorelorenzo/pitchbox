@@ -1,6 +1,6 @@
 import type { Dict } from './types';
 
-// English dictionary — source of truth. Other locales mirror these keys.
+// English dictionary - source of truth. Other locales mirror these keys.
 export const en: Dict = {
   // Sidebar navigation
   'nav.home': 'Home',

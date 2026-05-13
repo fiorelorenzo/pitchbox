@@ -50,14 +50,14 @@
 		post: { perDay: 5, perWeek: 20 },
 	};
 
-	// Quota dirty-tracking state — untrack to silence state_referenced_locally
+	// Quota dirty-tracking state - untrack to silence state_referenced_locally
 	let initial = $state(untrack(() => structuredClone(data.quota)));
 	let q = $state(untrack(() => structuredClone(data.quota)));
 	const dirty = $derived(JSON.stringify(q) !== JSON.stringify(initial));
 
 	let saving = $state(false);
 
-	// Tab state — driven by URL ?tab=
+	// Tab state - driven by URL ?tab=
 	const VALID_TABS = ['status', 'runners', 'integrations', 'quota'] as const;
 	type TabValue = (typeof VALID_TABS)[number];
 
@@ -196,11 +196,7 @@
 		<!-- Integrations tab -->
 		<Tabs.Content value="integrations" class="mt-4">
 			<div class="max-w-2xl">
-				<ExtensionCard
-					token={data.extension.token}
-					createdAt={data.extension.createdAt}
-					backendUrl={data.extension.backendUrl}
-				/>
+				<ExtensionCard backendUrl={data.extension.backendUrl} />
 			</div>
 		</Tabs.Content>
 
@@ -219,7 +215,7 @@
 		</Tabs.Content>
 	</Tabs.Root>
 
-	<!-- Sticky save bar — only on quota tab when dirty -->
+	<!-- Sticky save bar - only on quota tab when dirty -->
 	{#if activeTab === 'quota' && dirty}
 		<div
 			class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-lg border bg-background px-4 py-2 shadow-lg"

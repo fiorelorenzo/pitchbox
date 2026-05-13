@@ -30,7 +30,7 @@
 	});
 </script>
 
-<Seo title="Settings — Retention" description="Configure how long drafts and event logs are kept before pruning." />
+<Seo title="Settings - Retention" description="Configure how long drafts and event logs are kept before pruning." />
 
 <PageHeader
 	title="Retention"

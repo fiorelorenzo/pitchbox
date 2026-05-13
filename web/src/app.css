@@ -137,7 +137,7 @@
   }
 }
 
-/* Themed scrollbars — uses CSS vars so they auto-adapt to light/dark themes. */
+/* Themed scrollbars - uses CSS vars so they auto-adapt to light/dark themes. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);

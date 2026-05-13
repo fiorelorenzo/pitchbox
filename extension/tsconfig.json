@@ -6,7 +6,13 @@
     "types": ["chrome", "vite/client", "svelte"],
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "noEmit": true,
-    "allowJs": true
+    "allowJs": true,
+    "baseUrl": ".",
+    "paths": {
+      "$ext/*": ["src/lib/*"],
+      "$lib/*": ["src/lib/*"],
+      "$ui/*": ["src/lib/components/ui/*"]
+    }
   },
   "include": ["src/**/*", "tests/**/*"]
 }

@@ -80,12 +80,12 @@
 
 <Seo
 	title="Home"
-	description="Outreach overview — drafts awaiting review, recent runs, campaign status."
+	description="Outreach overview - drafts awaiting review, recent runs, campaign status."
 />
 
 <PageHeader
 	title="Home"
-	description="Outreach overview — drafts awaiting review, recent runs, campaign status."
+	description="Outreach overview - drafts awaiting review, recent runs, campaign status."
 />
 
 <!-- Primary stats -->
@@ -115,7 +115,7 @@
 	/>
 	<StatCard
 		label="Reply rate"
-		value={replyRate > 0 ? `${replyRate}%` : '—'}
+		value={replyRate > 0 ? `${replyRate}%` : '-'}
 		icon={MessageCircle}
 		href="/contacts"
 		hint="{data.stats.replies} replies · {data.stats.uniqueContacts} contacts"
@@ -167,7 +167,7 @@
 		<Card.Content>
 			{#if data.recentRuns.length === 0}
 				<p class="text-sm text-muted-foreground italic py-6 text-center">
-					No runs yet — start one from Campaigns.
+					No runs yet - start one from Campaigns.
 				</p>
 			{:else}
 				<ul class="divide-y divide-border/60">

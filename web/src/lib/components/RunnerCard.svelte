@@ -93,7 +93,7 @@
 				</p>
 			{/if}
 			{#if !runner.implemented}
-				<p class="text-[11px] text-amber-700 dark:text-amber-300 mt-1.5">Coming soon — adapter not implemented yet.</p>
+				<p class="text-[11px] text-amber-700 dark:text-amber-300 mt-1.5">Coming soon - adapter not implemented yet.</p>
 			{:else if runner.error && !runner.available}
 				<p class="text-[11px] text-rose-700 dark:text-rose-300 mt-1.5">{runner.error}</p>
 			{/if}
@@ -113,7 +113,7 @@
 						<span>
 							{f.label}
 							{#if f.description}
-								<span class="ml-1 text-muted-foreground/70">— {f.description}</span>
+								<span class="ml-1 text-muted-foreground/70">- {f.description}</span>
 							{/if}
 						</span>
 						{#if f.kind === 'select'}

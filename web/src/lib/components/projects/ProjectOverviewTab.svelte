@@ -200,7 +200,7 @@
       <div
         class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
       >
-        An extraction is running — the editor is locked until it finishes.
+        An extraction is running - the editor is locked until it finishes.
       </div>
       <MarkdownEditor
         value={description}

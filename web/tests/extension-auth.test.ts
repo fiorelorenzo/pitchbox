@@ -2,7 +2,6 @@ import { describe, expect, it, beforeEach, afterAll } from 'vitest';
 import { createHash, randomBytes } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
-import { rotateExtensionToken } from '@pitchbox/shared/extension-token';
 import { requireExtensionAuth } from '../src/lib/server/extension-auth.js';
 
 function hashToken(token: string): string {
@@ -70,10 +69,6 @@ describe('extension auth', () => {
     });
   });
 
-  it('falls back to the legacy shared app_config token', async () => {
-    const token = await rotateExtensionToken();
-    await expect(requireExtensionAuth(authedRequest(token))).resolves.toEqual({ deviceId: null });
-  });
 });
 
 afterAll(async () => {

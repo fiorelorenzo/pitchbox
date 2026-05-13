@@ -26,7 +26,7 @@
     try {
       // Placeholder: surface intent without dispatching a run yet.
       await new Promise((r) => setTimeout(r, 300));
-      alert('Insights regeneration is not wired yet — daemon worker pending.');
+      alert('Insights regeneration is not wired yet - daemon worker pending.');
     } finally {
       regenerating = false;
     }

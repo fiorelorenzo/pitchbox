@@ -55,7 +55,7 @@ export class ClaudeCodeRunner implements AgentRunner {
         cacheCreationTokens: number;
         totalCostUsd?: number;
       } | null = null;
-      // Per-run sequence counter — monotonically increasing, owned by this runner.
+      // Per-run sequence counter - monotonically increasing, owned by this runner.
       let seq = 0;
 
       try {

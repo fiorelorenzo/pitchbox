@@ -30,7 +30,7 @@
 		dm: "Direct messages. Reddit doesn't publish an official limit; under 15/day is considered low-risk for accounts with organic history.",
 		comment:
 			'Sum of post comments + comment replies. Reddit applies implicit throttling on new accounts.',
-		post: "Published posts. Post-draft generation isn't wired up yet — the limit is here for future use.",
+		post: "Published posts. Post-draft generation isn't wired up yet - the limit is here for future use.",
 	};
 
 	const KINDS: (keyof PlatformQuota)[] = ['dm', 'comment', 'post'];

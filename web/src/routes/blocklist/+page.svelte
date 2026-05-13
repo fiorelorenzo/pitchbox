@@ -161,7 +161,7 @@
 						<SelectField
 							bind:value={projectId}
 							options={projectOptions}
-							placeholder="— choose —"
+							placeholder="- choose -"
 							fullWidth
 						/>
 					</label>
@@ -182,7 +182,7 @@
 		<Card.Content>
 			{#if data.entries.length === 0}
 				<p class="text-sm text-muted-foreground italic py-6 text-center">
-					Empty blocklist — add your first entry on the left.
+					Empty blocklist - add your first entry on the left.
 				</p>
 			{:else}
 				<Table.Root>

@@ -3,7 +3,7 @@ name: reddit-scout
 description: Run a Reddit outreach scout for a Pitchbox campaign. Fetches candidates, filters, drafts personalised DMs, and writes them back to Pitchbox. Never sends anything.
 ---
 
-# Pitchbox — Reddit Scout Playbook
+# Pitchbox - Reddit Scout Playbook
 
 You are acting inside a Pitchbox campaign run. All state lives in Postgres; the `pitchbox` CLI is the only way to read or write it. Stay strictly within the steps below.
 
@@ -11,8 +11,8 @@ You are acting inside a Pitchbox campaign run. All state lives in Postgres; the 
 
 Environment variables available to you:
 
-- `PITCHBOX_CAMPAIGN_ID` — the campaign id to run.
-- `PITCHBOX_RUN_ID` — the run id created by the scheduler (may be absent if the CLI was invoked directly; in that case the first step creates one).
+- `PITCHBOX_CAMPAIGN_ID` - the campaign id to run.
+- `PITCHBOX_RUN_ID` - the run id created by the scheduler (may be absent if the CLI was invoked directly; in that case the first step creates one).
 
 ## Steps
 
@@ -22,7 +22,7 @@ Environment variables available to you:
    pitchbox run:start --campaign=$PITCHBOX_CAMPAIGN_ID
    ```
 
-   Parse the JSON. Extract: `runId`, `project` (includes `description` — the project's markdown briefing), `platform`, `campaign.config` (the strict-validated structured scout profile), `accounts`, `blocklist`, `contactedRecently`.
+   Parse the JSON. Extract: `runId`, `project` (includes `description` - the project's markdown briefing), `platform`, `campaign.config` (the strict-validated structured scout profile), `accounts`, `blocklist`, `contactedRecently`.
 
 2. **Fetch raw candidates.** Shell out:
 
@@ -51,13 +51,13 @@ Environment variables available to you:
    Skip candidates scoring below `campaign.config.fitScoreThreshold` (default 3 if absent).
 
    **b. Draft a DM.** English, first-person, casual, ~80–100 words. Reference a concrete detail from the candidate's matched post. The DM **must** follow the voice rules in `campaign.config.voice`:
-   - `voice.hardBans` — banned words/phrases. Never use them.
-   - `voice.dos` — required stylistic elements (e.g. contractions, lowercase opener).
-   - `voice.tone` — overall tone (e.g. `casual`).
-   - `voice.openerStyle` — opener convention (e.g. `lowercase-casual` → "hey," not "Hey,").
-   - `voice.disclosure` — closing self-disclosure / signature line. Always include it.
+   - `voice.hardBans` - banned words/phrases. Never use them.
+   - `voice.dos` - required stylistic elements (e.g. contractions, lowercase opener).
+   - `voice.tone` - overall tone (e.g. `casual`).
+   - `voice.openerStyle` - opener convention (e.g. `lowercase-casual` → "hey," not "Hey,").
+   - `voice.disclosure` - closing self-disclosure / signature line. Always include it.
 
-   Treat `campaign.config.systemInstructions` as additional voice & content guidance — it overrides defaults.
+   Treat `campaign.config.systemInstructions` as additional voice & content guidance - it overrides defaults.
 
    The offer text comes from `campaign.config.offer.text` and the product URL from `campaign.config.offer.productUrl`. Never invent an offer.
 
@@ -71,7 +71,7 @@ Environment variables available to you:
    echo '<json>' | pitchbox drafts:create --run=<runId>
    ```
 
-   > Response: `{ ok, inserted, skipped: [{targetUser, reason}] }` — blocklisted targets are silently skipped, log them and do not retry.
+   > Response: `{ ok, inserted, skipped: [{targetUser, reason}] }` - blocklisted targets are silently skipped, log them and do not retry.
 
    Each draft object:
 
@@ -100,7 +100,7 @@ Environment variables available to you:
 - Never send the DM. The human reviews and sends from the Pitchbox dashboard.
 - No generic openers. If you catch yourself writing "I saw your post about X" without a concrete quote, stop and rewrite.
 - Skip candidates whose post complains about AI; don't recruit people who'll push back publicly.
-- Respect `contactedRecently` — even though the fetch step already filters, do a defensive check before emitting a draft.
+- Respect `contactedRecently` - even though the fetch step already filters, do a defensive check before emitting a draft.
 - If fewer than 3 candidates survive scoring, still finish the run with `success`; it's valid to produce zero drafts.
 
 ## Failure modes

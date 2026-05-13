@@ -52,7 +52,7 @@ if (process.env.PITCHBOX_EMBED_DAEMON === '1') {
   const { startEmbeddedDaemon } = await import('@pitchbox/daemon/embed');
   const daemon = startEmbeddedDaemon({ heartbeatModule: 'web' });
   const stop = async (sig: string) => {
-    console.log(`[hooks] ${sig} — stopping embedded daemon`);
+    console.log(`[hooks] ${sig} - stopping embedded daemon`);
     await daemon.stop();
   };
   process.once('SIGINT', () => void stop('SIGINT'));
@@ -90,7 +90,7 @@ function isExemptPath(pathname: string): boolean {
  * Reject cross-origin mutations to /api/* (except extension routes which
  * have their own bearer-token auth and explicit allowed origins). Same-origin
  * dashboard fetches pass through unchanged. This is the lightweight CSRF
- * defence — we don't need a per-request token because every state-changing
+ * defence - we don't need a per-request token because every state-changing
  * route is fetch-only (no plain HTML forms).
  */
 function blocksCrossOriginMutation(event: { request: Request; url: URL }): boolean {
@@ -145,7 +145,7 @@ export const handle = async ({ event, resolve }) => {
     // Resolve active organization. Multi-tenant phase 2: every authenticated
     // request must map to a membership. If the user has none, return 404 to
     // avoid leaking the existence of unrelated orgs. The `/invite/*` and
-    // `/api/orgs/*/invites/*/accept` routes are exempt — a brand-new user
+    // `/api/orgs/*/invites/*/accept` routes are exempt - a brand-new user
     // accepting an invite has no membership yet.
     const path = event.url.pathname;
     const orgExempt = path.startsWith('/invite/') || path.startsWith('/api/orgs/');

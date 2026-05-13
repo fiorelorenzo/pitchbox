@@ -1,5 +1,6 @@
 import { parseDraftId } from '../lib/draft-param.js';
 import { api } from '../lib/api.js';
+import { logFromContent } from '../lib/log-from-content.js';
 import { findComposeTextarea, findComposeSendButton } from './shared/reddit-dom.js';
 
 const draftId = parseDraftId(location.href);
@@ -12,7 +13,7 @@ if (draftId !== null) {
   async function onSendIntent() {
     if (armed) return;
     armed = true;
-    // Capture the textarea content at click time — Reddit clears it on success.
+    // Capture the textarea content at click time - Reddit clears it on success.
     capturedBody = findComposeTextarea()?.value || undefined;
     await api.armed(draftId!);
   }
@@ -20,7 +21,22 @@ if (draftId !== null) {
   async function onSendCompleted() {
     if (sent) return;
     sent = true;
-    await api.sent(draftId!, capturedBody);
+    const res = await api.sent(draftId!, capturedBody);
+    if (res.ok) {
+      logFromContent({
+        level: 'info',
+        source: 'reddit-action',
+        message: 'activity.reddit-action.dm-sent',
+        meta: { draftId },
+      });
+    } else {
+      logFromContent({
+        level: 'error',
+        source: 'reddit-action',
+        message: 'activity.reddit-action.fail',
+        meta: { draftId, reason: res.error || String(res.status), status: res.status },
+      });
+    }
   }
 
   function wireUp(): boolean {

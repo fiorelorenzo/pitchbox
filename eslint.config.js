@@ -30,7 +30,7 @@ export default [
     },
   },
   {
-    // Test files — allow expressive any and unused placeholder args.
+    // Test files - allow expressive any and unused placeholder args.
     files: ['**/tests/**/*.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',

@@ -46,7 +46,7 @@
     try {
       const validated = getSchema(scenarioSlug).safeParse(config);
       if (!validated.success) {
-        toast.error('Profile is invalid — fix the highlighted fields');
+        toast.error('Profile is invalid - fix the highlighted fields');
         return;
       }
       const res = await fetch(`/api/campaigns/${campaignId}`, {
@@ -92,7 +92,7 @@
     <div
       class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
     >
-      Generation running — profile is locked until it finishes.
+      Generation running - profile is locked until it finishes.
     </div>
   {/if}
 
