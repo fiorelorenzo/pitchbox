@@ -47,7 +47,7 @@ describe('i18n', () => {
   });
 
   it('interpolates {name}-style params', () => {
-    // Use a key that doesn't exist so the template falls back to the key —
+    // Use a key that doesn't exist so the template falls back to the key -
     // this also verifies interpolation runs on the fallback path.
     expect(translate('en', 'Hello, {name}!', { name: 'Ada' })).toBe('Hello, Ada!');
     // Missing params leave the placeholder untouched.

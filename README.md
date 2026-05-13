@@ -26,13 +26,13 @@ Prerequisites: Node ≥ 22, Docker, and the `claude` CLI (or another supported r
 
 ## Browser extension
 
-The companion Chrome extension auto-marks drafts as sent when you submit on Reddit, and syncs replies back into the dashboard.
+The companion Chrome extension auto-marks drafts as sent when you submit on Reddit, syncs replies back into the dashboard, and surfaces what it's doing in a persistent **side panel** with three tabs (Dashboard, Activity log, Settings).
 
 ```bash
 npm run build:extension   # then load extension/dist/ unpacked in chrome://extensions
 ```
 
-Pairing is one click: open your Pitchbox dashboard tab and hit **Pair with this tab** in the extension popup. You can pair multiple backends (cloud + self-hosted) at the same time. Details: <https://fiorelorenzo.github.io/pitchbox/extension>
+Click the toolbar icon to open the side panel. Pair with your dashboard in one click, kick off a manual sync, follow every operation in real time (pairings, DM/chat sync runs, Matrix token captures, Reddit actions), and tune theme (light/dark/system), language (en/it), density and poller interval from Settings. You can pair multiple backends (cloud + self-hosted) at the same time. Details: <https://fiorelorenzo.github.io/pitchbox/extension>
 
 ## License
 

@@ -44,7 +44,7 @@ describe('project_insights schema', () => {
   it('emits "not enough data yet" message for projects with < 5 drafts', async () => {
     const db = getDb();
     const pid = await makeProject('ins-test-low-data');
-    // No drafts inserted — simulate the playbook's gate.
+    // No drafts inserted - simulate the playbook's gate.
     const draftCount = await db
       .select({ id: schema.drafts.id })
       .from(schema.drafts)

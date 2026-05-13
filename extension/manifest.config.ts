@@ -49,7 +49,7 @@ export default defineManifest({
     },
     {
       // The Matrix token lives in reddit.com's localStorage (per-origin), so any
-      // reddit.com page works — no need to be on /chat. The chat also appears as
+      // reddit.com page works - no need to be on /chat. The chat also appears as
       // a side-panel widget from any reddit.com page.
       matches: ['https://www.reddit.com/*'],
       js: ['src/content/chat-token.ts'],

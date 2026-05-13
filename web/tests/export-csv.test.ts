@@ -164,7 +164,7 @@ describe('streamCsv', () => {
       })
       .returning();
 
-    // A draft whose body contains a comma, a quote and a newline — every CSV
+    // A draft whose body contains a comma, a quote and a newline - every CSV
     // escape codepath should fire on this single row.
     const trickyBody = 'hello, "world"\nbye';
     await db.insert(schema.drafts).values({

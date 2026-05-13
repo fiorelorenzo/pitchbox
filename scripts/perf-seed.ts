@@ -7,7 +7,7 @@
 // Usage:
 //   tsx scripts/perf-seed.ts
 //
-// Point DATABASE_URL at a throwaway database — this script does not clean up.
+// Point DATABASE_URL at a throwaway database - this script does not clean up.
 
 import { sql } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
@@ -24,7 +24,7 @@ function pick<T>(arr: T[], i: number): T {
 async function seedDraftEvents(db: ReturnType<typeof getDb>): Promise<void> {
   const drafts = await db.select({ id: schema.drafts.id }).from(schema.drafts).limit(500);
   if (drafts.length === 0) {
-    console.warn('[perf-seed] no drafts found — skipping draft_events');
+    console.warn('[perf-seed] no drafts found - skipping draft_events');
     return;
   }
   for (let offset = 0; offset < TOTAL; offset += BATCH) {
@@ -42,7 +42,7 @@ async function seedDraftEvents(db: ReturnType<typeof getDb>): Promise<void> {
 async function seedRunEvents(db: ReturnType<typeof getDb>): Promise<void> {
   const runs = await db.select({ id: schema.runs.id }).from(schema.runs).limit(500);
   if (runs.length === 0) {
-    console.warn('[perf-seed] no runs found — skipping run_events');
+    console.warn('[perf-seed] no runs found - skipping run_events');
     return;
   }
   for (let offset = 0; offset < TOTAL; offset += BATCH) {

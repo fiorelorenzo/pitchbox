@@ -21,7 +21,7 @@ describe('thread-id encode/decode', () => {
   });
 
   it('rejects malformed thread ids', () => {
-    // base64 of "only|two" — only two segments after decode
+    // base64 of "only|two" - only two segments after decode
     const bad = Buffer.from('only|two', 'utf8')
       .toString('base64')
       .replace(/\+/g, '-')

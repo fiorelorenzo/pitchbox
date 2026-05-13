@@ -93,7 +93,7 @@ describe('getCampaignReadiness', () => {
   it('returns ready=true once profile, account, and a runnable runner are present', async () => {
     const id = await makeCampaign({ withProfile: true, withAccount: true });
     const r = await getCampaignReadiness(id);
-    // claude-code may or may not be installed in the test environment — the
+    // claude-code may or may not be installed in the test environment - the
     // remaining gating issues should at minimum exclude profile_missing and
     // no_account.
     expect(r.issues.some((i) => i.id === 'profile_missing')).toBe(false);
