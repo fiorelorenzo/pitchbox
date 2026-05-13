@@ -2,6 +2,16 @@
 
 A long-running Node process under `daemon/`. Start with `npm run -w daemon dev` (or wrap with systemd / PM2 for production).
 
+## Embedded mode
+
+Single-host self-hosters can avoid running a second process by booting the daemon loops inside the web server:
+
+```
+PITCHBOX_EMBED_DAEMON=1 npm run dev
+```
+
+The same loops (scheduler, reply-poller, heartbeat, retention, keyword-watcher, webhook-sender) run in the SvelteKit process and stop cleanly on `SIGINT`/`SIGTERM`. Heartbeat rows are tagged `module='web'` so Settings can tell embedded vs. standalone. Run both at once safely — the advisory lock on dispatch (#32) and `SELECT … FOR UPDATE SKIP LOCKED` on webhook deliveries (#36) keep behaviour exactly-once across processes. Standalone mode stays the recommended deploy for HA / multi-host setups.
+
 ## Modules
 
 - `scheduler.ts` — parses `cron_expression` on active campaigns via `cron-parser`. Due campaigns are dispatched by POSTing to the web `/api/run` endpoint, so the daemon never touches agent runners directly.
