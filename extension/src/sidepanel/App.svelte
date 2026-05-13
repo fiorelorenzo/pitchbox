@@ -3,6 +3,7 @@
   import { t } from '$ext/i18n';
   import Dashboard from './routes/Dashboard.svelte';
   import Activity from './routes/Activity.svelte';
+  import Settings from './routes/Settings.svelte';
 
   let tab = $state<'dashboard' | 'activity' | 'settings'>('dashboard');
 </script>
@@ -34,7 +35,7 @@
     {:else if tab === 'activity'}
       <Activity />
     {:else}
-      <p class="text-sm text-muted-foreground">Settings placeholder</p>
+      <Settings />
     {/if}
   </section>
 </main>

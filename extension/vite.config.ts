@@ -4,9 +4,13 @@ import { crx } from '@crxjs/vite-plugin';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import manifest from './manifest.config';
+import pkg from './package.json' with { type: 'json' };
 
 export default defineConfig({
   plugins: [svelte(), tailwindcss(), crx({ manifest })],
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
+  },
   resolve: {
     alias: {
       $ext: path.resolve(__dirname, 'src/lib'),
