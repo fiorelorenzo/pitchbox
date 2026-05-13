@@ -38,6 +38,27 @@ async function reapOrphanedRuns() {
 // Run once at module load (first request to the server).
 await reapOrphanedRuns();
 
+/**
+ * Optional embedded daemon: when PITCHBOX_EMBED_DAEMON=1 the same loops the
+ * standalone `pitchbox daemon` process runs are started in-proc here. Useful
+ * for single-host self-hosters who don't want a second supervised process.
+ *
+ * The advisory lock around dispatch (#32) and `SELECT … FOR UPDATE SKIP LOCKED`
+ * on webhook deliveries (#36) keep behaviour consistent even if a standalone
+ * daemon is also running against the same DB. Heartbeat module is tagged 'web'
+ * so the Settings page can tell which process supplies liveness.
+ */
+if (process.env.PITCHBOX_EMBED_DAEMON === '1') {
+  const { startEmbeddedDaemon } = await import('@pitchbox/daemon/embed');
+  const daemon = startEmbeddedDaemon({ heartbeatModule: 'web' });
+  const stop = async (sig: string) => {
+    console.log(`[hooks] ${sig} — stopping embedded daemon`);
+    await daemon.stop();
+  };
+  process.once('SIGINT', () => void stop('SIGINT'));
+  process.once('SIGTERM', () => void stop('SIGTERM'));
+}
+
 const EXTENSION_ALLOWED_ORIGINS = new Set(['https://www.reddit.com', 'https://old.reddit.com']);
 
 function extensionCorsHeaders(origin: string | null): Record<string, string> {

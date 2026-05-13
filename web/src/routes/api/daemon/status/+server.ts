@@ -19,7 +19,9 @@ export async function GET() {
     };
   });
 
-  const alive = modules.some((m) => m.module === 'daemon' && m.alive);
+  // Either the standalone `pitchbox daemon` process (module='daemon') or the
+  // web's embedded loops (module='web', when PITCHBOX_EMBED_DAEMON=1) count.
+  const alive = modules.some((m) => (m.module === 'daemon' || m.module === 'web') && m.alive);
 
   return json({ alive, modules });
 }

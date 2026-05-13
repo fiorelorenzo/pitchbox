@@ -19,10 +19,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { cn } from '$lib/utils';
-	import { VERSION } from '$lib/shared/version';
-	import { daemonStatus } from '$lib/stores/daemon';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
-	import SseIndicator from '$lib/realtime/SseIndicator.svelte';
+	import SystemStatusCard from '$lib/components/SystemStatusCard.svelte';
 	import { t } from '$lib/i18n';
 	import type { ComponentType } from 'svelte';
 
@@ -133,28 +131,8 @@
 			<LogOut class="size-4 shrink-0" />
 			{$t('nav.signOut')}
 		</button>
-		<div class="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
-			<span
-				class="size-2 rounded-full shrink-0 {$daemonStatus.loading
-					? 'bg-muted-foreground/40'
-					: $daemonStatus.alive
-						? 'bg-emerald-400 animate-pulse'
-						: 'bg-muted-foreground/40'}"
-			></span>
-			<span>
-				{$t('nav.daemon')}:
-				{#if $daemonStatus.loading}
-					…
-				{:else if $daemonStatus.alive}
-					{$t('nav.daemon.online')}
-				{:else}
-					{$t('nav.daemon.offline')}
-				{/if}
-			</span>
-			<span class="ml-auto font-mono opacity-50">{VERSION}</span>
-		</div>
-		<div class="px-3 pb-2">
-			<SseIndicator />
+		<div class="px-1 pt-1">
+			<SystemStatusCard />
 		</div>
 	</div>
 </aside>
