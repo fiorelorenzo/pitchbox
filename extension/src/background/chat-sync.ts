@@ -191,7 +191,20 @@ export async function runChatSync(): Promise<SyncResult> {
 
   if (items.length === 0) return { ok: true, inserted: 0, replied: 0, chatStatus: 'ok' };
 
-  const r = await api.dmSync('reddit', items);
-  if (!r.ok) return { ok: false, reason: r.error, chatStatus: 'ok' };
-  return { ok: true, inserted: r.data.inserted, replied: r.data.replied, chatStatus: 'ok' };
+  // Fan-out to every paired backend; aggregate counts and take the worst
+  // outcome as the channel status (any backend failing surfaces a warning).
+  const results = await api.dmSync('reddit', items);
+  if (results.length === 0) return { ok: false, reason: 'not configured', chatStatus: 'ok' };
+  const successes = results.filter((r) => r.ok);
+  if (successes.length === 0) {
+    const first = results.find((r) => !r.ok);
+    return {
+      ok: false,
+      reason: first && !first.ok ? first.error : 'unknown',
+      chatStatus: 'ok',
+    };
+  }
+  const inserted = successes.reduce((acc, r) => acc + (r.ok ? r.data.inserted : 0), 0);
+  const replied = successes.reduce((acc, r) => acc + (r.ok ? r.data.replied : 0), 0);
+  return { ok: true, inserted, replied, chatStatus: 'ok' };
 }

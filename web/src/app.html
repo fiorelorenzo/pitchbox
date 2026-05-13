@@ -15,6 +15,10 @@
     <meta property="og:description" content="Self-hosted, human-in-the-loop outreach agent." />
     <meta property="og:image" content="/og-image.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <!-- Beacon read by the Pitchbox browser extension's auto-pair content
+         script. Presence + value identify this origin as a Pitchbox dashboard
+         worth probing via GET /api/extension/auto-pair. -->
+    <meta name="pitchbox-pair" content="ready" />
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
