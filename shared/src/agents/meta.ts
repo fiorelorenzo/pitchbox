@@ -2,7 +2,7 @@
 // the runner implementations (which depend on node:path / node:child_process and
 // can't be bundled into the browser).
 
-export type AgentRunnerSlug = 'claude-code' | 'codex' | 'opencode';
+export type AgentRunnerSlug = 'claude-code' | 'codex' | 'opencode' | 'cloud';
 
 export type AgentRunnerMeta = {
   slug: AgentRunnerSlug;
@@ -12,6 +12,67 @@ export type AgentRunnerMeta = {
 
 export const AGENT_RUNNER_META: AgentRunnerMeta[] = [
   { slug: 'claude-code', label: 'Claude Code', implemented: true },
-  { slug: 'codex', label: 'Codex', implemented: false },
-  { slug: 'opencode', label: 'OpenCode', implemented: false },
+  { slug: 'codex', label: 'Codex', implemented: true },
+  { slug: 'opencode', label: 'OpenCode', implemented: true },
+  { slug: 'cloud', label: 'Pitchbox Cloud', implemented: false },
 ];
+
+// Typed config schema so the dashboard can render per-runner fields
+// generically without hardcoding inputs in components.
+export type RunnerConfigField =
+  | { key: string; kind: 'string'; label: string; placeholder?: string; description?: string }
+  | {
+      key: string;
+      kind: 'select';
+      label: string;
+      options: string[];
+      allowCustom?: boolean;
+      description?: string;
+    }
+  | { key: string; kind: 'number'; label: string; min?: number; max?: number; description?: string }
+  | { key: string; kind: 'boolean'; label: string; description?: string };
+
+const CLAUDE_KNOWN_MODELS = ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5'];
+const CODEX_KNOWN_MODELS = ['gpt-5-codex'];
+const OPENCODE_KNOWN_MODELS = ['opencode-default'];
+
+export const RUNNER_CONFIG_SCHEMA: Partial<Record<AgentRunnerSlug, RunnerConfigField[]>> = {
+  'claude-code': [
+    {
+      key: 'model',
+      kind: 'select',
+      label: 'Model',
+      options: CLAUDE_KNOWN_MODELS,
+      allowCustom: true,
+      description: 'Maps to `--model` on the `claude` CLI. Leave empty for the CLI default.',
+    },
+    {
+      key: 'maxTurns',
+      kind: 'number',
+      label: 'Max turns',
+      min: 1,
+      max: 200,
+      description: 'Hard cap on agent turns per run.',
+    },
+  ],
+  codex: [
+    {
+      key: 'model',
+      kind: 'select',
+      label: 'Model',
+      options: CODEX_KNOWN_MODELS,
+      allowCustom: true,
+      description: 'Maps to `--model` on the `codex` CLI. Defaults to `gpt-5-codex`.',
+    },
+  ],
+  opencode: [
+    {
+      key: 'model',
+      kind: 'select',
+      label: 'Model',
+      options: OPENCODE_KNOWN_MODELS,
+      allowCustom: true,
+      description: 'Maps to `--model` on the `opencode` CLI. Defaults to `opencode-default`.',
+    },
+  ],
+};

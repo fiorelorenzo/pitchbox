@@ -3,9 +3,10 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": ".",
-    "types": ["chrome", "vite/client"],
+    "types": ["chrome", "vite/client", "svelte"],
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "noEmit": true
+    "noEmit": true,
+    "allowJs": true
   },
   "include": ["src/**/*", "tests/**/*"]
 }

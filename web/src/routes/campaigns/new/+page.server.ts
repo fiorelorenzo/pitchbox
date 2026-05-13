@@ -1,6 +1,8 @@
 import type { PageServerLoad } from './$types';
 import { desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
+import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
+import { detectAllRunners } from '@pitchbox/shared/agents/detect';
 
 export const load: PageServerLoad = async ({ url }) => {
   const db = getDb();
@@ -45,5 +47,14 @@ export const load: PageServerLoad = async ({ url }) => {
         .orderBy(desc(schema.campaignRecommendations.createdAt))
     : [];
 
-  return { projects, platforms, preselected, recommendations };
+  const detections = await detectAllRunners();
+  const runners = AGENT_RUNNER_META.map((m) => ({
+    slug: m.slug,
+    label: m.label,
+    implemented: m.implemented,
+    available: m.implemented && detections[m.slug].available,
+    error: m.implemented ? detections[m.slug].error : 'Runner adapter not implemented yet',
+  }));
+
+  return { projects, platforms, preselected, recommendations, runners };
 };

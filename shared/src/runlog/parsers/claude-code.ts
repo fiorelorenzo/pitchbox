@@ -164,7 +164,12 @@ export function parseClaudeCodeLine(line: string, seqStart = 0): ParsedEvent[] {
       result?: unknown;
       total_cost_usd?: number;
       duration_ms?: number;
-      usage?: { input_tokens?: number; output_tokens?: number };
+      usage?: {
+        input_tokens?: number;
+        output_tokens?: number;
+        cache_read_input_tokens?: number;
+        cache_creation_input_tokens?: number;
+      };
       num_turns?: number;
       is_error?: boolean;
     };
@@ -179,6 +184,8 @@ export function parseClaudeCodeLine(line: string, seqStart = 0): ParsedEvent[] {
         text: r.result != null ? String(r.result) : undefined,
         inputTokens: r.usage?.input_tokens,
         outputTokens: r.usage?.output_tokens,
+        cacheReadTokens: r.usage?.cache_read_input_tokens,
+        cacheCreationTokens: r.usage?.cache_creation_input_tokens,
         totalCostUsd: r.total_cost_usd,
         durationMs: r.duration_ms,
         numTurns: r.num_turns,

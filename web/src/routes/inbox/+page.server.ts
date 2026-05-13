@@ -1,23 +1,62 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { and, eq, desc, inArray, type SQL } from 'drizzle-orm';
+import { and, eq, desc, gte, inArray, type SQL } from 'drizzle-orm';
 import { getUsageForAccounts, loadQuotaLimits } from '@pitchbox/shared/quota';
 import { listProjects } from '@pitchbox/shared/projects';
+import { resolveOrgId } from '$lib/server/auth.js';
+import { hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
 
-export async function load({ url }: { url: URL }) {
+export async function load(event: import('@sveltejs/kit').RequestEvent) {
+  const { url } = event;
   const state = url.searchParams.get('state') ?? 'pending_review';
   const kind = url.searchParams.get('kind');
   const run = url.searchParams.get('run');
   const campaign = url.searchParams.get('campaign');
   const projectSlug = url.searchParams.get('project') ?? '';
+  const platformSlugFilter = url.searchParams.get('platform');
+  const minQualityRaw = url.searchParams.get('minQuality');
+  const minQuality =
+    minQualityRaw != null && minQualityRaw !== '' && Number.isFinite(Number(minQualityRaw))
+      ? Math.max(0, Math.min(100, Number(minQualityRaw)))
+      : null;
   const db = getDb();
 
-  const projects = await listProjects(db);
+  const orgId = await resolveOrgId(event);
+  const projects = await listProjects(db, { organizationId: orgId });
+  const chatSyncUnauthorized = await hasChatUnauthorizedDevice();
   const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
   const projectsForUi = projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name }));
+
+  const allPlatforms = await db
+    .select({ id: schema.platforms.id, slug: schema.platforms.slug })
+    .from(schema.platforms);
+  const activePlatform = platformSlugFilter
+    ? (allPlatforms.find((p) => p.slug === platformSlugFilter) ?? null)
+    : null;
+
+  if (platformSlugFilter && !activePlatform) {
+    return {
+      drafts: [],
+      state,
+      kind,
+      run: null,
+      campaign,
+      runInfo: null,
+      campaignInfo: null,
+      usage: {},
+      quotaLimitsByPlatform: {},
+      projects: projectsForUi,
+      activeProject,
+      platforms: allPlatforms,
+      activePlatform: null,
+      chatSyncUnauthorized,
+    };
+  }
 
   const filters: SQL[] = state !== 'all' ? [eq(schema.drafts.state, state)] : [];
   if (kind) filters.push(eq(schema.drafts.kind, kind));
   if (activeProject) filters.push(eq(schema.drafts.projectId, activeProject.id));
+  if (activePlatform) filters.push(eq(schema.drafts.platformId, activePlatform.id));
+  if (minQuality != null) filters.push(gte(schema.drafts.qualityScore, minQuality));
 
   if (run) {
     filters.push(eq(schema.drafts.runId, Number(run)));
@@ -39,6 +78,9 @@ export async function load({ url }: { url: URL }) {
         quotaLimitsByPlatform: {},
         projects: projectsForUi,
         activeProject,
+        platforms: allPlatforms,
+        activePlatform,
+        chatSyncUnauthorized,
       };
     }
     filters.push(
@@ -60,7 +102,6 @@ export async function load({ url }: { url: URL }) {
       kind: schema.drafts.kind,
       state: schema.drafts.state,
       fitScore: schema.drafts.fitScore,
-      subreddit: schema.drafts.subreddit,
       targetUser: schema.drafts.targetUser,
       sourceRef: schema.drafts.sourceRef,
       title: schema.drafts.title,
@@ -73,17 +114,25 @@ export async function load({ url }: { url: URL }) {
       sentAt: schema.drafts.sentAt,
       sentContent: schema.drafts.sentContent,
       platformCommentId: schema.drafts.platformCommentId,
+      dedupWarning: schema.drafts.dedupWarning,
+      qualityScore: schema.drafts.qualityScore,
+      qualityReason: schema.drafts.qualityReason,
+      variantGroupId: schema.drafts.variantGroupId,
+      variantLabel: schema.drafts.variantLabel,
       projectSlug: schema.projects.slug,
       projectName: schema.projects.name,
+      platformSlug: schema.platforms.slug,
     })
     .from(schema.drafts)
     .innerJoin(schema.projects, eq(schema.projects.id, schema.drafts.projectId))
+    .innerJoin(schema.platforms, eq(schema.platforms.id, schema.drafts.platformId))
     .where(filters.length > 0 ? and(...filters) : undefined)
     .orderBy(desc(schema.drafts.createdAt))
     .limit(200);
 
-  const drafts = draftRows.map(({ projectSlug, projectName, ...rest }) => ({
+  const drafts = draftRows.map(({ projectSlug, projectName, platformSlug, ...rest }) => ({
     ...rest,
+    platformSlug,
     project: { id: rest.projectId, slug: projectSlug, name: projectName },
   }));
 
@@ -150,5 +199,8 @@ export async function load({ url }: { url: URL }) {
     quotaLimitsByPlatform,
     projects: projectsForUi,
     activeProject,
+    platforms: allPlatforms,
+    activePlatform,
+    chatSyncUnauthorized,
   };
 }

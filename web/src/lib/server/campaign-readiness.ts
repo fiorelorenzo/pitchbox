@@ -1,12 +1,14 @@
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from './db.js';
 import { getSchema } from '@pitchbox/shared/campaigns';
+import { AGENT_RUNNER_META, type AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
+import { detectRunner } from '@pitchbox/shared/agents/detect';
 
 export type ReadinessIssue = {
-  id: 'profile_missing' | 'profile_invalid' | 'no_account';
+  id: 'profile_missing' | 'profile_invalid' | 'no_account' | 'runner_unavailable';
   title: string;
   hint: string;
-  fix: { label: string; kind: 'profile' | 'accounts'; href?: string };
+  fix: { label: string; kind: 'profile' | 'accounts' | 'runner'; href?: string };
 };
 
 export type CampaignReadiness = { ready: boolean; issues: ReadinessIssue[] };
@@ -52,6 +54,26 @@ export async function getCampaignReadiness(campaignId: number): Promise<Campaign
           fix: { label: 'Regenerate profile', kind: 'profile' },
         });
       }
+    }
+  }
+
+  const runnerMeta = AGENT_RUNNER_META.find((m) => m.slug === campaign.agentRunner);
+  if (!runnerMeta || !runnerMeta.implemented) {
+    issues.push({
+      id: 'runner_unavailable',
+      title: 'Agent runner not implemented',
+      hint: `${campaign.agentRunner} does not have a runner adapter yet — pick claude-code or wait for the adapter.`,
+      fix: { label: 'Open settings', kind: 'runner', href: '/settings' },
+    });
+  } else {
+    const detection = await detectRunner(campaign.agentRunner as AgentRunnerSlug);
+    if (!detection.available) {
+      issues.push({
+        id: 'runner_unavailable',
+        title: `${runnerMeta.label} not installed`,
+        hint: detection.error ?? 'Runner CLI not detected on PATH.',
+        fix: { label: 'Open settings', kind: 'runner', href: '/settings' },
+      });
     }
   }
 

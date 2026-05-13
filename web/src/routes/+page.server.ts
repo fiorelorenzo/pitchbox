@@ -54,6 +54,22 @@ export async function load() {
     .orderBy(desc(schema.runs.startedAt))
     .limit(5);
 
+  // ----- Spend (last 24h / 7d) -----
+  const [spendRow] = await db
+    .select({
+      cost24h: sql<
+        string | null
+      >`COALESCE(SUM(cost_usd) FILTER (WHERE started_at >= ${since24h}), 0)`,
+      cost7d: sql<
+        string | null
+      >`COALESCE(SUM(cost_usd) FILTER (WHERE started_at >= ${since7d}), 0)`,
+    })
+    .from(schema.runs);
+  const spend = {
+    cost24h: Number(spendRow?.cost24h ?? 0),
+    cost7d: Number(spendRow?.cost7d ?? 0),
+  };
+
   // ----- Run stats (last 7 days) -----
   const [runStats7d] = await db
     .select({
@@ -136,5 +152,6 @@ export async function load() {
     },
     recentRuns,
     campaigns,
+    spend,
   };
 }

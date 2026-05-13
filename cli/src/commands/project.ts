@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
 import { SCENARIO_META, RecommendationItemSchema } from '@pitchbox/shared/campaigns';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { stat, rm } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { ok, fail } from '../lib/output.js';
@@ -177,6 +177,92 @@ export function registerProjectCommands(program: Command) {
         bytes: description.length,
         recommendations: capped.length,
       });
+    });
+
+  // Reads recent drafts/messages for a project so the project-insighter
+  // playbook can produce a Markdown summary without touching the DB directly.
+  program
+    .command('project:insights:context')
+    .requiredOption('--project <id>', 'project id')
+    .action(async (opts: { project: string }) => {
+      const projectId = Number(opts.project);
+      if (!Number.isInteger(projectId)) return fail('invalid project id');
+      const db = getDb();
+      const [project] = await db
+        .select()
+        .from(schema.projects)
+        .where(eq(schema.projects.id, projectId));
+      if (!project) return fail(`project ${projectId} not found`);
+
+      const drafts = await db
+        .select({
+          id: schema.drafts.id,
+          state: schema.drafts.state,
+          kind: schema.drafts.kind,
+          createdAt: schema.drafts.createdAt,
+        })
+        .from(schema.drafts)
+        .where(eq(schema.drafts.projectId, projectId))
+        .orderBy(desc(schema.drafts.createdAt))
+        .limit(200);
+
+      // Join via drafts so we only pull messages tied to this project's drafts.
+      const draftIds = drafts.map((d) => d.id);
+      const messages =
+        draftIds.length === 0
+          ? []
+          : await db
+              .select({
+                id: schema.messages.id,
+                draftId: schema.messages.draftId,
+                isFromUs: schema.messages.isFromUs,
+                createdAtPlatform: schema.messages.createdAtPlatform,
+              })
+              .from(schema.messages)
+              .where(inArray(schema.messages.draftId, draftIds))
+              .orderBy(desc(schema.messages.createdAtPlatform))
+              .limit(200);
+
+      ok({
+        projectId,
+        projectName: project.name,
+        draftCount: drafts.length,
+        replyCount: messages.filter((m) => !m.isFromUs).length,
+        drafts,
+        messages,
+      });
+    });
+
+  // Persists a generated summary into `project_insights`. The playbook emits
+  // `{summaryMd, evidence}` on stdout; this command writes one row.
+  program
+    .command('project:insights')
+    .requiredOption('--project <id>', 'project id')
+    .action(async (opts: { project: string }) => {
+      const projectId = Number(opts.project);
+      if (!Number.isInteger(projectId)) return fail('invalid project id');
+      const raw = await readStdin();
+      if (!raw || !raw.trim()) return fail('empty payload on stdin');
+      let payload: { summaryMd?: unknown; evidence?: unknown };
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        return fail('payload is not valid JSON');
+      }
+      const summaryMd =
+        typeof payload.summaryMd === 'string' ? payload.summaryMd : String(payload.summaryMd ?? '');
+      if (!summaryMd.trim()) return fail('summaryMd missing');
+      const evidence =
+        payload.evidence && typeof payload.evidence === 'object' ? payload.evidence : {};
+      const db = getDb();
+      const [row] = await db
+        .insert(schema.projectInsights)
+        .values({ projectId, summaryMd, evidence: evidence as Record<string, unknown> })
+        .returning({
+          id: schema.projectInsights.id,
+          generatedAt: schema.projectInsights.generatedAt,
+        });
+      ok({ id: row.id, projectId, generatedAt: row.generatedAt });
     });
 }
 

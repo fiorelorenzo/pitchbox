@@ -46,9 +46,30 @@ const RedditCommenterSchema = z
   })
   .strict();
 
+const RedditPosterSchema = z
+  .object({
+    targetSubreddits: z.array(z.string().min(1)).min(1),
+    topicKeywords: z.array(z.string().min(1)),
+    avoidKeywords: z.array(z.string().min(1)),
+    postAngle: z.string().min(1),
+    voice: z
+      .object({
+        tone: z.enum(['casual', 'neutral', 'professional']),
+        hardBans: z.array(z.string()),
+        dos: z.array(z.string()),
+        disclosure: z.string().min(1),
+      })
+      .strict(),
+    valuePropositions: z.array(z.string().min(1)),
+    productUrl: z.string().url(),
+    systemInstructions: z.string().min(1),
+  })
+  .strict();
+
 export const SCENARIO_SCHEMAS = {
   'reddit-scout': RedditScoutSchema,
   'reddit-commenter': RedditCommenterSchema,
+  'reddit-poster': RedditPosterSchema,
 } as const;
 
 export type CampaignProfile<S extends ScenarioSlug> = z.infer<(typeof SCENARIO_SCHEMAS)[S]>;

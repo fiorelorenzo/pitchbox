@@ -5,6 +5,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import { Input } from '$lib/components/ui/input';
+	import { Button } from '$lib/components/ui/button';
 	import { SelectField } from '$lib/components/ui/select-field';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -90,13 +91,27 @@
 					bind:value={query}
 					onkeydown={onSearchKeydown}
 					placeholder="Search target user…"
-					class="h-9 w-64 pl-8"
+					class="h-9 w-full sm:w-64 pl-8"
 				/>
 			</div>
 		</div>
-		<span class="text-xs text-muted-foreground">
-			{data.contacts.length} rows shown
-		</span>
+		<div class="flex items-center gap-3">
+			<span class="text-xs text-muted-foreground">
+				{data.contacts.length} rows shown
+			</span>
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={() => {
+					// Mirror the current contacts filters into the export URL.
+					const qs = new URLSearchParams($page.url.searchParams);
+					qs.set('format', 'csv');
+					window.location.href = `/api/export/contacts?${qs.toString()}`;
+				}}
+			>
+				Export CSV
+			</Button>
+		</div>
 	</Card.Header>
 	<Card.Content>
 		{#if data.contacts.length === 0}
@@ -104,6 +119,7 @@
 				No contacts yet. Mark drafts as sent to populate this table.
 			</p>
 		{:else}
+			<div class="w-full overflow-x-auto">
 			<Table.Root>
 				<Table.Header>
 					<Table.Row>
@@ -172,6 +188,7 @@
 					{/each}
 				</Table.Body>
 			</Table.Root>
+			</div>
 		{/if}
 	</Card.Content>
 </Card.Root>

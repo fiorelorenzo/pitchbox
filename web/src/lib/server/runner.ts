@@ -1,9 +1,15 @@
 import { createAgentRunner } from '@pitchbox/shared/agents/registry';
+import { loadRunnerConfig } from '@pitchbox/shared/agents/config';
+import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
+import { notify } from '@pitchbox/shared/notifications';
+import { classifyFailure } from '@pitchbox/shared/runlog/classify-failure';
+import type { ParsedEvent, EventKind, EventPayload } from '@pitchbox/shared/runlog/types';
+import { withCampaignLock } from '@pitchbox/shared/scheduler/dispatch-lock';
 import { getDb, schema } from './db.js';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rm } from 'node:fs/promises';
+import { rm, mkdir, writeFile } from 'node:fs/promises';
 import { emit } from './events.js';
 
 // Derive repo root from this module's location (web/src/lib/server/runner.ts → ../../../..).
@@ -19,6 +25,51 @@ const PITCHBOX_ROOT =
 const runCancels = new Map<number, () => void>();
 
 const TERMINAL_STATUSES = new Set(['success', 'failed', 'cancelled']);
+
+/**
+ * Load every persisted run_event row for `runId` and reshape it into
+ * `ParsedEvent[]` so the failure classifier can scan it. Used only on the
+ * failure path so the cost is bounded to the events the run actually emitted.
+ */
+async function loadParsedEvents(runId: number): Promise<ParsedEvent[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      seq: schema.runEvents.seq,
+      kind: schema.runEvents.kind,
+      payload: schema.runEvents.payload,
+      raw: schema.runEvents.raw,
+    })
+    .from(schema.runEvents)
+    .where(eq(schema.runEvents.runId, runId));
+  return rows.map((r) => ({
+    seq: r.seq,
+    kind: r.kind as EventKind,
+    payload: r.payload as EventPayload,
+    raw: r.raw,
+  }));
+}
+
+/**
+ * Classify a failed run by reading its persisted events plus an extra hint
+ * (typically the runner's own error string when no events were emitted).
+ */
+async function classifyFailedRun(
+  runId: number,
+  exitCode: number | null,
+  extraHint?: string,
+): Promise<ReturnType<typeof classifyFailure>> {
+  const events = await loadParsedEvents(runId);
+  if (extraHint && extraHint.trim().length > 0) {
+    events.push({
+      seq: -1,
+      kind: 'unknown',
+      payload: { type: 'unknown', eventType: 'runner-error', raw: extraHint },
+      raw: extraHint,
+    });
+  }
+  return classifyFailure(events, exitCode);
+}
 
 /**
  * Kind-agnostic dispatcher: spawns an agent runner for a pre-inserted run row,
@@ -41,12 +92,14 @@ async function dispatchRun(
 
   let runner: ReturnType<typeof createAgentRunner>;
   try {
-    runner = createAgentRunner(run.agentRunner);
+    const config = await loadRunnerConfig(db, run.agentRunner as AgentRunnerSlug);
+    runner = createAgentRunner(run.agentRunner, config);
   } catch (err) {
     const errMsg = String(err instanceof Error ? err.message : err);
+    const failureReason = await classifyFailedRun(run.id, 1, errMsg);
     await db
       .update(schema.runs)
-      .set({ status: 'failed', finishedAt: new Date(), error: errMsg })
+      .set({ status: 'failed', finishedAt: new Date(), error: errMsg, failureReason })
       .where(eq(schema.runs.id, run.id));
     opts.onFinish?.('failed');
     emit('run:finished', {
@@ -59,7 +112,16 @@ async function dispatchRun(
     return;
   }
 
-  const playbook = resolve(PITCHBOX_ROOT, 'playbooks', `${opts.playbookSlug}.md`);
+  // Prefer the run's snapshot (set at run-creation time) over the on-disk file.
+  // The on-disk file remains the fallback for legacy runs and for project
+  // extraction / skill generation which don't have rows in the playbooks table.
+  let playbook = resolve(PITCHBOX_ROOT, 'playbooks', `${opts.playbookSlug}.md`);
+  if (run.playbookBody) {
+    const tmpDir = resolve(PITCHBOX_ROOT, 'daemon', 'tmp');
+    await mkdir(tmpDir, { recursive: true });
+    playbook = resolve(tmpDir, `run-${run.id}-${opts.playbookSlug}.md`);
+    await writeFile(playbook, run.playbookBody, 'utf8');
+  }
 
   // Prepend our bin/ so playbooks can call `pitchbox <cmd>` directly.
   const augmentedPath = `${PITCHBOX_ROOT}/bin:${process.env.PATH ?? ''}`;
@@ -162,9 +224,24 @@ async function dispatchRun(
         const finalStatus = current.status as 'success' | 'failed' | 'cancelled';
         // Backfill metadata that the CLI doesn't know (token count, stdout log path),
         // without disturbing the terminal status the playbook already committed to.
-        const patch: { tokensUsed?: number; stdoutLogPath?: string } = {};
+        const patch: {
+          tokensUsed?: number;
+          stdoutLogPath?: string;
+          inputTokens?: number;
+          outputTokens?: number;
+          cacheReadTokens?: number;
+          cacheCreationTokens?: number;
+          costUsd?: string;
+        } = {};
         if (current.tokensUsed == null && res.tokensUsed != null) patch.tokensUsed = res.tokensUsed;
         if (current.stdoutLogPath == null && res.logPath) patch.stdoutLogPath = res.logPath;
+        if (res.usage) {
+          patch.inputTokens = res.usage.inputTokens;
+          patch.outputTokens = res.usage.outputTokens;
+          patch.cacheReadTokens = res.usage.cacheReadTokens;
+          patch.cacheCreationTokens = res.usage.cacheCreationTokens;
+          patch.costUsd = res.usage.costUsd.toFixed(4);
+        }
         if (Object.keys(patch).length > 0) {
           await db.update(schema.runs).set(patch).where(eq(schema.runs.id, run.id));
         }
@@ -181,6 +258,8 @@ async function dispatchRun(
         return;
       }
       const finalStatus: 'success' | 'failed' = res.exitCode === 0 ? 'success' : 'failed';
+      const failureReason =
+        finalStatus === 'failed' ? await classifyFailedRun(run.id, res.exitCode) : null;
       await db
         .update(schema.runs)
         .set({
@@ -188,6 +267,12 @@ async function dispatchRun(
           finishedAt: new Date(),
           stdoutLogPath: res.logPath,
           tokensUsed: res.tokensUsed ?? null,
+          inputTokens: res.usage?.inputTokens ?? null,
+          outputTokens: res.usage?.outputTokens ?? null,
+          cacheReadTokens: res.usage?.cacheReadTokens ?? null,
+          cacheCreationTokens: res.usage?.cacheCreationTokens ?? null,
+          costUsd: res.usage ? res.usage.costUsd.toFixed(4) : null,
+          failureReason,
         })
         .where(eq(schema.runs.id, run.id));
       opts.onFinish?.(finalStatus);
@@ -198,6 +283,13 @@ async function dispatchRun(
         exitCode: res.exitCode,
       });
       if (isCampaignRun && res.exitCode === 0) emit('drafts:changed', {});
+      await notify(db, {
+        kind: `run.${finalStatus}`,
+        title: `Run #${run.id} ${finalStatus}`,
+        body: isCampaignRun ? `Campaign ${run.campaignId} run finished.` : undefined,
+        payload: { runId: run.id, campaignId: run.campaignId, projectId: run.projectId },
+        severity: finalStatus === 'success' ? 'success' : 'error',
+      });
     })
     .catch(async (err) => {
       await flushPendingResult();
@@ -218,9 +310,10 @@ async function dispatchRun(
         if (isCampaignRun && finalStatus === 'success') emit('drafts:changed', {});
         return;
       }
+      const failureReason = await classifyFailedRun(run.id, 1, String(err));
       await db
         .update(schema.runs)
-        .set({ status: 'failed', finishedAt: new Date(), error: String(err) })
+        .set({ status: 'failed', finishedAt: new Date(), error: String(err), failureReason })
         .where(eq(schema.runs.id, run.id));
       opts.onFinish?.('failed');
       emit('run:finished', {
@@ -229,6 +322,13 @@ async function dispatchRun(
         projectId: run.projectId,
         exitCode: 1,
         error: String(err),
+      });
+      await notify(db, {
+        kind: 'run.failed',
+        title: `Run #${run.id} failed`,
+        body: String(err),
+        payload: { runId: run.id, campaignId: run.campaignId, projectId: run.projectId },
+        severity: 'error',
       });
     })
     .finally(async () => {
@@ -259,6 +359,7 @@ async function dispatchRun(
 export async function runCampaign(
   campaignId: number,
   trigger: string = 'manual',
+  scheduledFor: Date | null = null,
 ): Promise<{ runId: number; alreadyRunning?: boolean }> {
   const db = getDb();
   const [campaign] = await db
@@ -271,57 +372,117 @@ export async function runCampaign(
     throw new Error(`campaign ${campaignId} is still draft — generate the profile first`);
   }
 
-  // Application-level guard: look up an existing running run and short-circuit.
-  const [existing] = await db
-    .select()
-    .from(schema.runs)
-    .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
-    .limit(1);
-  if (existing) {
-    return { runId: existing.id, alreadyRunning: true };
-  }
+  const [pb] = await db
+    .select({ body: schema.playbooks.body })
+    .from(schema.playbooks)
+    .where(eq(schema.playbooks.slug, campaign.skillSlug));
 
-  // DB-level safety net: a partial unique index on (campaign_id) WHERE status='running'
-  // prevents two concurrent INSERTs from both succeeding if they race past the SELECT above.
-  let run: typeof schema.runs.$inferSelect;
-  try {
-    [run] = await db
-      .insert(schema.runs)
-      .values({
-        campaignId,
-        agentRunner: campaign.agentRunner,
-        trigger,
-        status: 'running',
-      })
-      .returning();
-  } catch (err) {
-    // Unique violation on the partial index → someone else just inserted a running run.
-    // Drizzle wraps the underlying pg error; check code in a few places and fall back
-    // to matching the constraint name in the message.
-    const e = err as {
-      code?: string;
-      constraint?: string;
-      cause?: { code?: string; constraint?: string };
-      message?: string;
-    };
-    const code = e?.code ?? e?.cause?.code;
-    const constraint = e?.constraint ?? e?.cause?.constraint;
-    const message = e?.message ?? String(err);
-    const isUniqueViolation =
-      code === '23505' ||
-      constraint === 'runs_one_running_per_campaign' ||
-      message.includes('runs_one_running_per_campaign');
+  // Wrap the read-modify-write in a Postgres transaction-scoped advisory lock
+  // keyed on `campaign:<id>`. Concurrent dispatches for the same campaign
+  // serialise behind the lock; the loser sees the winner's `running` row and
+  // short-circuits with `alreadyRunning: true`. The DB-level partial UNIQUE
+  // index (status='running') and the new `(campaign_id, scheduled_for)`
+  // partial UNIQUE index are the safety net if the lock is bypassed.
+  const locked = await withCampaignLock(db, campaignId, async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(schema.runs)
+      .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
+      .limit(1);
+    if (existing) {
+      return { runId: existing.id, alreadyRunning: true } as const;
+    }
 
-    if (isUniqueViolation) {
-      const [raced] = await db
+    // If this is a scheduled dispatch, an idempotency check on
+    // (campaign_id, scheduled_for) catches a concurrent scheduler that
+    // already created the row for this tick.
+    if (scheduledFor) {
+      const [dup] = await tx
         .select()
         .from(schema.runs)
-        .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
+        .where(
+          and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.scheduledFor, scheduledFor)),
+        )
         .limit(1);
-      if (raced) return { runId: raced.id, alreadyRunning: true };
+      if (dup) {
+        return { runId: dup.id, alreadyRunning: true } as const;
+      }
     }
+
+    try {
+      const [inserted] = await tx
+        .insert(schema.runs)
+        .values({
+          campaignId,
+          agentRunner: campaign.agentRunner,
+          trigger,
+          status: 'running',
+          playbookBody: pb?.body ?? null,
+          scheduledFor,
+        })
+        .returning();
+      return { run: inserted } as const;
+    } catch (err) {
+      const e = err as {
+        code?: string;
+        constraint?: string;
+        cause?: { code?: string; constraint?: string };
+        message?: string;
+      };
+      const code = e?.code ?? e?.cause?.code;
+      const constraint = e?.constraint ?? e?.cause?.constraint;
+      const message = e?.message ?? String(err);
+      const isUniqueViolation = code === '23505';
+      const isScheduledForViolation =
+        isUniqueViolation &&
+        (constraint === 'runs_campaign_scheduled_for_unique' ||
+          message.includes('runs_campaign_scheduled_for_unique'));
+      const isRunningViolation =
+        isUniqueViolation &&
+        (constraint === 'runs_one_running_per_campaign' ||
+          message.includes('runs_one_running_per_campaign'));
+
+      if (isScheduledForViolation) {
+        // Tagged so the /api/run route can map it to a clean 409.
+        const tagged = new Error('already_dispatched') as Error & { code: string };
+        tagged.code = 'already_dispatched';
+        throw tagged;
+      }
+      if (isRunningViolation) {
+        const [raced] = await tx
+          .select()
+          .from(schema.runs)
+          .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
+          .limit(1);
+        if (raced) return { runId: raced.id, alreadyRunning: true } as const;
+      }
+      throw err;
+    }
+  });
+
+  // Lock unavailable → another writer is mid-RMW for this campaign. Treat as
+  // already-running so the caller doesn't double-fire.
+  if (locked == null) {
+    const [existing] = await db
+      .select()
+      .from(schema.runs)
+      .where(and(eq(schema.runs.campaignId, campaignId), eq(schema.runs.status, 'running')))
+      .limit(1);
+    if (existing) return { runId: existing.id, alreadyRunning: true };
+    // Lost the lock AND no running row yet — surface the same 409 contract.
+    const err = new Error('already_dispatched') as Error & { code: string };
+    err.code = 'already_dispatched';
     throw err;
   }
+
+  if ('runId' in locked && locked.runId != null) {
+    return { runId: locked.runId, alreadyRunning: locked.alreadyRunning };
+  }
+  if (!('run' in locked) || !locked.run) {
+    // Should be unreachable — the lock callback always returns one branch.
+    throw new Error('dispatch returned no run');
+  }
+  const run = locked.run;
 
   emit('run:started', { runId: run.id, campaignId });
 
@@ -393,6 +554,7 @@ export async function runCampaignSkillGeneration(
   scenario: 'reddit-scout' | 'reddit-commenter',
   objective: string,
   trigger: string = 'manual',
+  mode: 'apply' | 'preview' = 'apply',
 ): Promise<{ runId: number; alreadyRunning?: boolean }> {
   const db = getDb();
   const [campaign] = await db
@@ -422,7 +584,7 @@ export async function runCampaignSkillGeneration(
       agentRunner: campaign.agentRunner,
       trigger,
       status: 'running',
-      params: { scenario, objective },
+      params: { scenario, objective, mode },
     })
     .returning();
 

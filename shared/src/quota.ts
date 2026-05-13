@@ -48,6 +48,39 @@ export async function getAccountUsage(db: Db, accountId: number, now?: Date): Pr
   return m[accountId];
 }
 
+export type QuotaWindow = 'day' | 'week';
+export type QuotaCheck = {
+  limit: number;
+  used: number;
+  remaining: number;
+  kind: 'platform' | 'account';
+};
+
+/**
+ * Compute the binding quota for a given account+kind+window.
+ *
+ * The binding limit is the minimum of the platform-wide limit (from
+ * `app_config.quota_defaults`) and the optional per-account override
+ * (`accounts.daily_limit` / `accounts.weekly_limit`). When both are set, the
+ * smaller one wins and `kind` reflects which side bound. On ties, the
+ * account-level override is preferred so users see their explicit setting.
+ */
+export function checkQuota(args: {
+  platformLimit: number;
+  accountLimit: number | null | undefined;
+  used: number;
+}): QuotaCheck {
+  const { platformLimit, accountLimit, used } = args;
+  let limit = platformLimit;
+  let kind: 'platform' | 'account' = 'platform';
+  if (accountLimit != null && accountLimit <= platformLimit) {
+    limit = accountLimit;
+    kind = 'account';
+  }
+  const remaining = Math.max(0, limit - used);
+  return { limit, used, remaining, kind };
+}
+
 export async function loadQuotaLimits(db: Db, platform: string): Promise<QuotaLimits> {
   const [row] = await db
     .select({ value: schema.appConfig.value })

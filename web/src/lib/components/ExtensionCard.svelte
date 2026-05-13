@@ -53,6 +53,21 @@
     copied = true;
     setTimeout(() => (copied = false), 1500);
   }
+
+  let pairingCode = $state<string | null>(null);
+  let pairingBusy = $state(false);
+
+  async function generatePairingCode() {
+    pairingBusy = true;
+    try {
+      const res = await fetch('/api/settings/extension-pairing', { method: 'POST' });
+      if (!res.ok) return;
+      const body = (await res.json()) as { code: string };
+      pairingCode = body.code;
+    } finally {
+      pairingBusy = false;
+    }
+  }
 </script>
 
 <Card.Root size="sm">
@@ -119,6 +134,25 @@
       {/if}
     {/if}
 
+    <div class="rounded-md border border-border/60 px-3 py-2">
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-xs">
+          <strong>Pair a new device</strong> (recommended over the shared token).
+        </p>
+        <Button size="sm" variant="outline" onclick={generatePairingCode} disabled={pairingBusy}>
+          {pairingBusy ? '…' : 'Generate code'}
+        </Button>
+      </div>
+      {#if pairingCode}
+        <p class="mt-2 text-xs text-muted-foreground">
+          Paste this in the extension popup. Single-use, expires in 10 minutes.
+        </p>
+        <code class="mt-1 block rounded border bg-muted px-2 py-1 font-mono text-sm tracking-widest">
+          {pairingCode}
+        </code>
+      {/if}
+    </div>
+
     <details class="text-xs text-muted-foreground">
       <summary class="cursor-pointer select-none">Install instructions</summary>
       <ol class="mt-2 list-inside list-decimal space-y-1">
@@ -129,7 +163,7 @@
         <li>
           Click <em>Load unpacked</em> and choose <code>extension/dist/</code>.
         </li>
-        <li>Click the Pitchbox icon in the toolbar, paste the URL + token below, Connect.</li>
+        <li>Click the Pitchbox icon in the toolbar, paste the URL + pairing code, Pair.</li>
       </ol>
       <div class="mt-2 font-mono">
         <div>Backend URL: <code>{backendUrl}</code></div>
