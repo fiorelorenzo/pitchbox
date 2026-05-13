@@ -24,11 +24,26 @@ async function setupFixtures() {
     .insert(schema.accounts)
     .values({ projectId: proj.id, platformId: platform!.id, handle: 'u/ret-test' })
     .returning();
+  const [campaign] = await db
+    .insert(schema.campaigns)
+    .values({
+      projectId: proj.id,
+      platformId: platform!.id,
+      name: 'ret-test',
+      skillSlug: 'reddit-scout',
+    })
+    .returning();
   const [run] = await db
     .insert(schema.runs)
-    .values({ kind: 'campaign', agentRunner: 'claude-code', trigger: 'manual', status: 'success' })
+    .values({
+      kind: 'campaign',
+      campaignId: campaign.id,
+      agentRunner: 'claude-code',
+      trigger: 'manual',
+      status: 'success',
+    })
     .returning();
-  return { proj, platform: platform!, account, run };
+  return { proj, platform: platform!, account, campaign, run };
 }
 
 describe('retention worker', () => {
