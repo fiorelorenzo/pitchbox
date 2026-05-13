@@ -21,6 +21,14 @@ export const it: Dict = {
   'nav.daemon.online': 'online',
   'nav.daemon.offline': 'offline',
 
+  // System status footer
+  'status.liveStream': 'Stream live',
+  'status.live': 'attivo',
+  'status.reconnecting': 'riconnessione',
+  'status.connecting': 'connessione',
+  'status.offline': 'offline',
+  'status.checking': 'controllo',
+
   // Inbox header
   'inbox.title': 'Posta in arrivo',
   'inbox.empty': 'Nessuna bozza da rivedere',
