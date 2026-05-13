@@ -18,7 +18,7 @@ const VALID_SCOUT_PROFILE = {
   fitScoreThreshold: 3,
   voice: {
     tone: 'casual',
-    hardBans: ['—'],
+    hardBans: ['-'],
     dos: ['use lowercase opener'],
     openerStyle: 'lowercase-casual',
     disclosure: 'i build this',

@@ -18,7 +18,7 @@ async function reset() {
   await db.execute(sql`TRUNCATE runs, campaigns, projects RESTART IDENTITY CASCADE`);
 }
 
-describe('pitchbox project:extract:start — recommendations context', () => {
+describe('pitchbox project:extract:start - recommendations context', () => {
   let runId: number;
   let projectId: number;
   let folder: string;

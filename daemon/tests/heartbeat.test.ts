@@ -56,7 +56,7 @@ describe('heartbeat.beat', () => {
 
   it('lets callers clear heartbeats on graceful shutdown', async () => {
     // The daemon does not auto-delete on shutdown today, but the table is a
-    // simple module-keyed upsert — verify that a manual clear works as the
+    // simple module-keyed upsert - verify that a manual clear works as the
     // shutdown story expects.
     await beat('shutdown-target');
     await getDb()
