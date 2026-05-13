@@ -65,7 +65,24 @@
 </script>
 
 <Card>
-  <CardHeader><CardTitle>{$t('dashboard.connection.title')}</CardTitle></CardHeader>
+  <CardHeader class="flex flex-row items-center justify-between gap-2 space-y-0">
+    <CardTitle>{$t('dashboard.connection.title')}</CardTitle>
+    <span
+      class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium {pairings.length >
+      0
+        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+        : 'border-muted-foreground/30 bg-muted text-muted-foreground'}"
+    >
+      <span
+        class="size-1.5 rounded-full {pairings.length > 0
+          ? 'bg-emerald-500'
+          : 'bg-muted-foreground/60'}"
+      ></span>
+      {pairings.length > 0
+        ? $t('dashboard.connection.connected')
+        : $t('dashboard.connection.disconnected')}
+    </span>
+  </CardHeader>
   <CardContent class="flex flex-col gap-3">
     {#if pairings.length === 0}
       <p class="text-sm text-muted-foreground">{$t('dashboard.connection.empty')}</p>
@@ -73,23 +90,31 @@
         {$t('dashboard.connection.pair')}
       </Button>
     {:else}
-      {#each pairings as p (p.backendUrl)}
-        <div class="flex items-center justify-between gap-2">
-          <div class="flex-1 truncate">
-            <div class="text-sm font-medium truncate" title={p.backendUrl}>
-              {shortHost(p.backendUrl)}
+      <div class="flex flex-col divide-y divide-border rounded-md border bg-muted/30">
+        {#each pairings as p (p.backendUrl)}
+          <div class="flex items-center justify-between gap-2 px-3 py-2.5">
+            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+              <div class="flex items-center gap-2">
+                <span
+                  class="size-2 shrink-0 rounded-full bg-emerald-500"
+                  aria-hidden="true"
+                ></span>
+                <span class="truncate text-sm font-medium" title={p.backendUrl}>
+                  {shortHost(p.backendUrl)}
+                </span>
+              </div>
+              <div class="pl-4 text-xs text-muted-foreground">
+                {$t('dashboard.connection.handshake-ago', { ago: fmtAgo(p.lastHandshakeAt) })}
+                ·
+                {$t('dashboard.connection.sync-ago', { ago: fmtAgo(p.lastDmSyncAt) })}
+              </div>
             </div>
-            <div class="text-xs text-muted-foreground">
-              {$t('dashboard.connection.handshake-ago', { ago: fmtAgo(p.lastHandshakeAt) })}
-              ·
-              {$t('dashboard.connection.sync-ago', { ago: fmtAgo(p.lastDmSyncAt) })}
-            </div>
+            <Button variant="ghost" size="sm" onclick={() => disconnect(p.backendUrl)}>
+              {$t('dashboard.connection.disconnect')}
+            </Button>
           </div>
-          <Button variant="ghost" size="sm" onclick={() => disconnect(p.backendUrl)}>
-            {$t('dashboard.connection.disconnect')}
-          </Button>
-        </div>
-      {/each}
+        {/each}
+      </div>
       <Button variant="outline" disabled={busy} onclick={pair}>
         {$t('dashboard.connection.pair-another')}
       </Button>

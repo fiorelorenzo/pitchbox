@@ -9,6 +9,8 @@ export const it: Dict = {
   'nav.settings': 'Impostazioni',
 
   'dashboard.connection.title': 'Connessione',
+  'dashboard.connection.connected': 'Connesso',
+  'dashboard.connection.disconnected': 'Non connesso',
   'dashboard.connection.empty':
     'Nessun pairing. Apri la dashboard di Pitchbox e clicca qui sotto.',
   'dashboard.connection.pair': 'Abbina questo tab',
@@ -46,10 +48,12 @@ export const it: Dict = {
   'activity.clear.confirm-ok': 'Svuota',
   'activity.clear.cancel': 'Annulla',
 
-  'activity.dm-sync.run-ok': 'Sync OK — {inserted} nuovi, {replied} risposti.',
-  'activity.dm-sync.run-fail': 'Sync fallito: {reason}',
-  'activity.chat-sync.run-ok': 'Sync chat OK — {messages} messaggi, {inserted} nuovi.',
-  'activity.chat-sync.unauthorized': 'Sync chat non autorizzato — token Matrix scaduto.',
+  'activity.dm-sync.ok': 'Sync inbox Reddit — {inserted} nuovi, {replied} risposti.',
+  'activity.dm-sync.unauthorized': 'Sync inbox Reddit in pausa — fai login su reddit.com.',
+  'activity.dm-sync.error': 'Sync inbox Reddit fallito: {reason}',
+  'activity.chat-sync.ok': 'Sync Reddit Chat — {messages} messaggi, {inserted} nuovi.',
+  'activity.chat-sync.unauthorized': 'Sync Reddit Chat in pausa — token Matrix scaduto.',
+  'activity.chat-sync.error': 'Sync Reddit Chat fallito: {reason}',
   'activity.pairing.added': 'Abbinato a {host}.',
   'activity.pairing.removed': 'Disconnesso {host}.',
   'activity.matrix-token.captured': 'Token di Reddit Chat catturato.',

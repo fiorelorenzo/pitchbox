@@ -76,9 +76,21 @@
   --link: oklch(0.78 0.14 240);
 }
 
+/* Compact density: tighten card paddings and shrink the root font-size so
+ * rem-based spacing scales down across the whole side panel. */
 html.density-compact {
-  --row-py: 0.45rem;
-  --row-px: 0.75rem;
+  font-size: 13px;
+}
+html.density-compact [data-slot='card'] {
+  gap: 0.625rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+html.density-compact [data-slot='card-header'],
+html.density-compact [data-slot='card-content'],
+html.density-compact [data-slot='card-footer'] {
+  padding-left: 0.875rem;
+  padding-right: 0.875rem;
 }
 
 html,
