@@ -1,5 +1,6 @@
 import { parseDraftId } from '../lib/draft-param.js';
 import { api } from '../lib/api.js';
+import { logFromContent } from '../lib/log-from-content.js';
 
 // Auto-attribution for the reddit-poster scenario. Runs on
 // https://www.reddit.com/r/*/submit* and on old.reddit.com's equivalent.
@@ -27,7 +28,22 @@ if (draftId !== null) {
   async function onSubmitted(t3: string) {
     if (sent) return;
     sent = true;
-    await api.sent(draftId!, undefined, undefined, t3);
+    const res = await api.sent(draftId!, undefined, undefined, t3);
+    if (res.ok) {
+      logFromContent({
+        level: 'info',
+        source: 'reddit-action',
+        message: 'activity.reddit-action.submit-sent',
+        meta: { draftId, t3 },
+      });
+    } else {
+      logFromContent({
+        level: 'error',
+        source: 'reddit-action',
+        message: 'activity.reddit-action.fail',
+        meta: { draftId, reason: res.error || String(res.status), status: res.status },
+      });
+    }
   }
 
   const startUrl = location.href;

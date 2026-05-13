@@ -1,3 +1,5 @@
+import { logFromContent } from '../lib/log-from-content.js';
+
 function tryParse(raw: string | null): string | null {
   if (!raw) return null;
   try {
@@ -16,10 +18,21 @@ function readCreds() {
   };
 }
 
+let lastLoggedToken: string | null = null;
+
 function send() {
   const c = readCreds();
   if (!c.matrixUserId || !c.matrixToken) return;
   chrome.runtime.sendMessage({ type: 'pitchbox:chat-creds', ...c });
+  // Dedupe: only emit when the observed token actually changes.
+  if (c.matrixToken !== lastLoggedToken) {
+    lastLoggedToken = c.matrixToken;
+    logFromContent({
+      level: 'info',
+      source: 'matrix-token',
+      message: 'activity.matrix-token.captured',
+    });
+  }
 }
 
 send();

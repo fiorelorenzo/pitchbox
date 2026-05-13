@@ -1,5 +1,6 @@
 import { parseDraftId } from '../lib/draft-param.js';
 import { api } from '../lib/api.js';
+import { logFromContent } from '../lib/log-from-content.js';
 import { findCommentTextarea, findCommentSubmitButton } from './shared/reddit-dom.js';
 
 const draftId = parseDraftId(location.href);
@@ -91,7 +92,22 @@ if (draftId !== null) {
       postId && handle
         ? { postId, accountHandle: handle, postedAt: new Date().toISOString() }
         : undefined;
-    await api.sent(draftId!, sentContent, commentLookup);
+    const res = await api.sent(draftId!, sentContent, commentLookup);
+    if (res.ok) {
+      logFromContent({
+        level: 'info',
+        source: 'reddit-action',
+        message: 'activity.reddit-action.comment-sent',
+        meta: { draftId },
+      });
+    } else {
+      logFromContent({
+        level: 'error',
+        source: 'reddit-action',
+        message: 'activity.reddit-action.fail',
+        meta: { draftId, reason: res.error || String(res.status), status: res.status },
+      });
+    }
   }
 
   function wireSubmit(): boolean {
