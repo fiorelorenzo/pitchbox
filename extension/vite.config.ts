@@ -18,6 +18,12 @@ export default defineConfig({
       $ui: path.resolve(__dirname, 'src/lib/components/ui'),
     },
   },
+  // @lucide/svelte ships `.svelte` source files in its dist; esbuild's
+  // dep-prebundling can't load them. Let Vite's svelte plugin handle these
+  // packages at request time instead.
+  optimizeDeps: {
+    exclude: ['@lucide/svelte', 'bits-ui'],
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

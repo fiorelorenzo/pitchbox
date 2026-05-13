@@ -50,7 +50,7 @@
 </script>
 
 <script lang="ts">
-	import { Loader2 } from 'lucide-svelte';
+	import Loader2 from '@lucide/svelte/icons/loader-circle';
 
 	let {
 		class: className,
