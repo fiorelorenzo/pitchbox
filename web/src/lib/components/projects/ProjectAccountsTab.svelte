@@ -5,10 +5,24 @@
   import { SelectField } from '$lib/components/ui/select-field';
   import { toast } from 'svelte-sonner';
 
-  type Account = { id: number; handle: string; role: string; platformId: number };
+  type Account = {
+    id: number;
+    handle: string;
+    role: string;
+    platformId: number;
+    isDefault: boolean;
+    dailyLimit: number | null;
+    weeklyLimit: number | null;
+  };
   type Platform = { id: number; slug: string };
-  type Props = { projectId: number; accounts: Account[]; platforms: Platform[] };
-  let { projectId, accounts, platforms }: Props = $props();
+  type PlatformDefaults = { daily: number; weekly: number };
+  type Props = {
+    projectId: number;
+    accounts: Account[];
+    platforms: Platform[];
+    platformDefaults?: Record<number, PlatformDefaults>;
+  };
+  let { projectId, accounts, platforms, platformDefaults = {} }: Props = $props();
 
   let addOpen = $state(false);
   let newHandle = $state('');
@@ -57,6 +71,16 @@
     if (!res.ok) toast.error('Failed to update');
     else await invalidateAll();
   }
+
+  async function setDefault(id: number) {
+    const res = await fetch(`/api/projects/${projectId}/accounts/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ isDefault: true }),
+    });
+    if (!res.ok) toast.error('Failed to set default');
+    else await invalidateAll();
+  }
 </script>
 
 <div class="space-y-3 max-w-2xl">
@@ -64,6 +88,15 @@
     <div class="border border-border rounded-md p-3 flex items-center gap-3">
       <code class="text-sm">{a.handle}</code>
       <span class="text-xs text-muted-foreground">{platformSlug(a.platformId)}</span>
+      {#if a.isDefault}
+        <span class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+          default
+        </span>
+      {:else}
+        <Button size="sm" variant="ghost" onclick={() => setDefault(a.id)} class="text-xs">
+          Set default
+        </Button>
+      {/if}
       <SelectField
         value={a.role as 'personal' | 'brand'}
         onValueChange={(v) => changeRole(a.id, v as 'personal' | 'brand')}

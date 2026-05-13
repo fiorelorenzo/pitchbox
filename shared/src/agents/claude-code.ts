@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentRunHandle, AgentRunOptions, AgentRunResult, AgentRunner } from './base.js';
 import { parseClaudeCodeLine } from '../runlog/parsers/claude-code.js';
+import { computeCostUsd } from '../runlog/usage.js';
+import type { RunnerConfig } from './config.js';
 
 type SpawnFn = typeof nodeSpawn;
 
@@ -11,6 +13,7 @@ export interface ClaudeCodeRunnerOptions {
   binary?: string;
   spawn?: SpawnFn;
   logDir?: string;
+  config?: RunnerConfig;
 }
 
 export class ClaudeCodeRunner implements AgentRunner {
@@ -18,11 +21,13 @@ export class ClaudeCodeRunner implements AgentRunner {
   private readonly binary: string;
   private readonly spawn: SpawnFn;
   private readonly logDir: string;
+  private readonly config: RunnerConfig;
 
   constructor(opts: ClaudeCodeRunnerOptions = {}) {
     this.binary = opts.binary ?? 'claude';
     this.spawn = opts.spawn ?? nodeSpawn;
     this.logDir = opts.logDir ?? join(process.cwd(), 'daemon', 'logs');
+    this.config = opts.config ?? {};
   }
 
   run(opts: AgentRunOptions): AgentRunHandle {
@@ -42,6 +47,14 @@ export class ClaudeCodeRunner implements AgentRunner {
       const prompt = `Invoke the '${opts.slug}' skill for campaign ${opts.env.PITCHBOX_CAMPAIGN_ID ?? ''}. The skill knows what to do.`;
 
       let tokensUsed: number | undefined;
+      // Last seen detailed usage block from a 'result' event (later result wins).
+      let lastUsage: {
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;
+        cacheCreationTokens: number;
+        totalCostUsd?: number;
+      } | null = null;
       // Per-run sequence counter — monotonically increasing, owned by this runner.
       let seq = 0;
 
@@ -56,6 +69,9 @@ export class ClaudeCodeRunner implements AgentRunner {
               '--verbose',
               '--output-format',
               'stream-json',
+              ...(this.config.model ? ['--model', this.config.model] : []),
+              ...(this.config.maxTurns ? ['--max-turns', String(this.config.maxTurns)] : []),
+              ...(this.config.extraArgs ?? []),
             ],
             {
               cwd: opts.cwd,
@@ -107,6 +123,21 @@ export class ClaudeCodeRunner implements AgentRunner {
               if (e.kind === 'result' && e.payload?.type === 'result') {
                 const r = e.payload;
                 tokensUsed = (r.inputTokens ?? 0) + (r.outputTokens ?? 0) || tokensUsed;
+                if (
+                  r.inputTokens != null ||
+                  r.outputTokens != null ||
+                  r.cacheReadTokens != null ||
+                  r.cacheCreationTokens != null ||
+                  r.totalCostUsd != null
+                ) {
+                  lastUsage = {
+                    inputTokens: r.inputTokens ?? 0,
+                    outputTokens: r.outputTokens ?? 0,
+                    cacheReadTokens: r.cacheReadTokens ?? 0,
+                    cacheCreationTokens: r.cacheCreationTokens ?? 0,
+                    totalCostUsd: r.totalCostUsd,
+                  };
+                }
               }
             }
 
@@ -144,7 +175,27 @@ export class ClaudeCodeRunner implements AgentRunner {
             reject(err);
           });
         });
-        return { exitCode, logPath, tokensUsed };
+        const lu = lastUsage as {
+          inputTokens: number;
+          outputTokens: number;
+          cacheReadTokens: number;
+          cacheCreationTokens: number;
+          totalCostUsd?: number;
+        } | null;
+        const usage = lu
+          ? {
+              inputTokens: lu.inputTokens,
+              outputTokens: lu.outputTokens,
+              cacheReadTokens: lu.cacheReadTokens,
+              cacheCreationTokens: lu.cacheCreationTokens,
+              costUsd:
+                typeof lu.totalCostUsd === 'number'
+                  ? Number(lu.totalCostUsd.toFixed(4))
+                  : computeCostUsd(lu),
+              costReported: typeof lu.totalCostUsd === 'number',
+            }
+          : undefined;
+        return { exitCode, logPath, tokensUsed, usage };
       } finally {
         if (existsSync(skillDir)) rmSync(skillDir, { recursive: true, force: true });
       }

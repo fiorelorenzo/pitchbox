@@ -1,15 +1,55 @@
 import { runInboxSync } from './background/inbox-sync.js';
 import { runChatSync } from './background/chat-sync.js';
-import { setSettings } from './lib/storage.js';
+import { setSettings, type SyncChannelStatus } from './lib/storage.js';
+import { api } from './lib/api.js';
 
 const ALARM = 'pitchbox:dm-sync';
 const PERIOD_MIN = 10;
 
-type Result = { ok: boolean; inserted?: number; replied?: number; reason?: string };
+type Result = {
+  ok: boolean;
+  inserted?: number;
+  replied?: number;
+  reason?: string;
+  chatStatus?: SyncChannelStatus;
+  legacyStatus?: SyncChannelStatus;
+};
+
+function classifyInbox(r: Result): SyncChannelStatus {
+  if (r.ok) return 'ok';
+  if (r.reason === 'not-logged-in') return 'unauthorized';
+  return 'error';
+}
+
+function classifyChat(r: Result): SyncChannelStatus {
+  if (r.chatStatus) return r.chatStatus;
+  if (r.ok) return 'ok';
+  if (r.reason === 'no-matrix-creds') return 'unknown';
+  if (r.reason === 'matrix-token-invalid') return 'unauthorized';
+  return 'error';
+}
 
 async function runAllSyncs() {
   const inbox = await runInboxSync();
   const chat = await runChatSync();
+  const status = {
+    chat: classifyChat(chat),
+    legacy: classifyInbox(inbox),
+    capturedAt: new Date().toISOString(),
+  };
+  await setSettings({ syncStatus: status });
+  // Heartbeat: report current channel status to the dashboard even when no
+  // items moved. Fire-and-forget — failures here are non-fatal and the next
+  // alarm tick will retry.
+  try {
+    await api.dmSync('reddit', [], [], {
+      chat: status.chat,
+      legacy: status.legacy,
+      captured_at: status.capturedAt,
+    });
+  } catch {
+    // ignored
+  }
   return { inbox, chat };
 }
 

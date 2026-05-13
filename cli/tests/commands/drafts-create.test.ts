@@ -74,6 +74,7 @@ describe('pitchbox drafts:create', () => {
     expect(drafts).toHaveLength(1);
     expect(drafts[0].state).toBe('pending_review');
     expect(drafts[0].targetUser).toBe('bob');
+    expect(drafts[0].metadata).toMatchObject({ subreddit: 'rpg' });
   });
 
   it('skips blocklisted targets and reports them in the response', async () => {

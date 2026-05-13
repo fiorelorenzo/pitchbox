@@ -52,11 +52,52 @@ type SyncResult = {
   inserted?: number;
   replied?: number;
   reason?: string;
+  chatStatus?: 'ok' | 'unauthorized' | 'error' | 'unknown';
 };
+
+// Cheap pre-flight: hit /whoami before the heavier /sync call. If the Matrix
+// token has expired we surface it as a badge + paused state in the popup
+// rather than letting the sync silently fail every 10 min.
+export async function probeMatrixToken(token: string): Promise<'ok' | 'unauthorized' | 'error'> {
+  try {
+    const res = await fetch(`${HS}/_matrix/client/v3/account/whoami`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (res.status === 401 || res.status === 403) return 'unauthorized';
+    if (!res.ok) return 'error';
+    return 'ok';
+  } catch {
+    return 'error';
+  }
+}
+
+function setBadge(state: 'unauthorized' | 'ok'): void {
+  try {
+    if (state === 'unauthorized') {
+      chrome.action?.setBadgeText?.({ text: '!' });
+      chrome.action?.setBadgeBackgroundColor?.({ color: '#dc2626' });
+    } else {
+      chrome.action?.setBadgeText?.({ text: '' });
+    }
+  } catch {
+    // Badge updates are best-effort (e.g. when running under tests without chrome.action).
+  }
+}
 
 export async function runChatSync(): Promise<SyncResult> {
   const s = await getSettings();
   if (!s.matrixToken || !s.matrixUserId) return { ok: false, reason: 'no-matrix-creds' };
+
+  // Liveness probe first.
+  const probe = await probeMatrixToken(s.matrixToken);
+  if (probe === 'unauthorized') {
+    setBadge('unauthorized');
+    return { ok: false, reason: 'matrix-token-invalid', chatStatus: 'unauthorized' };
+  }
+  if (probe === 'error') {
+    return { ok: false, reason: 'matrix-whoami-error', chatStatus: 'error' };
+  }
+  setBadge('ok');
 
   const meId = s.matrixUserId;
   const since = s.matrixSince ?? '';
@@ -75,12 +116,13 @@ export async function runChatSync(): Promise<SyncResult> {
       headers: { authorization: `Bearer ${s.matrixToken}` },
     });
   } catch (e) {
-    return { ok: false, reason: (e as Error).message };
+    return { ok: false, reason: (e as Error).message, chatStatus: 'error' };
   }
   if (res.status === 401 || res.status === 403) {
-    return { ok: false, reason: 'matrix-token-invalid' };
+    setBadge('unauthorized');
+    return { ok: false, reason: 'matrix-token-invalid', chatStatus: 'unauthorized' };
   }
-  if (!res.ok) return { ok: false, reason: `matrix http ${res.status}` };
+  if (!res.ok) return { ok: false, reason: `matrix http ${res.status}`, chatStatus: 'error' };
 
   const data = (await res.json()) as SyncResponse;
   const joins = data.rooms?.join ?? {};
@@ -147,9 +189,9 @@ export async function runChatSync(): Promise<SyncResult> {
     matrixRoomMembers: roomMembers,
   });
 
-  if (items.length === 0) return { ok: true, inserted: 0, replied: 0 };
+  if (items.length === 0) return { ok: true, inserted: 0, replied: 0, chatStatus: 'ok' };
 
   const r = await api.dmSync('reddit', items);
-  if (!r.ok) return { ok: false, reason: r.error };
-  return { ok: true, inserted: r.data.inserted, replied: r.data.replied };
+  if (!r.ok) return { ok: false, reason: r.error, chatStatus: 'ok' };
+  return { ok: true, inserted: r.data.inserted, replied: r.data.replied, chatStatus: 'ok' };
 }

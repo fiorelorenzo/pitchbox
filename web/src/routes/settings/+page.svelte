@@ -3,12 +3,14 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import { Info, Activity, Cpu } from 'lucide-svelte';
+	import { Info, Activity } from 'lucide-svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ExtensionCard from '$lib/components/ExtensionCard.svelte';
 	import SettingsQuotaCard from '$lib/components/SettingsQuotaCard.svelte';
+	import SettingsRunnersCard from '$lib/components/SettingsRunnersCard.svelte';
+	import SettingsAppearanceCard from '$lib/components/SettingsAppearanceCard.svelte';
 	import { daemonStatus } from '$lib/stores/daemon';
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from 'svelte-sonner';
@@ -19,12 +21,28 @@
 
 	type QuotaWindow = { perDay: number; perWeek: number };
 	type PlatformQuota = { dm: QuotaWindow; comment: QuotaWindow; post: QuotaWindow };
+	type RunnerInfo = {
+		slug: string;
+		label: string;
+		implemented: boolean;
+		available: boolean;
+		version: string | null;
+		path: string | null;
+		error: string | null;
+		detectedAt: string;
+		config: { model?: string; maxTurns?: number; extraArgs?: string[] };
+	};
 	type PageData = {
 		extension: { token: string | null; createdAt: string | null; backendUrl: string };
 		quota: Record<string, PlatformQuota>;
+		runners: RunnerInfo[];
+		defaultRunner: string | null;
 	};
 
 	let { data }: { data: PageData } = $props();
+
+	let runners = $state(untrack(() => data.runners));
+	let defaultRunner = $state(untrack(() => data.defaultRunner));
 
 	const DEFAULTS: PlatformQuota = {
 		dm: { perDay: 10, perWeek: 50 },
@@ -40,7 +58,7 @@
 	let saving = $state(false);
 
 	// Tab state — driven by URL ?tab=
-	const VALID_TABS = ['status', 'integrations', 'quota'] as const;
+	const VALID_TABS = ['status', 'runners', 'integrations', 'quota'] as const;
 	type TabValue = (typeof VALID_TABS)[number];
 
 	let activeTab = $state<TabValue>('status');
@@ -112,6 +130,7 @@
 	<Tabs.Root value={activeTab} onValueChange={onTabChange} class="mt-2">
 		<Tabs.List variant="line">
 			<Tabs.Trigger value="status">Status</Tabs.Trigger>
+			<Tabs.Trigger value="runners">Runners</Tabs.Trigger>
 			<Tabs.Trigger value="integrations">Integrations</Tabs.Trigger>
 			<Tabs.Trigger value="quota">Quota</Tabs.Trigger>
 		</Tabs.List>
@@ -163,21 +182,14 @@
 					</Card.Content>
 				</Card.Root>
 
-				<Card.Root size="sm">
-					<Card.Header class="flex flex-row flex-nowrap items-center gap-2 space-y-0">
-						<Cpu class="size-4 shrink-0 text-muted-foreground" />
-						<Card.Title class="text-base min-w-0 flex-1 truncate">Agent runner</Card.Title>
-						<code class="shrink-0 rounded border bg-muted px-1.5 py-[1px] font-mono text-[10px]">
-							claude-code
-						</code>
-					</Card.Header>
-					<Card.Content>
-						<p class="text-xs text-muted-foreground">
-							Each campaign locks its runner at creation time, and each run snapshots the runner it
-							used. Per-campaign overrides plus codex/opencode adapters ship in the next milestones.
-						</p>
-					</Card.Content>
-				</Card.Root>
+				<SettingsAppearanceCard />
+			</div>
+		</Tabs.Content>
+
+		<!-- Runners tab -->
+		<Tabs.Content value="runners" class="mt-4">
+			<div class="max-w-3xl">
+				<SettingsRunnersCard bind:runners bind:defaultRunner />
 			</div>
 		</Tabs.Content>
 

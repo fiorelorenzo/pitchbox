@@ -16,6 +16,15 @@ export interface AgentRunResult {
   exitCode: number;
   logPath: string;
   tokensUsed?: number;
+  /** Detailed token usage + USD cost extracted from the runner's `result`/`usage` block. */
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+    costUsd: number;
+    costReported: boolean;
+  };
 }
 
 export interface AgentRunHandle {

@@ -7,13 +7,20 @@ export default defineManifest({
   description: 'Companion extension for the Pitchbox outreach dashboard.',
   version: pkg.version,
   icons: {
-    48: 'public/icon-48.png',
-    128: 'public/icon-128.png',
+    16: 'public/icons/icon-16.png',
+    32: 'public/icons/icon-32.png',
+    48: 'public/icons/icon-48.png',
+    128: 'public/icons/icon-128.png',
   },
   action: {
     default_title: 'Pitchbox',
     default_popup: 'src/popup/index.html',
-    default_icon: { 48: 'public/icon-48.png' },
+    default_icon: {
+      16: 'public/icons/icon-16.png',
+      32: 'public/icons/icon-32.png',
+      48: 'public/icons/icon-48.png',
+      128: 'public/icons/icon-128.png',
+    },
   },
   background: {
     service_worker: 'src/background.ts',
@@ -34,6 +41,11 @@ export default defineManifest({
       run_at: 'document_idle',
     },
     {
+      matches: ['https://www.reddit.com/r/*/submit*', 'https://old.reddit.com/r/*/submit*'],
+      js: ['src/content/post-submit.ts'],
+      run_at: 'document_idle',
+    },
+    {
       // The Matrix token lives in reddit.com's localStorage (per-origin), so any
       // reddit.com page works — no need to be on /chat. The chat also appears as
       // a side-panel widget from any reddit.com page.
@@ -42,7 +54,7 @@ export default defineManifest({
       run_at: 'document_idle',
     },
   ],
-  permissions: ['storage', 'alarms'],
+  permissions: ['storage', 'alarms', 'tabs'],
   host_permissions: [
     'https://www.reddit.com/*',
     'https://old.reddit.com/*',

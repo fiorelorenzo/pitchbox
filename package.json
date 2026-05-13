@@ -25,24 +25,33 @@
     "migrate:generate": "npm run -w shared migrate:generate",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
-    "dev": "npm run -w web dev",
+    "dev": "concurrently -n web,ext -c blue,magenta --kill-others-on-fail \"npm run -w web dev\" \"npm run -w @pitchbox/extension dev\"",
+    "dev:web": "npm run -w web dev",
+    "dev:extension": "npm run -w @pitchbox/extension dev",
     "migrate:from-ai-game": "tsx scripts/migrate-from-ai-game.ts",
     "seed:embertold": "tsx scripts/seed-embertold.ts",
     "reseed": "npm run -w @pitchbox/shared seed:core && npm run seed:embertold",
     "build:extension": "npm run -w @pitchbox/extension build",
-    "zip:extension": "npm run -w @pitchbox/extension zip"
+    "zip:extension": "npm run -w @pitchbox/extension zip",
+    "docs:dev": "vitepress dev docs --port 5181",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "brand:render": "tsx scripts/render-brand.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
     "@types/node": "^22.19.17",
     "@typescript-eslint/eslint-plugin": "^8.59.0",
     "@typescript-eslint/parser": "^8.59.0",
+    "concurrently": "^9.2.1",
     "eslint": "^10.2.1",
     "globals": "^17.5.0",
     "prettier": "^3.8.3",
+    "sharp": "0.34.5",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.5"
+    "vitepress": "^1.6.4",
+    "vitest": "4.1.5"
   },
   "overrides": {
     "cookie": "^1.0.2",

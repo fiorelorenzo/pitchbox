@@ -9,10 +9,12 @@ export type DraftLike = {
   accountId: number;
   targetUser: string | null;
   kind: string;
+  scheduledSendAfter?: Date | null;
 };
 
 export type SendEvaluation =
   | { kind: 'blocked'; reason: string | null }
+  | { kind: 'scheduled'; sendAfter: Date }
   | { kind: 'ok'; quotaEventDetails: Record<string, unknown> | null };
 
 /**
@@ -32,6 +34,12 @@ export async function evaluateDraftSend(
   draft: DraftLike,
   now: Date = new Date(),
 ): Promise<SendEvaluation> {
+  // Scheduled send-after: drafts with a future scheduled_send_after are not
+  // considered ready to send.
+  if (draft.scheduledSendAfter && draft.scheduledSendAfter.getTime() > now.getTime()) {
+    return { kind: 'scheduled', sendAfter: draft.scheduledSendAfter };
+  }
+
   // Blocklist check (skip when no targetUser)
   if (draft.targetUser) {
     const r = await isBlocklisted(db, {

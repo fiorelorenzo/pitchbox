@@ -12,6 +12,7 @@
   import RedditCommenterTargetingForm from './forms/RedditCommenterTargetingForm.svelte';
   import RedditCommenterVoiceForm from './forms/RedditCommenterVoiceForm.svelte';
   import RedditCommenterValueForm from './forms/RedditCommenterValueForm.svelte';
+  import RedditPosterAngleForm from './forms/RedditPosterAngleForm.svelte';
   import SystemInstructionsForm from './forms/SystemInstructionsForm.svelte';
 
   type SkillRun = { id: number; status: string; params: { objective?: string } | null };
@@ -129,7 +130,7 @@
       onChange={(v) => patch({ offer: v })}
       disabled={generationRunning}
     />
-  {:else}
+  {:else if scenarioSlug === 'reddit-commenter'}
     <RedditCommenterTargetingForm
       value={{
         targetSubreddits: (config.targetSubreddits as string[]) ?? [],
@@ -137,6 +138,39 @@
         avoidKeywords: (config.avoidKeywords as string[]) ?? [],
       }}
       onChange={(v) => patch(v)}
+      disabled={generationRunning}
+    />
+    <RedditCommenterVoiceForm
+      value={(config.voice as never) ?? {
+        tone: 'casual',
+        hardBans: [],
+        dos: [],
+        disclosure: '',
+      }}
+      onChange={(v) => patch({ voice: v })}
+      disabled={generationRunning}
+    />
+    <RedditCommenterValueForm
+      value={{
+        valuePropositions: (config.valuePropositions as string[]) ?? [],
+        productUrl: (config.productUrl as string) ?? '',
+      }}
+      onChange={(v) => patch(v)}
+      disabled={generationRunning}
+    />
+  {:else if scenarioSlug === 'reddit-poster'}
+    <RedditCommenterTargetingForm
+      value={{
+        targetSubreddits: (config.targetSubreddits as string[]) ?? [],
+        topicKeywords: (config.topicKeywords as string[]) ?? [],
+        avoidKeywords: (config.avoidKeywords as string[]) ?? [],
+      }}
+      onChange={(v) => patch(v)}
+      disabled={generationRunning}
+    />
+    <RedditPosterAngleForm
+      value={(config.postAngle as string) ?? ''}
+      onChange={(v) => patch({ postAngle: v })}
       disabled={generationRunning}
     />
     <RedditCommenterVoiceForm

@@ -1,4 +1,4 @@
-# Pitchbox
+<p align="left"><img src="assets/brand/wordmark-dark.svg#gh-dark-mode-only" alt="Pitchbox" height="64"><img src="assets/brand/wordmark-light.svg#gh-light-mode-only" alt="Pitchbox" height="64"></p>
 
 Self-hosted outreach agent for Reddit (and future platforms). You keep the human-in-the-loop; Pitchbox does the research, drafting, and bookkeeping.
 
@@ -93,7 +93,9 @@ When a target user replies, you'll see:
 - **Contacts** — every outreach with platform/account/kind, plus a `replied` badge.
 - **Conversations** — reply threads across DMs and comment-replies, with kind filter.
 - **Blocklist** — add/remove subreddit / user / keyword entries, scoped globally or per-project.
-- **Settings** — tabbed layout (Status / Integrations / Quota): daemon heartbeat, agent runner info, extension API token (generate / rotate), editable per-platform quota limits.
+- **Playbooks** — list of agent-runner playbooks (built-in + user-created), with inline markdown editor and **Duplicate** to fork a built-in.
+- **Notifications** — bell badge with unread count, recent system events (`run.success` / `run.failed` / `drafts.created` / `reply.received`), and an outgoing-webhook configuration so Slack / Discord / Telegram can be wired up.
+- **Settings** — tabbed layout (Status / Integrations / Quota): daemon heartbeat, auto-detected agent runners (CLI path + version, with **Re-detect**), extension API token (generate / rotate), editable per-platform quota limits.
 
 **Daemon**
 
@@ -110,9 +112,9 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.3
 - **`shared/`** — Drizzle schema + migrations, platform adapters (Reddit), `AgentRunner` + `ReplyReader` interfaces, run-log parsers (claude-code + stubs for codex/opencode).
 - **`cli/`** — the `pitchbox` CLI that playbooks call to read/write DB (`run:start`, `run:finish`, `reddit:scout`, `drafts:create`, …).
 - **`web/`** — SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte dashboard. Routes: `/` (home), `/inbox`, `/campaigns`, `/campaigns/[id]`, `/contacts`, `/conversations`, `/blocklist`, `/settings`.
-- **`daemon/`** — heartbeat + scheduler + reply poller (real DM reader still pending).
+- **`daemon/`** — heartbeat + scheduler + reply poller. Reply ingestion is handled by the Chrome extension; the daemon's `ReplyReader` slot stays in place for future server-side readers.
 - **`extension/`** — Chrome MV3 companion (Vite + `@crxjs/vite-plugin`) that auto-marks drafts as `sent` when you submit on Reddit and polls your DM inbox to flip drafts to `replied` once the target user writes back.
-- **`playbooks/`** — agent-agnostic markdown instructions consumed by the `AgentRunner`.
+- **`playbooks/`** — agent-agnostic markdown instructions. The on-disk files are the source for the **built-in** rows in the `playbooks` table; once seeded, the dashboard becomes the editor. Each run snapshots the body of the chosen playbook into `runs.playbook_body` at creation time so future edits never retroactively change past runs. The disk file remains a fallback for legacy runs and for project extraction / skill generation.
 
 ## Roadmap
 
@@ -122,15 +124,36 @@ Monorepo using npm workspaces. Every workspace versions to the same number (`0.3
 - ✅ **M3** — Chrome extension, auto mark-as-sent for DM compose + post-comment drafts
 - ✅ **M4** — DM reply tracking via the extension's inbox poller, Conversations UI (post-comment reply tracking deferred to M4.5)
 - ✅ **M4.5** — comment-reply tracking via the extension's inbox poller
-- ✅ **M5** — blocklist enforcement (creation + send) + advisory rate-limiting (Inbox badge + over-quota warning); safety brake deferred
+- ✅ **M5** — blocklist enforcement (creation + send) + advisory rate-limiting (Inbox badge + over-quota warning)
 - ✅ **M6.1** — full project CRUD (UI + API; basic fields + versioned configs + accounts)
 - ⏳ **M6.2** — templates (few-shot examples + reusable snippets, scoped to project, override per campaign)
 - ⏳ **M6.x** — keyword watches, analytics, A/B tests
 - ⏳ **M7+** — additional platform adapters, posting automation, team mode
 
+## Documentation
+
+The full docs live in [`docs/`](./docs) and ship as a static VitePress site (`npm run docs:dev` for local preview, `npm run docs:build` for production output, auto-deployed to GitHub Pages on push to `main` via `.github/workflows/docs.yml`). Stable entry points:
+
+- [Getting started](./docs/getting-started.md)
+- [Concepts](./docs/concepts.md) · [Agent runners](./docs/runners.md) · [Playbooks](./docs/playbooks.md)
+- [Notifications](./docs/notifications.md) · [Authentication](./docs/auth.md)
+- [Chrome extension](./docs/extension.md) · [Daemon](./docs/daemon.md) · [CLI](./docs/cli.md) · [HTTP API](./docs/api.md) · [Self-hosting](./docs/self-hosting.md)
+
+## Authentication (opt-in)
+
+Set `PITCHBOX_AUTH=on` in `.env` to gate the dashboard behind a username + password login. The first user is created on first login — the credentials you submit become the admin account. Sessions are stored in the `sessions` table and pinned to an httpOnly cookie. Sign out lives at the bottom of the sidebar. Webhook and extension routes (`/api/extension/*`) stay unauthenticated by design — they have their own token.
+
+The self-hosted edition assumes a single user / single org. Multi-tenant orgs and SSO are intentionally deferred (umbrella issue #6 covered the long-term plan; this build ships Phase 1).
+
 ## Agent runners
 
 Each campaign snapshots its runner at creation time; each run snapshots the runner it used. Today only `claude-code` is implemented (spawns `claude -p --verbose --output-format stream-json`). `codex` and `opencode` adapters exist as typed stubs so new runners can be wired in without touching the rest of the pipeline.
+
+Pitchbox auto-detects installed runner CLIs by probing `<binary> --version` on PATH. Detection is cached for the process lifetime and exposed in **Settings → Status → Agent runners** with a **Re-detect** button (and via `GET /api/runners` · `POST /api/runners` for a fresh probe). The campaign-creation form disables runners that are not installed, and `POST /api/run` refuses to dispatch a campaign whose runner is unavailable (returned as a readiness issue).
+
+Per-runner configuration (model · max turns · extra CLI args) lives under `app_config['runner_configs']` and is editable inline under each runner in **Settings → Status → Agent runners**. The dispatch path (`web/src/lib/server/runner.ts`) calls `loadRunnerConfig(slug)` and passes the config into `createAgentRunner(slug, config)` — for `claude-code` that translates to `--model`, `--max-turns`, and any extra flags appended after the standard `-p / --output-format stream-json` invocation.
+
+**Accounts** carry a `platform_id` (first-class column) and an `is_default` flag scoped per (project, platform). A partial unique index guarantees at most one default per scope. The CLI `run:start` filters accounts to the campaign's platform and surfaces them with the default first, so playbooks can pick the right account without explicit wiring. Toggle the default from **Projects → [id] → Accounts**.
 
 ## License
 

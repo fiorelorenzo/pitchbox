@@ -12,6 +12,7 @@
 	import Markdown from '$lib/components/Markdown.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { replyUrl } from '$lib/utils/reply-url';
+	import { getPresenter } from '$lib/platforms/presenter';
 	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 
@@ -26,8 +27,10 @@
 		id: number;
 		runId: number;
 		kind: string;
+		title?: string | null;
 		targetUser: string | null;
-		subreddit: string | null;
+		platformSlug: string | null;
+		metadata: Record<string, unknown> | null;
 		fitScore: number | null;
 		state: string;
 		body: string;
@@ -60,6 +63,15 @@
 	let approving = $state(false);
 	let rejecting = $state(false);
 	let copied = $state(false);
+	// Inline body-edit state (issue #23). Editable while the draft is in
+	// `pending_review` or `proposed`.
+	let editing = $state(false);
+	let editText = $state('');
+	let savingEdit = $state(false);
+	// Regenerate-with-hint state (issue #22).
+	let regenerating = $state(false);
+	let regenerateOpen = $state(false);
+	let regenerateHint = $state('');
 	let events = $state<DraftEvent[]>([]);
 	let loadingEvents = $state(false);
 	let latestReply = $state<LatestReply>(null);
@@ -132,6 +144,64 @@
 		}
 	}
 
+	function startEdit() {
+		if (!draft) return;
+		editText = draft.body;
+		editing = true;
+	}
+
+	function cancelEdit() {
+		editing = false;
+		editText = '';
+	}
+
+	async function saveEdit() {
+		if (!draft) return;
+		savingEdit = true;
+		try {
+			const res = await fetch(`/api/drafts/${draft.id}`, {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ body: editText }),
+			});
+			if (!res.ok) {
+				const msg = await res.text();
+				throw new Error(msg || `HTTP ${res.status}`);
+			}
+			toast.success('Draft updated');
+			editing = false;
+			await invalidateAll();
+		} catch (e) {
+			toast.error('Could not save edit', { description: (e as Error).message });
+		} finally {
+			savingEdit = false;
+		}
+	}
+
+	async function regenerate() {
+		if (!draft) return;
+		regenerating = true;
+		try {
+			const res = await fetch(`/api/drafts/${draft.id}/regenerate`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ hint: regenerateHint || undefined }),
+			});
+			if (!res.ok) {
+				const msg = await res.text();
+				throw new Error(msg || `HTTP ${res.status}`);
+			}
+			toast.success('Regeneration requested');
+			regenerateOpen = false;
+			regenerateHint = '';
+			await invalidateAll();
+		} catch (e) {
+			toast.error('Could not regenerate', { description: (e as Error).message });
+		} finally {
+			regenerating = false;
+		}
+	}
+
 	function openSendDialog() {
 		sentDraftText = draft?.body ?? '';
 		sendDialogOpen = true;
@@ -163,15 +233,19 @@
 		draft?.sentContent != null && draft.sentContent !== draft.body
 	);
 
-	const EVENT_LABEL: Record<string, string> = {
+	const GENERIC_EVENT_LABEL: Record<string, string> = {
 		created: 'Created',
 		approved: 'Approved',
 		rejected: 'Rejected',
 		sent: 'Sent',
 		edited: 'Edited',
 		replied: 'Replied',
-		armed: 'Send clicked on Reddit',
 	};
+
+	function eventLabel(event: string): string {
+		const fromPresenter = getPresenter(draft?.platformSlug ?? null).eventLabel(event);
+		return fromPresenter ?? GENERIC_EVENT_LABEL[event] ?? event;
+	}
 
 	let editedFromDraft = $derived(draft != null && sentDraftText !== draft.body);
 
@@ -197,8 +271,7 @@
 </script>
 
 {#if draft}
-	{@const primary =
-		draft.kind === 'dm' ? `u/${draft.targetUser ?? '—'}` : `r/${draft.subreddit ?? '—'}`}
+	{@const primary = getPresenter(draft.platformSlug).primaryLabel(draft)}
 	{@const urlSep = draft.composeUrl?.includes('?') ? '&' : '?'}
 	{@const openLabel =
 		draft.kind === 'dm'
@@ -212,6 +285,11 @@
 		<header class="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-border">
 			<div class="flex flex-col gap-1.5 min-w-0">
 				<h2 class="text-lg font-semibold truncate">{primary}</h2>
+				{#if draft.kind === 'post' && draft.title}
+					<p class="text-base font-medium text-foreground/90 truncate" title={draft.title}>
+						{draft.title}
+					</p>
+				{/if}
 				<div class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
 					<StatusBadge domain="draft-kind" value={draft.kind} />
 					<StatusBadge domain="draft-state" value={draft.state} />
@@ -253,7 +331,13 @@
 						<Clipboard class="size-3.5" />
 					{/if}
 				</Button>
-				{#if draft.state === 'pending_review'}
+				{#if draft.state === 'pending_review' || draft.state === 'proposed'}
+					{#if !editing}
+						<Button onclick={startEdit} variant="outline" size="sm">Edit</Button>
+						<Button onclick={() => (regenerateOpen = true)} variant="outline" size="sm">
+							Regenerate
+						</Button>
+					{/if}
 					<Button onclick={approve} loading={approving} variant="default" size="sm">
 						Approve
 					</Button>
@@ -300,6 +384,22 @@
 						</ScrollArea>
 					</Tabs.Content>
 				</Tabs.Root>
+			{:else if editing}
+				<div class="flex-1 rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2">
+					<Textarea
+						bind:value={editText}
+						class="flex-1 min-h-[200px] resize-none font-mono text-sm"
+						aria-label="Draft body"
+					/>
+					<div class="flex justify-end gap-2">
+						<Button onclick={cancelEdit} variant="outline" size="sm" disabled={savingEdit}>
+							Cancel
+						</Button>
+						<Button onclick={saveEdit} loading={savingEdit} variant="default" size="sm">
+							Save
+						</Button>
+					</div>
+				</div>
 			{:else}
 				<ScrollArea class="flex-1 rounded-lg border border-border/60 bg-muted/20 p-4">
 					<Markdown source={draft.body} />
@@ -335,7 +435,7 @@
 							class="shrink-0"
 						>
 							<MessageSquare class="size-3.5" />
-							Reply on Reddit
+							{getPresenter(draft.platformSlug).replyActionLabel()}
 						</Button>
 					</div>
 					<p class="mt-1 whitespace-pre-wrap text-sm">{latestReply.body}</p>
@@ -365,7 +465,7 @@
 									{/if}
 								</div>
 								<div class="flex-1 min-w-0 flex items-baseline gap-2 flex-wrap">
-									<span class="text-xs font-medium">{EVENT_LABEL[ev.event] ?? ev.event}</span>
+									<span class="text-xs font-medium">{eventLabel(ev.event)}</span>
 									<span class="text-[10px] text-muted-foreground">by {ev.actor}</span>
 									<span class="text-[10px] text-muted-foreground ml-auto tabular-nums">
 										{relativeTime(ev.createdAt)}
@@ -391,8 +491,8 @@
 		<Dialog.Header>
 			<Dialog.Title>Mark as sent</Dialog.Title>
 			<Dialog.Description>
-				Paste or edit what you actually sent on Reddit. Saved on the draft for future reference and
-				logged to contact history.
+				Paste or edit what you actually sent. Saved on the draft for future reference and logged
+				to contact history.
 			</Dialog.Description>
 		</Dialog.Header>
 		{#if overQuota && quotaKind && usage && limits}
@@ -400,8 +500,8 @@
 				<strong>Quota reached.</strong>
 				You've already sent {usage[quotaKind].day}/{limits[quotaKind].perDay} {labelFor(quotaKind)} today
 				{#if overWeek}and {usage[quotaKind].week}/{limits[quotaKind].perWeek} this week{/if}
-				from this account. Reddit may rate-limit or suspend the account if you continue. Proceed only
-				if necessary.
+				from this account. The platform may rate-limit or suspend the account if you continue.
+				Proceed only if necessary.
 			</div>
 		{/if}
 		<Textarea bind:value={sentDraftText} rows={12} class="font-mono text-xs" />
@@ -424,6 +524,33 @@
 				Cancel
 			</Button>
 			<Button onclick={confirmSent} loading={sendingNow}>Confirm sent</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Regenerate-with-hint dialog -->
+<Dialog.Root bind:open={regenerateOpen}>
+	<Dialog.Content class="max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>Regenerate draft</Dialog.Title>
+			<Dialog.Description>
+				Optional hint for the agent: what should it change in the next pass?
+			</Dialog.Description>
+		</Dialog.Header>
+		<Textarea
+			bind:value={regenerateHint}
+			rows={5}
+			placeholder="e.g. Make it shorter and reference the latest comment."
+		/>
+		<Dialog.Footer>
+			<Button
+				variant="outline"
+				onclick={() => (regenerateOpen = false)}
+				disabled={regenerating}
+			>
+				Cancel
+			</Button>
+			<Button onclick={regenerate} loading={regenerating}>Regenerate</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

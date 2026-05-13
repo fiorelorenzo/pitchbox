@@ -16,5 +16,6 @@ export async function GET({ params, request }: { params: { id: string }; request
     state: draft.state,
     body: draft.body,
     targetUser: draft.targetUser,
+    version: draft.version,
   });
 }

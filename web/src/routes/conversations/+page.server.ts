@@ -1,8 +1,10 @@
 import { getDb, schema } from '$lib/server/db.js';
 import { desc, eq, inArray, sql } from 'drizzle-orm';
+import { hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
 
 export async function load() {
   const db = getDb();
+  const chatSyncUnauthorized = await hasChatUnauthorizedDevice();
 
   const rows = await db
     .select({
@@ -17,7 +19,7 @@ export async function load() {
       draftKind: schema.drafts.kind,
       draftState: schema.drafts.state,
       draftBody: schema.drafts.body,
-      subreddit: schema.drafts.subreddit,
+      draftMetadata: schema.drafts.metadata,
       platformContextUrl: schema.contactHistory.platformContextUrl,
     })
     .from(schema.contactHistory)
@@ -55,5 +57,6 @@ export async function load() {
       ...r,
       lastMessage: latestByContact.get(r.contactId) ?? null,
     })),
+    chatSyncUnauthorized,
   };
 }

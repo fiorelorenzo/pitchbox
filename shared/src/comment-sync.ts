@@ -11,6 +11,13 @@ export type CommentDraftRow = {
   draftId: number;
   accountHandle: string;
   platformId: number;
+  /**
+   * The id we expect to match against `IncomingCommentReply.parentCommentId`.
+   *
+   * For comment-reply drafts this is the `t1_…` id of the comment we left
+   * under someone else's post. For post drafts (`reddit-poster`) this is the
+   * `t3_…` id of the submission — top-level replies have `parent_id == t3_…`.
+   */
   platformCommentId: string;
 };
 

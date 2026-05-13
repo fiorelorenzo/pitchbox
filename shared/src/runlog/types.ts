@@ -59,6 +59,8 @@ export type EventPayload =
       text?: string;
       inputTokens?: number;
       outputTokens?: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
       totalCostUsd?: number;
       durationMs?: number;
       numTurns?: number;

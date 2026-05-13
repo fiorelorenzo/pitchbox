@@ -2,14 +2,18 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import ChatSyncStalledBanner from '$lib/components/ChatSyncStalledBanner.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import * as Card from '$lib/components/ui/card';
   import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   import { Search, Inbox, MessageSquare } from 'lucide-svelte';
   import { relativeTime } from '$lib/utils/time';
   import { cn } from '$lib/utils';
   import { replyUrl } from '$lib/utils/reply-url';
+  import { getPresenter } from '$lib/platforms/presenter';
+  import { encodeThreadId } from './[id]/thread-id';
 
   type Convo = {
     contactId: number;
@@ -19,7 +23,7 @@
     lastContactedAt: string;
     repliedAt: string | null;
     chatRoomId: string | null;
-    subreddit: string | null;
+    draftMetadata: Record<string, unknown> | null;
     platformContextUrl: string | null;
     draftId: number | null;
     draftKind: string | null;
@@ -33,7 +37,7 @@
     } | null;
   };
 
-  let { data }: { data: { conversations: Convo[] } } = $props();
+  let { data }: { data: { conversations: Convo[]; chatSyncUnauthorized?: boolean } } = $props();
 
   type Filter = 'all' | 'replied' | 'awaiting';
   let filter = $derived(($page.url.searchParams.get('filter') as Filter) ?? 'all');
@@ -95,7 +99,7 @@
   }
   const AVATAR_CLASS: Record<Tone, string> = {
     default: 'bg-muted text-foreground/70 ring-border/50',
-    replied: 'bg-violet-500/15 text-violet-300 ring-violet-500/25',
+    replied: 'bg-violet-500/15 text-violet-700 dark:text-violet-300 ring-violet-500/25',
     awaiting: 'bg-muted text-muted-foreground ring-border/50',
   };
 </script>
@@ -109,6 +113,8 @@
   title="Conversations"
   description="Every outreach you've sent plus replies captured by the browser extension."
 />
+
+<ChatSyncStalledBanner show={!!data.chatSyncUnauthorized} />
 
 <div class="mb-4 flex flex-wrap items-center gap-2">
   {#each [{ key: 'all', label: 'All' }, { key: 'awaiting', label: 'Awaiting reply' }, { key: 'replied', label: 'Replied' }] as f (f.key)}
@@ -135,7 +141,7 @@
     </button>
   {/each}
 
-  <div class="relative ml-auto w-64">
+  <div class="relative w-full sm:ml-auto sm:w-64">
     <Search
       class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
     />
@@ -145,6 +151,19 @@
       class="h-8 pl-8 text-xs"
     />
   </div>
+
+  <Button
+    variant="outline"
+    size="sm"
+    onclick={() => {
+      // Mirror the current conversations filters into the export URL.
+      const qs = new URLSearchParams($page.url.searchParams);
+      qs.set('format', 'csv');
+      window.location.href = `/api/export/conversations?${qs.toString()}`;
+    }}
+  >
+    Export CSV
+  </Button>
 </div>
 
 <div class="mb-4 flex flex-wrap items-center gap-2">
@@ -185,22 +204,31 @@
       </div>
     {:else}
       {#each filtered as c (c.contactId)}
-        {@const href = c.draftId != null ? `/inbox?state=all&focus=${c.draftId}` : null}
+        {@const threadId = encodeThreadId({
+          accountHandle: c.accountHandle,
+          targetUser: c.targetUser,
+          platform: c.platformSlug,
+        })}
+        {@const href = `/conversations/${threadId}`}
+        {@const cp = getPresenter(c.platformSlug)}
+        {@const subredditCtx =
+          c.draftKind === 'post_comment' && typeof c.draftMetadata?.subreddit === 'string'
+            ? (c.draftMetadata.subreddit as string)
+            : null}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
-          role={href ? 'button' : undefined}
-          tabindex={href ? 0 : undefined}
-          aria-label={href ? `Open draft ${c.draftId} for u/${c.targetUser}` : undefined}
-          onclick={() => href && goto(href)}
+          role="button"
+          tabindex={0}
+          aria-label={`Open conversation with ${cp.userLabel(c.targetUser)}`}
+          onclick={() => goto(href)}
           onkeydown={(e) => {
-            if (href && (e.key === 'Enter' || e.key === ' ')) {
+            if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               goto(href);
             }
           }}
           class={cn(
-            'group flex items-start gap-3 px-4 py-3 transition-colors',
-            href && 'cursor-pointer hover:bg-accent/40',
+            'group flex items-start gap-3 px-4 py-3 transition-colors cursor-pointer hover:bg-accent/40',
             c.repliedAt && 'border-l-2 border-l-violet-400/50',
           )}
         >
@@ -215,7 +243,7 @@
           </div>
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span class="font-mono text-sm font-medium">u/{c.targetUser}</span>
+              <span class="font-mono text-sm font-medium">{cp.userLabel(c.targetUser)}</span>
               {#if c.draftKind}
                 <StatusBadge domain="draft-kind" value={c.draftKind} />
               {/if}
@@ -223,9 +251,9 @@
                 <StatusBadge domain="draft-state" value="replied" />
               {/if}
               <span class="text-xs text-muted-foreground">
-                via u/{c.accountHandle}
-                {#if c.draftKind === 'post_comment' && c.subreddit}
-                  · r/{c.subreddit}
+                via {cp.userLabel(c.accountHandle)}
+                {#if subredditCtx}
+                  · {cp.primaryLabel({ kind: 'post_comment', targetUser: null, metadata: { subreddit: subredditCtx } })}
                 {:else}
                   · {c.platformSlug}
                 {/if}
@@ -247,11 +275,11 @@
                   rel="noopener"
                   onclick={(e) => e.stopPropagation()}
                   class="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-0.5 text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-foreground"
-                  title={c.draftKind === 'post_comment'
-                    ? `Open the comment thread on r/${c.subreddit ?? '?'}`
+                  title={c.draftKind === 'post_comment' && subredditCtx
+                    ? `Open the thread on ${cp.primaryLabel({ kind: 'post_comment', targetUser: null, metadata: { subreddit: subredditCtx } })}`
                     : c.chatRoomId
-                      ? `Open Reddit chat with u/${c.targetUser}`
-                      : `Open u/${c.targetUser}'s profile`}
+                      ? `Open chat with ${cp.userLabel(c.targetUser)}`
+                      : `Open ${cp.userLabel(c.targetUser)}'s profile`}
                 >
                   <MessageSquare class="size-3" />
                   Reply
@@ -261,7 +289,7 @@
             {#if c.lastMessage}
               <p class="mt-1 text-sm leading-snug">
                 <span class="text-muted-foreground"
-                  >{c.lastMessage.isFromUs ? 'you' : `u/${c.lastMessage.author}`}:</span
+                  >{c.lastMessage.isFromUs ? 'you' : cp.userLabel(c.lastMessage.author)}:</span
                 >
                 {snippet(c.lastMessage.body)}
               </p>

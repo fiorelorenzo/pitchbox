@@ -28,7 +28,14 @@ export type ProjectListRow = {
   accountCount: number;
 };
 
-export async function listProjects(db: Db): Promise<ProjectListRow[]> {
+export async function listProjects(
+  db: Db,
+  opts: { organizationId?: number | null } = {},
+): Promise<ProjectListRow[]> {
+  // Single query — LEFT JOIN both children, GROUP BY the project. Faster than
+  // the previous per-row correlated subqueries once the project count grows.
+  const orgFilter =
+    opts.organizationId != null ? sql`WHERE p.organization_id = ${opts.organizationId}` : sql``;
   const result = await db.execute<{
     id: number;
     slug: string;
@@ -43,9 +50,13 @@ export async function listProjects(db: Db): Promise<ProjectListRow[]> {
     SELECT
       p.id, p.slug, p.name, p.description, p.default_agent_runner,
       p.created_at, p.updated_at,
-      COALESCE((SELECT COUNT(*) FROM campaigns c WHERE c.project_id = p.id), 0)::int AS campaign_count,
-      COALESCE((SELECT COUNT(*) FROM accounts a WHERE a.project_id = p.id), 0)::int AS account_count
+      COALESCE(COUNT(DISTINCT c.id), 0)::int AS campaign_count,
+      COALESCE(COUNT(DISTINCT a.id), 0)::int AS account_count
     FROM projects p
+    LEFT JOIN campaigns c ON c.project_id = p.id
+    LEFT JOIN accounts  a ON a.project_id = p.id
+    ${orgFilter}
+    GROUP BY p.id
     ORDER BY p.created_at DESC
   `);
   const list =
@@ -86,12 +97,23 @@ export type CreateProjectArgs = {
   name: string;
   description?: string | null;
   defaultAgentRunner?: string;
+  organizationId?: number | null;
   account?: { handle: string; role: 'personal' | 'brand'; platformId: number };
 };
 
 export async function createProjectTx(db: Db, args: CreateProjectArgs): Promise<{ id: number }> {
   return await db.transaction(async (tx) => {
     let project: { id: number } | undefined;
+    // Resolve org: explicit > the only existing org (single-tenant self-host) > null.
+    let organizationId: number | null = args.organizationId ?? null;
+    if (organizationId == null) {
+      const [row] = await tx
+        .select({ id: schema.organizations.id })
+        .from(schema.organizations)
+        .where(eq(schema.organizations.slug, 'default'))
+        .limit(1);
+      organizationId = row?.id ?? null;
+    }
     try {
       [project] = await tx
         .insert(schema.projects)
@@ -100,6 +122,7 @@ export async function createProjectTx(db: Db, args: CreateProjectArgs): Promise<
           name: args.name,
           description: args.description ?? null,
           defaultAgentRunner: args.defaultAgentRunner ?? 'claude-code',
+          organizationId,
         })
         .returning({ id: schema.projects.id });
     } catch (e) {
