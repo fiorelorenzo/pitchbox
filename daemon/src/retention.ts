@@ -58,11 +58,15 @@ async function deleteTerminalDraftsBatch(cutoffIso: string): Promise<number> {
   // the age proxy so drafts that never moved out of a terminal state still
   // age out (sent_at can be null on rejected rows). `contact_history.draft_id`
   // is ON DELETE SET NULL in the schema, so contact_history rows survive.
+  // node-postgres needs a single array bound to ANY(), not N scalar params.
+  // sql.raw is unsafe here (interpolation), so build the IN list as a fixed
+  // SQL literal — TERMINAL_DRAFT_STATES is a compile-time constant.
+  const states = TERMINAL_DRAFT_STATES.map((s) => `'${s}'`).join(', ');
   const res = await getDb().execute(sql`
     DELETE FROM drafts
     WHERE id IN (
       SELECT id FROM drafts
-      WHERE state = ANY(${TERMINAL_DRAFT_STATES as unknown as string[]})
+      WHERE state IN (${sql.raw(states)})
         AND created_at < ${cutoffIso}
       ORDER BY id
       LIMIT ${RETENTION_BATCH_SIZE}
