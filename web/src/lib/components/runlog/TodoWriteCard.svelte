@@ -46,7 +46,7 @@
 						<Loader2 class="size-3.5 text-primary animate-spin shrink-0 mt-0.5" />
 						<span class="italic text-foreground/80 break-words min-w-0">{todo.activeForm || todo.content}</span>
 					{:else}
-						<Circle class="size-3.5 text-muted-foreground/40 shrink-0 mt-0.5" />
+						<Circle class="size-3.5 text-muted-foreground/60 shrink-0 mt-0.5" />
 						<span class="text-muted-foreground/70 break-words min-w-0">{todo.content}</span>
 					{/if}
 				</li>
