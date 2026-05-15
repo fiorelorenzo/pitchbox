@@ -69,6 +69,30 @@
   let extractionRunning = $derived(
     runningRunId !== null || extractionRunsState.some((r) => r.status === 'running'),
   );
+
+  // Keep the local description in sync with the upstream prop. Two cases this
+  // covers:
+  //   1) Fresh navigation onto a project whose description was populated by a
+  //      prior auto-extract: the $state initializer above runs once and may
+  //      capture an early-mount value of project.description. The effect
+  //      below re-syncs after props settle.
+  //   2) Auto-extract finishes in this tab: after invalidateAll() the prop
+  //      updates; the SSE handler also writes `description` directly, but we
+  //      keep this effect as a safety net so the editor never lags behind
+  //      project.description while no extraction is running.
+  // We only overwrite the local state when the user hasn't started editing
+  // (i.e. local description is empty) - otherwise we'd clobber edits.
+  $effect(() => {
+    const upstream = project.description ?? '';
+    if (!extractionRunning && upstream && !description) {
+      description = upstream;
+    }
+  });
+
+  // Keep the runs table reactive to upstream prop changes (post-invalidate).
+  $effect(() => {
+    extractionRunsState = extractionRuns;
+  });
   // svelte-ignore state_referenced_locally
   let initialSource = $state<{ kind: 'folder' | 'git'; value: string } | undefined>(
     (() => {
