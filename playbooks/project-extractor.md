@@ -35,7 +35,7 @@ Environment variables:
 4. **Propose 0-10 campaign recommendations.** Read `existingCampaigns` from the payload - these are campaigns the user has already configured for this project. **Do not duplicate**: skip any scenario+angle already covered. Then look at `scenarios` for the list of available campaign types and pair each promising angle with the right `scenarioSlug`.
 
    Each recommendation is an object:
-   - `scenarioSlug`: one of the slugs listed in `scenarios`.
+   - `scenarioSlug`: one of the slugs listed in `scenarios`. Reddit scenarios (`reddit-scout` / `reddit-commenter` / `reddit-poster`) suit consumer, prosumer, hobby, and broad B2C audiences. Hacker News scenarios (`hn-commenter` / `hn-poster`) suit developer-tools, infrastructure, open-source, AI / ML, security, and technical-founder audiences - the kind of post that would make sense on the front page of news.ycombinator.com. **Do not propose HN for a product that is not technical in nature.** A given project may earn both Reddit and HN recommendations if it has audiences on both platforms; many won't.
    - `name`: 1-7 word title for the campaign (e.g. "Reddit RPG launch").
    - `objective`: 1-3 sentences describing who to reach and the angle (be concrete - vague objectives produce mediocre campaigns).
 
