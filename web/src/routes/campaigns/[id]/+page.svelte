@@ -189,12 +189,12 @@
 	</div>
 	<Button
 		onclick={runNow}
-		loading={isStarting}
 		size="sm"
-		disabled={!ready || isStarting}
+		disabled={!ready}
+		loading={isStarting}
 		title={!ready ? 'Resolve the setup items below first' : undefined}
 	>
-		{isStarting ? 'Starting…' : 'Run now'}
+		Run now
 	</Button>
 </header>
 

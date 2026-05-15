@@ -70,9 +70,7 @@
   </label>
 
   <div class="flex gap-2 pt-2">
-    <Button type="submit" disabled={saving || !name.trim()}
-      >{saving ? 'Creating…' : 'Create project'}</Button
-    >
+    <Button type="submit" disabled={!name.trim()} loading={saving}>Create project</Button>
     <a href="/projects"><Button type="button" variant="ghost">Cancel</Button></a>
   </div>
 </form>

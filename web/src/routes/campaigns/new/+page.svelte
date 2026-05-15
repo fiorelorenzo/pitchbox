@@ -185,7 +185,7 @@
 		<Input bind:value={cron} placeholder="0 9 * * *" />
 	</label>
 	<div class="flex gap-2">
-		<Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
+		<Button type="submit" loading={saving}>Create</Button>
 		<Button type="button" variant="ghost" onclick={() => goto('/campaigns')}>Cancel</Button>
 	</div>
 </form>

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import Spinner from '$lib/components/Spinner.svelte';
   import { Input } from '$lib/components/ui/input';
   import { SelectField } from '$lib/components/ui/select-field';
   import { toast } from 'svelte-sonner';
@@ -132,7 +133,9 @@
       descriptionBeforeUpdate = descriptionAtLaunch;
       runningRunId = null;
       await invalidateAll();
-      // Pull the freshly-loaded values from props after invalidation completed.
+      // Wait for Svelte to flush the new props before reading project.description,
+      // otherwise this branch may race with the load and re-show the empty state.
+      await tick();
       description = project.description ?? '';
       extractionRunsState = extractionRuns;
       toast.success('Description updated', {
@@ -198,9 +201,10 @@
     </div>
     {#if extractionRunning}
       <div
-        class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+        class="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
       >
-        An extraction is running - the editor is locked until it finishes.
+        <Spinner size="xs" class="text-amber-600 dark:text-amber-300" />
+        <span>An extraction is running - the editor is locked until it finishes.</span>
       </div>
       <MarkdownEditor
         value={description}
@@ -253,9 +257,7 @@
   {/if}
 
   <div class="flex justify-end pt-2 border-t">
-    <Button onclick={save} disabled={saving || extractionRunning}>
-      {saving ? 'Saving…' : 'Save'}
-    </Button>
+    <Button onclick={save} disabled={extractionRunning} loading={saving}>Save</Button>
   </div>
 
   <div
