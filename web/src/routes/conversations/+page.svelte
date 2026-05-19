@@ -8,7 +8,8 @@
   import * as Card from '$lib/components/ui/card';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { Search, Inbox, MessageSquare } from 'lucide-svelte';
+  import { Search, MessageSquare } from 'lucide-svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
   import { relativeTime } from '$lib/utils/time';
   import { cn } from '$lib/utils';
   import { replyUrl } from '$lib/utils/reply-url';
@@ -187,21 +188,18 @@
 <Card.Root size="sm">
   <Card.Content class="divide-y divide-border p-0">
     {#if data.conversations.length === 0}
-      <div class="flex flex-col items-center gap-3 px-6 py-12 text-center">
-        <div class="rounded-full bg-muted p-3 text-muted-foreground">
-          <Inbox class="size-6" />
-        </div>
-        <p class="text-sm text-muted-foreground">No conversations yet.</p>
-        <p class="max-w-sm text-xs text-muted-foreground">
-          Once you send a DM and the browser extension picks up a reply, the thread will land here.
-          Connect the extension from
-          <a href="/settings" class="text-foreground hover:underline">Settings → Browser extension</a>.
-        </p>
-      </div>
+      <EmptyState
+        icon={MessageSquare}
+        title="No conversations yet"
+        description="Once you send a DM or a comment-reply and the browser extension picks up an inbound message, the thread will land here. Pair the extension from the side panel to start syncing."
+      />
     {:else if filtered.length === 0}
-      <div class="px-6 py-10 text-center text-sm text-muted-foreground">
-        No conversations match these filters.
-      </div>
+      <EmptyState
+        icon={Search}
+        title="No matches"
+        description="No conversations match the current filters. Try clearing the search or switching the kind filter."
+        size="sm"
+      />
     {:else}
       {#each filtered as c (c.contactId)}
         {@const threadId = encodeThreadId({

@@ -3,6 +3,7 @@ export {
   getScenarioMeta,
   type ScenarioSlug,
   type ScenarioMeta,
+  type ScenarioPlatformSlug,
 } from './scenarios.js';
 
 export { SCENARIO_SCHEMAS, getSchema, type CampaignProfile } from './scenario-schemas.js';

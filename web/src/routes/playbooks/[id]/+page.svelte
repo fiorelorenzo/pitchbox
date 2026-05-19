@@ -85,7 +85,7 @@
 		<Button variant="outline" onclick={() => goto('/playbooks')}>Back</Button>
 		<Button variant="outline" onclick={duplicate}>Duplicate</Button>
 		{#if !readOnly}
-			<Button onclick={save} disabled={saving || !dirty}>{saving ? 'Saving…' : 'Save'}</Button>
+			<Button onclick={save} disabled={!dirty} loading={saving}>Save</Button>
 		{/if}
 	{/snippet}
 </PageHeader>

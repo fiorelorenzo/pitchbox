@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { Plus, Trash2 } from 'lucide-svelte';
+	import { Plus, Trash2, Shield } from 'lucide-svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -181,9 +182,12 @@
 		</Card.Header>
 		<Card.Content>
 			{#if data.entries.length === 0}
-				<p class="text-sm text-muted-foreground italic py-6 text-center">
-					Empty blocklist - add your first entry on the left.
-				</p>
+				<EmptyState
+					icon={Shield}
+					title="Empty blocklist"
+					description="Block usernames, subreddits, or keywords here. The drafts pipeline and the send path both consult the blocklist before any outreach goes out."
+					size="sm"
+				/>
 			{:else}
 				<Table.Root>
 					<Table.Header>

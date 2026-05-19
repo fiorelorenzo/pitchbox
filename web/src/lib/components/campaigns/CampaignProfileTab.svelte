@@ -200,9 +200,7 @@
   />
 
   <div class="pt-2 border-t flex justify-end">
-    <Button onclick={save} disabled={saving || generationRunning}>
-      {saving ? 'Saving…' : 'Save'}
-    </Button>
+    <Button onclick={save} disabled={generationRunning} loading={saving}>Save</Button>
   </div>
 </div>
 

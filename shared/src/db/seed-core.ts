@@ -34,6 +34,11 @@ const BUILTIN_PLAYBOOKS = [
     name: 'Hacker News commenter',
     description: 'Draft helpful comment-replies on Hacker News stories that match the project.',
   },
+  {
+    slug: 'hn-poster',
+    name: 'Hacker News poster',
+    description: 'Draft proactive Show HN / Ask HN / text submissions (title + body).',
+  },
 ];
 
 function repoRoot(): string {

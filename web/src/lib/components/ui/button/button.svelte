@@ -50,7 +50,7 @@
 </script>
 
 <script lang="ts">
-	import { Loader2 } from 'lucide-svelte';
+	import Spinner from '$lib/components/Spinner.svelte';
 
 	let {
 		class: className,
@@ -81,7 +81,7 @@
 		{...restProps}
 	>
 		{#if loading}
-			<Loader2 class="animate-spin" aria-hidden="true" />
+			<Spinner size="sm" />
 		{/if}
 		{@render children?.()}
 	</a>
@@ -96,7 +96,7 @@
 		{...restProps}
 	>
 		{#if loading}
-			<Loader2 class="animate-spin" aria-hidden="true" />
+			<Spinner size="sm" />
 		{/if}
 		{@render children?.()}
 	</button>

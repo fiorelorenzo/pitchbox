@@ -370,7 +370,7 @@
       <Button variant="ghost" onclick={() => onOpenChange(false)} disabled={submitting}>
         Cancel
       </Button>
-      <Button onclick={submit} disabled={submitting}>{submitting ? 'Starting…' : 'Run'}</Button>
+      <Button onclick={submit} loading={submitting}>Run</Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

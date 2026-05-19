@@ -89,7 +89,7 @@
       <code class="text-sm">{a.handle}</code>
       <span class="text-xs text-muted-foreground">{platformSlug(a.platformId)}</span>
       {#if a.isDefault}
-        <span class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+        <span class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
           default
         </span>
       {:else}

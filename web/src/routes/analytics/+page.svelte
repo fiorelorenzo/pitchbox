@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Spinner from '$lib/components/Spinner.svelte';
 
   type Stage = { stage: string; count: number };
 
@@ -62,7 +63,10 @@
   </div>
 
   {#if loading}
-    <p class="text-sm text-muted-foreground">Loading…</p>
+    <div class="flex items-center gap-2 text-sm text-muted-foreground">
+      <Spinner size="sm" />
+      <span>Loading…</span>
+    </div>
   {:else if error}
     <p class="text-sm text-destructive">Failed to load funnel: {error}</p>
   {:else if stages.length === 0}
