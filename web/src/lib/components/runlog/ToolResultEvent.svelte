@@ -64,14 +64,14 @@
 			<span class="text-xs font-medium text-destructive">Error</span>
 		{:else if env}
 			{#if env.ok}
-				<CheckCircle2 class="size-3.5 text-green-400 shrink-0" />
+				<CheckCircle2 class="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
 				<span class="text-xs text-muted-foreground">{envelopePreview}</span>
 			{:else}
 				<XCircle class="size-3.5 text-destructive shrink-0" />
 				<span class="text-xs font-medium text-destructive">{env.error ?? 'Command failed'}</span>
 			{/if}
 		{:else}
-			<CheckCircle2 class="size-3.5 text-green-400/70 shrink-0" />
+			<CheckCircle2 class="size-3.5 text-emerald-700/70 dark:text-emerald-400/70 shrink-0" />
 			<span class="text-xs text-muted-foreground truncate flex-1">
 				{data.text.split('\n')[0].slice(0, 80)}
 				{data.text.split('\n')[0].length > 80 ? '…' : ''}

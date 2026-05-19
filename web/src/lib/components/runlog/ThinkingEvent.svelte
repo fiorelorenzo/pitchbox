@@ -21,7 +21,7 @@
 		class="flex items-center gap-2 w-full text-left hover:text-foreground/80 transition-colors group"
 		aria-expanded={!collapsed}
 	>
-		<Brain class="size-3.5 text-slate-400 shrink-0" />
+		<Brain class="size-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
 		<span class="text-xs font-medium text-muted-foreground">Thinking</span>
 		{#if collapsed && preview}
 			<span class="text-xs text-muted-foreground/60 italic truncate min-w-0 flex-1">{preview}</span>

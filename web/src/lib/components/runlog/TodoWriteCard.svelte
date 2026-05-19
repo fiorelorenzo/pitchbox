@@ -40,7 +40,7 @@
 			{#each todos as todo}
 				<li class="flex items-start gap-2 text-xs min-w-0">
 					{#if todo.status === 'completed'}
-						<CheckCircle2 class="size-3.5 text-green-400 shrink-0 mt-0.5" />
+						<CheckCircle2 class="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
 						<span class="line-through text-muted-foreground/50 break-words min-w-0">{todo.content}</span>
 					{:else if todo.status === 'in_progress'}
 						<Loader2 class="size-3.5 text-primary animate-spin shrink-0 mt-0.5" />
