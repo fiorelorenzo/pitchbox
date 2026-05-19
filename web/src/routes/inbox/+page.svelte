@@ -5,6 +5,7 @@
 	import { invalidateAll, goto } from '$app/navigation';
 	import { navigating, page } from '$app/stores';
 	import { ChevronDown, X, Inbox, Keyboard, ArrowLeft, SlidersHorizontal } from 'lucide-svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -581,16 +582,14 @@
 				{/each}
 			</div>
 		{:else if data.drafts.length === 0}
-			<div class="flex flex-col items-center justify-center h-full gap-3 p-6 text-center">
-				<Inbox class="size-10 text-muted-foreground/40" />
-				<div>
-					<p class="text-sm font-medium">No drafts yet</p>
-					<p class="text-xs text-muted-foreground mt-0.5">
-						Drafts will appear here when a campaign runs.
-					</p>
-				</div>
+			<EmptyState
+				icon={Inbox}
+				title="No drafts yet"
+				description="Drafts land here as soon as a campaign produces them. Run a campaign or wait for the next scheduled tick."
+				class="h-full"
+			>
 				<Button variant="outline" size="sm" href="/campaigns">Go to Campaigns</Button>
-			</div>
+			</EmptyState>
 		{:else}
 			{#each data.drafts as draft (draft.id)}
 				{@const isSelected = draft.id === selectedId}

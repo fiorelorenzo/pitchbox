@@ -41,9 +41,7 @@
         LLM-summarized patterns from this project's outreach history.
       </p>
     </div>
-    <Button variant="outline" onclick={regenerate} disabled={regenerating}>
-      {regenerating ? 'Regenerating…' : 'Regenerate now'}
-    </Button>
+    <Button variant="outline" onclick={regenerate} loading={regenerating}>Regenerate now</Button>
   </div>
 
   {#if latestInsight}

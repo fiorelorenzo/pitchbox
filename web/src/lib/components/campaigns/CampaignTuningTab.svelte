@@ -189,12 +189,8 @@
         disabled={submitting || runningRunId !== null}
       />
       <div class="flex justify-end">
-        <Button onclick={tune} disabled={submitting || runningRunId !== null}>
-          {runningRunId !== null
-            ? 'Tuning in progress…'
-            : submitting
-              ? 'Starting…'
-              : 'Tune this campaign'}
+        <Button onclick={tune} loading={submitting || runningRunId !== null}>
+          {runningRunId !== null ? 'Tuning in progress' : 'Tune this campaign'}
         </Button>
       </div>
     </Card.Content>

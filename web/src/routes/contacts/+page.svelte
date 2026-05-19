@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { Search } from 'lucide-svelte';
+	import { Search, Users } from 'lucide-svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import { SelectField } from '$lib/components/ui/select-field';
@@ -115,9 +116,11 @@
 	</Card.Header>
 	<Card.Content>
 		{#if data.contacts.length === 0}
-			<p class="text-sm text-muted-foreground italic py-10 text-center">
-				No contacts yet. Mark drafts as sent to populate this table.
-			</p>
+			<EmptyState
+				icon={Users}
+				title="No contacts yet"
+				description="Every time a draft is marked as sent, the target lands here with first-seen / last-seen timestamps. Run a campaign and approve a draft to populate the table."
+			/>
 		{:else}
 			<div class="w-full overflow-x-auto">
 			<Table.Root>

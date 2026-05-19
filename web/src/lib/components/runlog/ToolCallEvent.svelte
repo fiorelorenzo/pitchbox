@@ -122,11 +122,11 @@
 			class="flex items-center gap-2 flex-1 text-left hover:text-foreground/80 transition-colors min-w-0 group"
 			aria-expanded={!collapsed}
 		>
-			<Icon class="size-3.5 text-blue-400 shrink-0" />
+			<Icon class="size-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
 
 			<!-- Tool name chip -->
 			<span
-				class="rounded bg-blue-950/50 border border-blue-500/30 text-blue-300 text-[10px] font-mono px-1.5 py-0.5 shrink-0 font-semibold"
+				class="rounded bg-blue-500/15 border border-blue-500/30 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 text-[10px] font-mono px-1.5 py-0.5 shrink-0 font-semibold"
 			>
 				{data.name}
 			</span>
@@ -135,7 +135,7 @@
 			<span class="flex-1 min-w-0 text-xs text-muted-foreground truncate">
 				{#if isBashTool}
 					{#if isPitchboxCmd}
-						<span class="text-orange-400 font-mono">
+						<span class="text-orange-600 dark:text-orange-400 font-mono">
 							{command.trimStart().slice('pitchbox '.length).split(/\s/)[0]}
 						</span>
 						<span class="text-muted-foreground/60 font-mono"
@@ -181,8 +181,8 @@
 			<!-- Status badge -->
 			<span class="shrink-0 flex items-center gap-1">
 				{#if statusKind === 'pending'}
-					<Loader2 class="size-3 animate-spin text-amber-400" />
-					<span class="text-[10px] text-amber-400/80 font-mono">running</span>
+					<Loader2 class="size-3 animate-spin text-amber-600 dark:text-amber-400" />
+					<span class="text-[10px] text-amber-700/90 dark:text-amber-400/80 font-mono">running</span>
 				{:else if statusKind === 'error'}
 					<XCircle class="size-3 text-destructive" />
 					{#if pr?.exitCode !== undefined}
@@ -193,13 +193,13 @@
 						<span class="text-[10px] font-mono text-destructive">error</span>
 					{/if}
 				{:else}
-					<CheckCircle2 class="size-3 text-green-400" />
+					<CheckCircle2 class="size-3 text-emerald-600 dark:text-emerald-400" />
 					{#if isBashTool && pr?.exitCode !== undefined}
-						<span class="text-[10px] font-mono rounded px-1 py-0.5 bg-green-500/10 text-green-400"
+						<span class="text-[10px] font-mono rounded px-1 py-0.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
 							>exit {pr.exitCode}</span
 						>
 					{:else}
-						<span class="text-[10px] font-mono text-green-400/70">ok</span>
+						<span class="text-[10px] font-mono text-emerald-600 dark:text-emerald-400/70">ok</span>
 					{/if}
 				{/if}
 			</span>
@@ -215,11 +215,11 @@
 		{#if isBashTool && command}
 			<button
 				onclick={copyCommand}
-				class="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors p-0.5 rounded"
+				class="shrink-0 text-muted-foreground/60 hover:text-muted-foreground transition-colors p-0.5 rounded"
 				aria-label="Copy command"
 			>
 				{#if copied}
-					<Check class="size-3 text-green-400" />
+					<Check class="size-3 text-emerald-600 dark:text-emerald-400" />
 				{:else}
 					<Copy class="size-3" />
 				{/if}

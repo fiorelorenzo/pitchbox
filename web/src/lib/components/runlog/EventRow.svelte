@@ -53,7 +53,7 @@
 				{@render children()}
 			</div>
 			{#if offset}
-				<span class="text-[10px] text-muted-foreground/40 font-mono shrink-0 mt-[2px] tabular-nums">
+				<span class="text-[10px] text-muted-foreground/70 font-mono shrink-0 mt-[2px] tabular-nums">
 					{offset}
 				</span>
 			{/if}

@@ -35,17 +35,26 @@ export type BadgeStyle = {
   pulse?: boolean;
 };
 
-/** Tailwind classes per tone. Tuned for the app's dark-first theme. */
+/**
+ * Tailwind classes per tone. Each tone pairs a darker text colour for light
+ * mode with the lighter shade for dark mode, so badges remain readable on
+ * both backgrounds.
+ */
 export const TONE_CLASS: Record<Tone, string> = {
   neutral: 'bg-foreground/10 text-foreground/80 ring-foreground/15',
   muted: 'bg-muted text-muted-foreground ring-border/50',
-  emerald: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/25',
-  sky: 'bg-sky-500/15 text-sky-300 ring-sky-500/25',
-  amber: 'bg-amber-500/15 text-amber-300 ring-amber-500/25',
-  rose: 'bg-rose-500/15 text-rose-300 ring-rose-500/30',
-  violet: 'bg-violet-500/15 text-violet-300 ring-violet-500/25',
-  slate: 'bg-slate-500/15 text-slate-300 ring-slate-500/25',
-  orange: 'bg-orange-500/15 text-orange-300 ring-orange-500/25',
+  emerald:
+    'bg-emerald-500/15 text-emerald-700 ring-emerald-500/30 dark:text-emerald-300 dark:ring-emerald-500/25',
+  sky: 'bg-sky-500/15 text-sky-700 ring-sky-500/30 dark:text-sky-300 dark:ring-sky-500/25',
+  amber:
+    'bg-amber-500/15 text-amber-700 ring-amber-500/30 dark:text-amber-300 dark:ring-amber-500/25',
+  rose: 'bg-rose-500/15 text-rose-700 ring-rose-500/35 dark:text-rose-300 dark:ring-rose-500/30',
+  violet:
+    'bg-violet-500/15 text-violet-700 ring-violet-500/30 dark:text-violet-300 dark:ring-violet-500/25',
+  slate:
+    'bg-slate-500/15 text-slate-700 ring-slate-500/30 dark:text-slate-300 dark:ring-slate-500/25',
+  orange:
+    'bg-orange-500/15 text-orange-700 ring-orange-500/30 dark:text-orange-300 dark:ring-orange-500/25',
 };
 
 export const PULSE_DOT_CLASS: Record<Tone, string> = {

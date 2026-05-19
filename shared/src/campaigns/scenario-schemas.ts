@@ -66,10 +66,53 @@ const RedditPosterSchema = z
   })
   .strict();
 
+const HnListingEnum = z.enum(['top', 'new', 'best', 'ask', 'show']);
+
+const HnCommenterSchema = z
+  .object({
+    listing: HnListingEnum,
+    topicKeywords: z.array(z.string().min(1)),
+    avoidKeywords: z.array(z.string().min(1)),
+    voice: z
+      .object({
+        tone: z.enum(['casual', 'neutral', 'professional']),
+        hardBans: z.array(z.string()),
+        dos: z.array(z.string()),
+        disclosure: z.string().min(1),
+      })
+      .strict(),
+    valuePropositions: z.array(z.string().min(1)),
+    productUrl: z.string().url(),
+    systemInstructions: z.string().min(1),
+  })
+  .strict();
+
+const HnPosterSchema = z
+  .object({
+    postAngle: z.string().min(1),
+    format: z.enum(['show-hn', 'ask-hn', 'text']).optional(),
+    topicKeywords: z.array(z.string().min(1)),
+    avoidKeywords: z.array(z.string().min(1)),
+    voice: z
+      .object({
+        tone: z.enum(['casual', 'neutral', 'professional']),
+        hardBans: z.array(z.string()),
+        dos: z.array(z.string()),
+        disclosure: z.string().min(1),
+      })
+      .strict(),
+    valuePropositions: z.array(z.string().min(1)),
+    productUrl: z.string().url(),
+    systemInstructions: z.string().min(1),
+  })
+  .strict();
+
 export const SCENARIO_SCHEMAS = {
   'reddit-scout': RedditScoutSchema,
   'reddit-commenter': RedditCommenterSchema,
   'reddit-poster': RedditPosterSchema,
+  'hn-commenter': HnCommenterSchema,
+  'hn-poster': HnPosterSchema,
 } as const;
 
 export type CampaignProfile<S extends ScenarioSlug> = z.infer<(typeof SCENARIO_SCHEMAS)[S]>;

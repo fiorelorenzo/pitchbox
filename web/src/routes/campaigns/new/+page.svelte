@@ -6,7 +6,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { SelectField } from '$lib/components/ui/select-field';
 	import { toast } from 'svelte-sonner';
-	import { SCENARIO_META } from '@pitchbox/shared/campaigns';
+	import { SCENARIO_META, type ScenarioSlug } from '@pitchbox/shared/campaigns';
 	import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 	import CampaignRecommendationsList, {
 		type Recommendation,
@@ -21,11 +21,20 @@
 	let projectId = $state<number | null>(
 		untrack(() => data.preselected?.projectId ?? data.projects[0]?.id ?? null),
 	);
-	let platformSlug = $state<string>(untrack(() => data.platforms[0]?.slug ?? 'reddit'));
-	let scenarioSlug = $state<'reddit-scout' | 'reddit-commenter'>(
-		untrack(
-			() => (data.preselected?.scenarioSlug as 'reddit-scout' | 'reddit-commenter') ?? 'reddit-scout',
-		),
+	// When the page is preselected from a recommendation, prefer the platform that
+	// matches the scenario so the scenario dropdown isn't filtered out.
+	let platformSlug = $state<string>(
+		untrack(() => {
+			const presetSlug = data.preselected?.scenarioSlug;
+			if (presetSlug) {
+				const meta = SCENARIO_META.find((s) => s.slug === presetSlug);
+				if (meta) return meta.platformSlug;
+			}
+			return data.platforms[0]?.slug ?? 'reddit';
+		}),
+	);
+	let scenarioSlug = $state<ScenarioSlug>(
+		untrack(() => (data.preselected?.scenarioSlug as ScenarioSlug) ?? 'reddit-scout'),
 	);
 	let name = $state(untrack(() => data.preselected?.name ?? ''));
 	let runner = $state('claude-code');
@@ -112,7 +121,10 @@
 		<CampaignRecommendationsList
 			{recommendations}
 			onUse={(rec) => {
-				scenarioSlug = rec.scenarioSlug as typeof scenarioSlug;
+				const slug = rec.scenarioSlug as ScenarioSlug;
+				scenarioSlug = slug;
+				const meta = SCENARIO_META.find((s) => s.slug === slug);
+				if (meta) platformSlug = meta.platformSlug;
 				name = rec.name;
 				objective = rec.objective;
 				preselectedRecId = rec.id;
@@ -153,7 +165,7 @@
 		Scenario
 		<SelectField
 			value={scenarioSlug}
-			onValueChange={(v) => (scenarioSlug = v as 'reddit-scout' | 'reddit-commenter')}
+			onValueChange={(v) => (scenarioSlug = v as ScenarioSlug)}
 			options={scenarioOptions}
 			fullWidth
 		/>
@@ -185,7 +197,7 @@
 		<Input bind:value={cron} placeholder="0 9 * * *" />
 	</label>
 	<div class="flex gap-2">
-		<Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
+		<Button type="submit" loading={saving}>Create</Button>
 		<Button type="button" variant="ghost" onclick={() => goto('/campaigns')}>Cancel</Button>
 	</div>
 </form>

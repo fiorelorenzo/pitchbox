@@ -162,9 +162,7 @@
 				{/each}
 			</div>
 			<div class="flex justify-end">
-				<Button size="sm" onclick={save} disabled={saving}>
-					{saving ? 'Saving…' : 'Save config'}
-				</Button>
+				<Button size="sm" onclick={save} loading={saving}>Save config</Button>
 			</div>
 		</Card.Content>
 	{/if}

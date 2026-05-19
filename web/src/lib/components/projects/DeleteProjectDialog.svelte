@@ -48,10 +48,11 @@
         <Button
           type="button"
           variant="destructive"
-          disabled={typed !== slug || busy}
+          disabled={typed !== slug}
+          loading={busy}
           onclick={confirm}
         >
-          {busy ? 'Deleting…' : 'Delete project'}
+          Delete project
         </Button>
       </div>
     </div>

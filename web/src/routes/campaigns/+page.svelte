@@ -17,6 +17,8 @@
 	import { slide } from 'svelte/transition';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import { Megaphone } from 'lucide-svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { SelectField } from '$lib/components/ui/select-field';
 
@@ -209,6 +211,22 @@
 	/>
 </div>
 
+{#if !isNavigating && data.campaigns.length === 0}
+	<Card.Root size="sm">
+		<Card.Content>
+			<EmptyState
+				icon={Megaphone}
+				title="No campaigns yet"
+				description={data.activeProject
+					? `Create the first campaign for ${data.activeProject.name}. Each campaign pairs a playbook with an agent runner and an optional cron schedule.`
+					: 'A campaign pairs a playbook (e.g. reddit-scout) with an agent runner and an optional cron schedule. Create the first one to dispatch a run.'}
+				size="lg"
+			>
+				<a href="/campaigns/new"><Button size="sm">New campaign</Button></a>
+			</EmptyState>
+		</Card.Content>
+	</Card.Root>
+{:else}
 <Card.Root size="sm">
 	<Card.Content class="p-0 overflow-x-auto">
 		<Table.Root>
@@ -411,3 +429,4 @@
 		</Table.Root>
 	</Card.Content>
 </Card.Root>
+{/if}

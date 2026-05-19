@@ -58,9 +58,9 @@
 	}
 
 	const STATUS_TONE: Record<string, string> = {
-		pending: 'text-amber-300',
-		delivered: 'text-emerald-300',
-		dead: 'text-rose-300',
+		pending: 'text-amber-700 dark:text-amber-300',
+		delivered: 'text-emerald-700 dark:text-emerald-300',
+		dead: 'text-rose-700 dark:text-rose-300',
 	};
 
 	async function markAllRead() {
@@ -86,9 +86,9 @@
 
 	const SEVERITY_TONE: Record<string, string> = {
 		info: 'text-foreground',
-		success: 'text-emerald-300',
-		warning: 'text-amber-300',
-		error: 'text-rose-300',
+		success: 'text-emerald-700 dark:text-emerald-300',
+		warning: 'text-amber-700 dark:text-amber-300',
+		error: 'text-rose-700 dark:text-rose-300',
 	};
 </script>
 
@@ -163,7 +163,7 @@
 										attempt {d.attempts}/{d.maxAttempts} · {relativeTime(d.createdAt)}
 									</p>
 									{#if d.lastError}
-										<p class="text-rose-300/80 mt-0.5 truncate" title={d.lastError}>
+										<p class="text-rose-700/90 dark:text-rose-300/80 mt-0.5 truncate" title={d.lastError}>
 											{d.lastError}
 										</p>
 									{/if}
