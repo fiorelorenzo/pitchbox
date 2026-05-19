@@ -430,7 +430,7 @@
 	<Tabs.Root
 		value={data.state}
 		onValueChange={(v) => setState(v)}
-		class="w-auto max-w-full overflow-x-auto"
+		class="w-auto max-w-full overflow-x-auto no-scrollbar"
 	>
 		<Tabs.List>
 			{#each STATES as s (s.value)}
