@@ -205,11 +205,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
   if (msg?.type === 'pitchbox:chat-creds') {
-    setSettings({
-      matrixUserId: msg.matrixUserId,
-      matrixDeviceId: msg.matrixDeviceId,
-      matrixToken: msg.matrixToken,
-    }).then(() => sendResponse({ ok: true }));
+    (async () => {
+      const prior = await getSettings();
+      const tokenChanged = msg.matrixToken && prior.matrixToken !== msg.matrixToken;
+      await setSettings({
+        matrixUserId: msg.matrixUserId,
+        matrixDeviceId: msg.matrixDeviceId,
+        matrixToken: msg.matrixToken,
+      });
+      sendResponse({ ok: true });
+      // When the Matrix token actually rotated (typical after the user
+      // refreshes reddit.com to clear an `unauthorized` state), kick off
+      // an immediate sync so the dashboard banner clears without waiting
+      // for the next alarm tick.
+      if (tokenChanged) {
+        runAllSyncs().catch(() => {
+          // Ignore failures; the regular alarm will retry shortly.
+        });
+      }
+    })();
     return true;
   }
   if (msg?.type === 'pitchbox:auto-pair') {
