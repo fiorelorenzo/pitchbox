@@ -12,7 +12,8 @@ export interface PermissionPolicy {
 }
 
 export class AutoAllowPolicy implements PermissionPolicy {
-  decide(_req: PermissionRequest): PermissionDecision {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  decide(req: PermissionRequest): PermissionDecision {
     return 'allow';
   }
 }

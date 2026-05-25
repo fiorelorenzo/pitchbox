@@ -13,7 +13,12 @@ export interface AcpUsage {
   totalCostUsd?: number;
 }
 
-export type AcpStopReasonKind = 'end_turn' | 'cancelled' | 'error' | 'max_turn_requests' | 'refusal';
+export type AcpStopReasonKind =
+  | 'end_turn'
+  | 'cancelled'
+  | 'error'
+  | 'max_turn_requests'
+  | 'refusal';
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   return typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : null;
@@ -59,7 +64,8 @@ export function normalizeAcpUpdate(update: unknown, raw: string, seq: number): P
     }
     case 'tool_call': {
       const id = typeof u.toolCallId === 'string' ? u.toolCallId : undefined;
-      const name = typeof u.kind === 'string' ? u.kind : (typeof u.title === 'string' ? u.title : 'tool');
+      const name =
+        typeof u.kind === 'string' ? u.kind : typeof u.title === 'string' ? u.title : 'tool';
       const input = asRecord(u.rawInput) ?? {};
       return [{ seq, kind: 'tool-call', payload: { type: 'tool-call', id, name, input }, raw }];
     }
@@ -78,9 +84,7 @@ export function normalizeAcpUpdate(update: unknown, raw: string, seq: number): P
       ];
     }
     default:
-      return [
-        { seq, kind: 'unknown', payload: { type: 'unknown', eventType: kind, raw }, raw },
-      ];
+      return [{ seq, kind: 'unknown', payload: { type: 'unknown', eventType: kind, raw }, raw }];
   }
 }
 

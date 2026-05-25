@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeAcpUpdate, normalizeStopReason } from '../../../src/agents/acp/event-normalizer.js';
+import {
+  normalizeAcpUpdate,
+  normalizeStopReason,
+} from '../../../src/agents/acp/event-normalizer.js';
 
 const raw = '<<test-raw-line>>';
 
@@ -92,11 +95,7 @@ describe('normalizeAcpUpdate', () => {
   });
 
   it('drops unknown sessionUpdate kinds with an unknown event', () => {
-    const events = normalizeAcpUpdate(
-      { sessionUpdate: 'made_up_kind', whatever: 1 },
-      raw,
-      0,
-    );
+    const events = normalizeAcpUpdate({ sessionUpdate: 'made_up_kind', whatever: 1 }, raw, 0);
     expect(events).toEqual([
       {
         seq: 0,

@@ -50,7 +50,7 @@ export class MockAcpServer {
   private async dispatch(msg: JsonRpcRequest | JsonRpcResponse) {
     if ('method' in msg) {
       const req = msg;
-      let result: unknown = null;
+      let result: unknown;
       switch (req.method) {
         case 'initialize':
           result = (await this.handlers.onInitialize?.(req.params)) ?? {
@@ -64,7 +64,9 @@ export class MockAcpServer {
         case 'session/prompt':
           for (const r of this.sessionPromptResolvers) r(req.params);
           this.sessionPromptResolvers = [];
-          result = (await this.handlers.onSessionPrompt?.(req.params)) ?? { stopReason: 'end_turn' };
+          result = (await this.handlers.onSessionPrompt?.(req.params)) ?? {
+            stopReason: 'end_turn',
+          };
           break;
         case 'session/cancel':
           result = (await this.handlers.onSessionCancel?.(req.params)) ?? null;

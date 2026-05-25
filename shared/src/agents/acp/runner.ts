@@ -3,12 +3,7 @@ import { spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from 'node:ch
 import { mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type {
-  AgentRunHandle,
-  AgentRunOptions,
-  AgentRunResult,
-  AgentRunner,
-} from '../base.js';
+import type { AgentRunHandle, AgentRunOptions, AgentRunResult, AgentRunner } from '../base.js';
 import type { RunnerConfig } from '../config.js';
 import { computeCostUsd } from '../../runlog/usage.js';
 import { ACP_BACKENDS, type AcpBackendSlug, type BackendSpec } from './backends.js';
@@ -149,7 +144,11 @@ export class AcpRunner implements AgentRunner {
         } catch {
           return;
         }
-        if (msg.id != null && (msg.result !== undefined || msg.error !== undefined) && !msg.method) {
+        if (
+          msg.id != null &&
+          (msg.result !== undefined || msg.error !== undefined) &&
+          !msg.method
+        ) {
           const cb = pending.get(msg.id as number);
           if (cb) {
             pending.delete(msg.id as number);
@@ -227,10 +226,7 @@ export class AcpRunner implements AgentRunner {
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
       });
       const initTimeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error('ACP initialize timed out')),
-          this.initializeTimeoutMs,
-        ),
+        setTimeout(() => reject(new Error('ACP initialize timed out')), this.initializeTimeoutMs),
       );
       await Promise.race([initPromise, initTimeoutPromise]);
 
@@ -242,7 +238,7 @@ export class AcpRunner implements AgentRunner {
       sessionId = sessionResult.sessionId;
 
       // 3. session/prompt
-      let promptResult: { stopReason?: string; usage?: AcpUsage } = {};
+      let promptResult: { stopReason?: string; usage?: AcpUsage };
       try {
         promptResult = await sendRequest<{ stopReason?: string; usage?: AcpUsage }>(
           'session/prompt',

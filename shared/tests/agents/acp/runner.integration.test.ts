@@ -106,8 +106,7 @@ describe('AcpRunner integration', () => {
     expect(
       events.some(
         (e) =>
-          e.kind === 'assistant' &&
-          (e.payload as { text: string }).text === 'Hello from agent',
+          e.kind === 'assistant' && (e.payload as { text: string }).text === 'Hello from agent',
       ),
     ).toBe(true);
     expect(events.some((e) => e.kind === 'result')).toBe(true);
