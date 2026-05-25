@@ -23,10 +23,16 @@ export const ACP_BACKENDS: Record<AcpBackendSlug, BackendSpec> = {
   'claude-code': {
     slug: 'claude-code',
     displayName: 'Claude Code',
-    binary: 'claude',
-    acpArgs: ['--acp'],
+    // Claude Code's `claude` CLI does NOT speak ACP directly. The official
+    // adapter `@agentclientprotocol/claude-agent-acp` (also used by Zed) wraps
+    // the Claude Agent SDK and exposes it over ACP/JSON-RPC. We launch it via
+    // `npx -y` so users don't need a separate global install; auth + model
+    // selection still come from the underlying `claude` CLI's local state.
+    binary: 'npx',
+    acpArgs: ['-y', '@agentclientprotocol/claude-agent-acp'],
     envPassthrough: ['ANTHROPIC_API_KEY'],
-    notes: 'Install Anthropic Claude Code CLI and run `claude login`, or set ANTHROPIC_API_KEY.',
+    notes:
+      'Requires the `claude` CLI installed and authenticated (`claude login`), or set ANTHROPIC_API_KEY. The ACP adapter `@agentclientprotocol/claude-agent-acp` is fetched on demand via npx (cached after first run).',
   },
   codex: {
     slug: 'codex',
