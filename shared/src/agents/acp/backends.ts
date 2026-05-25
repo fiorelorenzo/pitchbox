@@ -37,38 +37,51 @@ export const ACP_BACKENDS: Record<AcpBackendSlug, BackendSpec> = {
   codex: {
     slug: 'codex',
     displayName: 'Codex',
-    binary: 'codex',
-    acpArgs: ['--acp'],
+    // OpenAI's `codex` CLI does not expose an ACP server mode. The adapter
+    // `@zed-industries/codex-acp` (same project Zed bundles internally) wraps
+    // it and speaks ACP/JSON-RPC. Auth still flows through the local `codex`
+    // CLI state (`codex login`) or OPENAI_API_KEY.
+    binary: 'npx',
+    acpArgs: ['-y', '@zed-industries/codex-acp'],
     envPassthrough: ['OPENAI_API_KEY'],
-    notes: 'Install OpenAI Codex CLI and run `codex login`, or set OPENAI_API_KEY.',
+    notes:
+      'Requires the `codex` CLI installed and authenticated (`codex login`), or set OPENAI_API_KEY. The ACP adapter `@zed-industries/codex-acp` is fetched on demand via npx.',
   },
   gemini: {
     slug: 'gemini',
     displayName: 'Gemini CLI',
+    // Native ACP support: `gemini --acp` (per google-gemini/gemini-cli docs).
     binary: 'gemini',
     acpArgs: ['--acp'],
     envPassthrough: ['GOOGLE_API_KEY', 'GEMINI_API_KEY'],
-    notes: 'Install Google Gemini CLI and authenticate, or set GEMINI_API_KEY.',
+    notes:
+      'Install `@google/gemini-cli` and authenticate, or set GEMINI_API_KEY / GOOGLE_API_KEY. ACP is native via `gemini --acp`.',
   },
   copilot: {
     slug: 'copilot',
     displayName: 'GitHub Copilot CLI',
+    // Native ACP support since the public-preview ACP rollout: `copilot --acp`.
     binary: 'copilot',
     acpArgs: ['--acp'],
-    notes: 'Install GitHub Copilot CLI and run `copilot auth login`.',
+    notes:
+      'Install GitHub Copilot CLI and run `copilot auth login`. ACP is native via `copilot --acp` (public preview).',
   },
   opencode: {
     slug: 'opencode',
     displayName: 'opencode',
+    // Native ACP support via the `acp` sub-command.
     binary: 'opencode',
     acpArgs: ['acp'],
-    notes: 'Install sst/opencode and configure a provider.',
+    notes: 'Install `opencode-ai` and configure a provider. ACP is native via `opencode acp`.',
   },
   'qwen-code': {
     slug: 'qwen-code',
     displayName: 'Qwen Code',
+    // Native ACP support: `qwen --acp` (replaces the deprecated
+    // `--experimental-acp` flag).
     binary: 'qwen',
     acpArgs: ['--acp'],
-    notes: 'Install Qwen Code CLI and configure DashScope credentials.',
+    notes:
+      'Install Qwen Code CLI and configure DashScope credentials. ACP is native via `qwen --acp`.',
   },
 };
