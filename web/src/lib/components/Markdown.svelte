@@ -41,6 +41,18 @@
 	div :global(*) {
 		min-width: 0;
 	}
+	/* Wrap long unbroken tokens (URLs, paths, identifiers) so paragraphs
+	   never blow out their flex parent. `anywhere` is more aggressive than
+	   `break-word` and is necessary inside the runlog rows where every
+	   ancestor is `flex` with `min-w-0`. */
+	div :global(p),
+	div :global(li),
+	div :global(blockquote),
+	div :global(td),
+	div :global(th) {
+		overflow-wrap: anywhere;
+		word-break: break-word;
+	}
 	div :global(pre) {
 		overflow-x: auto;
 		max-width: 100%;
