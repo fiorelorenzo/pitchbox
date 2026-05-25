@@ -1,12 +1,8 @@
 // shared/src/agents/acp/backends.ts
 
-export type AcpBackendSlug =
-  | 'claude-code'
-  | 'codex'
-  | 'gemini'
-  | 'copilot'
-  | 'opencode'
-  | 'qwen-code';
+import type { AgentRunnerSlug } from '../meta.js';
+
+export type AcpBackendSlug = Exclude<AgentRunnerSlug, 'cloud'>;
 
 export interface BackendSpec {
   slug: AcpBackendSlug;
