@@ -4,7 +4,6 @@ import {
   extractRunUsage,
   CLAUDE_SONNET_46_PRICING,
 } from '../../src/runlog/usage.js';
-import { parseClaudeCodeLine } from '../../src/runlog/parsers/claude-code.js';
 import type { ParsedEvent } from '../../src/runlog/types.js';
 
 describe('computeCostUsd', () => {
@@ -32,26 +31,46 @@ describe('computeCostUsd', () => {
   });
 });
 
+/**
+ * Build a synthetic `result` ParsedEvent. extractRunUsage only inspects the
+ * payload fields below, so we construct the shape directly rather than going
+ * through a runner-specific parser.
+ */
+function resultEvent(
+  seq: number,
+  payload: {
+    success?: boolean;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+    totalCostUsd?: number;
+  },
+): ParsedEvent {
+  return {
+    seq,
+    kind: 'result',
+    payload: { type: 'result', success: payload.success ?? true, ...payload },
+    raw: '',
+  };
+}
+
 describe('extractRunUsage', () => {
   it('returns null when no result event has usage', () => {
     const events: ParsedEvent[] = [];
     expect(extractRunUsage(events)).toBeNull();
   });
 
-  it('extracts and computes cost from parsed stream-json result line', () => {
-    const line = JSON.stringify({
-      type: 'result',
-      subtype: 'success',
-      result: 'done',
-      total_cost_usd: 0.1234,
-      usage: {
-        input_tokens: 1000,
-        output_tokens: 500,
-        cache_read_input_tokens: 200,
-        cache_creation_input_tokens: 100,
-      },
-    });
-    const events = parseClaudeCodeLine(line, 0);
+  it('extracts and computes cost from a result event with usage + cost', () => {
+    const events: ParsedEvent[] = [
+      resultEvent(0, {
+        inputTokens: 1000,
+        outputTokens: 500,
+        cacheReadTokens: 200,
+        cacheCreationTokens: 100,
+        totalCostUsd: 0.1234,
+      }),
+    ];
     const usage = extractRunUsage(events);
     expect(usage).not.toBeNull();
     expect(usage!.inputTokens).toBe(1000);
@@ -62,19 +81,15 @@ describe('extractRunUsage', () => {
     expect(usage!.costUsd).toBeCloseTo(0.1234, 4);
   });
 
-  it('falls back to computed cost when total_cost_usd is missing', () => {
-    const line = JSON.stringify({
-      type: 'result',
-      subtype: 'success',
-      result: 'done',
-      usage: {
-        input_tokens: 1_000_000,
-        output_tokens: 0,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
-      },
-    });
-    const events = parseClaudeCodeLine(line, 0);
+  it('falls back to computed cost when totalCostUsd is missing', () => {
+    const events: ParsedEvent[] = [
+      resultEvent(0, {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      }),
+    ];
     const usage = extractRunUsage(events);
     expect(usage).not.toBeNull();
     expect(usage!.costReported).toBe(false);
@@ -82,25 +97,9 @@ describe('extractRunUsage', () => {
   });
 
   it('picks the last result event when multiple are present', () => {
-    const events = [
-      ...parseClaudeCodeLine(
-        JSON.stringify({
-          type: 'result',
-          subtype: 'success',
-          usage: { input_tokens: 1, output_tokens: 1 },
-          total_cost_usd: 0.0001,
-        }),
-        0,
-      ),
-      ...parseClaudeCodeLine(
-        JSON.stringify({
-          type: 'result',
-          subtype: 'success',
-          usage: { input_tokens: 999, output_tokens: 999 },
-          total_cost_usd: 0.9999,
-        }),
-        10,
-      ),
+    const events: ParsedEvent[] = [
+      resultEvent(0, { inputTokens: 1, outputTokens: 1, totalCostUsd: 0.0001 }),
+      resultEvent(10, { inputTokens: 999, outputTokens: 999, totalCostUsd: 0.9999 }),
     ];
     const usage = extractRunUsage(events);
     expect(usage!.inputTokens).toBe(999);

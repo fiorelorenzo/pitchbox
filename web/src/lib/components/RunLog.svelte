@@ -3,7 +3,7 @@
 	import { Loader, ChevronsDown } from 'lucide-svelte';
 
 	import { formatOffset } from '$lib/utils/time';
-	import { parse, resetParser, dbEventToTimeline, pairToolEvents } from './runlog/parse';
+	import { resetParser, dbEventToTimeline, pairToolEvents } from './runlog/parse';
 	import type { TimelineEvent } from './runlog/types';
 
 	import EventRow from './runlog/EventRow.svelte';
