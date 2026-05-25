@@ -14,6 +14,8 @@ export type RunFailureReason =
   | 'quota_exhausted'
   | 'playbook_error'
   | 'network'
+  | 'agent_crashed'
+  | 'agent_timeout'
   | 'unknown';
 
 export const RUN_FAILURE_REASONS: readonly RunFailureReason[] = [
@@ -22,6 +24,8 @@ export const RUN_FAILURE_REASONS: readonly RunFailureReason[] = [
   'quota_exhausted',
   'playbook_error',
   'network',
+  'agent_crashed',
+  'agent_timeout',
   'unknown',
 ] as const;
 

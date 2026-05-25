@@ -1,7 +1,6 @@
-// Re-export shared parser + add client-side helpers (id/ts assignment).
-import { parseClaudeCodeLine } from '@pitchbox/shared/runlog';
-export { parseClaudeCodeLine } from '@pitchbox/shared/runlog';
-import type { ParsedEvent, CliEnvelope } from '@pitchbox/shared/runlog';
+// Client-side helpers that hydrate persisted ParsedEvents into TimelineEvents
+// (raw stream parsing now lives in AcpRunner on the server).
+import type { CliEnvelope } from '@pitchbox/shared/runlog';
 import type { TimelineEvent } from './types';
 
 let nextId = 0;
@@ -25,70 +24,6 @@ function defaultCollapsed(kind: string, isError?: boolean): boolean {
     default:
       return true;
   }
-}
-
-/** Convert a ParsedEvent (from shared) into a client TimelineEvent with id/ts/collapsed. */
-function toTimelineEvent(pe: ParsedEvent, ts: number): TimelineEvent {
-  const id = nextId++;
-  const base = { id, kind: pe.kind, ts, collapsed: defaultCollapsed(pe.kind) } as TimelineEvent;
-
-  const p = pe.payload;
-  switch (p.type) {
-    case 'session':
-      return {
-        ...base,
-        collapsed: false,
-        session: { sessionId: p.sessionId, model: p.model, cwd: p.cwd },
-      };
-    case 'assistant':
-      return { ...base, collapsed: false, assistant: { text: p.text } };
-    case 'thinking':
-      return { ...base, collapsed: true, thinking: { text: p.text } };
-    case 'tool-call':
-      return { ...base, collapsed: true, toolCall: { name: p.name, input: p.input, id: p.id } };
-    case 'tool-result':
-      return {
-        ...base,
-        collapsed: defaultCollapsed('tool-result', p.isError),
-        toolResult: {
-          raw: p.raw,
-          text: p.text,
-          parsedEnvelope: p.parsedEnvelope,
-          isError: p.isError,
-          toolUseId: p.toolUseId,
-        },
-      };
-    case 'rate-limit':
-      return { ...base, collapsed: true, rateLimit: { info: p.info } };
-    case 'result':
-      return {
-        ...base,
-        collapsed: false,
-        result: {
-          success: p.success,
-          text: p.text,
-          inputTokens: p.inputTokens,
-          outputTokens: p.outputTokens,
-          totalCostUsd: p.totalCostUsd,
-          durationMs: p.durationMs,
-          numTurns: p.numTurns,
-        },
-      };
-    case 'unknown':
-      return { ...base, collapsed: true, unknown: { type: p.eventType, raw: p.raw } };
-    default:
-      return { ...base, collapsed: true };
-  }
-}
-
-/**
- * Parse a raw JSONL line into client-side TimelineEvents.
- * Maintains the module-level `nextId` counter for stable React-style keys.
- */
-export function parse(line: string): TimelineEvent[] {
-  const now = Date.now();
-  const parsed = parseClaudeCodeLine(line, 0);
-  return parsed.map((pe) => toTimelineEvent(pe, now));
 }
 
 /**

@@ -163,3 +163,17 @@
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/*
+ * Utility for containers that need overflow behaviour (so content can scroll
+ * on narrow viewports) but should never paint a visible scrollbar - typically
+ * tab strips, pill rows and segmented controls where the gutter shows as an
+ * unwanted thin vertical line in WebKit even when nothing overflows.
+ */
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge / IE */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

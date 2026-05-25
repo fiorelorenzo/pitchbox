@@ -62,7 +62,7 @@ export async function getCampaignReadiness(campaignId: number): Promise<Campaign
     issues.push({
       id: 'runner_unavailable',
       title: 'Agent runner not implemented',
-      hint: `${campaign.agentRunner} does not have a runner adapter yet - pick claude-code or wait for the adapter.`,
+      hint: `${campaign.agentRunner} is not a supported agent runner.`,
       fix: { label: 'Open settings', kind: 'runner', href: '/settings' },
     });
   } else {

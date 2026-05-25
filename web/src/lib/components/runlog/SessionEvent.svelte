@@ -23,14 +23,14 @@
 </script>
 
 <div class="flex items-center gap-2 flex-wrap min-w-0 py-0.5">
-	<Sparkles class="size-3.5 text-violet-400 shrink-0" />
+	<Sparkles class="size-3.5 text-violet-600 dark:text-violet-400 shrink-0" />
 	<span class="text-xs font-medium text-muted-foreground">Session</span>
 
 	{#if data.model}
 		<Tooltip.Provider>
 			<Tooltip.Root>
 				<Tooltip.Trigger>
-					<span class="rounded bg-violet-950/50 border border-violet-500/30 text-violet-300 text-[10px] font-mono px-1.5 py-0.5 truncate max-w-[140px] cursor-default">
+					<span class="rounded bg-violet-500/15 border border-violet-500/30 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300 text-[10px] font-mono px-1.5 py-0.5 truncate max-w-[140px] cursor-default">
 						{data.model}
 					</span>
 				</Tooltip.Trigger>
