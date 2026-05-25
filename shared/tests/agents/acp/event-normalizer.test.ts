@@ -36,7 +36,7 @@ describe('normalizeAcpUpdate', () => {
         toolCallId: 't1',
         title: 'Run pitchbox drafts:create',
         kind: 'execute',
-        rawInput: { cmd: 'pitchbox drafts:create' },
+        rawInput: { command: 'pitchbox drafts:create' },
       },
       raw,
       0,
@@ -48,12 +48,47 @@ describe('normalizeAcpUpdate', () => {
         payload: {
           type: 'tool-call',
           id: 't1',
-          name: 'execute',
-          input: { cmd: 'pitchbox drafts:create' },
+          name: 'Bash',
+          input: { command: 'pitchbox drafts:create' },
         },
         raw,
       },
     ]);
+  });
+
+  it('suppresses placeholder tool_call with empty rawInput', () => {
+    const events = normalizeAcpUpdate(
+      {
+        sessionUpdate: 'tool_call',
+        toolCallId: 't1',
+        title: 'Terminal',
+        kind: 'execute',
+        rawInput: {},
+      },
+      raw,
+      0,
+    );
+    expect(events).toEqual([]);
+  });
+
+  it('synthesizes a tool-call from tool_call_update when rawInput is filled in', () => {
+    const events = normalizeAcpUpdate(
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 't1',
+        title: 'ls -la /tmp',
+        kind: 'execute',
+        rawInput: { command: 'ls -la /tmp', description: 'List tmp' },
+      },
+      raw,
+      5,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      seq: 5,
+      kind: 'tool-call',
+      payload: { type: 'tool-call', id: 't1', name: 'Bash', input: { command: 'ls -la /tmp' } },
+    });
   });
 
   it('maps tool_call_update with completed content to tool-result', () => {
