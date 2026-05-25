@@ -89,6 +89,8 @@ export class AcpRunner implements AgentRunner {
       let nextId = 1;
       const pending = new Map<number, (msg: JsonRpcMessage) => void>();
       let seq = 0;
+      let cancelRequested = false;
+      let childExited = false;
 
       const writeMessage = (msg: JsonRpcMessage) => {
         const line = JSON.stringify(msg) + '\n';
@@ -114,6 +116,7 @@ export class AcpRunner implements AgentRunner {
       };
 
       cancelFn = () => {
+        cancelRequested = true;
         if (sessionId) {
           try {
             sendNotification('session/cancel', { sessionId });
@@ -195,6 +198,21 @@ export class AcpRunner implements AgentRunner {
         child.on('exit', (code) => {
           clearTimeout(runTimer);
           appendFileSync(logPath, `\n# exit ${code} at ${new Date().toISOString()}\n`, 'utf8');
+          childExited = true;
+          // Reject any in-flight JSON-RPC requests so the run finishes instead
+          // of hanging on a request that will never be answered (e.g. after
+          // cancel() or an unexpected child crash).
+          if (pending.size > 0) {
+            const entries = Array.from(pending.entries());
+            pending.clear();
+            const reason = cancelRequested ? 'cancelled' : `child exited with code ${code ?? 1}`;
+            for (const [, cb] of entries) {
+              cb({
+                jsonrpc: '2.0',
+                error: { code: -32000, message: reason },
+              });
+            }
+          }
           resolve(code ?? 1);
         });
         child.on('error', (err) => {
@@ -224,10 +242,21 @@ export class AcpRunner implements AgentRunner {
       sessionId = sessionResult.sessionId;
 
       // 3. session/prompt
-      const promptResult = await sendRequest<{ stopReason?: string; usage?: AcpUsage }>(
-        'session/prompt',
-        { sessionId, prompt: [{ type: 'text', text: promptText }] },
-      );
+      let promptResult: { stopReason?: string; usage?: AcpUsage } = {};
+      try {
+        promptResult = await sendRequest<{ stopReason?: string; usage?: AcpUsage }>(
+          'session/prompt',
+          { sessionId, prompt: [{ type: 'text', text: promptText }] },
+        );
+      } catch (err) {
+        // If the child exited mid-prompt (cancel or crash), synthesize an
+        // appropriate stop reason instead of bubbling the rejection.
+        if (cancelRequested || childExited) {
+          promptResult = { stopReason: cancelRequested ? 'cancelled' : 'error' };
+        } else {
+          throw err;
+        }
+      }
       const stopReason: AcpStopReasonKind | string = promptResult.stopReason ?? 'end_turn';
       const stopUsage = promptResult.usage;
 
