@@ -32,7 +32,7 @@
 	const html = $derived(render(source));
 </script>
 
-<div class="prose prose-invert prose-sm max-w-none {className}">
+<div class="prose prose-invert prose-sm max-w-none min-w-0 [overflow-wrap:anywhere] {className}">
 	{@html html}
 </div>
 

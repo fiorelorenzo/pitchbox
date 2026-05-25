@@ -12,8 +12,8 @@
 	);
 </script>
 
-<div class="mt-1 min-w-0">
-	<Markdown source={displayText} class="text-foreground/90 leading-relaxed" />
+<div class="mt-1 min-w-0 max-w-full break-words">
+	<Markdown source={displayText} class="text-foreground/90 leading-relaxed break-words" />
 	{#if isLong}
 		<button
 			onclick={() => (expanded = !expanded)}
