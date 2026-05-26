@@ -36,7 +36,9 @@ export async function load() {
     })
     .from(schema.contactHistory);
 
-  // ----- Recent runs -----
+  // ----- Recent runs (campaign runs only - the widget is labelled
+  // 'Last 5 campaign runs' so project_extraction / skill_generation runs
+  // are filtered out here). -----
   const recentRuns = await db
     .select({
       id: schema.runs.id,
@@ -50,7 +52,8 @@ export async function load() {
       campaignName: schema.campaigns.name,
     })
     .from(schema.runs)
-    .leftJoin(schema.campaigns, eq(schema.runs.campaignId, schema.campaigns.id))
+    .innerJoin(schema.campaigns, eq(schema.runs.campaignId, schema.campaigns.id))
+    .where(eq(schema.runs.kind, 'campaign'))
     .orderBy(desc(schema.runs.startedAt))
     .limit(5);
 
@@ -70,7 +73,10 @@ export async function load() {
     cost7d: Number(spendRow?.cost7d ?? 0),
   };
 
-  // ----- Run stats (last 7 days) -----
+  // ----- Run stats (last 7 days, campaign runs only - the three cards on
+  // the home page are labelled 'Campaign runs', 'Successful runs',
+  // 'Failed runs' and are about outreach activity, not extraction /
+  // skill-generation runs). -----
   const [runStats7d] = await db
     .select({
       total: sql<number>`COUNT(*)::int`,
@@ -79,7 +85,7 @@ export async function load() {
       running: sql<number>`COUNT(*) FILTER (WHERE status = 'running')::int`,
     })
     .from(schema.runs)
-    .where(gte(schema.runs.startedAt, since7d));
+    .where(and(gte(schema.runs.startedAt, since7d), eq(schema.runs.kind, 'campaign')));
 
   // ----- Campaigns with derived last-run info -----
   // Derive from runs table so we don't depend on campaigns.last_run_at, which is

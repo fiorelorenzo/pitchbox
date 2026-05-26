@@ -2,8 +2,8 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { Loader, ChevronsDown } from 'lucide-svelte';
 
-	import { formatOffset } from '$lib/utils/time';
-	import { parse, resetParser, dbEventToTimeline, pairToolEvents } from './runlog/parse';
+	import { relativeTimeFine } from '$lib/utils/time';
+	import { resetParser, dbEventToTimeline, pairToolEvents } from './runlog/parse';
 	import type { TimelineEvent } from './runlog/types';
 
 	import EventRow from './runlog/EventRow.svelte';
@@ -284,7 +284,7 @@
 					{#each events as ev, i (ev.id)}
 						{@const isFirst = i === 0}
 						{@const isLast = i === events.length - 1}
-						{@const offset = start != null ? formatOffset(ev.ts - start) : ''}
+						{@const offset = relativeTimeFine(new Date(ev.ts))}
 						{@const isError = ev.result ? !ev.result.success : (ev.toolResult?.isError ?? false)}
 
 						<EventRow kind={ev.kind} {isFirst} {isLast} {offset} {isError}>

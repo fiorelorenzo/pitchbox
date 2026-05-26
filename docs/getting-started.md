@@ -4,7 +4,20 @@ Pitchbox is a Node monorepo. You need:
 
 - Node ≥ 22
 - Docker (for the Postgres dev DB)
-- The `claude` CLI logged into a Claude subscription (the default agent runner; `codex` and `opencode` are also supported)
+- One ACP-compatible agent CLI on PATH (see below)
+
+## Agent CLI
+
+Pitchbox talks to every backend through the open [Agent Client Protocol](https://agentclientprotocol.com), so any ACP-compatible CLI will do. Install at least one of the supported runners and authenticate it:
+
+- **Claude Code**: `npm install -g @anthropic-ai/claude-code`, then `claude login` (or set `ANTHROPIC_API_KEY`).
+- **Codex**: `npm install -g @openai/codex`, then `codex login` (or set `OPENAI_API_KEY`).
+- **Gemini CLI**: `npm install -g @google/gemini-cli`, then `gemini auth login` (or set `GEMINI_API_KEY`).
+- **GitHub Copilot CLI**: see GitHub docs, then `copilot auth login`.
+- **opencode**: `npm install -g opencode-ai`, then configure a provider (see opencode docs).
+- **Qwen Code**: install the Qwen Code CLI per Alibaba docs and configure DashScope credentials.
+
+The dashboard probes each registered runner on boot and the campaign-creation form only lets you pick installed ones. See [Agent runners](/runners) for details.
 
 ## Install
 
