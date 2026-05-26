@@ -130,10 +130,20 @@
 
             {#if expanded}
               <Table.Row class="hover:bg-transparent border-t-0">
-                <Table.Cell colspan={9} class="p-0 border-t border-border/50 max-w-0">
+                <Table.Cell colspan={9} class="p-0 border-t border-border/50">
+                  <!--
+                    The `grid grid-cols-[minmax(0,1fr)]` wrapper is intentional:
+                    in a `<td>` with auto table-layout, `max-w-0` / `min-w-0`
+                    on inner divs are ignored when descendant content (the
+                    runlog rows + their long assistant text) needs more space,
+                    so the cell expands and the rows blow past the viewport.
+                    A single-column grid track of `minmax(0, 1fr)` constrains
+                    children to the track width regardless of their content,
+                    forcing the runlog inside to wrap at the cell's width.
+                  -->
                   <div
                     transition:slide={{ duration: 200 }}
-                    class="bg-muted/10 px-6 py-3 min-w-0 overflow-hidden"
+                    class="bg-muted/10 px-6 py-3 grid grid-cols-[minmax(0,1fr)] overflow-hidden"
                   >
                     <RunLog runId={run.id} />
                   </div>
