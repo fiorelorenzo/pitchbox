@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentRunHandle, AgentRunOptions, AgentRunResult, AgentRunner } from '../base.js';
 import type { RunnerConfig } from '../config.js';
+import type { ParsedEvent } from '../../runlog/types.js';
 import { computeCostUsd } from '../../runlog/usage.js';
 import { ACP_BACKENDS, type AcpBackendSlug, type BackendSpec } from './backends.js';
 import {
@@ -134,6 +135,44 @@ export class AcpRunner implements AgentRunner {
         child.once('exit', () => clearTimeout(t));
       };
 
+      // Buffers for streamed assistant/thinking text chunks. ACP emits one
+      // `agent_message_chunk` per generated token/group, which would otherwise
+      // produce a row per chunk in the runlog. We accumulate and flush as a
+      // single ParsedEvent when a non-chunk update arrives (or at stop_reason).
+      let pendingAssistantText = '';
+      let pendingThinkingText = '';
+
+      const flushPendingText = () => {
+        const flushed: ParsedEvent[] = [];
+        if (pendingAssistantText.length > 0) {
+          flushed.push({
+            seq,
+            kind: 'assistant',
+            payload: { type: 'assistant', text: pendingAssistantText },
+            raw: '',
+          });
+          seq += 1;
+          pendingAssistantText = '';
+        }
+        if (pendingThinkingText.length > 0) {
+          flushed.push({
+            seq,
+            kind: 'thinking',
+            payload: { type: 'thinking', text: pendingThinkingText },
+            raw: '',
+          });
+          seq += 1;
+          pendingThinkingText = '';
+        }
+        if (flushed.length > 0) void opts.onParsedEvents?.(flushed);
+      };
+
+      const extractChunkText = (update: unknown): string => {
+        const u = update as { content?: unknown } | null;
+        const c = (u?.content ?? null) as { text?: unknown } | null;
+        return typeof c?.text === 'string' ? c.text : '';
+      };
+
       const handleStdoutLine = (line: string) => {
         if (!line.trim()) return;
         appendFileSync(logPath, `[<-] ${line}\n`, 'utf8');
@@ -158,6 +197,26 @@ export class AcpRunner implements AgentRunner {
         }
         if (msg.method === 'session/update') {
           const params = msg.params as { sessionId?: string; update?: unknown } | undefined;
+          const updateKind = (params?.update as { sessionUpdate?: string } | null)?.sessionUpdate;
+
+          // Coalesce streamed text chunks into a single rendered event.
+          if (updateKind === 'agent_message_chunk') {
+            pendingAssistantText += extractChunkText(params?.update);
+            return;
+          }
+          if (updateKind === 'agent_thought_chunk') {
+            pendingThinkingText += extractChunkText(params?.update);
+            return;
+          }
+          // ACP emits incremental usage_update events between tokens. The
+          // total usage arrives with `stop_reason`, so the incremental
+          // ones are noise for the runlog UI.
+          if (updateKind === 'usage_update') {
+            return;
+          }
+
+          // Any other kind: flush buffered text first, then normalize this event.
+          flushPendingText();
           const produced = normalizeAcpUpdate(params?.update, line, seq);
           seq += Math.max(produced.length, 1);
           if (produced.length > 0) void opts.onParsedEvents?.(produced);
@@ -176,6 +235,7 @@ export class AcpRunner implements AgentRunner {
           return;
         }
       };
+
 
       let stdoutBuf = '';
       child.stdout.setEncoding('utf8');
@@ -255,6 +315,11 @@ export class AcpRunner implements AgentRunner {
       }
       const stopReason: AcpStopReasonKind | string = promptResult.stopReason ?? 'end_turn';
       const stopUsage = promptResult.usage;
+
+      // Flush any tail-end assistant/thinking text the agent emitted right
+      // before the stop_reason. Without this, the final tokens of the last
+      // message would be silently dropped.
+      flushPendingText();
 
       // Synthesize a final result event so the runlog has a closing record.
       const tail = normalizeStopReason(stopReason, stopUsage, '', seq);
