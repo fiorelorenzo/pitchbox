@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { ChevronLeft } from 'lucide-svelte';
+	import { ChevronLeft, Loader2 } from 'lucide-svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { invalidateAll } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
@@ -17,10 +18,19 @@
 	type SkillRun = { id: number; status: string; params: { objective?: string } | null };
 
 	type ReadinessIssue = {
-		id: 'profile_missing' | 'profile_invalid' | 'no_account';
+		id:
+			| 'profile_missing'
+			| 'profile_invalid'
+			| 'profile_generating'
+			| 'no_account'
+			| 'runner_unavailable';
 		title: string;
 		hint: string;
-		fix: { label: string; kind: 'profile' | 'accounts'; href?: string };
+		fix: {
+			label: string;
+			kind: 'profile' | 'accounts' | 'runner' | 'progress';
+			href?: string;
+		};
 	};
 
 	let {
@@ -60,13 +70,38 @@
 				finishedAt: string | Date | null;
 				params: Record<string, unknown> | null;
 			}>;
-			readiness: { ready: boolean; issues: ReadinessIssue[] };
+			readiness: {
+				ready: boolean;
+				issues: ReadinessIssue[];
+				generatingProfile: boolean;
+				campaignRunning: boolean;
+			};
 		};
 	} = $props();
 
 	let isStarting = $state(false);
 	let tab = $state<'overview' | 'profile' | 'tuning' | 'runs'>('overview');
 	let regenOpen = $state(false);
+
+	// Live-refresh readiness + run lists when a profile-gen or campaign run
+	// starts or finishes (this tab, another tab, or the daemon). Without this,
+	// the banner stays stuck on the snapshot taken at page load.
+	let es: EventSource | null = null;
+	onMount(() => {
+		es = new EventSource('/api/stream');
+		const refreshIfRelevant = (e: MessageEvent) => {
+			try {
+				const payload = JSON.parse(e.data);
+				if (payload?.campaignId === data.campaign.id) void invalidateAll();
+			} catch {
+				// non-JSON heartbeat: ignore
+			}
+		};
+		es.addEventListener('run:started', refreshIfRelevant);
+		es.addEventListener('run:finished', refreshIfRelevant);
+		es.addEventListener('run:failed', refreshIfRelevant);
+	});
+	onDestroy(() => es?.close());
 
 	const tabs = [
 		{ k: 'overview' as const, label: 'Overview' },
@@ -78,6 +113,8 @@
 	const isDraft = $derived(data.campaign.status === 'draft');
 	const ready = $derived(data.readiness?.ready ?? false);
 	const issues = $derived(data.readiness?.issues ?? []);
+	const generatingProfile = $derived(data.readiness?.generatingProfile ?? false);
+	const campaignRunning = $derived(data.readiness?.campaignRunning ?? false);
 	const hasRateLimit = $derived(
 		!!data.campaign.rateLimit && JSON.stringify(data.campaign.rateLimit) !== '{}',
 	);
@@ -132,7 +169,17 @@
 	}
 
 	function handleIssueAction(issue: ReadinessIssue) {
+		// In-progress issues have no action: the spinner is the affordance.
+		if (issue.fix.kind === 'progress') return;
 		if (issue.fix.kind === 'profile') {
+			// Belt-and-braces: even if SSE hasn't refreshed yet, don't let the
+			// user open the modal while a generation run is already underway.
+			if (generatingProfile) {
+				toast.info('Profile is already being generated', {
+					description: 'Wait for the current run to finish, then regenerate if needed.',
+				});
+				return;
+			}
 			if (isDraft || (data.campaign.config && Object.keys(data.campaign.config).length === 0)) {
 				regenOpen = true;
 			} else {
@@ -140,7 +187,7 @@
 			}
 			return;
 		}
-		if (issue.fix.kind === 'accounts' && issue.fix.href) {
+		if ((issue.fix.kind === 'accounts' || issue.fix.kind === 'runner') && issue.fix.href) {
 			window.location.assign(issue.fix.href);
 		}
 	}
@@ -190,37 +237,61 @@
 	<Button
 		onclick={runNow}
 		size="sm"
-		disabled={!ready}
-		loading={isStarting}
-		title={!ready ? 'Resolve the setup items below first' : undefined}
+		disabled={!ready || campaignRunning}
+		loading={isStarting || campaignRunning}
+		title={!ready
+			? 'Resolve the setup items below first'
+			: campaignRunning
+				? 'A run is already in progress for this campaign'
+				: undefined}
 	>
-		Run now
+		{campaignRunning ? 'Running…' : 'Run now'}
 	</Button>
 </header>
 
-{#if !ready && issues.length > 0}
+{#if issues.length > 0}
+	{@const blocking = issues.filter((i) => i.fix.kind !== 'progress').length}
 	<div class="mb-6 rounded-md border border-amber-500/40 bg-amber-500/10 p-4">
 		<div class="flex items-baseline justify-between gap-3 mb-3">
-			<h2 class="text-sm font-medium text-amber-700 dark:text-amber-300">Setup required</h2>
+			<h2 class="text-sm font-medium text-amber-700 dark:text-amber-300">
+				{blocking > 0 ? 'Setup required' : 'In progress'}
+			</h2>
 			<span class="text-xs text-amber-700/70 dark:text-amber-300/70">
-				{issues.length} item{issues.length === 1 ? '' : 's'} blocking this campaign
+				{#if blocking > 0}
+					{blocking} item{blocking === 1 ? '' : 's'} blocking this campaign
+				{:else}
+					An operation is running for this campaign
+				{/if}
 			</span>
 		</div>
 		<ul class="space-y-3">
 			{#each issues as issue (issue.id)}
 				<li class="flex items-start justify-between gap-3">
-					<div class="min-w-0">
-						<p class="text-sm font-medium">{issue.title}</p>
-						<p class="text-xs text-muted-foreground">{issue.hint}</p>
+					<div class="min-w-0 flex items-start gap-2">
+						{#if issue.fix.kind === 'progress'}
+							<Loader2 class="size-4 animate-spin text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+						{/if}
+						<div class="min-w-0">
+							<p class="text-sm font-medium">{issue.title}</p>
+							<p class="text-xs text-muted-foreground">{issue.hint}</p>
+						</div>
 					</div>
-					<Button
-						size="sm"
-						variant="outline"
-						class="shrink-0"
-						onclick={() => handleIssueAction(issue)}
-					>
-						{issue.fix.label}
-					</Button>
+					{#if issue.fix.kind === 'progress'}
+						<span
+							class="shrink-0 text-xs font-mono text-amber-700/80 dark:text-amber-300/80 px-2 py-1"
+						>
+							{issue.fix.label}
+						</span>
+					{:else}
+						<Button
+							size="sm"
+							variant="outline"
+							class="shrink-0"
+							onclick={() => handleIssueAction(issue)}
+						>
+							{issue.fix.label}
+						</Button>
+					{/if}
 				</li>
 			{/each}
 		</ul>

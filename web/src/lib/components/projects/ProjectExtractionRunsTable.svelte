@@ -51,17 +51,27 @@
         <p class="text-xs">Click "Auto-extract" on the description above to start one.</p>
       </div>
     {:else}
-      <Table.Root>
+      <!--
+        `table-fixed` is critical for the expanded RunLog row below. With the
+        default `table-auto` layout, the `<td colspan={9}>` containing the
+        RunLog would grow to fit its longest child (long assistant messages),
+        forcing the entire table - and the page - to scroll horizontally even
+        though every descendant has `min-w-0`. `table-fixed` locks column
+        widths to their first-row sizes, so the colspan'd row is bounded by
+        the table's outer width and the inner CSS-grid wrapper can correctly
+        clamp the runlog to that width.
+      -->
+      <Table.Root class="table-fixed w-full">
         <Table.Header>
           <Table.Row>
             <Table.Head class="w-16">ID</Table.Head>
-            <Table.Head>Status</Table.Head>
-            <Table.Head>Trigger</Table.Head>
-            <Table.Head>Runner</Table.Head>
+            <Table.Head class="w-24">Status</Table.Head>
+            <Table.Head class="w-24">Trigger</Table.Head>
+            <Table.Head class="w-32">Runner</Table.Head>
             <Table.Head>Source</Table.Head>
-            <Table.Head>Started</Table.Head>
-            <Table.Head>Duration</Table.Head>
-            <Table.Head>Tokens</Table.Head>
+            <Table.Head class="w-28">Started</Table.Head>
+            <Table.Head class="w-24">Duration</Table.Head>
+            <Table.Head class="w-20">Tokens</Table.Head>
             <Table.Head class="w-8"></Table.Head>
           </Table.Row>
         </Table.Header>
@@ -130,10 +140,20 @@
 
             {#if expanded}
               <Table.Row class="hover:bg-transparent border-t-0">
-                <Table.Cell colspan={9} class="p-0 border-t border-border/50 max-w-0">
+                <Table.Cell colspan={9} class="p-0 border-t border-border/50">
+                  <!--
+                    The `grid grid-cols-[minmax(0,1fr)]` wrapper is intentional:
+                    in a `<td>` with auto table-layout, `max-w-0` / `min-w-0`
+                    on inner divs are ignored when descendant content (the
+                    runlog rows + their long assistant text) needs more space,
+                    so the cell expands and the rows blow past the viewport.
+                    A single-column grid track of `minmax(0, 1fr)` constrains
+                    children to the track width regardless of their content,
+                    forcing the runlog inside to wrap at the cell's width.
+                  -->
                   <div
                     transition:slide={{ duration: 200 }}
-                    class="bg-muted/10 px-6 py-3 min-w-0 overflow-hidden"
+                    class="bg-muted/10 px-6 py-3 grid grid-cols-[minmax(0,1fr)] overflow-hidden"
                   >
                     <RunLog runId={run.id} />
                   </div>

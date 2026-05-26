@@ -16,7 +16,6 @@
     "./quota": "./src/quota.ts",
     "./quota-types": "./src/quota-types.ts",
     "./agents": "./src/agents/base.ts",
-    "./agents/claude-code": "./src/agents/claude-code.ts",
     "./agents/registry": "./src/agents/registry.ts",
     "./agents/meta": "./src/agents/meta.ts",
     "./agents/detect": "./src/agents/detect.ts",
@@ -41,10 +40,6 @@
     "./runlog": "./src/runlog/index.ts",
     "./runlog/types": "./src/runlog/types.ts",
     "./runlog/classify-failure": "./src/runlog/classify-failure.ts",
-    "./runlog/parsers": "./src/runlog/parsers/index.ts",
-    "./runlog/parsers/claude-code": "./src/runlog/parsers/claude-code.ts",
-    "./runlog/parsers/codex": "./src/runlog/parsers/codex.ts",
-    "./runlog/parsers/opencode": "./src/runlog/parsers/opencode.ts",
     "./runlog/usage": "./src/runlog/usage.ts",
     "./projects": "./src/projects/index.ts",
     "./scheduler/jitter": "./src/scheduler/jitter.ts",
@@ -59,6 +54,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.22.1",
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.45.2",
     "pg": "^8.13.0",

@@ -22,7 +22,7 @@ npm run dev            # dashboard at http://127.0.0.1:5180
 
 Embedded daemon mode runs the scheduler + reply poller + retention loops inside the web process - set `PITCHBOX_EMBED_DAEMON=1` in `.env` and skip `npm run -w daemon dev`. See [the daemon docs](https://fiorelorenzo.github.io/pitchbox/daemon) for when to run it as a separate process instead.
 
-Prerequisites: Node ≥ 22, Docker, and the `claude` CLI (or another supported runner) on PATH.
+Prerequisites: Node >= 22, Docker, and one of the supported ACP-compatible agent CLIs on PATH (Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, opencode, or Qwen Code - details in [docs/runners.md](./docs/runners.md)).
 
 ## Browser extension
 
