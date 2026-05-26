@@ -92,4 +92,5 @@ Clients MAY include `"version": <int>` in their request body to opt in to strict
 
 - The server sends a `:ping` SSE comment every 15 s so reverse proxies keep the connection alive.
 - The client wrapper at [`web/src/lib/realtime/sse.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/web/src/lib/realtime/sse.ts) tracks the last event timestamp. If no named event lands for **30 s** it closes the underlying `EventSource` and reconnects with capped exponential backoff (1 s → 30 s max). The wrapper exposes a `live` / `reconnecting` / `closed` status the sidebar indicator renders.
-- Event kinds currently published: `hello`, `run:started`, `run:log`, `drafts:changed`, plus future ones registered via `lib/server/events.ts`.
+- Event kinds currently published: `hello`, `run:started`, `run:log`, `run:finished`, `drafts:changed`, `project:description:updated`, plus future ones registered via `lib/server/events.ts`.
+- `run:started` and `run:finished` carry `{ runId, campaignId?, projectId?, exitCode?, error? }`. The campaign detail page subscribes to both and calls `invalidateAll()` when the event's `campaignId` matches its own, so the "Setup required" / "In progress" banner and the "Run now" button reflect the new state without a manual reload. Other surfaces (Projects overview, Inbox) wire the same events in the same way.

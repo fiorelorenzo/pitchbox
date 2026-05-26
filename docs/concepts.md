@@ -12,9 +12,20 @@ An **account** is a platform identity (e.g. `u/myhandle` on Reddit) tied to a pr
 
 A **campaign** scopes an outreach intent: which platform, which skill (`reddit-scout` for DMs, `reddit-commenter` for comment-replies, `reddit-poster` for top-level posts), which agent runner, which cron schedule. Campaigns snapshot their runner at creation; runs snapshot the runner and playbook at start.
 
+### Campaign readiness and live setup banner
+
+Each campaign page evaluates a small readiness check on every load (`web/src/lib/server/campaign-readiness.ts`) and renders the result as a banner at the top of the page. Two kinds of items can appear:
+
+- **Blocking issues** (orange "Setup required" header): the campaign cannot run until they are resolved. Examples: profile not generated, profile invalid against the skill schema, no account linked to the project, agent runner CLI not installed. Each blocking issue has an action button (Generate profile, Add account, Open settings, ...).
+- **In-progress operations** (amber "In progress" header with a spinner, no button): a long-running operation is already executing against this campaign. Today this surfaces a `campaign_skill_generation` run, i.e. the agent producing the profile. The banner reads "Generating campaign profile…" and updates live: the page subscribes to the dashboard's SSE stream and re-invalidates the readiness snapshot when a relevant `run:started` / `run:finished` arrives, so the banner clears itself without a manual refresh.
+
+The page also reads two booleans alongside the issues list, `generatingProfile` and `campaignRunning`, and uses them to disable redundant triggers. The "Run now" button shows "Running…" while a `campaign` run for this campaign is alive; clicking "Generate profile" while a generation is already running raises a toast instead of opening the modal.
+
+Project description extraction follows the same pattern: the **Auto-extract** button on a project page disables itself while a `project_extraction` run is alive (`extractionRunning` derived in `ProjectOverviewTab.svelte`).
+
 ## Runs
 
-A **run** is one execution of a campaign or background task. The dashboard streams `run_events` as the agent works, including normalised tool-use / message events.
+A **run** is one execution of a campaign or background task. The dashboard streams `run_events` as the agent works, including normalised tool-use / message events. The run-log UI (`web/src/lib/components/RunLog.svelte`) coalesces ACP-streamed `agent_message_chunk` tokens into a single assistant bubble per turn, pairs `tool_call` with its `tool_call_update` completion so each tool invocation renders as one expandable row with command + output, and timestamps every event with a granular `Ns ago` / `Nm Ks ago` label (see `relativeTimeFine` in `web/src/lib/utils/time.ts`).
 
 ## Drafts
 
