@@ -1,77 +1,51 @@
-# CLAUDE.md
+@AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Claude Code specific
 
-## Project
+Everything about *this repo* (stack, commands, architecture, conventions, gotchas)
+lives in `AGENTS.md`, imported above. This section is only for how **Claude Code**
+should operate here.
 
-Pitchbox: self-hosted outreach agent for Reddit (future: other platforms). Human-in-the-loop - the system researches, drafts, and bookkeeps; the human approves and sends. Alpha, currently `0.3.0` (M5 shipped).
+### Skills
 
-## Commands
+Process skills decide *how* to approach a task - reach for them before writing code:
 
-Requires Node ≥22, Docker, and the `claude` CLI logged into a Claude subscription. An `ENCRYPTION_KEY` (32-byte hex) must be set in `.env`.
+- **brainstorming** - before any new feature surface (a new route, CLI command,
+  table, playbook, or a behaviour change). Don't unilaterally design.
+- **test-driven-development** - this codebase is test-first and the suite hits a
+  real Postgres (`pitchbox_test`). Write/extend the test before the implementation.
+- **systematic-debugging** - for any failing test or unexpected behaviour (a flaky
+  run-event parse, a DM-sync mismatch, a quota edge case) before proposing a fix.
+- **verification-before-completion** - before claiming done, actually run the
+  relevant `npm run lint` / `typecheck` / `test` (and `npm run -w web check` for
+  Svelte) and read the output. Never assert "tests pass" from inference.
 
-```bash
-# DB (port 5434 on host, not 5432 - shared by dev + test DBs)
-npm run db:up                       # start Postgres
-npm run migrate                     # apply Drizzle migrations to DATABASE_URL
-npm run migrate:generate            # regenerate SQL after schema.ts edits
-npm run -w @pitchbox/shared seed:core
+### Context discipline
 
-# Dev
-npm run dev                         # web dashboard (127.0.0.1:5180)
-npm run -w daemon dev               # scheduler + reply poller (optional)
+Some files swamp the context window for nothing - never `Read` them whole:
 
-# Quality gates
-npm run lint                        # eslint + prettier --check
-npm run format                      # prettier --write
-npm run typecheck                   # tsc -b (project references)
-npm run -w web check                # svelte-check (Svelte-specific types)
+- `package-lock.json` and the generated SQL under `shared/src/db/migrations/`.
+- For lookups, use `grep` / `find` via Bash or dispatch the **Explore** agent;
+  only `Read` a source file in full when you're about to edit it.
 
-# Tests - vitest, hits a real Postgres at pitchbox_test (port 5434)
-npm test                            # full suite (fileParallelism disabled)
-npm run test:watch
-npx vitest run path/to/file.test.ts # single file
-npx vitest run -t "pattern"         # single test by name
-```
+### Parallel subagents
 
-Tests share one Postgres DB (`pitchbox_test`) and run sequentially - do **not** re-enable `fileParallelism`. Global setup (`tests/global-setup.ts`) migrates + seeds core; teardown intentionally leaves data for inspection.
+For anything that spans the monorepo (tracing a type through
+shared → cli → web → daemon, finding every call site, auditing how DB access is
+wired across workspaces), dispatch parallel **Explore** agents rather than serially
+reading. See the `superpowers:dispatching-parallel-agents` skill.
 
-## Architecture
+### Memory vs. AGENTS.md
 
-npm workspaces monorepo. All workspaces share a single version (`0.3.0`), and the dashboard sidebar reads that version from `web/package.json`.
+Auto-memory **is** active for this project - keep using it. The split:
 
-**Data flow:** A campaign (scheduled by cron or triggered manually) spawns a run via the web `/api/run` endpoint. The run launches an `AgentRunner` (today only `claude-code`, which spawns `claude -p --verbose --output-format stream-json`). The agent executes a markdown playbook from `playbooks/` - the playbook shells out to the `pitchbox` CLI (`bin/pitchbox`) to read/write the DB and produce drafts. A human reviews drafts in the Inbox, approves, sends manually on Reddit, then clicks **Mark as sent** which advances state and logs `contact_history`. The daemon polls sent DMs for replies via a pluggable `ReplyReader`.
+- **Durable, cross-conversation facts** (user preferences, recurring workflow
+  lessons) → auto-memory.
+- **Repo orientation** (structure, commands, conventions) → `AGENTS.md`.
+- If a memory and `AGENTS.md` disagree, trust the repo and update the stale one.
+  Don't duplicate `AGENTS.md` content into memory or vice-versa.
 
-**Workspaces:**
+### PRs
 
-- **`shared/`** - the only workspace that touches the DB directly.
-  - `src/db/` - Drizzle schema (`schema.ts`), client, migrations, core seed. Source of truth for all tables: projects, accounts, campaigns, runs, run_events, drafts, draft_events, contact_history, messages, blocklist, daemon_heartbeats, app_config.
-  - `src/blocklist.ts` - `isBlocklisted` helper (global + project scope) used by `drafts:create` and the send path.
-  - `src/quota.ts` / `src/quota-server.ts` - per-account usage + per-platform quota limits (loaded from `app_config.quota_defaults`, editable from Settings).
-  - `src/dm-sync.ts` / `src/comment-sync.ts` - pure matchers used by the extension's `/api/extension/dm-sync` route to attribute incoming DMs and `t1` comment-replies to drafts.
-  - `src/agents/` - `AgentRunner` interface (`base.ts`), `claude-code.ts` implementation, registry. `codex` and `opencode` exist only as typed stubs.
-  - `src/platforms/` - Reddit adapter + `base-reply-reader.ts` (`ReplyReader` interface; null reader is wired today).
-  - `src/runlog/` - parsers per agent runner, converting stream output into run events.
-  - `src/crypto.ts` - `ENCRYPTION_KEY`-backed encryption for secrets at rest.
-  - Exports are pinned in `package.json` `exports` - add new public modules there, not via deep imports.
-
-- **`cli/`** - the `pitchbox` command invoked by playbooks. Commands live in `src/commands/` (`run`, `drafts`, `reddit`, `utility`). Entry `bin/pitchbox` is a bash wrapper that runs `cli/src/index.ts` under `tsx`, so playbooks need no build step.
-
-- **`web/`** - SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte. Routes: `/`, `/inbox`, `/campaigns`, `/campaigns/[id]`, `/contacts`, `/conversations`, `/blocklist`, `/settings`, plus `/api/*` (including `/api/extension/*` for the Chrome extension and `/api/settings/quota` for editable quota limits). Server-only DB access lives under `src/lib/server/`; do not import `@pitchbox/shared/db` from client code.
-
-- **`daemon/`** - long-lived Node process. `scheduler.ts` parses `cron_expression` on active campaigns via `cron-parser` and POSTs to the web `/api/run` endpoint (the daemon never touches agent runners directly). `reply-poller.ts` drives the `ReplyReader`. `heartbeat.ts` writes to `daemon_heartbeats` so Settings can show liveness. SIGINT/SIGTERM trigger graceful shutdown.
-
-- **`playbooks/`** - agent-agnostic markdown consumed by an `AgentRunner`. Today: `reddit-scout.md`, `reddit-commenter.md`. They assume `bin/pitchbox` is on PATH within the agent sandbox.
-
-- **`extension/`** - Chrome MV3 companion built with Vite + `@crxjs/vite-plugin`. Reads the `pitchbox_draft=<id>` query param the dashboard appends to compose URLs; calls token-authenticated `/api/extension/*` endpoints on the local web server to flip drafts to `sent` when the user submits on Reddit. Build with `npm run build:extension` then load `extension/dist/` unpacked in `chrome://extensions`. Token lives in `app_config.extension_api_token` (generate/rotate from Settings).
-  - Background service worker runs two pollers every 10 min via `chrome.alarms`, both posting to `POST /api/extension/dm-sync`: (1) `src/background/inbox-sync.ts` polls `reddit.com/message/inbox.json` for legacy PMs **and** comment-replies (`t1` items), splitting them into the `items[]` and `comments[]` arrays of the request body; (2) `src/background/chat-sync.ts` calls `matrix.redditspace.com/_matrix/client/v3/sync` for Reddit Chat. The server matches DMs on `(account_handle, target_user)` and comment-replies on `parent_id == drafts.platform_comment_id`, recording everything in the `messages` table and flipping draft state to `replied`. The matchers (`shared/src/dm-sync.ts` and `shared/src/comment-sync.ts`) are pure and reused across both pollers.
-
-## Conventions
-
-- **DB access is centralised in `shared/`.** CLI, web server routes, and daemon all import from `@pitchbox/shared/db` (and subpaths). Never spin up an ad-hoc `pg` client.
-- **Runner indirection.** Each campaign snapshots its runner at creation, each run snapshots it again. Code that dispatches a run reads the snapshot - do not hardcode `claude-code`.
-- **Platform indirection.** Same for `ReplyReader` - the null reader is the current default for Reddit until a real DM reader lands (M3).
-- **`PITCHBOX_ROOT`** in `.env` must be an absolute path; the daemon and CLI use it to locate the repo when spawned by an agent from a different cwd.
-- **Secrets.** Account credentials are encrypted with `ENCRYPTION_KEY` via `shared/src/crypto.ts`. Never log decrypted secrets or commit `.env`.
-- **Do not run tests against the dev DB.** Vitest pins `DATABASE_URL` to `pitchbox_test` in `vitest.config.ts`; if you override it, match that pattern.
-- **Migrations.** Edit `shared/src/db/schema.ts`, run `npm run migrate:generate`, then `npm run migrate`. Never hand-edit generated SQL unless you also regenerate.
+PRs target the `development` branch, not `main` - pass `--base development` to
+`gh pr create`.
