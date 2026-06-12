@@ -6,14 +6,14 @@ Pitchbox's `AgentRunner` interface (`shared/src/agents/base.ts`) is the contract
 
 Four of the six backends speak ACP natively (a CLI flag or sub-command on the agent's own binary). Two of them, Claude Code and Codex, do NOT expose an ACP server mode on their primary CLI; for those, Pitchbox launches a thin adapter package via `npx` that wraps the agent's SDK and re-exposes it as an ACP server. Authentication still flows through each agent's own local state (e.g. `claude login`), so no extra auth step is required.
 
-| Slug          | Display name        | How Pitchbox launches it                              | Install / auth hint                                                                |
-| ------------- | ------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `claude-code` | Claude Code         | `npx -y @agentclientprotocol/claude-agent-acp`        | Install Anthropic Claude Code CLI and run `claude login`, or set `ANTHROPIC_API_KEY`. Adapter is fetched on demand and cached after the first run. |
-| `codex`       | Codex               | `npx -y @zed-industries/codex-acp`                    | Install OpenAI Codex CLI and run `codex login`, or set `OPENAI_API_KEY`. Adapter is fetched on demand and cached after the first run.              |
-| `gemini`      | Gemini CLI          | `gemini --acp`                                        | Install `@google/gemini-cli` and authenticate, or set `GEMINI_API_KEY` / `GOOGLE_API_KEY`. ACP is native.            |
-| `copilot`     | GitHub Copilot CLI  | `copilot --acp`                                       | Install GitHub Copilot CLI and run `copilot auth login`. ACP is native (public preview).                            |
-| `opencode`    | opencode            | `opencode acp`                                        | Install `opencode-ai` and configure a provider. ACP is native via the `acp` sub-command.                            |
-| `qwen-code`   | Qwen Code           | `qwen --acp`                                          | Install Qwen Code CLI and configure DashScope credentials. ACP is native (replaces the deprecated `--experimental-acp` flag).                       |
+| Slug          | Display name       | How Pitchbox launches it                       | Install / auth hint                                                                                                                                |
+| ------------- | ------------------ | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude-code` | Claude Code        | `npx -y @agentclientprotocol/claude-agent-acp` | Install Anthropic Claude Code CLI and run `claude login`, or set `ANTHROPIC_API_KEY`. Adapter is fetched on demand and cached after the first run. |
+| `codex`       | Codex              | `npx -y @zed-industries/codex-acp`             | Install OpenAI Codex CLI and run `codex login`, or set `OPENAI_API_KEY`. Adapter is fetched on demand and cached after the first run.              |
+| `gemini`      | Gemini CLI         | `gemini --acp`                                 | Install `@google/gemini-cli` and authenticate, or set `GEMINI_API_KEY` / `GOOGLE_API_KEY`. ACP is native.                                          |
+| `copilot`     | GitHub Copilot CLI | `copilot --acp`                                | Install GitHub Copilot CLI and run `copilot auth login`. ACP is native (public preview).                                                           |
+| `opencode`    | opencode           | `opencode acp`                                 | Install `opencode-ai` and configure a provider. ACP is native via the `acp` sub-command.                                                           |
+| `qwen-code`   | Qwen Code          | `qwen --acp`                                   | Install Qwen Code CLI and configure DashScope credentials. ACP is native (replaces the deprecated `--experimental-acp` flag).                      |
 
 Backend specs (binary name, ACP args, env passthrough, install notes) live as data in `shared/src/agents/acp/backends.ts` and are surfaced verbatim in **Settings → Status → Agent runners**.
 

@@ -2,13 +2,13 @@
 
 ## Claude Code specific
 
-Everything about *this repo* (stack, commands, architecture, conventions, gotchas)
+Everything about _this repo_ (stack, commands, architecture, conventions, gotchas)
 lives in `AGENTS.md`, imported above. This section is only for how **Claude Code**
 should operate here.
 
 ### Skills
 
-Process skills decide *how* to approach a task - reach for them before writing code:
+Process skills decide _how_ to approach a task - reach for them before writing code:
 
 - **brainstorming** - before any new feature surface (a new route, CLI command,
   table, playbook, or a behaviour change). Don't unilaterally design.
@@ -17,14 +17,14 @@ Process skills decide *how* to approach a task - reach for them before writing c
 - **systematic-debugging** - for any failing test or unexpected behaviour (a flaky
   run-event parse, a DM-sync mismatch, a quota edge case) before proposing a fix.
 - **verification-before-completion** - before claiming done, actually run the
-  relevant `npm run lint` / `typecheck` / `test` (and `npm run -w web check` for
+  relevant `pnpm run lint` / `typecheck` / `test` (and `pnpm -F web check` for
   Svelte) and read the output. Never assert "tests pass" from inference.
 
 ### Context discipline
 
 Some files swamp the context window for nothing - never `Read` them whole:
 
-- `package-lock.json` and the generated SQL under `shared/src/db/migrations/`.
+- `pnpm-lock.yaml` and the generated SQL under `shared/src/db/migrations/`.
 - For lookups, use `grep` / `find` via Bash or dispatch the **Explore** agent;
   only `Read` a source file in full when you're about to edit it.
 

@@ -8,6 +8,14 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+// Timestamps must be RELATIVE to now: the code-under-test ignores sync
+// statuses older than STALE_STATUS_MS (30 min). A hardcoded calendar date
+// rots — once "today" drifts >30 min past it, every fixture reads as stale
+// and the "unauthorized" assertions silently flip. "recent" sits well inside
+// the window; "stale" sits well outside it.
+const recentTimestamp = () => new Date(Date.now() - 5 * 60 * 1000).toISOString();
+const staleTimestamp = () => new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
 async function reset() {
   await getDb().execute(sql`TRUNCATE extension_devices RESTART IDENTITY CASCADE`);
 }
@@ -28,8 +36,8 @@ describe('hasChatUnauthorizedDevice', () => {
         lastSyncStatus: {
           chat: 'ok',
           legacy: 'ok',
-          captured_at: '2026-05-12T10:00:00Z',
-          updated_at: '2026-05-12T10:00:00Z',
+          captured_at: recentTimestamp(),
+          updated_at: recentTimestamp(),
         },
       });
     expect(await hasChatUnauthorizedDevice()).toBe(false);
@@ -45,8 +53,8 @@ describe('hasChatUnauthorizedDevice', () => {
           lastSyncStatus: {
             chat: 'ok',
             legacy: 'ok',
-            captured_at: '2026-05-12T10:00:00Z',
-            updated_at: '2026-05-12T10:00:00Z',
+            captured_at: recentTimestamp(),
+            updated_at: recentTimestamp(),
           },
         },
         {
@@ -55,12 +63,28 @@ describe('hasChatUnauthorizedDevice', () => {
           lastSyncStatus: {
             chat: 'unauthorized',
             legacy: 'ok',
-            captured_at: '2026-05-12T10:00:00Z',
-            updated_at: '2026-05-12T10:00:00Z',
+            captured_at: recentTimestamp(),
+            updated_at: recentTimestamp(),
           },
         },
       ]);
     expect(await hasChatUnauthorizedDevice()).toBe(true);
+  });
+
+  it('ignores a stale unauthorized report past the freshness window', async () => {
+    await getDb()
+      .insert(schema.extensionDevices)
+      .values({
+        label: 'stale',
+        tokenHash: hashToken(randomBytes(16).toString('hex')),
+        lastSyncStatus: {
+          chat: 'unauthorized',
+          legacy: 'ok',
+          captured_at: staleTimestamp(),
+          updated_at: staleTimestamp(),
+        },
+      });
+    expect(await hasChatUnauthorizedDevice()).toBe(false);
   });
 
   it('ignores revoked devices', async () => {
@@ -73,8 +97,8 @@ describe('hasChatUnauthorizedDevice', () => {
         lastSyncStatus: {
           chat: 'unauthorized',
           legacy: 'ok',
-          captured_at: '2026-05-12T10:00:00Z',
-          updated_at: '2026-05-12T10:00:00Z',
+          captured_at: recentTimestamp(),
+          updated_at: recentTimestamp(),
         },
       });
     expect(await hasChatUnauthorizedDevice()).toBe(false);

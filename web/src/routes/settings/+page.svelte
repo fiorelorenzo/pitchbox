@@ -159,7 +159,7 @@
 								<Alert.Title>Not running</Alert.Title>
 								<Alert.Description>
 									Start it from the repo root with
-									<code class="text-xs font-mono">npm run -w daemon dev</code>.
+									<code class="text-xs font-mono">pnpm -F daemon dev</code>.
 								</Alert.Description>
 							</Alert.Root>
 						{:else}

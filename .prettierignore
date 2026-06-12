@@ -1,0 +1,19 @@
+# Generated / non-source — never reformat these
+node_modules/
+pnpm-lock.yaml
+dist/
+build/
+.svelte-kit/
+coverage/
+*.min.js
+*.min.css
+
+# Generated docs site (VitePress)
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
+# Build/runtime junk
+extension/dist/
+web/build/
+daemon/tmp/
+.claude/

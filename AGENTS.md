@@ -10,37 +10,37 @@ Pitchbox: self-hosted outreach agent for Reddit (future: other platforms). Human
 
 ## Commands
 
-Requires Node ≥22, Docker, and the `claude` CLI logged into a Claude subscription. An `ENCRYPTION_KEY` (32-byte hex) must be set in `.env`.
+Requires Node ≥22, pnpm 9.15 (via corepack), Docker, and the `claude` CLI logged into a Claude subscription. An `ENCRYPTION_KEY` (32-byte hex) must be set in `.env`.
 
 ```bash
 # DB (port 5434 on host, not 5432 - shared by dev + test DBs)
-npm run db:up                       # start Postgres
-npm run migrate                     # apply Drizzle migrations to DATABASE_URL
-npm run migrate:generate            # regenerate SQL after schema.ts edits
-npm run -w @pitchbox/shared seed:core
+pnpm run db:up                       # start Postgres
+pnpm run migrate                     # apply Drizzle migrations to DATABASE_URL
+pnpm run migrate:generate            # regenerate SQL after schema.ts edits
+pnpm -F @pitchbox/shared seed:core
 
 # Dev
-npm run dev                         # web dashboard (127.0.0.1:5180)
-npm run -w daemon dev               # scheduler + reply poller (optional)
+pnpm run dev                         # web dashboard (127.0.0.1:5180)
+pnpm -F daemon dev                   # scheduler + reply poller (optional)
 
 # Quality gates
-npm run lint                        # eslint + prettier --check
-npm run format                      # prettier --write
-npm run typecheck                   # tsc -b (project references)
-npm run -w web check                # svelte-check (Svelte-specific types)
+pnpm run lint                        # eslint + prettier --check
+pnpm run format                      # prettier --write
+pnpm run typecheck                   # tsc -b (project references)
+pnpm -F web check                    # svelte-check (Svelte-specific types)
 
 # Tests - vitest, hits a real Postgres at pitchbox_test (port 5434)
-npm test                            # full suite (fileParallelism disabled)
-npm run test:watch
-npx vitest run path/to/file.test.ts # single file
-npx vitest run -t "pattern"         # single test by name
+pnpm test                            # full suite (fileParallelism disabled)
+pnpm run test:watch
+pnpm exec vitest run path/to/file.test.ts # single file
+pnpm exec vitest run -t "pattern"         # single test by name
 ```
 
 Tests share one Postgres DB (`pitchbox_test`) and run sequentially - do **not** re-enable `fileParallelism`. Global setup (`tests/global-setup.ts`) migrates + seeds core; teardown intentionally leaves data for inspection.
 
 ## Architecture
 
-npm workspaces monorepo. All workspaces share a single version (`0.3.0`), and the dashboard sidebar reads that version from `web/package.json`.
+pnpm workspaces monorepo (`pnpm-workspace.yaml`). All workspaces share a single version (`0.3.0`), and the dashboard sidebar reads that version from `web/package.json`.
 
 **Data flow:** A campaign (scheduled by cron or triggered manually) spawns a run via the web `/api/run` endpoint. The run launches an `AgentRunner` (today only `claude-code`, which spawns `claude -p --verbose --output-format stream-json`). The agent executes a markdown playbook from `playbooks/` - the playbook shells out to the `pitchbox` CLI (`bin/pitchbox`) to read/write the DB and produce drafts. A human reviews drafts in the Inbox, approves, sends manually on Reddit, then clicks **Mark as sent** which advances state and logs `contact_history`. The daemon polls sent DMs for replies via a pluggable `ReplyReader`.
 
@@ -65,7 +65,7 @@ npm workspaces monorepo. All workspaces share a single version (`0.3.0`), and th
 
 - **`playbooks/`** - agent-agnostic markdown consumed by an `AgentRunner`. Today: `reddit-scout.md`, `reddit-commenter.md`. They assume `bin/pitchbox` is on PATH within the agent sandbox.
 
-- **`extension/`** - Chrome MV3 companion built with Vite + `@crxjs/vite-plugin`. Reads the `pitchbox_draft=<id>` query param the dashboard appends to compose URLs; calls token-authenticated `/api/extension/*` endpoints on the local web server to flip drafts to `sent` when the user submits on Reddit. Build with `npm run build:extension` then load `extension/dist/` unpacked in `chrome://extensions`. Token lives in `app_config.extension_api_token` (generate/rotate from Settings).
+- **`extension/`** - Chrome MV3 companion built with Vite + `@crxjs/vite-plugin`. Reads the `pitchbox_draft=<id>` query param the dashboard appends to compose URLs; calls token-authenticated `/api/extension/*` endpoints on the local web server to flip drafts to `sent` when the user submits on Reddit. Build with `pnpm run build:extension` then load `extension/dist/` unpacked in `chrome://extensions`. Token lives in `app_config.extension_api_token` (generate/rotate from Settings).
   - Background service worker runs two pollers every 10 min via `chrome.alarms`, both posting to `POST /api/extension/dm-sync`: (1) `src/background/inbox-sync.ts` polls `reddit.com/message/inbox.json` for legacy PMs **and** comment-replies (`t1` items), splitting them into the `items[]` and `comments[]` arrays of the request body; (2) `src/background/chat-sync.ts` calls `matrix.redditspace.com/_matrix/client/v3/sync` for Reddit Chat. The server matches DMs on `(account_handle, target_user)` and comment-replies on `parent_id == drafts.platform_comment_id`, recording everything in the `messages` table and flipping draft state to `replied`. The matchers (`shared/src/dm-sync.ts` and `shared/src/comment-sync.ts`) are pure and reused across both pollers.
 
 ## Conventions
@@ -76,5 +76,5 @@ npm workspaces monorepo. All workspaces share a single version (`0.3.0`), and th
 - **`PITCHBOX_ROOT`** in `.env` must be an absolute path; the daemon and CLI use it to locate the repo when spawned by an agent from a different cwd.
 - **Secrets.** Account credentials are encrypted with `ENCRYPTION_KEY` via `shared/src/crypto.ts`. Never log decrypted secrets or commit `.env`.
 - **Do not run tests against the dev DB.** Vitest pins `DATABASE_URL` to `pitchbox_test` in `vitest.config.ts`; if you override it, match that pattern.
-- **Migrations.** Edit `shared/src/db/schema.ts`, run `npm run migrate:generate`, then `npm run migrate`. Never hand-edit generated SQL unless you also regenerate.
+- **Migrations.** Edit `shared/src/db/schema.ts`, run `pnpm run migrate:generate`, then `pnpm run migrate`. Never hand-edit generated SQL unless you also regenerate.
 - **English everywhere.** All in-code comments and user-facing UI strings are in English (even when the conversation is in another language). No em dashes in any text - use regular hyphens or colons.

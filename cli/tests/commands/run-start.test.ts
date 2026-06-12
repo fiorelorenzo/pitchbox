@@ -24,7 +24,7 @@ const VALID_SCOUT_PROFILE = {
 };
 
 function cli(args: string): string {
-  return execSync(`npm -s run -w @pitchbox/cli dev -- ${args}`, {
+  return execSync(`pnpm -s -F @pitchbox/cli dev ${args}`, {
     encoding: 'utf8',
     cwd: '/Users/lorenzofiore/Progetti/Personale/pitchbox',
   });

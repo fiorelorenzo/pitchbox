@@ -236,7 +236,6 @@ export class AcpRunner implements AgentRunner {
         }
       };
 
-
       let stdoutBuf = '';
       child.stdout.setEncoding('utf8');
       child.stdout.on('data', (chunk: string) => {

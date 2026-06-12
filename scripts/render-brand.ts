@@ -1,5 +1,5 @@
 // Render Pitchbox brand exports (favicons, app icons, extension icons) from
-// the SVG masters in `assets/brand/`. Run with `npx tsx scripts/render-brand.ts`.
+// the SVG masters in `assets/brand/`. Run with `pnpm exec tsx scripts/render-brand.ts`.
 //
 // Outputs:
 //   - assets/brand/exports/mark-{size}.png

@@ -13,8 +13,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pitchbox/shared": "*",
+    "@pitchbox/shared": "workspace:*",
     "cron-parser": "^4.9.0",
+    "drizzle-orm": "^0.45.2",
     "dotenv": "^16.4.0"
   },
   "devDependencies": {
