@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vite build",
     "zip": "cd dist && zip -r ../pitchbox-extension.zip . && cd ..",
     "check": "svelte-check --tsconfig ./tsconfig.json"
