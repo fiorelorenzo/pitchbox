@@ -7,7 +7,7 @@ function cliWithStdin(args: string, input: string): string {
   return execSync(`pnpm -s -F @pitchbox/cli dev ${args}`, {
     encoding: 'utf8',
     input,
-    cwd: '/Users/lorenzofiore/Progetti/Personale/pitchbox',
+    cwd: process.cwd(),
   });
 }
 
