@@ -128,7 +128,38 @@ describe('AcpRunner integration', () => {
       timeoutMs: 5000,
     });
     await handle.result;
-    expect(ack).toMatchObject({ outcome: { type: 'allow' } });
+    expect(ack).toMatchObject({ outcome: { outcome: 'selected', optionId: 'allow_always' } });
+  });
+
+  it('hands the agent the Pitchbox MCP server in session/new', async () => {
+    const captured: Array<{ mcpServers?: unknown }> = [];
+    const { runner } = makeRunner({
+      onSessionNew: (params) => {
+        captured.push(params as { mcpServers?: unknown });
+        return { sessionId: 'sess-mock-1' };
+      },
+      onSessionPrompt: () => ({ stopReason: 'end_turn' }),
+    });
+    const handle = runner.run({
+      playbookPath,
+      slug: 'reddit-scout',
+      env: { PITCHBOX_ROOT: '/repo/root' },
+      cwd: '/repo/root',
+      timeoutMs: 5000,
+    });
+    await handle.result;
+    const servers = (captured[0]?.mcpServers ?? []) as Array<{
+      name: string;
+      command: string;
+      args: unknown;
+      env: unknown;
+    }>;
+    const pitchbox = servers.find((s) => s.name === 'pitchbox');
+    expect(pitchbox).toBeDefined();
+    expect(pitchbox!.command).toContain('pitchbox-mcp');
+    // ACP's stdio mcpServer schema requires args + env to be arrays.
+    expect(Array.isArray(pitchbox!.args)).toBe(true);
+    expect(Array.isArray(pitchbox!.env)).toBe(true);
   });
 
   it('treats stop_reason: error as success=false', async () => {
