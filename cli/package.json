@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@pitchbox/shared": "workspace:*",
     "commander": "^12.1.0",
     "drizzle-orm": "^0.45.2",
