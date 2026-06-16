@@ -379,8 +379,18 @@ function buildPitchboxMcpServer(opts: AgentRunOptions): {
 } {
   const root = opts.env.PITCHBOX_ROOT || opts.cwd;
   const merged: Record<string, string | undefined> = { ...process.env, ...opts.env };
+  // Forward the run/campaign binding so the MCP tools default to this session's
+  // run without the agent having to know or choose the ids.
   const env: { name: string; value: string }[] = [];
-  for (const key of ['DATABASE_URL', 'PITCHBOX_ROOT', 'ENCRYPTION_KEY', 'PATH', 'NODE_ENV']) {
+  for (const key of [
+    'DATABASE_URL',
+    'PITCHBOX_ROOT',
+    'PITCHBOX_RUN_ID',
+    'PITCHBOX_CAMPAIGN_ID',
+    'ENCRYPTION_KEY',
+    'PATH',
+    'NODE_ENV',
+  ]) {
     const value = merged[key];
     if (typeof value === 'string' && value.length > 0) env.push({ name: key, value });
   }

@@ -124,6 +124,128 @@ describe('pitchbox MCP server (read-only tools)', () => {
   });
 });
 
+const SCOUT_PROFILE = {
+  targetSubreddits: ['rpg'],
+  topicKeywords: ['ai dm'],
+  avoidKeywords: [],
+  fitScoreThreshold: 3,
+  voice: {
+    tone: 'casual',
+    hardBans: [],
+    dos: [],
+    openerStyle: 'lowercase-casual',
+    disclosure: 'i build this',
+  },
+  offer: { productUrl: 'https://example.com', subject: 'invite', text: 'short pitch' },
+  systemInstructions: 'casual tone',
+};
+
+async function seedScoutCampaign() {
+  const db = getDb();
+  const platformId = await redditPlatformId();
+  const [project] = await db
+    .insert(schema.projects)
+    .values({ slug: 'mcp-test', name: 'MCP Test' })
+    .returning();
+  const [account] = await db
+    .insert(schema.accounts)
+    .values({ projectId: project.id, platformId, handle: 'alice', role: 'personal' })
+    .returning();
+  const [campaign] = await db
+    .insert(schema.campaigns)
+    .values({
+      projectId: project.id,
+      platformId,
+      name: 'Scout',
+      skillSlug: 'reddit-scout',
+      config: SCOUT_PROFILE,
+    })
+    .returning();
+  return { projectId: project.id, accountId: account.id, campaignId: campaign.id, platformId };
+}
+
+describe('pitchbox MCP server (lifecycle + write tools)', () => {
+  beforeEach(async () => {
+    await reset();
+  });
+
+  it('run_start creates a run and returns campaign context', async () => {
+    const { campaignId } = await seedScoutCampaign();
+    const client = await connectClient();
+    const res = await call(client, 'run_start', { campaignId });
+    const data = parse(res) as {
+      runId: number;
+      campaign: { name: string };
+      platform: { slug: string };
+      accounts: { handle: string }[];
+    };
+    expect(data.runId).toBeGreaterThan(0);
+    expect(data.campaign.name).toBe('Scout');
+    expect(data.platform.slug).toBe('reddit');
+    expect(data.accounts[0]?.handle).toBe('alice');
+  });
+
+  it('run_start defaults the campaign id to PITCHBOX_CAMPAIGN_ID', async () => {
+    const { campaignId } = await seedScoutCampaign();
+    process.env.PITCHBOX_CAMPAIGN_ID = String(campaignId);
+    try {
+      const client = await connectClient();
+      const res = await call(client, 'run_start', {});
+      expect((parse(res) as { runId: number }).runId).toBeGreaterThan(0);
+    } finally {
+      delete process.env.PITCHBOX_CAMPAIGN_ID;
+    }
+  });
+
+  it('run_start errors when no campaign id is available', async () => {
+    const client = await connectClient();
+    const res = await call(client, 'run_start', {});
+    expect(res.isError).toBe(true);
+  });
+
+  it('run_finish marks the run finished', async () => {
+    const { campaignId } = await seedScoutCampaign();
+    const client = await connectClient();
+    const { runId } = parse(await call(client, 'run_start', { campaignId })) as { runId: number };
+    const res = await call(client, 'run_finish', { runId, status: 'success' });
+    expect(parse(res)).toEqual({ runId, status: 'success' });
+    const db = getDb();
+    const [row] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+    expect(row.status).toBe('success');
+    expect(row.finishedAt).toBeTruthy();
+  });
+
+  it('drafts_create persists drafts and skips blocklisted targets', async () => {
+    const { campaignId, accountId, platformId } = await seedScoutCampaign();
+    const db = getDb();
+    await db
+      .insert(schema.blocklist)
+      .values({ platformId, kind: 'user', value: 'blocked-guy', reason: 'spam' });
+    const client = await connectClient();
+    const { runId } = parse(await call(client, 'run_start', { campaignId })) as { runId: number };
+    const res = await call(client, 'drafts_create', {
+      runId,
+      drafts: [
+        { accountId, kind: 'dm', targetUser: 'good-guy', body: 'hey, nice post', fitScore: 4 },
+        { accountId, kind: 'dm', targetUser: 'blocked-guy', body: 'hey there', fitScore: 4 },
+      ],
+    });
+    const data = parse(res) as { inserted: number; skipped: { targetUser: string }[] };
+    expect(data.inserted).toBe(1);
+    expect(data.skipped.map((s) => s.targetUser)).toContain('blocked-guy');
+    const rows = await db.select().from(schema.drafts).where(eq(schema.drafts.runId, runId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.targetUser).toBe('good-guy');
+  });
+
+  it('reddit_scout surfaces an unknown run as a tool error', async () => {
+    const client = await connectClient();
+    const res = await call(client, 'reddit_scout', { runId: 987654 });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? '').toContain('not found');
+  });
+});
+
 afterAll(async () => {
   await getPool().end();
 });
