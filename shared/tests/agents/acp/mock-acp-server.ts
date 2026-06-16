@@ -110,7 +110,16 @@ export class MockAcpServer {
         jsonrpc: '2.0',
         id,
         method: 'session/request_permission',
-        params: { sessionId, toolCall: { toolName, args } },
+        params: {
+          sessionId,
+          toolCall: { toolName, args },
+          // Mirror the option set the real adapter offers for a tool permission.
+          options: [
+            { optionId: 'allow_always', kind: 'allow_always', name: 'Always allow' },
+            { optionId: 'allow', kind: 'allow_once', name: 'Allow' },
+            { optionId: 'reject', kind: 'reject_once', name: 'Reject' },
+          ],
+        },
       } as unknown as JsonRpcResponse);
     });
   }

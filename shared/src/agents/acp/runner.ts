@@ -14,7 +14,12 @@ import {
   type AcpStopReasonKind,
   type AcpUsage,
 } from './event-normalizer.js';
-import { AutoAllowPolicy, type PermissionPolicy } from './permission.js';
+import {
+  AutoAllowPolicy,
+  selectPermissionOption,
+  type PermissionOption,
+  type PermissionPolicy,
+} from './permission.js';
 
 type SpawnFn = typeof nodeSpawn;
 
@@ -224,14 +229,26 @@ export class AcpRunner implements AgentRunner {
         }
         if (msg.method === 'session/request_permission' && msg.id != null) {
           const params = msg.params as
-            | { toolCall?: { toolName?: string; args?: Record<string, unknown> } }
+            | {
+                toolCall?: { toolName?: string; args?: Record<string, unknown> };
+                options?: PermissionOption[];
+              }
             | undefined;
           const tc = params?.toolCall;
           const decision = policy.decide({
             toolName: tc?.toolName ?? 'unknown',
             args: tc?.args ?? {},
           });
-          sendResponse(msg.id, { outcome: { type: decision } });
+          // ACP expects a selected optionId, not a bare verdict. Map the decision
+          // onto one of the offered options; if none matches, cancel rather than
+          // send a shape the agent will reject.
+          const selected = selectPermissionOption(params?.options ?? [], decision);
+          sendResponse(
+            msg.id,
+            selected
+              ? { outcome: { outcome: 'selected', optionId: selected.optionId } }
+              : { outcome: { outcome: 'cancelled' } },
+          );
           return;
         }
       };
@@ -292,7 +309,7 @@ export class AcpRunner implements AgentRunner {
       // 2. session/new
       const sessionResult = await sendRequest<{ sessionId: string }>('session/new', {
         cwd: opts.cwd,
-        mcpServers: [],
+        mcpServers: [buildPitchboxMcpServer(opts)],
       });
       sessionId = sessionResult.sessionId;
 
@@ -346,6 +363,29 @@ export class AcpRunner implements AgentRunner {
 function buildPrompt(opts: AgentRunOptions, playbook: string): string {
   const campaign = opts.env.PITCHBOX_CAMPAIGN_ID ?? '';
   return `You are running the Pitchbox playbook '${opts.slug}' for campaign ${campaign}.\n\n${playbook}`;
+}
+
+/**
+ * Build the ACP `mcpServers` entry for the Pitchbox MCP server. Every run hands
+ * the agent this stdio server so it can reach Pitchbox data through MCP tools
+ * (the data-access boundary shared with the cloud runner; see
+ * docs/cloud-runner.md). It is spawned from the repo's `bin/pitchbox-mcp`
+ * wrapper and reads its DB config from the forwarded env (or the repo `.env`).
+ */
+function buildPitchboxMcpServer(opts: AgentRunOptions): {
+  name: string;
+  command: string;
+  args: string[];
+  env: { name: string; value: string }[];
+} {
+  const root = opts.env.PITCHBOX_ROOT || opts.cwd;
+  const merged: Record<string, string | undefined> = { ...process.env, ...opts.env };
+  const env: { name: string; value: string }[] = [];
+  for (const key of ['DATABASE_URL', 'PITCHBOX_ROOT', 'ENCRYPTION_KEY', 'PATH', 'NODE_ENV']) {
+    const value = merged[key];
+    if (typeof value === 'string' && value.length > 0) env.push({ name: key, value });
+  }
+  return { name: 'pitchbox', command: join(root, 'bin', 'pitchbox-mcp'), args: [], env };
 }
 
 function buildUsage(u: AcpUsage | undefined) {
