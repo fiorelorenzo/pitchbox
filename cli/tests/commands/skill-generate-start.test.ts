@@ -6,7 +6,7 @@ import { eq, sql } from 'drizzle-orm';
 function cli(args: string): string {
   return execSync(`pnpm -s -F @pitchbox/cli dev ${args}`, {
     encoding: 'utf8',
-    cwd: '/Users/lorenzofiore/Progetti/Personale/pitchbox',
+    cwd: process.cwd(),
   });
 }
 
