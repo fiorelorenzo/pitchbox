@@ -49,7 +49,6 @@ export class AcpRunner implements AgentRunner {
   private readonly policy: PermissionPolicy;
   private readonly initializeTimeoutMs: number;
   // Placeholder for per-run config that future tasks will use.
-  // eslint-disable-next-line @typescript-eslint/no-unused-private-class-members
   private readonly config: RunnerConfig;
 
   constructor(opts: AcpRunnerOptions) {
