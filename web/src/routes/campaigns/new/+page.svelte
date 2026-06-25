@@ -37,7 +37,13 @@
 		untrack(() => (data.preselected?.scenarioSlug as ScenarioSlug) ?? 'reddit-scout'),
 	);
 	let name = $state(untrack(() => data.preselected?.name ?? ''));
-	let runner = $state('claude-code');
+	// Pre-select the first available runner. Because the runner list is cloud-first
+	// (AGENT_RUNNER_META), this picks the cloud runner whenever it is configured, so
+	// the user just sees the cloud runner in use. Falls back to claude-code when no
+	// runner is detected as available yet.
+	let runner = $state<string>(
+		untrack(() => data.runners.find((r) => r.available)?.slug ?? 'claude-code'),
+	);
 	let objective = $state(untrack(() => data.preselected?.objective ?? ''));
 	let cron = $state('');
 	let saving = $state(false);
