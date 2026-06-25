@@ -1,4 +1,7 @@
 import { describe, expect, it, beforeEach, afterAll } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
 import { eq, sql } from 'drizzle-orm';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -243,6 +246,142 @@ describe('pitchbox MCP server (lifecycle + write tools)', () => {
     const res = await call(client, 'reddit_scout', { runId: 987654 });
     expect(res.isError).toBe(true);
     expect(res.content[0]?.text ?? '').toContain('not found');
+  });
+});
+
+describe('pitchbox MCP server (project + skill tools)', () => {
+  beforeEach(async () => {
+    await reset();
+  });
+
+  it('project_extract_start exposes the source path; finish persists the description', async () => {
+    const db = getDb();
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ slug: 'extract', name: 'Extract' })
+      .returning();
+    const dir = mkdtempSync(join(tmpdir(), 'pb-src-'));
+    writeFileSync(join(dir, 'README.md'), '# Cool Product\nDoes things.', 'utf8');
+    const [run] = await db
+      .insert(schema.runs)
+      .values({
+        kind: 'project_extraction',
+        projectId: project.id,
+        trigger: 'manual',
+        status: 'running',
+        params: { source: { kind: 'folder', value: dir } },
+      })
+      .returning();
+
+    const client = await connectClient();
+    const start = parse(await call(client, 'project_extract_start', { runId: run.id })) as {
+      sourcePath: string;
+      scenarios: unknown[];
+    };
+    expect(start.sourcePath).toBe(dir);
+    expect(start.scenarios.length).toBeGreaterThan(0);
+
+    const fin = parse(
+      await call(client, 'project_extract_finish', {
+        runId: run.id,
+        description: '## Overview\nGreat product for RPG players.',
+        recommendations: [
+          { scenarioSlug: 'reddit-scout', name: 'Launch', objective: 'reach rpg folks' },
+        ],
+      }),
+    ) as { recommendations: number };
+    expect(fin.recommendations).toBe(1);
+
+    const [p2] = await db.select().from(schema.projects).where(eq(schema.projects.id, project.id));
+    expect(p2?.description).toContain('Great product');
+    const [r2] = await db.select().from(schema.runs).where(eq(schema.runs.id, run.id));
+    expect(r2?.status).toBe('success');
+  });
+
+  it('project_insights_context reports counts; project_insights persists a summary', async () => {
+    const db = getDb();
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ slug: 'ins', name: 'Ins' })
+      .returning();
+    const client = await connectClient();
+    const ctx = parse(
+      await call(client, 'project_insights_context', { projectId: project.id }),
+    ) as {
+      draftCount: number;
+      projectName: string;
+    };
+    expect(ctx.draftCount).toBe(0);
+    expect(ctx.projectName).toBe('Ins');
+    const ins = parse(
+      await call(client, 'project_insights', {
+        projectId: project.id,
+        summaryMd: '## Insights\n- a pattern (draft #1)',
+        evidence: { draftIds: [1] },
+      }),
+    ) as { id: number };
+    expect(ins.id).toBeGreaterThan(0);
+  });
+
+  it('skill_generate validates the profile: invalid is a tool error, valid writes config', async () => {
+    const db = getDb();
+    const platformId = await redditPlatformId();
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ slug: 'skill', name: 'Skill', description: 'desc' })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId,
+        name: 'C',
+        skillSlug: 'reddit-scout',
+        status: 'draft',
+        config: {},
+      })
+      .returning();
+    const mkRun = async () =>
+      (
+        await db
+          .insert(schema.runs)
+          .values({
+            kind: 'campaign_skill_generation',
+            campaignId: campaign.id,
+            trigger: 'manual',
+            status: 'running',
+            params: { scenario: 'reddit-scout', objective: 'reach rpg folks', mode: 'apply' },
+          })
+          .returning()
+      )[0];
+
+    const run = await mkRun();
+    const client = await connectClient();
+    const start = parse(await call(client, 'skill_generate_start', { runId: run.id })) as {
+      scenario: string;
+      objective: string;
+    };
+    expect(start.scenario).toBe('reddit-scout');
+    expect(start.objective).toContain('rpg');
+
+    const bad = await call(client, 'skill_generate_finish', {
+      runId: run.id,
+      profile: { foo: 'bar' },
+    });
+    expect(bad.isError).toBe(true);
+    expect(bad.content[0]?.text ?? '').toContain('validation');
+
+    const run2 = await mkRun();
+    const okRes = parse(
+      await call(client, 'skill_generate_finish', { runId: run2.id, profile: SCOUT_PROFILE }),
+    ) as { status: string };
+    expect(okRes.status).toBe('success');
+    const [c2] = await db
+      .select()
+      .from(schema.campaigns)
+      .where(eq(schema.campaigns.id, campaign.id));
+    expect(c2?.status).toBe('active');
+    expect((c2?.config as { targetSubreddits?: unknown }).targetSubreddits).toBeDefined();
   });
 });
 
