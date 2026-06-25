@@ -20,6 +20,7 @@
     "./agents/meta": "./src/agents/meta.ts",
     "./agents/detect": "./src/agents/detect.ts",
     "./agents/config": "./src/agents/config.ts",
+    "./agents/cloud/protocol": "./src/agents/cloud/protocol.ts",
     "./campaigns": "./src/campaigns/index.ts",
     "./blocklist": "./src/blocklist.ts",
     "./contact-dedup": "./src/contact-dedup.ts",
