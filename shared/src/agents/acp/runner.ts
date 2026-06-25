@@ -48,7 +48,8 @@ export class AcpRunner implements AgentRunner {
   private readonly logDir: string;
   private readonly policy: PermissionPolicy;
   private readonly initializeTimeoutMs: number;
-  // Placeholder for per-run config that future tasks will use.
+  // Per-runner config (model, maxTurns). Applied to the claude-code backend via
+  // session/new `_meta.claudeCode.options` - see buildClaudeCodeMeta.
   private readonly config: RunnerConfig;
 
   constructor(opts: AcpRunnerOptions) {
@@ -305,11 +306,16 @@ export class AcpRunner implements AgentRunner {
       );
       await Promise.race([initPromise, initTimeoutPromise]);
 
-      // 2. session/new
-      const sessionResult = await sendRequest<{ sessionId: string }>('session/new', {
+      // 2. session/new. For the claude-code backend, forward the per-runner model
+      // / maxTurns through `_meta.claudeCode.options` (the ACP adapter spreads it
+      // into the Agent SDK query). Other backends keep their own defaults today.
+      const sessionParams: Record<string, unknown> = {
         cwd: opts.cwd,
         mcpServers: [buildPitchboxMcpServer(opts)],
-      });
+      };
+      const claudeMeta = buildClaudeCodeMeta(this.slug, this.config);
+      if (claudeMeta) sessionParams._meta = claudeMeta;
+      const sessionResult = await sendRequest<{ sessionId: string }>('session/new', sessionParams);
       sessionId = sessionResult.sessionId;
 
       // 3. session/prompt
@@ -397,6 +403,25 @@ function buildPitchboxMcpServer(opts: AgentRunOptions): {
     if (typeof value === 'string' && value.length > 0) env.push({ name: key, value });
   }
   return { name: 'pitchbox', command: join(root, 'bin', 'pitchbox-mcp'), args: [], env };
+}
+
+/**
+ * Build the `session/new` `_meta` that carries per-runner model / maxTurns to the
+ * claude-code ACP backend. The `@agentclientprotocol/claude-agent-acp` adapter
+ * reads `_meta.claudeCode.options` and spreads it into the Agent SDK `query()`
+ * options, so this is how a configured model actually reaches the LLM. Returns
+ * `undefined` when nothing is configured (or for non-claude backends, which use
+ * their own model mechanisms), leaving the agent on its default model.
+ */
+function buildClaudeCodeMeta(
+  slug: AcpBackendSlug,
+  config: RunnerConfig,
+): { claudeCode: { options: Record<string, unknown> } } | undefined {
+  if (slug !== 'claude-code') return undefined;
+  const options: Record<string, unknown> = {};
+  if (config.model) options.model = config.model;
+  if (typeof config.maxTurns === 'number') options.maxTurns = config.maxTurns;
+  return Object.keys(options).length > 0 ? { claudeCode: { options } } : undefined;
 }
 
 function buildUsage(u: AcpUsage | undefined) {
