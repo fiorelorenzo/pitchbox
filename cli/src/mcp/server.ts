@@ -41,21 +41,32 @@ function errorResult(message: string): ToolResult {
   return { isError: true, content: [{ type: 'text', text: message }] };
 }
 
-/** Read a positive integer from the environment, or null if unset/invalid. */
-function envInt(name: string): number | null {
-  const raw = process.env[name];
+/** Parse a positive integer from a raw string, or null if unset/invalid. */
+function posInt(raw: string | undefined): number | null {
   if (!raw) return null;
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-/** Project id bound to this session (project runs / insighter). */
-function sessionProjectId(): number | null {
-  return envInt('PITCHBOX_PROJECT_ID') ?? envInt('PROJECT_ID');
+/**
+ * Run/campaign/project the server is bound to. An explicit context (the cloud
+ * adapter, which runs the server in-process and needs per-instance binding) wins
+ * over the session env (the local runner, which spawns the server as a subprocess
+ * with run-specific env).
+ */
+export interface PitchboxMcpContext {
+  runId?: number;
+  campaignId?: number;
+  projectId?: number;
 }
 
-export function createPitchboxMcpServer(): McpServer {
+export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer {
   const server = new McpServer({ name: 'pitchbox', version: '0.4.0' });
+
+  const defaultRunId = () => ctx.runId ?? posInt(process.env.PITCHBOX_RUN_ID);
+  const defaultCampaignId = () => ctx.campaignId ?? posInt(process.env.PITCHBOX_CAMPAIGN_ID);
+  const defaultProjectId = () =>
+    ctx.projectId ?? posInt(process.env.PITCHBOX_PROJECT_ID) ?? posInt(process.env.PROJECT_ID);
 
   server.registerTool(
     'blocklist_check',
@@ -128,10 +139,10 @@ export function createPitchboxMcpServer(): McpServer {
       },
     },
     async ({ campaignId }) => {
-      const cid = campaignId ?? envInt('PITCHBOX_CAMPAIGN_ID');
+      const cid = campaignId ?? defaultCampaignId();
       if (cid == null) return errorResult('campaignId required (or set PITCHBOX_CAMPAIGN_ID)');
       try {
-        return jsonResult(await startRun(cid, envInt('PITCHBOX_RUN_ID')));
+        return jsonResult(await startRun(cid, defaultRunId()));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }
@@ -154,7 +165,7 @@ export function createPitchboxMcpServer(): McpServer {
       },
     },
     async ({ runId }) => {
-      const rid = runId ?? envInt('PITCHBOX_RUN_ID');
+      const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         return jsonResult(await scoutRun(rid));
@@ -181,7 +192,7 @@ export function createPitchboxMcpServer(): McpServer {
       },
     },
     async ({ drafts, runId }) => {
-      const rid = runId ?? envInt('PITCHBOX_RUN_ID');
+      const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         return jsonResult(await createDrafts(rid, drafts));
@@ -288,7 +299,7 @@ export function createPitchboxMcpServer(): McpServer {
       },
     },
     async ({ status, runId, error, tokens }) => {
-      const rid = runId ?? envInt('PITCHBOX_RUN_ID');
+      const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         return jsonResult(await finishRun(rid, status, { error, tokens }));
@@ -314,7 +325,7 @@ export function createPitchboxMcpServer(): McpServer {
       },
     },
     async ({ runId }) => {
-      const rid = runId ?? envInt('PITCHBOX_RUN_ID');
+      const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         return jsonResult(await projectExtractStart(rid));
@@ -345,7 +356,7 @@ export function createPitchboxMcpServer(): McpServer {
       },
     },
     async ({ description, recommendations, runId }) => {
-      const rid = runId ?? envInt('PITCHBOX_RUN_ID');
+      const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         return jsonResult(await projectExtractFinish(rid, description, recommendations ?? []));
@@ -371,7 +382,7 @@ export function createPitchboxMcpServer(): McpServer {
       },
     },
     async ({ projectId }) => {
-      const pid = projectId ?? sessionProjectId();
+      const pid = projectId ?? defaultProjectId();
       if (pid == null) return errorResult('projectId required (or set PITCHBOX_PROJECT_ID)');
       try {
         return jsonResult(await projectInsightsContext(pid));
@@ -398,7 +409,7 @@ export function createPitchboxMcpServer(): McpServer {
       },
     },
     async ({ summaryMd, evidence, projectId }) => {
-      const pid = projectId ?? sessionProjectId();
+      const pid = projectId ?? defaultProjectId();
       if (pid == null) return errorResult('projectId required (or set PITCHBOX_PROJECT_ID)');
       try {
         return jsonResult(await projectInsights(pid, summaryMd, evidence));
@@ -424,7 +435,7 @@ export function createPitchboxMcpServer(): McpServer {
       },
     },
     async ({ runId }) => {
-      const rid = runId ?? envInt('PITCHBOX_RUN_ID');
+      const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         return jsonResult(await skillGenerateStart(rid));
@@ -453,7 +464,7 @@ export function createPitchboxMcpServer(): McpServer {
       },
     },
     async ({ profile, runId }) => {
-      const rid = runId ?? envInt('PITCHBOX_RUN_ID');
+      const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         return jsonResult(await skillGenerateFinish(rid, profile));
