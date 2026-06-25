@@ -246,6 +246,25 @@ describe('pitchbox MCP server (lifecycle + write tools)', () => {
   });
 });
 
+describe('pitchbox MCP server (hn_search)', () => {
+  it('advertises hn_search', async () => {
+    const client = await connectClient();
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).toContain('hn_search');
+  });
+
+  it('returns structured Hacker News items (live)', async () => {
+    const client = await connectClient();
+    const res = await call(client, 'hn_search', { listing: 'top', limit: 3 });
+    expect(res.isError).toBeFalsy();
+    const data = parse(res) as { count: number; items: Array<{ id: unknown; title: unknown }> };
+    expect(typeof data.count).toBe('number');
+    expect(Array.isArray(data.items)).toBe(true);
+    expect(data.items.length).toBeLessThanOrEqual(3);
+    if (data.items[0]) expect(data.items[0]).toHaveProperty('title');
+  });
+});
+
 afterAll(async () => {
   await getPool().end();
 });

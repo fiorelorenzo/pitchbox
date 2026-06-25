@@ -7,30 +7,29 @@ description: Draft proactive Hacker News submissions (Show HN / Ask HN / regular
 
 You are acting inside a Pitchbox campaign run on the `hackernews` platform. Your job is to draft top-level Hacker News submissions (Show HN, Ask HN, or a regular text post) framed by an angle the human picked. The human reviews and submits manually. Never click submit yourself.
 
+All state lives in Postgres; you read and write it exclusively through the **`pitchbox` MCP server** (tools named `mcp__pitchbox__*`). Do not shell out and do not touch the database directly.
+
 ## Inputs
 
-Environment variables:
+The run is already bound to a campaign and run through the environment. Step 1 returns the canonical `runId` - thread it into the later calls.
 
-- `PITCHBOX_CAMPAIGN_ID`
-- `PITCHBOX_RUN_ID` (may be absent if invoked directly; step 1 creates it)
+## Tools
+
+- `run_start` - create/resume the run and load campaign context.
+- `hn_search` - fetch Hacker News stories from a listing.
+- `drafts_create` - write the drafts back.
+- `run_finish` - close the run.
 
 ## Steps
 
-1. **Start the run.**
+1. **Start the run.** Call `run_start` (no arguments needed).
 
-   ```
-   pitchbox run:start --campaign=$PITCHBOX_CAMPAIGN_ID
-   ```
+   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform` (should be `hackernews`), `campaign.config` (`postAngle`, `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`, optional `format` hint such as `show-hn` / `ask-hn` / `text`), `accounts`.
 
-   Parse JSON. Extract `runId`, `project` (incl. `description` markdown for high-level context), `platform` (should be `hackernews`), `campaign.config` (`postAngle`, `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`, optional `format` hint such as `show-hn` / `ask-hn` / `text`), `accounts`.
-
-2. **Study what's currently on HN.** Get a feel for what's resonating right now and the formats that already exist on the front page, so you don't ship something that's about to be flagged as duplicate or off-topic.
-
-   ```
-   pitchbox hn:search --listing=top --limit=30
-   pitchbox hn:search --listing=show --limit=30
-   pitchbox hn:search --listing=ask --limit=30
-   ```
+2. **Study what's currently on HN.** Get a feel for what's resonating right now and the formats that already exist on the front page, so you don't ship something that's about to be flagged as duplicate or off-topic. Call `hn_search` three times:
+   - `{ "listing": "top", "limit": 30 }`
+   - `{ "listing": "show", "limit": 30 }`
+   - `{ "listing": "ask", "limit": 30 }`
 
    Note recurring themes, opening lines, and how the most-upvoted Show HN / Ask HN posts frame themselves.
 
@@ -53,21 +52,21 @@ Environment variables:
 
 5. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` - no secret. Record `accountId`.
 
-6. **Build the compose URL.** HN submit page accepts a prefilled title (and url for Show HN):
+6. **Build the compose URL.** The HN submit form does not honour query-string prefill, so the user pastes title and body manually. Always emit the plain submit URL plus `pitchbox_draft=<draftId>` so the extension's content script can attach:
 
    ```
    https://news.ycombinator.com/submit
    ```
 
-   The submit form does not honour query-string prefill, so the user pastes title and body manually. Always emit the plain submit URL plus `pitchbox_draft=<draftId>` so the extension's content script can attach.
+7. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
-7. **Persist drafts.** For each surviving draft, emit one row:
+   Each draft:
 
    ```json
    {
-     "accountId": <pick from accounts[0]>,
+     "accountId": 1,
      "kind": "post",
-     "fitScore": <1-5 - how strong is this for HN today>,
+     "fitScore": 4,
      "targetUser": null,
      "title": "<post title>",
      "body": "<plain-text body, including disclosure where applicable>",
@@ -78,25 +77,7 @@ Environment variables:
    }
    ```
 
-   Then:
-
-   ```
-   pitchbox drafts:create --run=<runId>
-   ```
-
-   pipes the JSON array on stdin.
-
-8. **Finish the run.**
-
-   ```
-   pitchbox run:finish --run=<runId> --status=success
-   ```
-
-   If anything failed irrecoverably:
-
-   ```
-   pitchbox run:finish --run=<runId> --status=failed --error="<reason>"
-   ```
+8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
 
 ## Hard rules
 
@@ -108,5 +89,5 @@ Environment variables:
 
 ## Failure modes
 
-- Any CLI `{"ok": false}` -> stop, `run:finish --status=failed --error="..."`.
-- Zero qualifying drafts after step 4 -> finish with `success`, zero drafts is valid (means the angle wasn't ripe).
+- If any tool call returns an error result, stop and call `run_finish` with `{ "runId": <runId>, "status": "failed", "error": "<message>" }`.
+- Zero qualifying drafts after step 4 → finish with `success`, zero drafts is valid (means the angle wasn't ripe).
