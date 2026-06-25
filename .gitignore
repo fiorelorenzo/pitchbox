@@ -7,8 +7,10 @@ docs/.vitepress/cache/
 
 # Cloud-only code lives in private submodules wired in at build time.
 # OSS clones never see these paths. See docs/auth.md → repo strategy.
-cloud/
-private/
+# Anchored to the repo root so nested OSS dirs named `cloud` (e.g. the
+# cloud-runner protocol contract under shared/) are NOT ignored.
+/cloud/
+/private/
 
 # Node
 node_modules/

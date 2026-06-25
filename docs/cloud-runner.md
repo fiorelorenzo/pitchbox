@@ -73,6 +73,33 @@ entirely through a client-supplied MCP server. Concrete facts for the build:
   request never fires, but the cloud path (and any MCP tool use) must use the
   `selected` / `optionId` shape.
 
+## Runner-service spike: VALIDATED
+
+A second spike validated the runner service's load-bearing assumption: that the
+agent can be driven through an MCP server reached over the **network**, not just
+a local stdio subprocess. The real Pitchbox MCP server was exposed over
+**Streamable HTTP** in one process; a separately-spawned `claude-agent-acp` was
+pointed at it via `session/new` `mcpServers: [{ type: "http", url, headers: [] }]`
+and ran the full reddit-scout playbook. The agent called `run_start`,
+`reddit_scout`, `staging_candidates`, `drafts_create` and `run_finish` over HTTP,
+the run finished `success`, and a real draft was written to the test DB.
+
+This is the prerequisite for the relay: the runner can host an HTTP MCP endpoint
+the agent talks to, and tunnel every MCP frame to the client. Facts for the build:
+
+- ACP `mcpServers` **http** entry schema (ACP SDK `zMcpServerHttp`):
+  `{ name, type: "http", url, headers }` where `headers` is a required array.
+- The agent uses Streamable HTTP for `type: "http"` MCP servers
+  (`StreamableHTTPServerTransport` on the server side works).
+- The earlier permission side-finding is fixed in the local runner already
+  (`selectPermissionOption`, commit history); the same shape is reused here.
+
+The remaining piece is the transparent **MCP-over-WebSocket tunnel** between the
+runner's HTTP relay and the client's local Pitchbox MCP server. The wire contract
+for it now lives in OSS at
+[`shared/src/agents/cloud/protocol.ts`](../shared/src/agents/cloud/protocol.ts)
+(`@pitchbox/shared/agents/cloud/protocol`).
+
 ## Architecture
 
 ```
