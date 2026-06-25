@@ -200,6 +200,17 @@ describe('pitchbox MCP server (lifecycle + write tools)', () => {
     }
   });
 
+  it('run_start binds the campaign from an explicit context (no env)', async () => {
+    const { campaignId } = await seedScoutCampaign();
+    const server = createPitchboxMcpServer({ campaignId });
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverT);
+    const client = new Client({ name: 'ctx', version: '0.0.0' });
+    await client.connect(clientT);
+    const res = await call(client, 'run_start', {});
+    expect((parse(res) as { runId: number }).runId).toBeGreaterThan(0);
+  });
+
   it('run_start errors when no campaign id is available', async () => {
     const client = await connectClient();
     const res = await call(client, 'run_start', {});
