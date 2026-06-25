@@ -2,8 +2,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { checkBlocklist, checkContactHistory, getStagingCandidates } from '../commands/utility.js';
 import { startRun, finishRun } from '../commands/run.js';
-import { createDrafts, Payload } from '../commands/drafts.js';
-import { scoutRun } from '../commands/reddit.js';
+import {
+  createDrafts,
+  Payload,
+  getDraftById,
+  listDrafts,
+  updateDraftBody,
+} from '../commands/drafts.js';
+import { scoutRun, snapshotSubreddit } from '../commands/reddit.js';
 import { searchHn, HN_LISTINGS } from '../commands/hn.js';
 import type { HnListing } from '@pitchbox/shared/platforms/hackernews';
 import {
@@ -179,6 +185,64 @@ export function createPitchboxMcpServer(): McpServer {
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         return jsonResult(await createDrafts(rid, drafts));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'subreddit_snapshot',
+    {
+      title: 'Snapshot a subreddit',
+      description:
+        'Fetch a subreddit snapshot for the poster playbook: top posts of the week plus about + rules. Returns { subreddit, about, rules, posts }.',
+      inputSchema: {
+        subreddit: z.string().describe('subreddit name without the r/ prefix'),
+      },
+    },
+    async ({ subreddit }) => {
+      try {
+        return jsonResult(await snapshotSubreddit(subreddit));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'drafts_get',
+    {
+      title: 'Get drafts',
+      description:
+        'Fetch a single draft with its thread messages when `id` is given, otherwise list drafts (optionally filtered by state).',
+      inputSchema: {
+        id: z.number().int().positive().optional().describe('fetch one draft with its messages'),
+        state: z.string().optional().describe('filter the list by draft state'),
+      },
+    },
+    async ({ id, state }) => {
+      try {
+        return jsonResult(id != null ? await getDraftById(id) : await listDrafts(state));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'drafts_update',
+    {
+      title: 'Update a draft body',
+      description: 'Overwrite the body of an existing draft (used by the reply-drafter playbook).',
+      inputSchema: {
+        id: z.number().int().positive().describe('draft id'),
+        body: z.string().min(1).describe('the new draft body'),
+      },
+    },
+    async ({ id, body }) => {
+      try {
+        return jsonResult(await updateDraftBody(id, body));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }

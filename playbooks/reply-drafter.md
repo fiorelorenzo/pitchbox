@@ -7,6 +7,8 @@ description: Draft a continuation message for an existing conversation thread. R
 
 You are acting inside a Pitchbox reply-drafting run. The human reviewer just received a reply from a target user on a thread our agent previously initiated. Your job is to produce a single short, human-sounding continuation that builds on the conversation history.
 
+All state lives in Postgres; you read and write it exclusively through the **`pitchbox` MCP server** (tools named `mcp__pitchbox__*`). Do not shell out and do not touch the database directly.
+
 ## Inputs
 
 Environment variables:
@@ -14,15 +16,16 @@ Environment variables:
 - `PITCHBOX_REPLY_DRAFT_ID` - the placeholder draft row already inserted with `kind = 'reply_dm'` or `kind = 'reply_comment'`. You will rewrite its body.
 - `PITCHBOX_PARENT_MESSAGE_ID` - the inbound `messages` row that triggered this run.
 
+## Tools
+
+- `drafts_get` - fetch a draft and its thread messages.
+- `drafts_update` - overwrite a draft's body.
+
 ## Steps
 
-1. **Load the conversation history.**
+1. **Load the conversation history.** Call `drafts_get` with `{ "id": <PITCHBOX_REPLY_DRAFT_ID> }`.
 
-   ```
-   pitchbox drafts:get --id=$PITCHBOX_REPLY_DRAFT_ID
-   ```
-
-   Parse the JSON to extract `parentMessageId`, `accountId`, `targetUser`, `platformId`, and the parent draft id from `source_ref.parentDraftId`. Then load the full message stream for the underlying contact thread so you can read every prior turn (outbound and inbound) in chronological order. Pay attention to:
+   The result is `{ draft, messages }`: the placeholder draft (read `accountId`, `targetUser`, `platformId`, and `sourceRef.parentDraftId`) plus the message stream for this thread in chronological order. Read every prior turn (outbound and inbound). Pay attention to:
    - **Tone & voice** the human used in the original outbound draft. Match it.
    - **What the target user actually said** in the most recent inbound message - answer their question, acknowledge their concern, or move the conversation forward.
    - **Don't be salesy.** This is a 1:1 conversation, not a campaign blast.
@@ -33,13 +36,7 @@ Environment variables:
    - No greetings if the previous turn was within the last 24h.
    - End with either a soft question or a clear close - never both.
 
-3. **Persist the body.** Overwrite the placeholder body on `$PITCHBOX_REPLY_DRAFT_ID`:
-
-   ```
-   echo '{ "body": "..." }' | pitchbox drafts:update --id=$PITCHBOX_REPLY_DRAFT_ID
-   ```
-
-   (V1 note: the `drafts:update` command is still on the TODO list - for now, the human reviewer rewrites the placeholder body in the inbox UI. This playbook documents the contract the runner will fulfil once that command lands.)
+3. **Persist the body.** Overwrite the placeholder body by calling `drafts_update` with `{ "id": <PITCHBOX_REPLY_DRAFT_ID>, "body": "<your reply>" }`.
 
 4. **Stop.** Do not send. The reviewer will approve from `/conversations/[id]`.
 
@@ -52,4 +49,4 @@ The playbook's only side-effect is updating `drafts.body` for the row identified
 - Send a real message.
 - Create new `contact_history` rows.
 - Score quality (a separate `quality-judge` pass owns that).
-- Touch any other draft than `$PITCHBOX_REPLY_DRAFT_ID`.
+- Touch any other draft than `PITCHBOX_REPLY_DRAFT_ID`.
