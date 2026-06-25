@@ -7,22 +7,30 @@ operator should know about.
 
 ## Inputs
 
-The orchestrator invokes you with one variable: `PROJECT_ID`. All data access
-goes through the `pitchbox` CLI (already on PATH). Do **not** spin up your own
-database client.
+The project is bound to this session through the environment. All data access
+goes through the **`pitchbox` MCP server** (tools named `mcp__pitchbox__*`). Do
+**not** spin up your own database client.
+
+## Tools
+
+- `project_insights_context` - load the project's stats and sampled history.
+- `project_insights` - persist the generated summary.
 
 ## Steps
 
-1. Load the project's stats:
-   - `pitchbox project:insights:context --project $PROJECT_ID`
-   - This returns: project name/slug, draft count, reply count, last 30 days of
-     run summaries, and a sampled set of drafts that received a `replied` state
-     transition.
+1. Load the project's stats with `project_insights_context` (no arguments needed;
+   it defaults to this session's project). This returns: project name/slug, draft
+   count, reply count, recent run summaries, and a sampled set of drafts that
+   received a `replied` state transition.
 
-2. If `draftCount < 5`, stop and emit:
+2. If `draftCount < 5`, stop and persist an "insufficient data" summary via
+   `project_insights`:
 
    ```json
-   {"ok": true, "summaryMd": "Not enough data yet. Send at least 5 drafts before generating insights.", "evidence": {"reason": "insufficient_data", "draftCount": <n>}}
+   {
+     "summaryMd": "Not enough data yet. Send at least 5 drafts before generating insights.",
+     "evidence": { "reason": "insufficient_data", "draftCount": 0 }
+   }
    ```
 
 3. Otherwise read the sample. Look for:
@@ -35,13 +43,11 @@ database client.
    non-trivial claim **must** cite evidence inline as `(draft #123)` or
    `(message #45)` so the operator can audit the reasoning.
 
-5. Emit the final result as a single JSON line on stdout:
-   ```json
-   {"ok": true, "summaryMd": "<markdown>", "evidence": {"draftIds": [...], "messageIds": [...]}}
-   ```
+5. Persist the result by calling `project_insights` with:
 
-The wrapper command `pitchbox project:insights <id>` will persist the row into
-`project_insights`.
+   ```json
+   { "summaryMd": "<markdown>", "evidence": { "draftIds": [], "messageIds": [] } }
+   ```
 
 ## Constraints
 

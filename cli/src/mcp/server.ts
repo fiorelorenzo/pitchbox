@@ -6,6 +6,13 @@ import { createDrafts, Payload } from '../commands/drafts.js';
 import { scoutRun } from '../commands/reddit.js';
 import { searchHn, HN_LISTINGS } from '../commands/hn.js';
 import type { HnListing } from '@pitchbox/shared/platforms/hackernews';
+import {
+  projectExtractStart,
+  projectExtractFinish,
+  projectInsightsContext,
+  projectInsights,
+} from '../commands/project.js';
+import { skillGenerateStart, skillGenerateFinish } from '../commands/skill.js';
 
 // The Pitchbox MCP server exposes the data-access surface that playbooks need as
 // MCP tools, reusing the same query logic as the `pitchbox` CLI. It is the single
@@ -34,6 +41,11 @@ function envInt(name: string): number | null {
   if (!raw) return null;
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/** Project id bound to this session (project runs / insighter). */
+function sessionProjectId(): number | null {
+  return envInt('PITCHBOX_PROJECT_ID') ?? envInt('PROJECT_ID');
 }
 
 export function createPitchboxMcpServer(): McpServer {
@@ -216,6 +228,171 @@ export function createPitchboxMcpServer(): McpServer {
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         return jsonResult(await finishRun(rid, status, { error, tokens }));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'project_extract_start',
+    {
+      title: 'Start a project extraction',
+      description:
+        'Load the project-extraction context: projectId, sourcePath to inspect, scaffold template, current description, available scenarios, and existing campaigns. Defaults to this session run.',
+      inputSchema: {
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ runId }) => {
+      const rid = runId ?? envInt('PITCHBOX_RUN_ID');
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        return jsonResult(await projectExtractStart(rid));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'project_extract_finish',
+    {
+      title: 'Finish a project extraction',
+      description:
+        'Persist the generated project description and 0-10 campaign recommendations. Invalid recommendations are dropped; the description is saved when non-empty. Returns { runId, projectId, bytes, recommendations }.',
+      inputSchema: {
+        description: z.string().min(1).describe('the composed markdown project description'),
+        recommendations: z
+          .array(z.record(z.unknown()))
+          .optional()
+          .describe('array of { scenarioSlug, name, objective }'),
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ description, recommendations, runId }) => {
+      const rid = runId ?? envInt('PITCHBOX_RUN_ID');
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        return jsonResult(await projectExtractFinish(rid, description, recommendations ?? []));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'project_insights_context',
+    {
+      title: 'Load project insights context',
+      description:
+        'Load a project outreach history for analysis: draft count, reply count, and sampled drafts/messages. Returns the context object.',
+      inputSchema: {
+        projectId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('project id (defaults to PITCHBOX_PROJECT_ID / PROJECT_ID)'),
+      },
+    },
+    async ({ projectId }) => {
+      const pid = projectId ?? sessionProjectId();
+      if (pid == null) return errorResult('projectId required (or set PITCHBOX_PROJECT_ID)');
+      try {
+        return jsonResult(await projectInsightsContext(pid));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'project_insights',
+    {
+      title: 'Persist a project insights summary',
+      description: 'Persist a generated insights summary (markdown + evidence) for a project.',
+      inputSchema: {
+        summaryMd: z.string().min(1).describe('the markdown insights summary'),
+        evidence: z.record(z.unknown()).optional().describe('cited draft/message ids etc.'),
+        projectId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('project id (defaults to PITCHBOX_PROJECT_ID / PROJECT_ID)'),
+      },
+    },
+    async ({ summaryMd, evidence, projectId }) => {
+      const pid = projectId ?? sessionProjectId();
+      if (pid == null) return errorResult('projectId required (or set PITCHBOX_PROJECT_ID)');
+      try {
+        return jsonResult(await projectInsights(pid, summaryMd, evidence));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'skill_generate_start',
+    {
+      title: 'Start a campaign skill generation',
+      description:
+        'Load the skill-generation context: campaignId, scenario, objective, project description, schema prompt description, and existing config. Defaults to this session run.',
+      inputSchema: {
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ runId }) => {
+      const rid = runId ?? envInt('PITCHBOX_RUN_ID');
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        return jsonResult(await skillGenerateStart(rid));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'skill_generate_finish',
+    {
+      title: 'Finish a campaign skill generation',
+      description:
+        'Validate the generated profile against the scenario schema and write it to campaigns.config (flipping a draft campaign to active). Returns a tool error listing field paths when validation fails.',
+      inputSchema: {
+        profile: z
+          .record(z.unknown())
+          .describe('the structured campaign profile (campaign.config)'),
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ profile, runId }) => {
+      const rid = runId ?? envInt('PITCHBOX_RUN_ID');
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        return jsonResult(await skillGenerateFinish(rid, profile));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }

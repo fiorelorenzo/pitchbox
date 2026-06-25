@@ -387,6 +387,8 @@ function buildPitchboxMcpServer(opts: AgentRunOptions): {
     'PITCHBOX_ROOT',
     'PITCHBOX_RUN_ID',
     'PITCHBOX_CAMPAIGN_ID',
+    'PITCHBOX_PROJECT_ID',
+    'PROJECT_ID',
     'ENCRYPTION_KEY',
     'PATH',
     'NODE_ENV',

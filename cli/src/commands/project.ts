@@ -13,74 +13,216 @@ type Source =
   | { kind: 'git'; value: string }
   | { kind: 'upload'; value: string };
 
+// Core project-extraction / insights logic, extracted so both the CLI and the
+// Pitchbox MCP server share it. Returns data (or throws); never touches exit.
+
+export async function projectExtractStart(runId: number) {
+  if (!Number.isInteger(runId)) throw new Error('invalid run id');
+  const db = getDb();
+  const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+  if (!run) throw new Error(`run ${runId} not found`);
+  if (run.kind !== 'project_extraction')
+    throw new Error(`run ${runId} is not a project_extraction run`);
+  if (!run.projectId) throw new Error(`run ${runId} has no project_id`);
+
+  const [project] = await db
+    .select()
+    .from(schema.projects)
+    .where(eq(schema.projects.id, run.projectId));
+  if (!project) throw new Error(`project ${run.projectId} not found`);
+
+  const source = (run.params as { source?: Source }).source;
+  if (!source) throw new Error('run has no source in params');
+
+  let sourcePath: string;
+  if (source.kind === 'folder') {
+    if (!isAbsolute(source.value)) throw new Error('folder path must be absolute');
+    const s = await stat(source.value).catch(() => null);
+    if (!s || !s.isDirectory())
+      throw new Error(`folder ${source.value} is not a readable directory`);
+    sourcePath = source.value;
+  } else if (source.kind === 'git') {
+    sourcePath = `/tmp/pitchbox-extract-${runId}`;
+    await rm(sourcePath, { recursive: true, force: true });
+    await shallowClone(source.value, sourcePath);
+  } else if (source.kind === 'upload') {
+    if (!isAbsolute(source.value)) throw new Error('upload path must be absolute');
+    const s = await stat(source.value).catch(() => null);
+    if (!s || !s.isDirectory())
+      throw new Error(`upload ${source.value} is not a readable directory`);
+    sourcePath = source.value;
+  } else {
+    throw new Error(`unsupported source kind: ${(source as { kind: string }).kind}`);
+  }
+
+  const scenarios = SCENARIO_META.map((s) => ({
+    slug: s.slug,
+    label: s.label,
+    description: s.description,
+  }));
+  const existingCampaigns = await loadExistingCampaigns(db, project.id);
+
+  return {
+    runId,
+    projectId: project.id,
+    sourcePath,
+    scaffoldTemplate: DESCRIPTION_SCAFFOLD,
+    currentDescription: project.description ?? '',
+    scenarios,
+    existingCampaigns,
+  };
+}
+
+export async function projectExtractFinish(
+  runId: number,
+  description: string,
+  rawRecommendations: unknown[] = [],
+) {
+  if (!Number.isInteger(runId)) throw new Error('invalid run id');
+  if (!description || !description.trim()) throw new Error('description is empty');
+
+  const db = getDb();
+  const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+  if (!run) throw new Error(`run ${runId} not found`);
+  if (run.kind !== 'project_extraction')
+    throw new Error(`run ${runId} is not a project_extraction run`);
+  if (!run.projectId) throw new Error(`run ${runId} has no project_id`);
+
+  // Validate recommendations per-item; drop invalid.
+  const validRecs: Array<{ scenarioSlug: string; name: string; objective: string }> = [];
+  for (let i = 0; i < rawRecommendations.length; i++) {
+    const parsed = RecommendationItemSchema.safeParse(rawRecommendations[i]);
+    if (parsed.success) {
+      validRecs.push(parsed.data);
+    } else {
+      const issues = parsed.error.issues
+        .map((iss) => `${iss.path.join('.')}: ${iss.message}`)
+        .join('; ');
+      process.stderr.write(`[warn] recommendation[${i}] dropped: ${issues}\n`);
+    }
+  }
+  let capped = validRecs;
+  if (capped.length > 10) {
+    process.stderr.write(`[warn] recommendations capped from ${capped.length} to 10\n`);
+    capped = capped.slice(0, 10);
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(schema.projects)
+      .set({ description, updatedAt: new Date() })
+      .where(eq(schema.projects.id, run.projectId!));
+    await tx
+      .delete(schema.campaignRecommendations)
+      .where(eq(schema.campaignRecommendations.projectId, run.projectId!));
+    if (capped.length > 0) {
+      await tx.insert(schema.campaignRecommendations).values(
+        capped.map((r) => ({
+          projectId: run.projectId!,
+          scenarioSlug: r.scenarioSlug,
+          name: r.name,
+          objective: r.objective,
+        })),
+      );
+    }
+    await tx
+      .update(schema.runs)
+      .set({ status: 'success', finishedAt: new Date() })
+      .where(eq(schema.runs.id, runId));
+  });
+
+  // Best-effort cleanup of any temp dir created for the run.
+  const source = (run.params as { source?: { kind: string; value?: string } }).source;
+  if (source?.kind === 'git') {
+    await rm(`/tmp/pitchbox-extract-${runId}`, { recursive: true, force: true }).catch(() => {});
+  } else if (source?.kind === 'upload' && typeof source.value === 'string') {
+    await rm(source.value, { recursive: true, force: true }).catch(() => {});
+  }
+
+  return {
+    runId,
+    projectId: run.projectId,
+    bytes: description.length,
+    recommendations: capped.length,
+  };
+}
+
+export async function projectInsightsContext(projectId: number) {
+  if (!Number.isInteger(projectId)) throw new Error('invalid project id');
+  const db = getDb();
+  const [project] = await db
+    .select()
+    .from(schema.projects)
+    .where(eq(schema.projects.id, projectId));
+  if (!project) throw new Error(`project ${projectId} not found`);
+
+  const drafts = await db
+    .select({
+      id: schema.drafts.id,
+      state: schema.drafts.state,
+      kind: schema.drafts.kind,
+      createdAt: schema.drafts.createdAt,
+    })
+    .from(schema.drafts)
+    .where(eq(schema.drafts.projectId, projectId))
+    .orderBy(desc(schema.drafts.createdAt))
+    .limit(200);
+
+  // Join via drafts so we only pull messages tied to this project's drafts.
+  const draftIds = drafts.map((d) => d.id);
+  const messages =
+    draftIds.length === 0
+      ? []
+      : await db
+          .select({
+            id: schema.messages.id,
+            draftId: schema.messages.draftId,
+            isFromUs: schema.messages.isFromUs,
+            createdAtPlatform: schema.messages.createdAtPlatform,
+          })
+          .from(schema.messages)
+          .where(inArray(schema.messages.draftId, draftIds))
+          .orderBy(desc(schema.messages.createdAtPlatform))
+          .limit(200);
+
+  return {
+    projectId,
+    projectName: project.name,
+    draftCount: drafts.length,
+    replyCount: messages.filter((m) => !m.isFromUs).length,
+    drafts,
+    messages,
+  };
+}
+
+export async function projectInsights(projectId: number, summaryMd: string, evidence: unknown) {
+  if (!Number.isInteger(projectId)) throw new Error('invalid project id');
+  if (!summaryMd || !summaryMd.trim()) throw new Error('summaryMd missing');
+  const ev = evidence && typeof evidence === 'object' ? (evidence as Record<string, unknown>) : {};
+  const db = getDb();
+  const [row] = await db
+    .insert(schema.projectInsights)
+    .values({ projectId, summaryMd, evidence: ev })
+    .returning({ id: schema.projectInsights.id, generatedAt: schema.projectInsights.generatedAt });
+  return { id: row.id, projectId, generatedAt: row.generatedAt };
+}
+
 export function registerProjectCommands(program: Command) {
   program
     .command('project:extract:start')
     .requiredOption('--run <id>', 'run id')
     .action(async (opts: { run: string }) => {
-      const runId = Number(opts.run);
-      if (!Number.isInteger(runId)) return fail('invalid run id');
-      const db = getDb();
-      const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
-      if (!run) return fail(`run ${runId} not found`);
-      if (run.kind !== 'project_extraction')
-        return fail(`run ${runId} is not a project_extraction run`);
-      if (!run.projectId) return fail(`run ${runId} has no project_id`);
-
-      const [project] = await db
-        .select()
-        .from(schema.projects)
-        .where(eq(schema.projects.id, run.projectId));
-      if (!project) return fail(`project ${run.projectId} not found`);
-
-      const source = (run.params as { source?: Source }).source;
-      if (!source) return fail('run has no source in params');
-
-      let sourcePath: string;
-      if (source.kind === 'folder') {
-        if (!isAbsolute(source.value)) return fail('folder path must be absolute');
-        const s = await stat(source.value).catch(() => null);
-        if (!s || !s.isDirectory())
-          return fail(`folder ${source.value} is not a readable directory`);
-        sourcePath = source.value;
-      } else if (source.kind === 'git') {
-        sourcePath = `/tmp/pitchbox-extract-${runId}`;
-        await rm(sourcePath, { recursive: true, force: true });
-        await shallowClone(source.value, sourcePath);
-      } else if (source.kind === 'upload') {
-        if (!isAbsolute(source.value)) return fail('upload path must be absolute');
-        const s = await stat(source.value).catch(() => null);
-        if (!s || !s.isDirectory())
-          return fail(`upload ${source.value} is not a readable directory`);
-        sourcePath = source.value;
-      } else {
-        return fail(`unsupported source kind: ${(source as { kind: string }).kind}`);
+      try {
+        ok(await projectExtractStart(Number(opts.run)));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
       }
-
-      const scenarios = SCENARIO_META.map((s) => ({
-        slug: s.slug,
-        label: s.label,
-        description: s.description,
-      }));
-      const existingCampaigns = await loadExistingCampaigns(db, project.id);
-
-      ok({
-        runId,
-        projectId: project.id,
-        sourcePath,
-        scaffoldTemplate: DESCRIPTION_SCAFFOLD,
-        currentDescription: project.description ?? '',
-        scenarios,
-        existingCampaigns,
-      });
     });
 
   program
     .command('project:extract:finish')
     .requiredOption('--run <id>', 'run id')
     .action(async (opts: { run: string }) => {
-      const runId = Number(opts.run);
-      if (!Number.isInteger(runId)) return fail('invalid run id');
       const raw = await readStdin();
       if (!raw || !raw.trim()) return fail('empty markdown on stdin');
 
@@ -109,138 +251,28 @@ export function registerProjectCommands(program: Command) {
         description = raw;
       }
 
-      if (!description.trim()) return fail('empty markdown on stdin');
-
-      const db = getDb();
-      const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
-      if (!run) return fail(`run ${runId} not found`);
-      if (run.kind !== 'project_extraction')
-        return fail(`run ${runId} is not a project_extraction run`);
-      if (!run.projectId) return fail(`run ${runId} has no project_id`);
-
-      // Validate recommendations per-item; drop invalid.
-      const validRecs: Array<{ scenarioSlug: string; name: string; objective: string }> = [];
-      for (let i = 0; i < rawRecommendations.length; i++) {
-        const parsed = RecommendationItemSchema.safeParse(rawRecommendations[i]);
-        if (parsed.success) {
-          validRecs.push(parsed.data);
-        } else {
-          const issues = parsed.error.issues
-            .map((iss) => `${iss.path.join('.')}: ${iss.message}`)
-            .join('; ');
-          process.stderr.write(`[warn] recommendation[${i}] dropped: ${issues}\n`);
-        }
+      try {
+        ok(await projectExtractFinish(Number(opts.run), description, rawRecommendations));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
       }
-      let capped = validRecs;
-      if (capped.length > 10) {
-        process.stderr.write(`[warn] recommendations capped from ${capped.length} to 10\n`);
-        capped = capped.slice(0, 10);
-      }
-
-      await db.transaction(async (tx) => {
-        await tx
-          .update(schema.projects)
-          .set({ description, updatedAt: new Date() })
-          .where(eq(schema.projects.id, run.projectId!));
-        await tx
-          .delete(schema.campaignRecommendations)
-          .where(eq(schema.campaignRecommendations.projectId, run.projectId!));
-        if (capped.length > 0) {
-          await tx.insert(schema.campaignRecommendations).values(
-            capped.map((r) => ({
-              projectId: run.projectId!,
-              scenarioSlug: r.scenarioSlug,
-              name: r.name,
-              objective: r.objective,
-            })),
-          );
-        }
-        await tx
-          .update(schema.runs)
-          .set({ status: 'success', finishedAt: new Date() })
-          .where(eq(schema.runs.id, runId));
-      });
-
-      // Best-effort cleanup of any temp dir created for the run.
-      const source = (run.params as { source?: { kind: string; value?: string } }).source;
-      if (source?.kind === 'git') {
-        await rm(`/tmp/pitchbox-extract-${runId}`, { recursive: true, force: true }).catch(
-          () => {},
-        );
-      } else if (source?.kind === 'upload' && typeof source.value === 'string') {
-        await rm(source.value, { recursive: true, force: true }).catch(() => {});
-      }
-
-      ok({
-        runId,
-        projectId: run.projectId,
-        bytes: description.length,
-        recommendations: capped.length,
-      });
     });
 
-  // Reads recent drafts/messages for a project so the project-insighter
-  // playbook can produce a Markdown summary without touching the DB directly.
   program
     .command('project:insights:context')
     .requiredOption('--project <id>', 'project id')
     .action(async (opts: { project: string }) => {
-      const projectId = Number(opts.project);
-      if (!Number.isInteger(projectId)) return fail('invalid project id');
-      const db = getDb();
-      const [project] = await db
-        .select()
-        .from(schema.projects)
-        .where(eq(schema.projects.id, projectId));
-      if (!project) return fail(`project ${projectId} not found`);
-
-      const drafts = await db
-        .select({
-          id: schema.drafts.id,
-          state: schema.drafts.state,
-          kind: schema.drafts.kind,
-          createdAt: schema.drafts.createdAt,
-        })
-        .from(schema.drafts)
-        .where(eq(schema.drafts.projectId, projectId))
-        .orderBy(desc(schema.drafts.createdAt))
-        .limit(200);
-
-      // Join via drafts so we only pull messages tied to this project's drafts.
-      const draftIds = drafts.map((d) => d.id);
-      const messages =
-        draftIds.length === 0
-          ? []
-          : await db
-              .select({
-                id: schema.messages.id,
-                draftId: schema.messages.draftId,
-                isFromUs: schema.messages.isFromUs,
-                createdAtPlatform: schema.messages.createdAtPlatform,
-              })
-              .from(schema.messages)
-              .where(inArray(schema.messages.draftId, draftIds))
-              .orderBy(desc(schema.messages.createdAtPlatform))
-              .limit(200);
-
-      ok({
-        projectId,
-        projectName: project.name,
-        draftCount: drafts.length,
-        replyCount: messages.filter((m) => !m.isFromUs).length,
-        drafts,
-        messages,
-      });
+      try {
+        ok(await projectInsightsContext(Number(opts.project)));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
     });
 
-  // Persists a generated summary into `project_insights`. The playbook emits
-  // `{summaryMd, evidence}` on stdout; this command writes one row.
   program
     .command('project:insights')
     .requiredOption('--project <id>', 'project id')
     .action(async (opts: { project: string }) => {
-      const projectId = Number(opts.project);
-      if (!Number.isInteger(projectId)) return fail('invalid project id');
       const raw = await readStdin();
       if (!raw || !raw.trim()) return fail('empty payload on stdin');
       let payload: { summaryMd?: unknown; evidence?: unknown };
@@ -251,18 +283,11 @@ export function registerProjectCommands(program: Command) {
       }
       const summaryMd =
         typeof payload.summaryMd === 'string' ? payload.summaryMd : String(payload.summaryMd ?? '');
-      if (!summaryMd.trim()) return fail('summaryMd missing');
-      const evidence =
-        payload.evidence && typeof payload.evidence === 'object' ? payload.evidence : {};
-      const db = getDb();
-      const [row] = await db
-        .insert(schema.projectInsights)
-        .values({ projectId, summaryMd, evidence: evidence as Record<string, unknown> })
-        .returning({
-          id: schema.projectInsights.id,
-          generatedAt: schema.projectInsights.generatedAt,
-        });
-      ok({ id: row.id, projectId, generatedAt: row.generatedAt });
+      try {
+        ok(await projectInsights(Number(opts.project), summaryMd, payload.evidence));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
     });
 }
 
