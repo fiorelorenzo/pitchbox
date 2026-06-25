@@ -94,11 +94,34 @@ the agent talks to, and tunnel every MCP frame to the client. Facts for the buil
 - The earlier permission side-finding is fixed in the local runner already
   (`selectPermissionOption`, commit history); the same shape is reused here.
 
-The remaining piece is the transparent **MCP-over-WebSocket tunnel** between the
-runner's HTTP relay and the client's local Pitchbox MCP server. The wire contract
-for it now lives in OSS at
+The wire contract for the relay lives in OSS at
 [`shared/src/agents/cloud/protocol.ts`](../shared/src/agents/cloud/protocol.ts)
 (`@pitchbox/shared/agents/cloud/protocol`).
+
+### Full relay: VALIDATED end to end
+
+The transparent **MCP-over-WebSocket tunnel** is also validated. A prototype wired
+the two halves together over a real WebSocket: a runner part (WS server) that
+spawns the agent and hosts a raw `StreamableHTTPServerTransport` relay, and a
+client part that runs the real Pitchbox MCP server bridged to the socket. Each
+MCP frame the agent emits is tunnelled agent -> HTTP relay (runner) -> WS ->
+client -> Pitchbox MCP server -> test DB, and back. Running reddit-scout through
+this path, the agent's `run_start` / `reddit_scout` / `staging_candidates` /
+`drafts_create` / `run_finish` calls **all executed client-side** against the
+test DB, the run finished `success`, and a real draft was written. So the
+compute/data split across the WebSocket works end to end - the load-bearing
+proof for the whole runner service.
+
+What is proven vs. what remains:
+
+- **Proven**: agent + HTTP MCP; the bidirectional MCP-frame tunnel over a WS
+  (with `relatedRequestId` correlation on the runner's StreamableHTTP `send`);
+  client-side execution against the real DB; events flowing down.
+- **Remaining (productionisation)**: the per-org WS auth handshake; usage
+  metering on `session.done`; reconnect/resume; running the agent with the
+  runner's own LLM credentials (the prototype reused the dev token); and moving
+  the proven runner/client code into their homes (runner = standalone private
+  repo; client = the `cloud/` adapter), both importing the OSS protocol contract.
 
 ## Architecture
 
