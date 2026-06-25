@@ -7,32 +7,29 @@ description: Draft proactive top-level Reddit posts in target subreddits for a P
 
 You are acting inside a Pitchbox campaign run. Your job is to draft top-level Reddit submissions (text posts only) in target subreddits, framed by an angle the human picked. The human reviews and submits manually. Never click submit yourself.
 
+All state lives in Postgres; you read and write it exclusively through the **`pitchbox` MCP server** (tools named `mcp__pitchbox__*`). Do not shell out and do not touch the database directly.
+
 ## Inputs
 
-Environment variables:
+The run is already bound to a campaign and run through the environment. Step 1 returns the canonical `runId` - thread it into the later calls.
 
-- `PITCHBOX_CAMPAIGN_ID`
-- `PITCHBOX_RUN_ID` (may be absent if invoked directly; step 1 creates it)
+## Tools
+
+- `run_start` - create/resume the run and load campaign context.
+- `subreddit_snapshot` - fetch a subreddit's recent top posts + about/rules.
+- `drafts_create` - write the drafts back.
+- `run_finish` - close the run.
 
 ## Steps
 
-1. **Start the run.**
+1. **Start the run.** Call `run_start` (no arguments needed).
 
-   ```
-   pitchbox run:start --campaign=$PITCHBOX_CAMPAIGN_ID
-   ```
+   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (`targetSubreddits`, `topicKeywords`, `avoidKeywords`, `postAngle`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`.
 
-   Parse JSON. Extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (`targetSubreddits`, `topicKeywords`, `avoidKeywords`, `postAngle`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`.
-
-2. **Study each target subreddit.** For every subreddit in `campaign.config.targetSubreddits`:
-
-   ```
-   pitchbox reddit:subreddit-snapshot --subreddit=<name>
-   ```
-
-   - Read the top 25 posts of the week (titles, body excerpts, score, comment counts).
+2. **Study each target subreddit.** For every subreddit in `campaign.config.targetSubreddits`, call `subreddit_snapshot` with `{ "subreddit": "<name>" }`.
+   - Read the top posts of the week (titles, body excerpts, score, comment counts) from `posts`.
    - Note recurring formats (e.g. "Show & tell", weekly threads, AMA cadence).
-   - Note moderation / self-promo rules implied by what survives.
+   - Read `rules` and `about` for moderation / self-promo constraints.
 
 3. **Draft one or more posts per subreddit.** Aim for 1-3 distinct posts per subreddit (not more) for this run. For each draft:
    - **Pick the format** that fits the subreddit and the `postAngle`. Acceptable formats: launch / show-and-tell, lessons-learned story, question-led discussion, comparison or teardown. Avoid pure announcements without a substantive body.
@@ -46,44 +43,31 @@ Environment variables:
 4. **Apply hard skips.** Drop any draft if:
    - The subreddit appears in `blocklist` with `kind=subreddit` (global or project scope).
    - The title or body contains any term from `campaign.config.avoidKeywords`.
-   - The subreddit's recent top posts show explicit "no self-promotion" / "no AI-generated content" rules and the draft can't reasonably claim to be human-authored substantive content.
+   - The subreddit's `rules` show explicit "no self-promotion" / "no AI-generated content" rules and the draft can't reasonably claim to be human-authored substantive content.
 
-5. **Persist drafts.** For each surviving draft, emit one row:
+5. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+
+   Each draft:
 
    ```json
    {
-     "accountId": <pick from accounts[0]>,
+     "accountId": 1,
      "kind": "post",
-     "fitScore": <1-5 - how strong is this for the subreddit>,
+     "fitScore": 4,
      "targetUser": null,
      "title": "<post title>",
      "body": "<markdown body, including disclosure>",
      "composeUrl": "https://www.reddit.com/r/<sub>/submit?title=<urlencoded title>&text=<urlencoded body>",
      "reasoning": "<one sentence: which angle + why this subreddit>",
-     "sourceRef": { "subreddit": "<sub>", "format": "<launch | lessons | discussion | comparison>" },
+     "sourceRef": {
+       "subreddit": "<sub>",
+       "format": "<launch | lessons | discussion | comparison>"
+     },
      "metadata": { "subreddit": "<sub>" }
    }
    ```
 
-   Then:
-
-   ```
-   pitchbox drafts:create --run=<runId>
-   ```
-
-   pipes the JSON array on stdin.
-
-6. **Finish the run.**
-
-   ```
-   pitchbox run:finish --run=<runId> --status=success
-   ```
-
-   If anything failed irrecoverably:
-
-   ```
-   pitchbox run:finish --run=<runId> --status=failed --error="<reason>"
-   ```
+6. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
 
 ## Hard rules
 

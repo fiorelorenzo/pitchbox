@@ -385,6 +385,56 @@ describe('pitchbox MCP server (project + skill tools)', () => {
   });
 });
 
+describe('pitchbox MCP server (drafts_get / drafts_update / subreddit_snapshot)', () => {
+  beforeEach(async () => {
+    await reset();
+  });
+
+  it('advertises subreddit_snapshot, drafts_get and drafts_update', async () => {
+    const client = await connectClient();
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).toContain('subreddit_snapshot');
+    expect(names).toContain('drafts_get');
+    expect(names).toContain('drafts_update');
+  });
+
+  it('drafts_get fetches a draft with messages; drafts_update overwrites the body', async () => {
+    const { campaignId, accountId } = await seedScoutCampaign();
+    const client = await connectClient();
+    const { runId } = parse(await call(client, 'run_start', { campaignId })) as { runId: number };
+    await call(client, 'drafts_create', {
+      runId,
+      drafts: [{ accountId, kind: 'dm', targetUser: 'bob', body: 'original body', fitScore: 3 }],
+    });
+    const db = getDb();
+    const [d] = await db.select().from(schema.drafts).where(eq(schema.drafts.runId, runId));
+
+    const got = parse(await call(client, 'drafts_get', { id: d!.id })) as {
+      draft: { id: number; body: string };
+      messages: unknown[];
+    };
+    expect(got.draft.id).toBe(d!.id);
+    expect(got.draft.body).toBe('original body');
+    expect(Array.isArray(got.messages)).toBe(true);
+
+    const upd = parse(
+      await call(client, 'drafts_update', { id: d!.id, body: 'rewritten reply' }),
+    ) as {
+      updated: boolean;
+    };
+    expect(upd.updated).toBe(true);
+    const [d2] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, d!.id));
+    expect(d2?.body).toBe('rewritten reply');
+  });
+
+  it('drafts_get errors on an unknown id', async () => {
+    const client = await connectClient();
+    const res = await call(client, 'drafts_get', { id: 999999 });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? '').toContain('not found');
+  });
+});
+
 describe('pitchbox MCP server (hn_search)', () => {
   it('advertises hn_search', async () => {
     const client = await connectClient();

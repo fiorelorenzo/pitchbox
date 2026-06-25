@@ -173,6 +173,38 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
   return { runId, inserted: inserted.length, skipped, dedupSkipped };
 }
 
+export async function getDraftById(id: number) {
+  if (!Number.isInteger(id)) throw new Error('invalid draft id');
+  const db = getDb();
+  const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, id));
+  if (!draft) throw new Error(`draft ${id} not found`);
+  const messages = await db
+    .select()
+    .from(schema.messages)
+    .where(eq(schema.messages.draftId, id))
+    .orderBy(schema.messages.createdAtPlatform);
+  return { draft, messages };
+}
+
+export async function listDrafts(state?: string) {
+  const db = getDb();
+  const rows = await db.select().from(schema.drafts);
+  return state ? rows.filter((r) => r.state === state) : rows;
+}
+
+export async function updateDraftBody(id: number, body: string) {
+  if (!Number.isInteger(id)) throw new Error('invalid draft id');
+  if (!body || !body.trim()) throw new Error('body is empty');
+  const db = getDb();
+  const [updated] = await db
+    .update(schema.drafts)
+    .set({ body })
+    .where(eq(schema.drafts.id, id))
+    .returning({ id: schema.drafts.id });
+  if (!updated) throw new Error(`draft ${id} not found`);
+  return { id: updated.id, updated: true };
+}
+
 export function registerDraftCommands(program: Command) {
   program
     .command('drafts:create')
@@ -232,15 +264,33 @@ export function registerDraftCommands(program: Command) {
 
   program
     .command('drafts:get')
+    .option('--id <id>', 'fetch a single draft (with its thread messages)')
     .option('--state <state>')
     .option('--project <slug>')
-    .action(async (opts: { state?: string; project?: string }) => {
-      const db = getDb();
-      const rows = await db.select().from(schema.drafts);
-      const filtered = rows.filter((r) => {
-        if (opts.state && r.state !== opts.state) return false;
-        return true;
-      });
-      ok(filtered);
+    .action(async (opts: { id?: string; state?: string; project?: string }) => {
+      try {
+        if (opts.id) ok(await getDraftById(Number(opts.id)));
+        else ok(await listDrafts(opts.state));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
+    });
+
+  program
+    .command('drafts:update')
+    .requiredOption('--id <id>', 'draft id')
+    .action(async (opts: { id: string }) => {
+      let json: { body?: unknown };
+      try {
+        json = JSON.parse(await readStdin());
+      } catch {
+        return fail('invalid JSON on stdin');
+      }
+      const body = typeof json.body === 'string' ? json.body : '';
+      try {
+        ok(await updateDraftBody(Number(opts.id), body));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
     });
 }

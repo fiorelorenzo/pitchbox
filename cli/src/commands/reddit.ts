@@ -1,6 +1,12 @@
 import { Command } from 'commander';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { runScout } from '@pitchbox/shared/platforms/reddit';
+import {
+  runScout,
+  loadEnv,
+  browserBrowseSubreddit,
+  browserGetSubredditAbout,
+  browserGetSubredditRules,
+} from '@pitchbox/shared/platforms/reddit';
 import { eq } from 'drizzle-orm';
 import { ok, fail } from '../lib/output.js';
 
@@ -50,7 +56,47 @@ export async function scoutRun(
   return { runId, candidatesFetched: candidates.length };
 }
 
+// Snapshot a subreddit for the poster playbook: recent top posts of the week
+// plus about + rules. Extracted so the CLI and the MCP server share it. Hits
+// the public Reddit API (browser); returns data or throws.
+export async function snapshotSubreddit(subreddit: string) {
+  if (!subreddit || !subreddit.trim()) throw new Error('subreddit is required');
+  const env = loadEnv();
+  const [posts, about, rules] = await Promise.all([
+    browserBrowseSubreddit(env, { subreddit, sort: 'top', timeframe: 'week', limit: 25 }),
+    browserGetSubredditAbout(env, subreddit).catch(() => null),
+    browserGetSubredditRules(env, subreddit).catch(
+      () => [] as Awaited<ReturnType<typeof browserGetSubredditRules>>,
+    ),
+  ]);
+  return {
+    subreddit,
+    about,
+    rules,
+    posts: posts.map((p) => ({
+      title: p.title,
+      selftext: (p.selftext ?? '').slice(0, 500),
+      permalink: p.permalink,
+      score: p.score,
+      numComments: p.numComments,
+      author: p.author,
+      createdUtc: p.createdUtc,
+    })),
+  };
+}
+
 export function registerRedditCommands(program: Command) {
+  program
+    .command('reddit:subreddit-snapshot')
+    .requiredOption('--subreddit <name>', 'subreddit name (without r/)')
+    .action(async (opts: { subreddit: string }) => {
+      try {
+        ok(await snapshotSubreddit(opts.subreddit));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
+    });
+
   program
     .command('reddit:scout')
     .requiredOption('--run <id>', 'run id')
