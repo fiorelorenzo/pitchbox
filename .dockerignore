@@ -1,0 +1,20 @@
+# Build context for Dockerfile.app (the cloud-edition client stack). Keep it lean:
+# node_modules and build artifacts are recreated in the image. cloud/adapter IS
+# needed (the web bundles it); cloud/runner is not.
+**/node_modules
+.git
+.github
+**/.svelte-kit
+web/build
+**/dist
+.env
+.env.*
+!.env.example
+**/*.log
+docs/.vitepress/cache
+docs/.vitepress/dist
+extension/dist
+cloud/runner
+private
+.claude
+.DS_Store

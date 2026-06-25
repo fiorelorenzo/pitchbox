@@ -1,0 +1,28 @@
+# Dev overlay for the app: hot-reload from bind-mounted source, ports on the host,
+# no restart. node_modules + the web build stay from the image (only src is mounted).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.app.dev.yml up
+services:
+  web:
+    command: ['pnpm', '-F', 'web', 'dev']
+    environment:
+      NODE_ENV: development
+      WEB_PORT: ${WEB_PORT:-5180}
+    volumes:
+      - ./web/src:/app/web/src
+      - ./shared/src:/app/shared/src
+      - ./cli/src:/app/cli/src
+      - ./cloud/adapter/src:/app/cloud/adapter/src
+      - ./playbooks:/app/playbooks
+    ports:
+      - '${APP_BIND:-127.0.0.1}:${WEB_PORT:-5180}:${WEB_PORT:-5180}'
+    restart: 'no'
+
+  daemon:
+    command: ['pnpm', '-F', 'daemon', 'dev']
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./daemon/src:/app/daemon/src
+      - ./shared/src:/app/shared/src
+    restart: 'no'

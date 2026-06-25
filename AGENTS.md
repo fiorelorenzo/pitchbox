@@ -74,6 +74,31 @@ The cloud runner lets the agent run on managed compute without a local agent CLI
 
 **Repo layout (umbrella).** This public repo is the umbrella. Private cloud code lives in **separate git repos nested in the gitignored `cloud/` (and `private/`) dirs** that the public repo never tracks - the runner service is at `cloud/runner/`. Always launch agents from this repo directory: chat history is keyed by the launch path (Claude Code + Emdash), so launching from a parent/other folder loses it. Nested private repos use pnpm standalone and import the OSS protocol contract by relative path.
 
+## Docker (cloud-edition deployment)
+
+The client stack (web + daemon + Postgres) ships as Docker via `Dockerfile.app`
+plus the `docker-compose.app.*` overlays, parameterised by `.env` (copy
+`.env.docker.example`). Like the rest of the repo it runs **from TS source** (Vite
+for the web, tsx for the daemon) - no bundling step. The web image bundles Google
+Chrome (the Reddit MCP tool scrapes with Playwright `channel: 'chrome'`, client-side).
+
+```bash
+# dev: hot-reload from bind-mounted source, port published on the host
+docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.app.dev.yml up
+# prod: restart, resource limits, optional cloudflared tunnel (--profile tunnel)
+docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.app.prod.yml up -d
+```
+
+The Docker stack is **cloud edition only**: it sets `PITCHBOX_EDITION=cloud` and
+dispatches every run to a cloud runner (`PITCHBOX_RUNNER_URL`), whose image lives
+in `cloud/runner/` (its own `Dockerfile` + compose). The build context is the
+umbrella root so the web's Vite alias can bundle the private `cloud/adapter`.
+
+**Using your own (local) runner is NOT dockerised yet** - run the app without
+Docker for that: `pnpm run db:up && pnpm run migrate && pnpm run dev` (web) and
+`pnpm -F daemon dev`, with a local agent CLI installed (e.g. `claude`). The Docker
+images deliberately omit the local agent CLIs to stay lean.
+
 ## Conventions
 
 - **DB access is centralised in `shared/`.** CLI, web server routes, and daemon all import from `@pitchbox/shared/db` (and subpaths). Never spin up an ad-hoc `pg` client.
