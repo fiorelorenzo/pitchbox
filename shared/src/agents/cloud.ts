@@ -37,6 +37,19 @@ export function isCloudRunnerEnabled(): boolean {
   return process.env.PITCHBOX_EDITION === 'cloud' && !!process.env.PITCHBOX_RUNNER_URL;
 }
 
+async function importCloudAdapter(): Promise<CloudAdapterModule> {
+  // The web (Vite) resolves this via an alias and bundles it (see web/vite.config.ts);
+  // tsx/dev contexts fall back to the path under the umbrella. Both throw in an OSS
+  // clone where the private adapter is absent - the caller surfaces an actionable error.
+  try {
+    // @ts-expect-error optional private module, resolved at run time (Vite alias in the web, path fallback in tsx).
+    return (await import('@pitchbox/cloud-adapter')) as CloudAdapterModule;
+  } catch {
+    const spec = ['..', '..', '..', 'cloud', 'adapter', 'src', 'index.js'].join('/');
+    return (await import(spec)) as CloudAdapterModule;
+  }
+}
+
 async function loadCloudAdapter(): Promise<AgentRunner> {
   if (process.env.PITCHBOX_EDITION !== 'cloud') {
     throw new Error('Cloud runner requires PITCHBOX_EDITION=cloud.');
@@ -44,12 +57,9 @@ async function loadCloudAdapter(): Promise<AgentRunner> {
   const url = process.env.PITCHBOX_RUNNER_URL;
   if (!url) throw new Error('Cloud runner: PITCHBOX_RUNNER_URL is not set.');
 
-  // Computed relative specifier so OSS typecheck/build never requires the private
-  // adapter to exist; resolved (and .js->.ts mapped) at run time by tsx/the build.
-  const spec = ['..', '..', '..', 'cloud', 'adapter', 'src', 'runner.js'].join('/');
   let mod: CloudAdapterModule;
   try {
-    mod = (await import(spec)) as CloudAdapterModule;
+    mod = await importCloudAdapter();
   } catch (err) {
     throw new Error(
       'Cloud adapter not available - clone the private cloud/adapter into this umbrella (see docs/cloud-runner.md). ' +
