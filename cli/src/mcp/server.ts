@@ -4,6 +4,8 @@ import { checkBlocklist, checkContactHistory, getStagingCandidates } from '../co
 import { startRun, finishRun } from '../commands/run.js';
 import { createDrafts, Payload } from '../commands/drafts.js';
 import { scoutRun } from '../commands/reddit.js';
+import { searchHn, HN_LISTINGS } from '../commands/hn.js';
+import type { HnListing } from '@pitchbox/shared/platforms/hackernews';
 
 // The Pitchbox MCP server exposes the data-access surface that playbooks need as
 // MCP tools, reusing the same query logic as the `pitchbox` CLI. It is the single
@@ -165,6 +167,27 @@ export function createPitchboxMcpServer(): McpServer {
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         return jsonResult(await createDrafts(rid, drafts));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'hn_search',
+    {
+      title: 'Search Hacker News',
+      description:
+        'Fetch Hacker News stories from a listing, optionally filtered by a case-insensitive query. Returns { count, items }.',
+      inputSchema: {
+        listing: z.enum(HN_LISTINGS as [HnListing, ...HnListing[]]).optional(),
+        query: z.string().optional().describe('case-insensitive substring match on title/text'),
+        limit: z.number().int().positive().max(100).optional(),
+      },
+    },
+    async ({ listing, query, limit }) => {
+      try {
+        return jsonResult(await searchHn(listing ?? 'top', query, limit ?? 30));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }
