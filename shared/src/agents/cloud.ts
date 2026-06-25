@@ -44,9 +44,15 @@ async function importCloudAdapter(): Promise<CloudAdapterModule> {
   try {
     // @ts-expect-error optional private module, resolved at run time (Vite alias in the web, path fallback in tsx).
     return (await import('@pitchbox/cloud-adapter')) as CloudAdapterModule;
-  } catch {
-    const spec = ['..', '..', '..', 'cloud', 'adapter', 'src', 'index.js'].join('/');
-    return (await import(spec)) as CloudAdapterModule;
+  } catch (primaryErr) {
+    try {
+      const spec = ['..', '..', '..', 'cloud', 'adapter', 'src', 'index.js'].join('/');
+      return (await import(spec)) as CloudAdapterModule;
+    } catch {
+      // The path fallback only applies to the unbundled tsx case; in a bundled
+      // build it never resolves. Surface the primary error - it's the real cause.
+      throw primaryErr;
+    }
   }
 }
 

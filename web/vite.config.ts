@@ -15,6 +15,9 @@ const cloudDir = fileURLToPath(new URL('../cloud', import.meta.url));
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
+  // Vite's dep-optimizer + SSR cache. Default is node_modules/.vite, which is not
+  // writable when the app runs from a read-only image dir; allow an override.
+  cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
   server: {
     port: Number(process.env.WEB_PORT ?? 5180),
     strictPort: true,
