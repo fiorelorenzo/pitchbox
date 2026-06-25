@@ -18,13 +18,15 @@ export type AgentRunnerMeta = {
 };
 
 export const AGENT_RUNNER_META: AgentRunnerMeta[] = [
+  // Cloud is intentionally first: it is the primary, zero-setup runner, so the
+  // dashboard's runner select (built from this order) always lists it first.
+  { slug: 'cloud', label: 'Pitchbox Cloud', implemented: true },
   { slug: 'claude-code', label: 'Claude Code', implemented: true },
   { slug: 'codex', label: 'Codex', implemented: true },
   { slug: 'gemini', label: 'Gemini CLI', implemented: true },
   { slug: 'copilot', label: 'GitHub Copilot CLI', implemented: true },
   { slug: 'opencode', label: 'opencode', implemented: true },
   { slug: 'qwen-code', label: 'Qwen Code', implemented: true },
-  { slug: 'cloud', label: 'Pitchbox Cloud', implemented: true },
 ];
 
 // Typed config schema so the dashboard can render per-runner fields
