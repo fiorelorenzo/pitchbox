@@ -24,7 +24,7 @@ export const AGENT_RUNNER_META: AgentRunnerMeta[] = [
   { slug: 'copilot', label: 'GitHub Copilot CLI', implemented: true },
   { slug: 'opencode', label: 'opencode', implemented: true },
   { slug: 'qwen-code', label: 'Qwen Code', implemented: true },
-  { slug: 'cloud', label: 'Pitchbox Cloud', implemented: false },
+  { slug: 'cloud', label: 'Pitchbox Cloud', implemented: true },
 ];
 
 // Typed config schema so the dashboard can render per-runner fields
