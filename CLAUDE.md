@@ -54,9 +54,10 @@ PRs target the `development` branch, not `main` - pass `--base development` to
 ### Nested private repos (cloud/)
 
 `cloud/` and `private/` hold separate, gitignored git repos - the cloud runner
-service is at `cloud/runner/` (`@pitchbox/runner-service`, pnpm standalone). When
-working there it is its own repo: its own `git`, its own `main`/`development`, its
-own `pnpm`. Commit and push in the right repo; never `git add` it from the public
+service is at `cloud/runner/` (`@pitchbox/runner-service`) and the client-side
+cloud adapter at `cloud/adapter/` (`@pitchbox/cloud-adapter`), each its own
+pnpm-standalone repo. When working there it is its own repo: its own `git`, its own
+`main`/`development`, its own `pnpm`. Commit and push in the right repo; never `git add` it from the public
 repo. Always launch Claude from this `pitchbox` directory - chat history is keyed
 by the launch path (Claude Code + Emdash), so do not relocate the launch dir to a
 parent umbrella. See AGENTS.md "Cloud runner & repo layout".

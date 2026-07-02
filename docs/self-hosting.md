@@ -19,6 +19,8 @@ Pitchbox is designed to run on a single VPS or a beefy laptop. The architecture 
                    └─────────────────┘
 ```
 
+The **`AgentRunner`** box is pluggable. With a local runner (Claude Code, Codex, …) the web spawns an ACP agent CLI in-process, as drawn. With the default `cloud` runner it instead dispatches the run to a managed runner service and only relays MCP frames, so no agent CLI runs on this host and your data stays local. See [Agent runners](./runners.md) and [Cloud runner](./cloud-runner.md). The daemon loops (scheduler, reply poller, retention, keyword-watcher, webhook-sender) can also run embedded in the web process via `PITCHBOX_EMBED_DAEMON=1` instead of as a separate process.
+
 ## Backups
 
 `pg_dump pitchbox` is enough. Everything that matters lives in Postgres:

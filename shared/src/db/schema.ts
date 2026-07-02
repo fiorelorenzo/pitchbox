@@ -208,7 +208,7 @@ export const runs = pgTable(
   'runs',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction'
+    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction' | 'campaign_skill_generation'
     campaignId: integer('campaign_id').references(() => campaigns.id, { onDelete: 'cascade' }),
     projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     params: jsonb('params').notNull().default({}),

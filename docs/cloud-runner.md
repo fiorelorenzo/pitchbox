@@ -1,8 +1,13 @@
-# Cloud runner (design draft)
+# Cloud runner
 
-Status: DESIGN DRAFT, under review. This captures decisions taken so far and
-flags what is still open. Tags used below: **[LOCKED]** decided, **[PROPOSED]**
-recommended but open for change, **[OPEN]** needs a decision.
+Status: IMPLEMENTED. The cloud runner is live end to end: the client adapter ships
+in the private `cloud/adapter`, the runner service in the private `cloud/runner`
+(a standalone repo, deployable as a Docker image with dev + prod overlays and an
+optional Cloudflare Tunnel sidecar), the MCP relay is validated end to end, and
+token + USD usage is metered on `session.done`. The runner owns the LLM
+subscription and picks the model server-side (`RUNNER_MODEL`). This page keeps the
+original design record below; the tags mark how firm each decision was: **[LOCKED]**
+decided, **[PROPOSED]** recommended but open for change, **[OPEN]** needs a decision.
 
 ## Summary
 
@@ -117,11 +122,13 @@ What is proven vs. what remains:
 - **Proven**: agent + HTTP MCP; the bidirectional MCP-frame tunnel over a WS
   (with `relatedRequestId` correlation on the runner's StreamableHTTP `send`);
   client-side execution against the real DB; events flowing down.
-- **Remaining (productionisation)**: the per-org WS auth handshake; usage
-  metering on `session.done`; reconnect/resume; running the agent with the
-  runner's own LLM credentials (the prototype reused the dev token); and moving
-  the proven runner/client code into their homes (runner = standalone private
-  repo; client = the `cloud/` adapter), both importing the OSS protocol contract.
+- **Now shipped** (was "remaining"): the runner + client code moved into their
+  homes (runner = standalone private repo at `cloud/runner`, dockerized; client =
+  the `cloud/adapter`), both importing the OSS protocol contract; the runner runs
+  the agent with its own LLM credentials and picks the model via `RUNNER_MODEL`;
+  and usage + cost metering lands on `session.done`.
+- **Still open (productionisation)**: the per-org WS auth handshake (a static
+  bearer token is wired today) and reconnect/resume.
 
 ## Architecture
 

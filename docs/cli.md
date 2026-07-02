@@ -1,6 +1,6 @@
 # CLI reference
 
-`bin/pitchbox` is a bash wrapper that runs `cli/src/index.ts` under `tsx`. No build step - playbooks call it directly.
+`bin/pitchbox` is a bash wrapper that runs `cli/src/index.ts` under `tsx`, so there is no build step. The same command logic is also exposed to playbooks through the **Pitchbox MCP server** (`bin/pitchbox-mcp`): playbooks read and write state via the `mcp__pitchbox__*` tools, not by shelling out to this CLI. The commands below are handy for driving or debugging that surface from a shell.
 
 ## `pitchbox run:start --campaign <id>`
 
@@ -14,9 +14,9 @@ Commits terminal state for a run. The dispatcher's `then/catch` blocks tolerate 
 
 Reads a JSON payload from stdin (an array of up to 200 draft inputs) and bulk-inserts the rows. Blocklisted targets are skipped and reported back in the JSON response. Reddit's `subreddit` lives under `metadata.subreddit` - the column itself was dropped in migration 0014.
 
-## `pitchbox drafts:get [--state <state>] [--project <slug>]`
+## `pitchbox drafts:get [--id <id>] [--state <state>] [--project <slug>]`
 
-Read-only listing. Useful for debugging the playbook's state from a shell.
+Read-only. With `--id` it returns a single draft plus its thread messages; otherwise it lists drafts (optionally filtered by `--state`). Useful for debugging the playbook's state from a shell.
 
 ## Reddit helpers
 
