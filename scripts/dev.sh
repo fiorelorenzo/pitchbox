@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
-# Local dev with the cloud runner (and web + daemon) OUTSIDE Docker - for iterating
-# on / debugging the runner. Only postgres runs in Docker; web + daemon + runner run
-# on the HOST via pnpm (hot-reload, native `node --inspect` debugging). Everything
-# talks over localhost, so it works even where a container can't reach the host
-# (e.g. a firewalled VPS - which is why the runner can't sit on the host with the
-# web in Docker there).
+# The main dev command: launches EVERYTHING, hot-reloaded, in one shot -
+# postgres (Docker) + migrations/seed, then web + daemon + the cloud runner +
+# the Chrome extension + the docs, all on the HOST via pnpm. Ctrl-C stops all.
 #
-#   pnpm run dev:local
-#   RUNNER_PORT=8790 pnpm run dev:local     # if 8787 is taken
+#   pnpm run dev
+#   RUNNER_PORT=8790 pnpm run dev      # if 8787 is taken
 #
-# Uses your repo .env (DATABASE_URL, ENCRYPTION_KEY, ...) and your local Claude auth
-# (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY). Run from an interactive shell so
-# node/pnpm (mise) and the Claude token are on the environment.
+# Everything talks over localhost (works even on a firewalled host). The runner
+# uses YOUR local Claude auth (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY). Run
+# from an interactive shell so node/pnpm (mise) and the Claude token are present.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -35,6 +32,13 @@ if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; the
   echo "         runner won't authenticate. Run 'claude setup-token' and export it." >&2
 fi
 
+# Fail early with a clear message if the runner port is taken (a mid-run crash
+# would take the whole dev session down via --kill-others-on-fail).
+if command -v ss >/dev/null 2>&1 && ss -ltn "sport = :${RUNNER_PORT}" 2>/dev/null | grep -q LISTEN; then
+  echo "Port ${RUNNER_PORT} is in use. Pick a free one: RUNNER_PORT=8790 pnpm run dev" >&2
+  exit 1
+fi
+
 # The runner is a standalone package; make sure its deps are installed.
 [ -d cloud/runner/node_modules ] || (cd cloud/runner && pnpm install)
 
@@ -45,8 +49,10 @@ until docker compose exec -T postgres pg_isready -U pitchbox >/dev/null 2>&1; do
 pnpm -F @pitchbox/shared migrate
 pnpm -F @pitchbox/shared seed:core
 
-# 2) web + daemon + runner on the host, hot-reloaded, one command (Ctrl-C stops all).
-exec pnpm exec concurrently -n web,daemon,runner -c blue,magenta,green --kill-others-on-fail \
+# 2) Everything on the host, hot-reloaded, one command (Ctrl-C stops all).
+exec pnpm exec concurrently -n web,daemon,runner,ext,docs -c blue,magenta,green,cyan,yellow --kill-others-on-fail \
   "pnpm -F web dev" \
   "pnpm -F daemon dev" \
-  "PORT=${RUNNER_PORT} RUNNER_TOKEN=${RUNNER_TOKEN} pnpm -C cloud/runner dev"
+  "PORT=${RUNNER_PORT} RUNNER_TOKEN=${RUNNER_TOKEN} pnpm -C cloud/runner dev" \
+  "pnpm -F @pitchbox/extension dev" \
+  "pnpm run docs:dev"

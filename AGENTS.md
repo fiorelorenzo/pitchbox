@@ -19,9 +19,11 @@ pnpm run migrate                     # apply Drizzle migrations to DATABASE_URL
 pnpm run migrate:generate            # regenerate SQL after schema.ts edits
 pnpm -F @pitchbox/shared seed:core
 
-# Dev
-pnpm run dev                         # web dashboard (127.0.0.1:5180)
-pnpm -F daemon dev                   # scheduler + reply poller (optional)
+# Dev - ONE command launches EVERYTHING (postgres + migrations + web + daemon +
+# cloud runner + extension + docs), hot-reloaded, on the host. See scripts/dev.sh.
+pnpm run dev                         # web on 127.0.0.1:5180, docs on :5181
+# RUNNER_PORT=8790 pnpm run dev      # if 8787 is taken
+pnpm run dev:web                     # just the web (or dev:extension / dev:docs)
 
 # Quality gates
 pnpm run lint                        # eslint + prettier --check
@@ -87,17 +89,11 @@ image bundles Google Chrome (the Reddit MCP tool scrapes with Playwright
 `channel: 'chrome'`, client-side). `pnpm -F web dev` (Vite) is the dev overlay.
 
 ```bash
-# dev (everything in Docker): ONE command, hot-reloaded - postgres +
-# migrations/seed + web (Vite) + daemon (tsx) + the cloud runner (tsx). The runner
-# uses YOUR local Claude auth (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY inherited
-# from your shell; on the devbox it's already exported). See scripts/dev.sh.
+# The main dev command runs everything on the HOST + postgres in Docker (see the
+# Dev section above): `pnpm run dev`. The Docker variant below runs the whole stack
+# IN Docker instead (postgres + migrations + web + daemon + cloud runner), same
+# local-Claude auth; it does NOT include the extension/docs.
 pnpm run docker:dev
-
-# dev with the RUNNER OUTSIDE Docker (for debugging the runner): only postgres runs
-# in Docker; web + daemon + runner run on the HOST (localhost wiring, so it works
-# even on a firewalled VPS where a container can't reach the host). See
-# scripts/dev-local.sh. Use RUNNER_PORT=8790 if 8787 is taken.
-pnpm run dev:local
 
 # prod: restart, resource limits, optional cloudflared tunnel (--profile tunnel)
 docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.app.prod.yml up -d
@@ -108,10 +104,12 @@ dispatches every run to a cloud runner (`PITCHBOX_RUNNER_URL`), whose image live
 in `cloud/runner/` (its own `Dockerfile` + compose). The build context is the
 umbrella root so the web's Vite alias can bundle the private `cloud/adapter`.
 
-**Using your own (local) runner is NOT dockerised yet** - run the app without
-Docker for that: `pnpm run db:up && pnpm run migrate && pnpm run dev` (web) and
-`pnpm -F daemon dev`, with a local agent CLI installed (e.g. `claude`). The Docker
-images deliberately omit the local agent CLIs to stay lean.
+`pnpm run dev` (and `docker:dev`) use the **cloud** runner. To develop with a
+**local** runner edition instead (no cloud runner - the web spawns a local agent
+CLI like `claude-code` directly), run without `PITCHBOX_EDITION=cloud`:
+`pnpm run db:up && pnpm run migrate`, then `pnpm run dev:web` + `pnpm -F daemon dev`
+with a local agent CLI installed. The Docker images deliberately omit the local
+agent CLIs to stay lean.
 
 ## Conventions
 
