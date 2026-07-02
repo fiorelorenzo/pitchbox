@@ -3,7 +3,7 @@
 Self-hosted, human-in-the-loop outreach agent. The agent does the research and drafting; you approve before anything is sent.
 
 [![CI](https://github.com/fiorelorenzo/pitchbox/actions/workflows/ci.yml/badge.svg?branch=development)](https://github.com/fiorelorenzo/pitchbox/actions/workflows/ci.yml)
-[![Docs](https://github.com/fiorelorenzo/pitchbox/actions/workflows/docs.yml/badge.svg)](https://fiorelorenzo.github.io/pitchbox/)
+[![Docs](https://github.com/fiorelorenzo/pitchbox/actions/workflows/docs.yml/badge.svg?branch=development)](https://fiorelorenzo.github.io/pitchbox/)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](./LICENSE)
 [![Version](https://img.shields.io/github/package-json/v/fiorelorenzo/pitchbox?label=version)](./package.json)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)

@@ -2,7 +2,7 @@ name: docs
 
 on:
   push:
-    branches: [main]
+    branches: [main, development]
     paths:
       - 'docs/**'
       - 'README.md'
@@ -40,6 +40,9 @@ jobs:
           path: docs/.vitepress/dist
 
   deploy:
+    # Publish to the live Pages site only from the default branch; other branches
+    # just build the docs (so the badge reflects it) without deploying.
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:
