@@ -17,10 +17,10 @@ docker compose up -d postgres
 pnpm install
 pnpm run migrate
 pnpm -F @pitchbox/shared seed:core
-pnpm run dev            # dashboard at http://127.0.0.1:5180
+pnpm run dev:web        # dashboard at http://127.0.0.1:5180
 ```
 
-Embedded daemon mode runs the scheduler + reply poller + retention loops inside the web process - set `PITCHBOX_EMBED_DAEMON=1` in `.env` and skip `pnpm -F daemon dev`. See [the daemon docs](https://fiorelorenzo.github.io/pitchbox/daemon) for when to run it as a separate process instead.
+Embedded daemon mode runs the scheduler, reply poller, retention, keyword-watcher and webhook-sender loops inside the web process - set `PITCHBOX_EMBED_DAEMON=1` in `.env` and skip `pnpm -F daemon dev`. See [the daemon docs](https://fiorelorenzo.github.io/pitchbox/daemon) for when to run it as a separate process instead.
 
 Prerequisites: Node >= 22, pnpm 9.15 (via corepack), Docker, and one of the supported ACP-compatible agent CLIs on PATH (Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, opencode, or Qwen Code - details in [docs/runners.md](./docs/runners.md)).
 

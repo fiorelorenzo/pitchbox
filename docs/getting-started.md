@@ -41,17 +41,19 @@ pnpm -F @pitchbox/shared seed:core            # seeds platforms, default playboo
 
 ## Run
 
-```bash
-pnpm run dev               # web dashboard on http://127.0.0.1:5180
-```
-
-By default the dashboard runs on its own and you start the background daemon as a second process:
+With a local agent CLI installed, the simplest single-host setup runs the dashboard with the daemon embedded:
 
 ```bash
-pnpm -F daemon dev         # scheduler + reply poller + retention + webhook DLQ
+PITCHBOX_EMBED_DAEMON=1 pnpm run dev:web    # dashboard on http://127.0.0.1:5180
 ```
 
-For single-host installs you can skip the second process and run everything in one - set `PITCHBOX_EMBED_DAEMON=1` in your `.env` and the same loops boot inside the web server. See [Daemon](/daemon) for when each mode makes sense.
+`dev:web` is the SvelteKit dev server on its own; `PITCHBOX_EMBED_DAEMON=1` boots the background loops (scheduler, reply poller, retention, keyword-watcher, webhook-sender) inside it. To run the daemon as a separate process instead, drop the env var and start it alongside:
+
+```bash
+pnpm -F daemon dev
+```
+
+See [Daemon](/daemon) for when each mode makes sense. (`pnpm run dev` is a broader command that also boots a local cloud runner, the extension and the docs site; it targets the cloud edition and is covered in [Cloud runner](/cloud-runner).)
 
 ## Optional: turn on authentication
 
