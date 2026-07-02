@@ -61,6 +61,6 @@ pnpm -F @pitchbox/shared seed:core
 exec pnpm exec concurrently -n web,daemon,runner,ext,docs -c blue,magenta,green,cyan,yellow --kill-others-on-fail \
   "pnpm -F web dev" \
   "pnpm -F daemon dev" \
-  "PORT=${RUNNER_PORT} RUNNER_TOKEN=${RUNNER_TOKEN} pnpm -C cloud/runner dev" \
+  "PORT=${RUNNER_PORT} RUNNER_HOST=127.0.0.1 RUNNER_TOKEN=${RUNNER_TOKEN} pnpm -C cloud/runner dev" \
   "pnpm -F @pitchbox/extension dev" \
   "pnpm run docs:dev"
