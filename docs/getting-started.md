@@ -1,8 +1,9 @@
 # Getting started
 
-Pitchbox is a Node monorepo. You need:
+Pitchbox is a Node + pnpm monorepo. You need:
 
 - Node ≥ 22
+- pnpm 9.15 (enable via `corepack enable`)
 - Docker (for the Postgres dev DB)
 - One ACP-compatible agent CLI on PATH (see below)
 
@@ -10,11 +11,11 @@ Pitchbox is a Node monorepo. You need:
 
 Pitchbox talks to every backend through the open [Agent Client Protocol](https://agentclientprotocol.com), so any ACP-compatible CLI will do. Install at least one of the supported runners and authenticate it:
 
-- **Claude Code**: `npm install -g @anthropic-ai/claude-code`, then `claude login` (or set `ANTHROPIC_API_KEY`).
-- **Codex**: `npm install -g @openai/codex`, then `codex login` (or set `OPENAI_API_KEY`).
-- **Gemini CLI**: `npm install -g @google/gemini-cli`, then `gemini auth login` (or set `GEMINI_API_KEY`).
+- **Claude Code**: `pnpm add -g @anthropic-ai/claude-code`, then `claude login` (or set `ANTHROPIC_API_KEY`).
+- **Codex**: `pnpm add -g @openai/codex`, then `codex login` (or set `OPENAI_API_KEY`).
+- **Gemini CLI**: `pnpm add -g @google/gemini-cli`, then `gemini auth login` (or set `GEMINI_API_KEY`).
 - **GitHub Copilot CLI**: see GitHub docs, then `copilot auth login`.
-- **opencode**: `npm install -g opencode-ai`, then configure a provider (see opencode docs).
+- **opencode**: `pnpm add -g opencode-ai`, then configure a provider (see opencode docs).
 - **Qwen Code**: install the Qwen Code CLI per Alibaba docs and configure DashScope credentials.
 
 The dashboard probes each registered runner on boot and the campaign-creation form only lets you pick installed ones. See [Agent runners](/runners) for details.
@@ -24,7 +25,7 @@ The dashboard probes each registered runner on boot and the campaign-creation fo
 ```bash
 git clone https://github.com/fiorelorenzo/pitchbox.git
 cd pitchbox
-npm install
+pnpm install
 cp .env.example .env  # then set ENCRYPTION_KEY (32-byte hex) and PITCHBOX_ROOT
 ```
 
@@ -33,24 +34,26 @@ cp .env.example .env  # then set ENCRYPTION_KEY (32-byte hex) and PITCHBOX_ROOT
 ## Database
 
 ```bash
-npm run db:up                                 # boots Postgres on port 5434
-npm run migrate                               # applies the latest Drizzle migrations
-npm run -w @pitchbox/shared seed:core         # seeds platforms, default playbooks, quota defaults
+pnpm run db:up                                # boots Postgres on port 5434
+pnpm run migrate                              # applies the latest Drizzle migrations
+pnpm -F @pitchbox/shared seed:core            # seeds platforms, default playbooks, quota defaults
 ```
 
 ## Run
 
-```bash
-npm run dev                # web dashboard on http://127.0.0.1:5180
-```
-
-By default the dashboard runs on its own and you start the background daemon as a second process:
+With a local agent CLI installed, the simplest single-host setup runs the dashboard with the daemon embedded:
 
 ```bash
-npm run -w daemon dev      # scheduler + reply poller + retention + webhook DLQ
+PITCHBOX_EMBED_DAEMON=1 pnpm run dev:web    # dashboard on http://127.0.0.1:5180
 ```
 
-For single-host installs you can skip the second process and run everything in one - set `PITCHBOX_EMBED_DAEMON=1` in your `.env` and the same loops boot inside the web server. See [Daemon](/daemon) for when each mode makes sense.
+`dev:web` is the SvelteKit dev server on its own; `PITCHBOX_EMBED_DAEMON=1` boots the background loops (scheduler, reply poller, retention, keyword-watcher, webhook-sender) inside it. To run the daemon as a separate process instead, drop the env var and start it alongside:
+
+```bash
+pnpm -F daemon dev
+```
+
+See [Daemon](/daemon) for when each mode makes sense. (`pnpm run dev` is a broader command that also boots a local cloud runner, the extension and the docs site; it targets the cloud edition and is covered in [Cloud runner](/cloud-runner).)
 
 ## Optional: turn on authentication
 
@@ -58,7 +61,7 @@ Pitchbox ships unauthenticated by default for single-user self-host. To gate the
 
 ```bash
 echo 'PITCHBOX_AUTH=on' >> .env
-npm run dev
+pnpm run dev
 ```
 
 The first user you create via `/login` becomes the admin.

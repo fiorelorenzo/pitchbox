@@ -3,7 +3,7 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import { Info, Activity } from 'lucide-svelte';
+	import { Info, Activity } from '@lucide/svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -159,7 +159,7 @@
 								<Alert.Title>Not running</Alert.Title>
 								<Alert.Description>
 									Start it from the repo root with
-									<code class="text-xs font-mono">npm run -w daemon dev</code>.
+									<code class="text-xs font-mono">pnpm -F daemon dev</code>.
 								</Alert.Description>
 							</Alert.Root>
 						{:else}

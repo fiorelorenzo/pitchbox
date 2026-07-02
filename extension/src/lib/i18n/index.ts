@@ -40,9 +40,7 @@ export function translate(loc: Locale, key: string, params?: TParams): string {
 
 export const t: Readable<(key: string, params?: TParams) => string> = derived(
   locale,
-  ($loc) =>
-    (key: string, params?: TParams) =>
-      translate($loc, key, params),
+  ($loc) => (key: string, params?: TParams) => translate($loc, key, params),
 );
 
 /**

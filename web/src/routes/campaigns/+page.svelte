@@ -2,7 +2,7 @@
 	import RunLog from '$lib/components/RunLog.svelte';
 	import { invalidateAll, goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { ChevronDown, ChevronUp, Square } from 'lucide-svelte';
+	import { ChevronDown, ChevronUp, Square } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -18,7 +18,7 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
-	import { Megaphone } from 'lucide-svelte';
+	import { Megaphone } from '@lucide/svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { SelectField } from '$lib/components/ui/select-field';
 

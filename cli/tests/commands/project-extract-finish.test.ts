@@ -4,10 +4,10 @@ import { getDb, getPool, schema } from '@pitchbox/shared/db';
 import { eq, sql } from 'drizzle-orm';
 
 function cliWithStdin(args: string, input: string): string {
-  return execSync(`npm -s run -w @pitchbox/cli dev -- ${args}`, {
+  return execSync(`pnpm -s -F @pitchbox/cli dev ${args}`, {
     encoding: 'utf8',
     input,
-    cwd: '/Users/lorenzofiore/Progetti/Personale/pitchbox',
+    cwd: process.cwd(),
   });
 }
 

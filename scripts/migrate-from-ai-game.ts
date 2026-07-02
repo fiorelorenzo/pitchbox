@@ -6,12 +6,17 @@ import { eq } from 'drizzle-orm';
 
 config({ path: resolve(import.meta.dirname ?? '.', '..', '.env') });
 
-const CONTACTED_PATH =
-  '/Users/lorenzofiore/Progetti/Personale/ai-game/scripts/reddit-scout/cache/contacted.json';
+// Source path is environment-specific, so take it from an env var or the first
+// CLI arg rather than hardcoding it. Example:
+//   AI_GAME_CONTACTED_JSON=/path/to/contacted.json pnpm tsx scripts/migrate-from-ai-game.ts
+//   pnpm tsx scripts/migrate-from-ai-game.ts /path/to/contacted.json
+const CONTACTED_PATH = process.env.AI_GAME_CONTACTED_JSON ?? process.argv[2] ?? '';
 
 async function main() {
-  if (!existsSync(CONTACTED_PATH)) {
-    console.log('No contacted.json found, nothing to import.');
+  if (!CONTACTED_PATH || !existsSync(CONTACTED_PATH)) {
+    console.log(
+      'No contacted.json found (set AI_GAME_CONTACTED_JSON or pass a path arg); nothing to import.',
+    );
     await getPool().end();
     return;
   }

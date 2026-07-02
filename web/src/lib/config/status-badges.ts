@@ -18,15 +18,7 @@
  */
 
 type Tone =
-  | 'neutral'
-  | 'muted'
-  | 'emerald'
-  | 'sky'
-  | 'amber'
-  | 'rose'
-  | 'violet'
-  | 'slate'
-  | 'orange';
+  'neutral' | 'muted' | 'emerald' | 'sky' | 'amber' | 'rose' | 'violet' | 'slate' | 'orange';
 
 export type BadgeStyle = {
   label: string;

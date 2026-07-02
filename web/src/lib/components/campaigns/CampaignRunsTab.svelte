@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronDown, ChevronUp } from 'lucide-svelte';
+  import { ChevronDown, ChevronUp } from '@lucide/svelte';
   import { Badge } from '$lib/components/ui/badge';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import * as Card from '$lib/components/ui/card';

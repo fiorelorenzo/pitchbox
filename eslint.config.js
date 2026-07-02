@@ -12,6 +12,10 @@ export default [
       'extension/dist/**',
       'node_modules/**',
       '**/*.svelte',
+      // VitePress build output and dep-optimizer cache: generated, gitignored,
+      // and full of minified vendor bundles that eslint must not lint.
+      'docs/.vitepress/cache/**',
+      'docs/.vitepress/dist/**',
     ],
   },
   {

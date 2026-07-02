@@ -28,8 +28,7 @@ function sanitize(patch: Partial<ExtensionSettings>, prior: ExtensionSettings): 
   const next: ExtensionSettings = { ...prior };
   if (patch.theme === 'light' || patch.theme === 'dark' || patch.theme === 'system')
     next.theme = patch.theme;
-  if (patch.density === 'compact' || patch.density === 'comfortable')
-    next.density = patch.density;
+  if (patch.density === 'compact' || patch.density === 'comfortable') next.density = patch.density;
   if (patch.locale === 'en' || patch.locale === 'it') next.locale = patch.locale;
   if (
     typeof patch.syncIntervalMin === 'number' &&
@@ -50,9 +49,7 @@ export async function getSettings(): Promise<ExtensionSettings> {
   return sanitize(out.extensionSettings ?? {}, DEFAULTS);
 }
 
-export async function setSettings(
-  patch: Partial<ExtensionSettings>,
-): Promise<ExtensionSettings> {
+export async function setSettings(patch: Partial<ExtensionSettings>): Promise<ExtensionSettings> {
   const prior = await getSettings();
   const next = sanitize(patch, prior);
   await chrome.storage.local.set({ [KEY]: next });

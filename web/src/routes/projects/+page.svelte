@@ -4,7 +4,7 @@
   import ProjectCard from '$lib/components/projects/ProjectCard.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { FolderKanban } from 'lucide-svelte';
+  import { FolderKanban } from '@lucide/svelte';
 
   let { data }: { data: PageData } = $props();
 </script>

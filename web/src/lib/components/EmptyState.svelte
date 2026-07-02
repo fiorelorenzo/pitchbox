@@ -2,9 +2,9 @@
 	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
 
-	// `icon` accepts any Svelte component. lucide-svelte v1 ships legacy
-	// (Svelte 4-style) components which don't satisfy Svelte 5's strict
-	// `Component<...>` type, so we keep the prop weakly typed.
+	// `icon` accepts any Svelte component (typically a lucide icon). Kept weakly
+	// typed so call sites are not coupled to a specific icon `Component<...>`
+	// signature.
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	type IconComponent = any;
 

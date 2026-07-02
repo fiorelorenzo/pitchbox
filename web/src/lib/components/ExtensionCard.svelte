@@ -1,6 +1,6 @@
 <script lang="ts">
   import * as Card from '$lib/components/ui/card';
-  import { Puzzle } from 'lucide-svelte';
+  import { Puzzle } from '@lucide/svelte';
 
   type Props = {
     backendUrl: string;
@@ -39,7 +39,7 @@
     <details class="text-xs text-muted-foreground">
       <summary class="cursor-pointer select-none">Install the extension</summary>
       <ol class="mt-2 list-inside list-decimal space-y-1">
-        <li>From the repo root: <code>npm run build:extension</code>.</li>
+        <li>From the repo root: <code>pnpm run build:extension</code>.</li>
         <li>
           Open <code>chrome://extensions</code>, enable <em>Developer mode</em>.
         </li>

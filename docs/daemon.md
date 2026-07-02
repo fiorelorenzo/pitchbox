@@ -1,13 +1,13 @@
 # Daemon
 
-A long-running Node process under `daemon/`. Start with `npm run -w daemon dev` (or wrap with systemd / PM2 for production).
+A long-running Node process under `daemon/`. Start with `pnpm -F daemon dev` (or wrap with systemd / PM2 for production).
 
 ## Embedded mode
 
 Single-host self-hosters can avoid running a second process by booting the daemon loops inside the web server:
 
 ```
-PITCHBOX_EMBED_DAEMON=1 npm run dev
+PITCHBOX_EMBED_DAEMON=1 pnpm run dev
 ```
 
 The same loops (scheduler, reply-poller, heartbeat, retention, keyword-watcher, webhook-sender) run in the SvelteKit process and stop cleanly on `SIGINT`/`SIGTERM`. Heartbeat rows are tagged `module='web'` so Settings can tell embedded vs. standalone. Run both at once safely - the advisory lock on dispatch (#32) and `SELECT … FOR UPDATE SKIP LOCKED` on webhook deliveries (#36) keep behaviour exactly-once across processes. Standalone mode stays the recommended deploy for HA / multi-host setups.
@@ -27,10 +27,10 @@ The same loops (scheduler, reply-poller, heartbeat, retention, keyword-watcher, 
 Daemon tests live under `daemon/tests/` and hit the shared Postgres test DB (`pitchbox_test`, port 5434), same setup as the rest of the suite. Run only the daemon tests with:
 
 ```bash
-npx vitest run daemon/
+pnpm exec vitest run daemon/
 ```
 
-The full `npm test` picks them up automatically - no extra wiring needed.
+The full `pnpm test` picks them up automatically - no extra wiring needed.
 
 ## Dispatch is exactly-once per cron tick
 

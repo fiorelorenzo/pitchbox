@@ -12,13 +12,15 @@ The dashboard's `/api/*` routes power the UI and the extension. Authentication d
 
 ```http
 # Dispatch
-POST /api/run                                # { campaignId, trigger? } → { runId, alreadyRunning? }
-POST /api/run/[id]/cancel
+POST   /api/run                              # { campaignId, trigger? } → { runId, alreadyRunning? }
+DELETE /api/run/[id]                         # cancel a running run
+GET    /api/runs/[id]/events                 # a run's event log
 
-# Drafts & inbox
-PATCH /api/inbox/[id]                        # state transitions (approved | rejected | sent)
-GET   /api/inbox/[id]/events
-POST  /api/inbox/[id]/reply
+# Drafts
+PATCH  /api/drafts/[id]                      # edit body or transition state (optimistic-locked)
+POST   /api/drafts/[id]/regenerate           # re-run the drafter for this draft
+POST   /api/drafts/bulk-approve              # approve many drafts at once
+POST   /api/drafts/bulk-reschedule           # reschedule many drafts
 
 # Runners
 GET  /api/runners                            # detection results (cached)
@@ -43,6 +45,7 @@ POST /api/auth/login                         # { username, password }
 POST /api/auth/logout
 
 # Extension - pairing
+POST /api/extension/pair                     # public → redeem a short-lived pairing code for a token
 POST /api/extension/auto-pair                # cookie-auth → mints a per-device token
 POST /api/extension/handshake                # bearer-auth → liveness ping
 
@@ -79,7 +82,7 @@ See [`web/src/routes/api/`](https://github.com/fiorelorenzo/pitchbox/tree/develo
 
 ## Optimistic locking on draft state transitions
 
-Every state-changing draft endpoint (`PATCH /inbox/[id]`, `POST /api/extension/draft/[id]/sent`) reads the `drafts.version` column, bumps it inside the same `UPDATE … WHERE id = $1 AND version = $2`, and returns one of two outcomes:
+Every state-changing draft endpoint (`PATCH /api/drafts/[id]`, `POST /api/extension/draft/[id]/sent`) reads the `drafts.version` column, bumps it inside the same `UPDATE … WHERE id = $1 AND version = $2`, and returns one of two outcomes:
 
 - **`200 OK`** - the update committed; the new row's `version` is the previous one plus one.
 - **`409 Conflict`** with body `{ "error": "version_conflict", "current_version": <int> }` - another writer beat us to it. Callers should re-fetch the draft (the `current_version` hint is purely advisory) and retry once with the fresh version.

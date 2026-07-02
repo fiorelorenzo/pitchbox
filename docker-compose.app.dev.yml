@@ -1,0 +1,84 @@
+# Dev overlay: ONE command brings up the whole cloud-edition stack in dev, all with
+# hot-reload - postgres + migrations/seed + web (Vite) + daemon (tsx watch) + the
+# cloud runner (tsx watch). The runner uses YOUR local Claude auth via
+# CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY) inherited from the host env.
+#
+#   pnpm run docker:dev
+#   # or, setting the dev vars yourself:
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.app.dev.yml up
+services:
+  # One-shot: apply migrations + seed core before web/daemon start. Uses the app
+  # image (which has the source + tsx). Idempotent, so it is safe on every `up`.
+  migrate:
+    image: ${APP_IMAGE:-pitchbox-app:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    command: ['sh', '-c', 'pnpm -F @pitchbox/shared migrate && pnpm -F @pitchbox/shared seed:core']
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://pitchbox:pitchbox@postgres:5432/pitchbox}
+      PITCHBOX_ROOT: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  web:
+    command: ['pnpm', '-F', 'web', 'dev']
+    environment:
+      NODE_ENV: development
+      WEB_PORT: ${WEB_PORT:-5180}
+    volumes:
+      - ./web/src:/app/web/src
+      - ./shared/src:/app/shared/src
+      - ./cli/src:/app/cli/src
+      - ./cloud/adapter/src:/app/cloud/adapter/src
+      - ./playbooks:/app/playbooks
+    ports:
+      - '${APP_BIND:-127.0.0.1}:${WEB_PORT:-5180}:${WEB_PORT:-5180}'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      runner:
+        condition: service_started
+    restart: 'no'
+
+  daemon:
+    command: ['pnpm', '-F', 'daemon', 'dev']
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./daemon/src:/app/daemon/src
+      - ./shared/src:/app/shared/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: 'no'
+
+  # The cloud runner, hot-reloaded (tsx watch), on the same network as the web
+  # (which reaches it at ws://runner:8787). It spawns the agent using YOUR local
+  # Claude auth: CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY are inherited from the
+  # host env - on the devbox the token is already exported; elsewhere run
+  # `claude setup-token` and export it (or set ANTHROPIC_API_KEY).
+  runner:
+    build:
+      context: ./cloud/runner
+      dockerfile: Dockerfile
+      target: runtime
+    command: ['pnpm', 'dev']
+    environment:
+      NODE_ENV: development
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-devtoken}
+      RUNNER_MODEL: ${RUNNER_MODEL:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AGENT_CWD: /tmp/agent
+    volumes:
+      - ./cloud/runner/src:/app/src:ro
+    tmpfs:
+      - /tmp
+    restart: 'no'

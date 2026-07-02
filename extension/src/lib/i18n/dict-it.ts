@@ -11,8 +11,7 @@ export const it: Dict = {
   'dashboard.connection.title': 'Connessione',
   'dashboard.connection.connected': 'Connesso',
   'dashboard.connection.disconnected': 'Non connesso',
-  'dashboard.connection.empty':
-    'Nessun pairing. Apri la dashboard di Pitchbox e clicca qui sotto.',
+  'dashboard.connection.empty': 'Nessun pairing. Apri la dashboard di Pitchbox e clicca qui sotto.',
   'dashboard.connection.pair': 'Abbina questo tab',
   'dashboard.connection.pair-another': 'Abbina un altro tab',
   'dashboard.connection.disconnect': 'Disconnetti',
@@ -61,8 +60,7 @@ export const it: Dict = {
   'activity.reddit-action.dm-sent': 'DM inviato per il draft {draftId}.',
   'activity.reddit-action.comment-sent': 'Commento pubblicato per il draft {draftId}.',
   'activity.reddit-action.submit-sent': 'Post pubblicato per il draft {draftId}.',
-  'activity.reddit-action.fail':
-    'Aggiornamento backend fallito per il draft {draftId}: {reason}',
+  'activity.reddit-action.fail': 'Aggiornamento backend fallito per il draft {draftId}: {reason}',
   'activity.settings.changed': 'Impostazioni aggiornate.',
   'activity.system.boot': 'Service worker avviato.',
   'activity.system.alarms-applied': 'Alarms riapplicati ({interval} min).',
@@ -93,8 +91,7 @@ export const it: Dict = {
   'settings.data.clear-log': 'Svuota log delle attività',
   'settings.data.reset': 'Reset estensione',
   'settings.data.reset.confirm-title': 'Resettare l’estensione?',
-  'settings.data.reset.confirm-body':
-    'Tutti i pairing, le impostazioni e il log saranno rimossi.',
+  'settings.data.reset.confirm-body': 'Tutti i pairing, le impostazioni e il log saranno rimossi.',
   'settings.data.reset.confirm-ok': 'Reset',
 
   'settings.about.title': 'Informazioni',

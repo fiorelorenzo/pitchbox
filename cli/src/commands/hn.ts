@@ -2,7 +2,21 @@ import { Command } from 'commander';
 import { fetchListings, type HnListing } from '@pitchbox/shared/platforms/hackernews';
 import { ok, fail } from '../lib/output.js';
 
-const LISTINGS: HnListing[] = ['top', 'new', 'best', 'ask', 'show'];
+export const HN_LISTINGS: HnListing[] = ['top', 'new', 'best', 'ask', 'show'];
+
+// Fetch Hacker News stories from a listing, optionally filtered by query.
+// Extracted so both the CLI and the Pitchbox MCP server share it. Hits the
+// public HN Algolia API; returns data or throws.
+export async function searchHn(
+  listing: HnListing,
+  query: string | undefined,
+  limit: number,
+): Promise<{ count: number; items: Awaited<ReturnType<typeof fetchListings>> }> {
+  if (!HN_LISTINGS.includes(listing)) throw new Error(`unknown listing: ${listing}`);
+  if (!Number.isFinite(limit) || limit <= 0) throw new Error('limit must be a positive number');
+  const items = await fetchListings({ listing, query, limit });
+  return { count: items.length, items };
+}
 
 export function registerHnCommands(program: Command) {
   program
@@ -12,15 +26,16 @@ export function registerHnCommands(program: Command) {
     .option('--query <text>', 'case-insensitive substring match on title/text')
     .option('--limit <n>', 'max items to return', '30')
     .action(async (opts: { listing?: string; query?: string; limit?: string }) => {
-      const listing = (opts.listing ?? 'top') as HnListing;
-      if (!LISTINGS.includes(listing)) return fail(`unknown listing: ${listing}`);
-      const limit = Number(opts.limit ?? 30);
-      if (!Number.isFinite(limit) || limit <= 0) return fail('--limit must be a positive number');
       try {
-        const items = await fetchListings({ listing, query: opts.query, limit });
-        return ok({ count: items.length, items });
+        ok(
+          await searchHn(
+            (opts.listing ?? 'top') as HnListing,
+            opts.query,
+            Number(opts.limit ?? 30),
+          ),
+        );
       } catch (err) {
-        return fail(String((err as Error)?.message ?? err));
+        fail(String(err instanceof Error ? err.message : err));
       }
     });
 }

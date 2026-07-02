@@ -8,7 +8,7 @@
   import * as Card from '$lib/components/ui/card';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { Search, MessageSquare } from 'lucide-svelte';
+  import { Search, MessageSquare } from '@lucide/svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import { relativeTime } from '$lib/utils/time';
   import { cn } from '$lib/utils';

@@ -20,6 +20,7 @@
     "./agents/meta": "./src/agents/meta.ts",
     "./agents/detect": "./src/agents/detect.ts",
     "./agents/config": "./src/agents/config.ts",
+    "./agents/cloud/protocol": "./src/agents/cloud/protocol.ts",
     "./campaigns": "./src/campaigns/index.ts",
     "./blocklist": "./src/blocklist.ts",
     "./contact-dedup": "./src/contact-dedup.ts",
@@ -54,18 +55,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.22.1",
-    "dotenv": "^16.4.0",
+    "@agentclientprotocol/sdk": "^1.1.0",
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
-    "pg": "^8.13.0",
-    "playwright": "^1.48.0",
+    "pg": "^8.22.0",
+    "playwright": "^1.61.1",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "zod": "^3.23.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/pg": "^8.11.0",
+    "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10",
-    "tsx": "^4.21.0"
+    "tsx": "^4.22.4"
   }
 }

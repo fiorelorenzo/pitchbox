@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
-import { search } from '../src/routes/api/search/+server.js';
+import { search } from '../src/lib/server/search.js';
 
 async function reset() {
   await getDb().execute(

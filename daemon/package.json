@@ -13,12 +13,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pitchbox/shared": "*",
-    "cron-parser": "^4.9.0",
-    "dotenv": "^16.4.0"
+    "@pitchbox/shared": "workspace:*",
+    "cron-parser": "^5.6.1",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "tsx": "^4.21.0",
-    "typescript": "^5.6.0"
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
   }
 }

@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from './meta.js';
+import { isCloudRunnerEnabled } from './cloud.js';
 
 const exec = promisify(execFile);
 
@@ -65,17 +66,32 @@ const cache = new Map<AgentRunnerSlug, Promise<DetectResult>>();
 export function detectRunner(slug: AgentRunnerSlug): Promise<DetectResult> {
   let pending = cache.get(slug);
   if (!pending) {
-    const binary = BINARY_BY_SLUG[slug];
-    if (!binary) {
+    if (slug === 'cloud') {
+      // No local binary: the cloud runner is "available" when the cloud edition
+      // is enabled and a runner URL is configured.
+      const enabled = isCloudRunnerEnabled();
       pending = Promise.resolve({
-        available: false,
-        version: null,
+        available: enabled,
+        version: enabled ? 'managed' : null,
         path: null,
-        error: 'No local binary - managed by the runtime.',
+        error: enabled
+          ? null
+          : 'Set PITCHBOX_EDITION=cloud and PITCHBOX_RUNNER_URL to enable the cloud runner.',
         detectedAt: new Date().toISOString(),
       });
     } else {
-      pending = probe(binary);
+      const binary = BINARY_BY_SLUG[slug];
+      if (!binary) {
+        pending = Promise.resolve({
+          available: false,
+          version: null,
+          path: null,
+          error: 'No local binary - managed by the runtime.',
+          detectedAt: new Date().toISOString(),
+        });
+      } else {
+        pending = probe(binary);
+      }
     }
     cache.set(slug, pending);
   }

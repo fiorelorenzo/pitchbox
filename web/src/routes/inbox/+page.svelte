@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { invalidateAll, goto } from '$app/navigation';
 	import { navigating, page } from '$app/stores';
-	import { ChevronDown, X, Inbox, Keyboard, ArrowLeft, SlidersHorizontal } from 'lucide-svelte';
+	import { ChevronDown, X, Inbox, Keyboard, ArrowLeft, SlidersHorizontal } from '@lucide/svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';

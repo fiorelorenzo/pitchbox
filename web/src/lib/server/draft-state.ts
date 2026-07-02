@@ -11,8 +11,7 @@ import { getDb, schema } from './db.js';
  * and makes the contract straightforward to unit-test.
  */
 export type DraftPatchResult =
-  | { kind: 'ok'; newVersion: number }
-  | { kind: 'conflict'; currentVersion: number };
+  { kind: 'ok'; newVersion: number } | { kind: 'conflict'; currentVersion: number };
 
 export async function updateDraftWithVersion(
   draftId: number,
