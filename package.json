@@ -19,6 +19,7 @@
     "migrate:generate": "pnpm -F shared migrate:generate",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
+    "docker:dev": "bash scripts/dev.sh",
     "dev": "concurrently -n web,ext,docs -c blue,magenta,green --kill-others-on-fail \"pnpm -F web dev\" \"pnpm -F @pitchbox/extension dev\" \"pnpm run docs:dev\"",
     "dev:web": "pnpm -F web dev",
     "dev:extension": "pnpm -F @pitchbox/extension dev",
