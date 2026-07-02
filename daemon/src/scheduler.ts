@@ -1,6 +1,6 @@
 import { getDb, schema } from '@pitchbox/shared/db';
 import { and, eq, isNotNull, isNull, lte, or } from 'drizzle-orm';
-import cronParser from 'cron-parser';
+import { CronExpressionParser } from 'cron-parser';
 import { computeBackoff, FAILURE_PAUSE_THRESHOLD } from '@pitchbox/shared/scheduler/backoff';
 import { notify } from '@pitchbox/shared/notifications';
 import { config } from './config.js';
@@ -46,7 +46,7 @@ async function triggerRun(
 
 function computeNextRun(cronExpression: string, from: Date): Date | null {
   try {
-    const it = cronParser.parseExpression(cronExpression, { currentDate: from, tz: 'UTC' });
+    const it = CronExpressionParser.parse(cronExpression, { currentDate: from, tz: 'UTC' });
     return it.next().toDate();
   } catch (err) {
     log.warn(`invalid cron expression "${cronExpression}"`, err);

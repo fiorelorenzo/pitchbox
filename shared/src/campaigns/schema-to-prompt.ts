@@ -2,37 +2,41 @@ import { z } from 'zod';
 import type { ScenarioSlug } from './scenarios.js';
 import { SCENARIO_SCHEMAS } from './scenario-schemas.js';
 
-function describeType(z0: z.ZodTypeAny, path: string, lines: string[]): void {
-  const def = z0._def;
-  if (def.typeName === 'ZodObject') {
-    for (const [key, child] of Object.entries((z0 as z.ZodObject<z.ZodRawShape>).shape)) {
-      describeType(child as z.ZodTypeAny, path ? `${path}.${key}` : key, lines);
+// zod v4 dropped `_def.typeName` (e.g. 'ZodObject'); the schema kind now lives on
+// `_def.type` as a lowercase discriminator ('object', 'array', 'enum', ...). We
+// read the schema structurally because v4's public generics changed shape.
+type ZodKindDef = { _def: { type: string } };
+const kindOf = (z0: z.ZodType): string => (z0 as unknown as ZodKindDef)._def.type;
+
+function describeType(z0: z.ZodType, path: string, lines: string[]): void {
+  const type = kindOf(z0);
+  if (type === 'object') {
+    const shape = (z0 as unknown as { shape: Record<string, z.ZodType> }).shape;
+    for (const [key, child] of Object.entries(shape)) {
+      describeType(child, path ? `${path}.${key}` : key, lines);
     }
     return;
   }
-  if (def.typeName === 'ZodArray') {
-    const inner = (z0 as z.ZodArray<z.ZodTypeAny>).element;
-    const innerDesc =
-      inner._def.typeName === 'ZodString'
-        ? 'string'
-        : inner._def.typeName.replace(/^Zod/, '').toLowerCase();
-    lines.push(`- ${path}: array of ${innerDesc}`);
+  if (type === 'array') {
+    const inner = (z0 as unknown as { element: z.ZodType }).element;
+    lines.push(`- ${path}: array of ${kindOf(inner)}`);
     return;
   }
-  if (def.typeName === 'ZodEnum') {
-    const values = (z0 as z.ZodEnum<[string, ...string[]]>).options.map((v) => `"${v}"`).join(', ');
+  if (type === 'enum') {
+    const options = (z0 as unknown as { options: readonly string[] }).options;
+    const values = options.map((v) => `"${v}"`).join(', ');
     lines.push(`- ${path}: one of ${values}`);
     return;
   }
-  if (def.typeName === 'ZodNumber') {
+  if (type === 'number') {
     lines.push(`- ${path}: integer (1-5)`);
     return;
   }
-  if (def.typeName === 'ZodString') {
+  if (type === 'string') {
     lines.push(`- ${path}: string`);
     return;
   }
-  lines.push(`- ${path}: ${def.typeName.replace(/^Zod/, '').toLowerCase()}`);
+  lines.push(`- ${path}: ${type}`);
 }
 
 export function describeScenarioSchema(slug: ScenarioSlug): string {
@@ -40,6 +44,6 @@ export function describeScenarioSchema(slug: ScenarioSlug): string {
   const lines: string[] = [];
   lines.push('## Profile fields (must be filled exactly with this structure)');
   lines.push('');
-  describeType(schema as z.ZodTypeAny, '', lines);
+  describeType(schema as unknown as z.ZodType, '', lines);
   return lines.join('\n');
 }

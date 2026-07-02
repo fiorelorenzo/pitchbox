@@ -1,6 +1,6 @@
 <script lang="ts">
   import * as Card from '$lib/components/ui/card';
-  import { Puzzle } from 'lucide-svelte';
+  import { Puzzle } from '@lucide/svelte';
 
   type Props = {
     backendUrl: string;

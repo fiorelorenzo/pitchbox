@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronLeft, Loader2 } from 'lucide-svelte';
+	import { ChevronLeft, Loader2 } from '@lucide/svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { invalidateAll } from '$app/navigation';

@@ -14,11 +14,7 @@ export interface AcpUsage {
 }
 
 export type AcpStopReasonKind =
-  | 'end_turn'
-  | 'cancelled'
-  | 'error'
-  | 'max_turn_requests'
-  | 'refusal';
+  'end_turn' | 'cancelled' | 'error' | 'max_turn_requests' | 'refusal';
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   return typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : null;

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Circle, Loader2, CheckCircle2 } from 'lucide-svelte';
+	import { Circle, Loader2, CheckCircle2 } from '@lucide/svelte';
 
 	let {
 		todos = [],

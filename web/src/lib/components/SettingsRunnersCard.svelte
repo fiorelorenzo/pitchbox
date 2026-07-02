@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import { RefreshCw, Inbox } from 'lucide-svelte';
+	import { RefreshCw, Inbox } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import RunnerCard from '$lib/components/RunnerCard.svelte';
 

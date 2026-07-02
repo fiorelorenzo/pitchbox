@@ -42,7 +42,7 @@ export default defineConfig(({ command }) => {
         : ['@pitchbox/shared', '@pitchbox/cli', '@pitchbox/daemon', '@pitchbox/cloud-adapter'],
       // Packages that ship `.svelte` source files must be bundled by Vite for SSR
       // instead of being loaded by Node as ESM.
-      noExternal: ['svelte-sonner', 'bits-ui', 'lucide-svelte'],
+      noExternal: ['svelte-sonner', 'bits-ui', '@lucide/svelte'],
     },
   };
 });

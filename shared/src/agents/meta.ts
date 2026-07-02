@@ -3,13 +3,7 @@
 // can't be bundled into the browser).
 
 export type AgentRunnerSlug =
-  | 'claude-code'
-  | 'codex'
-  | 'gemini'
-  | 'copilot'
-  | 'opencode'
-  | 'qwen-code'
-  | 'cloud';
+  'claude-code' | 'codex' | 'gemini' | 'copilot' | 'opencode' | 'qwen-code' | 'cloud';
 
 export type AgentRunnerMeta = {
   slug: AgentRunnerSlug;

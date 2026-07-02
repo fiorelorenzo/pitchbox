@@ -1,6 +1,5 @@
 <script lang="ts">
-	import type { ComponentType } from 'svelte';
-	import type { Icon as LucideIcon } from 'lucide-svelte';
+	import type { LucideIcon } from '@lucide/svelte';
 
 	let {
 		label,
@@ -12,7 +11,7 @@
 		label: string;
 		value: number | string;
 		hint?: string;
-		icon?: ComponentType<LucideIcon>;
+		icon?: LucideIcon;
 		href?: string;
 	} = $props();
 </script>

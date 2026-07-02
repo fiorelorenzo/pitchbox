@@ -2,13 +2,7 @@ import { ulid } from './ulid.js';
 
 export type ActivityLevel = 'info' | 'warn' | 'error';
 export type ActivitySource =
-  | 'pairing'
-  | 'dm-sync'
-  | 'chat-sync'
-  | 'matrix-token'
-  | 'reddit-action'
-  | 'settings'
-  | 'system';
+  'pairing' | 'dm-sync' | 'chat-sync' | 'matrix-token' | 'reddit-action' | 'settings' | 'system';
 
 export type ActivityEvent = {
   id: string;

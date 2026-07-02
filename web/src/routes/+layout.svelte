@@ -5,7 +5,7 @@
 	import { Toaster } from '$lib/components/ui/sonner';
 	import CommandPalette from '$lib/components/command-palette/CommandPalette.svelte';
 	import { ModeWatcher } from 'mode-watcher';
-	import { Menu, X } from 'lucide-svelte';
+	import { Menu, X } from '@lucide/svelte';
 	import { page } from '$app/stores';
 
 	let { children } = $props();

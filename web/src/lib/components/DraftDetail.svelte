@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Clipboard, Check, Send, ExternalLink, MessageSquare } from 'lucide-svelte';
+	import { Clipboard, Check, Send, ExternalLink, MessageSquare } from '@lucide/svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';

@@ -2,11 +2,7 @@
 // the browser via `@pitchbox/shared/campaigns`.
 
 export type ScenarioSlug =
-  | 'reddit-scout'
-  | 'reddit-commenter'
-  | 'reddit-poster'
-  | 'hn-commenter'
-  | 'hn-poster';
+  'reddit-scout' | 'reddit-commenter' | 'reddit-poster' | 'hn-commenter' | 'hn-poster';
 
 export type ScenarioPlatformSlug = 'reddit' | 'hackernews';
 
