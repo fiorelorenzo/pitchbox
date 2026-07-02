@@ -7,11 +7,10 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "noEmit": true,
     "allowJs": true,
-    "baseUrl": ".",
     "paths": {
-      "$ext/*": ["src/lib/*"],
-      "$lib/*": ["src/lib/*"],
-      "$ui/*": ["src/lib/components/ui/*"]
+      "$ext/*": ["./src/lib/*"],
+      "$lib/*": ["./src/lib/*"],
+      "$ui/*": ["./src/lib/components/ui/*"]
     }
   },
   "include": ["src/**/*", "tests/**/*"]

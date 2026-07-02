@@ -68,8 +68,7 @@ export async function skillGenerateFinish(runId: number, payload: unknown) {
   if (!campaign) throw new Error(`campaign ${run.campaignId} not found`);
 
   const scenario = (run.params as { scenario?: string } | null)?.scenario as
-    | ScenarioSlug
-    | undefined;
+    ScenarioSlug | undefined;
   if (!scenario) throw new Error('run.params.scenario missing');
 
   const schema0 = getSchema(scenario);

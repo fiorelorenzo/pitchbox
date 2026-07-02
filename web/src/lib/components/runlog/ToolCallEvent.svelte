@@ -14,7 +14,7 @@
 		Loader2,
 		CheckCircle2,
 		XCircle,
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { slide } from 'svelte/transition';
 	import type { CliEnvelope } from './types';
 	import TodoWriteCard from './TodoWriteCard.svelte';

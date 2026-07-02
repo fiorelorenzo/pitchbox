@@ -24,8 +24,8 @@ export const DraftInput = z.object({
   body: z.string().min(1),
   composeUrl: z.string().url().optional(),
   reasoning: z.string().optional(),
-  sourceRef: z.record(z.unknown()).default({}),
-  metadata: z.record(z.unknown()).default({}),
+  sourceRef: z.record(z.string(), z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
   // Optional A/B variant bodies (issue #20). When provided, `body` is treated
   // as the primary (variant A) and `variants` supplies B, C, ... Each entry
   // produces a sibling draft sharing a `variant_group_id`.

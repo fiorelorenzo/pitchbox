@@ -15,15 +15,14 @@
 		BarChart3,
 		LogOut,
 		LogIn,
-		type Icon as LucideIcon,
-	} from 'lucide-svelte';
+		type LucideIcon,
+	} from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { dev } from '$app/environment';
 	import { cn } from '$lib/utils';
 	import SystemStatusCard from '$lib/components/SystemStatusCard.svelte';
 	import { t } from '$lib/i18n';
-	import type { ComponentType } from 'svelte';
 
 	// VitePress dev server runs on :5181 with base /pitchbox/. In production
 	// the published Pages site is the source of truth.
@@ -32,7 +31,7 @@
 	type NavItem = {
 		href: string;
 		labelKey: string;
-		icon: ComponentType<LucideIcon>;
+		icon: LucideIcon;
 		exact?: boolean;
 	};
 

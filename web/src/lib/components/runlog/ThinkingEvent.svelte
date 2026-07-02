@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Brain } from 'lucide-svelte';
+	import { Brain } from '@lucide/svelte';
 	import { slide } from 'svelte/transition';
 	import Markdown from '$lib/components/Markdown.svelte';
 

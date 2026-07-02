@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy, tick } from 'svelte';
-	import { Loader, ChevronsDown } from 'lucide-svelte';
+	import { Loader, ChevronsDown } from '@lucide/svelte';
 
 	import { relativeTimeFine } from '$lib/utils/time';
 	import { resetParser, dbEventToTimeline, pairToolEvents } from './runlog/parse';

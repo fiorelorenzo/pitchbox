@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CheckCircle2, XCircle } from 'lucide-svelte';
+	import { CheckCircle2, XCircle } from '@lucide/svelte';
 	import { formatDuration } from '$lib/utils/time';
 	import Markdown from '$lib/components/Markdown.svelte';
 

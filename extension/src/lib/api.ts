@@ -1,8 +1,7 @@
 import { getSettings, patchPairing, type Pairing } from './storage.js';
 
 export type ApiResult<T = unknown> =
-  | { ok: true; data: T }
-  | { ok: false; status: number; error: string };
+  { ok: true; data: T } | { ok: false; status: number; error: string };
 
 type DraftSummary = {
   id: number;

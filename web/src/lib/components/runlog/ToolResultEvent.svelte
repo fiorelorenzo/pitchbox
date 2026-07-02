@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CheckCircle2, XCircle } from 'lucide-svelte';
+	import { CheckCircle2, XCircle } from '@lucide/svelte';
 	import { slide } from 'svelte/transition';
 	import type { CliEnvelope } from './types';
 

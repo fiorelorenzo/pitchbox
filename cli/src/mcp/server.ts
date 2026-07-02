@@ -344,7 +344,7 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       inputSchema: {
         description: z.string().min(1).describe('the composed markdown project description'),
         recommendations: z
-          .array(z.record(z.unknown()))
+          .array(z.record(z.string(), z.unknown()))
           .optional()
           .describe('array of { scenarioSlug, name, objective }'),
         runId: z
@@ -399,7 +399,10 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       description: 'Persist a generated insights summary (markdown + evidence) for a project.',
       inputSchema: {
         summaryMd: z.string().min(1).describe('the markdown insights summary'),
-        evidence: z.record(z.unknown()).optional().describe('cited draft/message ids etc.'),
+        evidence: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe('cited draft/message ids etc.'),
         projectId: z
           .number()
           .int()
@@ -453,7 +456,7 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
         'Validate the generated profile against the scenario schema and write it to campaigns.config (flipping a draft campaign to active). Returns a tool error listing field paths when validation fails.',
       inputSchema: {
         profile: z
-          .record(z.unknown())
+          .record(z.string(), z.unknown())
           .describe('the structured campaign profile (campaign.config)'),
         runId: z
           .number()

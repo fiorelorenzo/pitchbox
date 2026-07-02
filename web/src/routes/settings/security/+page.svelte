@@ -7,7 +7,7 @@
 	import Seo from '$lib/components/Seo.svelte';
 	import { toast } from 'svelte-sonner';
 	import { invalidateAll } from '$app/navigation';
-	import { ShieldAlert } from 'lucide-svelte';
+	import { ShieldAlert } from '@lucide/svelte';
 
 	type Failure = { id: number; identifier: string; failedAt: string; kind: string };
 	type Policy = { maxAttempts: number; windowMinutes: number; lockoutMinutes: number };
