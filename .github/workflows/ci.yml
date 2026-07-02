@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+
+# One in-flight run per ref; new pushes cancel the old run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint · Typecheck · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint (eslint + prettier)
+        run: pnpm run lint
+      - name: Typecheck (tsc + svelte-check)
+        run: pnpm run typecheck
+      - name: Build (web + extension)
+        run: pnpm run build
+
+  test:
+    name: Tests (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pitchbox
+          POSTGRES_PASSWORD: pitchbox
+          POSTGRES_DB: pitchbox_test
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U pitchbox"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # The test suite pins this same URL in vitest.config.ts; global-setup runs
+      # migrate + seed against it. The other two are read by crypto / repo-locating
+      # code that a few integration tests exercise.
+      DATABASE_URL: postgres://pitchbox:pitchbox@127.0.0.1:5434/pitchbox_test
+      ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      PITCHBOX_ROOT: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Test (vitest, full suite)
+        run: pnpm test
