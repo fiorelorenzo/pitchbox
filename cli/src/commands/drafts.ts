@@ -22,7 +22,7 @@ export const DraftInput = z.object({
   targetUser: z.string().optional(),
   title: z.string().optional(),
   body: z.string().min(1),
-  composeUrl: z.string().url().optional(),
+  composeUrl: z.url().optional(),
   reasoning: z.string().optional(),
   sourceRef: z.record(z.string(), z.unknown()).default({}),
   metadata: z.record(z.string(), z.unknown()).default({}),
