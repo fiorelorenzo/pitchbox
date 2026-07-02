@@ -78,9 +78,13 @@ The cloud runner lets the agent run on managed compute without a local agent CLI
 
 The client stack (web + daemon + Postgres) ships as Docker via `Dockerfile.app`
 plus the `docker-compose.app.*` overlays, parameterised by `.env` (copy
-`.env.docker.example`). Like the rest of the repo it runs **from TS source** (Vite
-for the web, tsx for the daemon) - no bundling step. The web image bundles Google
-Chrome (the Reddit MCP tool scrapes with Playwright `channel: 'chrome'`, client-side).
+`.env.docker.example`). The web is a SvelteKit **adapter-node** build run under
+`node --import tsx`: the app is bundled, but `@pitchbox/*` stay **external** and
+load from TS source at runtime (see `web/vite.config.ts`), which keeps their CJS
+deps - ajv via the MCP SDK, the reddit stealth stack - out of the ESM bundle where
+`require()` would be undefined. The daemon runs from TS source via tsx. The web
+image bundles Google Chrome (the Reddit MCP tool scrapes with Playwright
+`channel: 'chrome'`, client-side). `pnpm -F web dev` (Vite) is the dev overlay.
 
 ```bash
 # dev: hot-reload from bind-mounted source, port published on the host

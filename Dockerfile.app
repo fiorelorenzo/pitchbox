@@ -36,8 +36,19 @@ RUN npx playwright install --with-deps chrome \
 COPY . .
 
 # 3b) The cloud adapter is a separate package (not in the workspace); install its
-#     runtime deps (ws) so Vite can resolve them when it loads the adapter source.
+#     runtime deps (ws) so it resolves when tsx loads the adapter source at runtime.
 RUN cd cloud/adapter && pnpm install --node-linker=hoisted
+
+# 3c) Build the SvelteKit web server (adapter-node). @pitchbox/* stay external
+#     (see web/vite.config.ts) and load at runtime under tsx, which keeps their CJS
+#     deps (ajv via the MCP SDK, the reddit stealth stack) out of the ESM bundle.
+RUN pnpm -F web build
+
+# 3d) Make the cloud adapter resolvable at runtime as its real package name (the
+#     built server imports '@pitchbox/cloud-adapter'; tsx then loads its TS source).
+#     AFTER the build on purpose, so Vite keeps it external at build time.
+RUN mkdir -p /app/node_modules/@pitchbox \
+ && ln -sfn /app/cloud/adapter /app/node_modules/@pitchbox/cloud-adapter
 
 # 4) Run as a non-root user. The app is owned by it so Vite's dep cache, the run
 #    scratch dirs (daemon/tmp, daemon/logs) and Playwright are all writable.
@@ -47,7 +58,9 @@ RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin pitchbox \
 USER pitchbox
 ENV HOME=/home/pitchbox \
     PITCHBOX_ROOT=/app \
+    PORT=5180 \
     WEB_PORT=5180
 EXPOSE 5180
-# Default entrypoint is the web (Vite) server; the daemon service overrides it.
-CMD ["pnpm", "-F", "web", "dev"]
+# Default entrypoint is the built web server, run under tsx so the external
+# @pitchbox/* TS source resolves at runtime. The daemon service overrides it.
+CMD ["node", "--import", "tsx", "web/build/index.js"]
