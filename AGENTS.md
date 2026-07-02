@@ -87,11 +87,18 @@ image bundles Google Chrome (the Reddit MCP tool scrapes with Playwright
 `channel: 'chrome'`, client-side). `pnpm -F web dev` (Vite) is the dev overlay.
 
 ```bash
-# dev: ONE command brings up the whole stack hot-reloaded - postgres +
+# dev (everything in Docker): ONE command, hot-reloaded - postgres +
 # migrations/seed + web (Vite) + daemon (tsx) + the cloud runner (tsx). The runner
 # uses YOUR local Claude auth (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY inherited
 # from your shell; on the devbox it's already exported). See scripts/dev.sh.
 pnpm run docker:dev
+
+# dev with the RUNNER OUTSIDE Docker (for debugging the runner): only postgres runs
+# in Docker; web + daemon + runner run on the HOST (localhost wiring, so it works
+# even on a firewalled VPS where a container can't reach the host). See
+# scripts/dev-local.sh. Use RUNNER_PORT=8790 if 8787 is taken.
+pnpm run dev:local
+
 # prod: restart, resource limits, optional cloudflared tunnel (--profile tunnel)
 docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.app.prod.yml up -d
 ```
