@@ -36,6 +36,10 @@ set -a
 set +a
 export ENCRYPTION_KEY="${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
 
+# We run the daemon as its own process below, so the web must NOT also embed it
+# (the repo .env often sets PITCHBOX_EMBED_DAEMON=1) - otherwise the loops run twice.
+export PITCHBOX_EMBED_DAEMON=0
+
 # Cloud edition pointed at the runner running on THIS host.
 export PITCHBOX_EDITION=cloud
 export RUNNER_TOKEN="${RUNNER_TOKEN:-devtoken}"

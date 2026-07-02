@@ -47,7 +47,8 @@ async function importCloudAdapter(): Promise<CloudAdapterModule> {
   } catch (primaryErr) {
     try {
       const spec = ['..', '..', '..', 'cloud', 'adapter', 'src', 'index.js'].join('/');
-      return (await import(spec)) as CloudAdapterModule;
+      // Intentionally dynamic (tsx-only fallback); tell Vite not to try to analyze it.
+      return (await import(/* @vite-ignore */ spec)) as CloudAdapterModule;
     } catch {
       // The path fallback only applies to the unbundled tsx case; in a bundled
       // build it never resolves. Surface the primary error - it's the real cause.
