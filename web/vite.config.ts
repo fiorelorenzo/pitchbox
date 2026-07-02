@@ -13,21 +13,32 @@ const cloudAlias: Record<string, string> = existsSync(cloudAdapter)
   : {};
 const cloudDir = fileURLToPath(new URL('../cloud', import.meta.url));
 
-export default defineConfig({
-  plugins: [tailwindcss(), sveltekit()],
-  // Vite's dep-optimizer + SSR cache. Default is node_modules/.vite, which is not
-  // writable when the app runs from a read-only image dir; allow an override.
-  cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
-  server: {
-    port: Number(process.env.WEB_PORT ?? 5180),
-    strictPort: true,
-    // Allow Vite to read the private adapter source outside the project root.
-    fs: { allow: [cloudDir] },
-  },
-  resolve: { alias: cloudAlias },
-  ssr: {
-    // Packages that ship `.svelte` source files must be bundled by Vite for SSR
-    // instead of being loaded by Node as ESM.
-    noExternal: ['svelte-sonner', 'bits-ui', 'lucide-svelte'],
-  },
+export default defineConfig(({ command }) => {
+  const isDev = command === 'serve';
+  return {
+    plugins: [tailwindcss(), sveltekit()],
+    // Vite's dep-optimizer + SSR cache. Default is node_modules/.vite, which is not
+    // writable when the app runs from a read-only image dir; allow an override.
+    cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
+    server: {
+      port: Number(process.env.WEB_PORT ?? 5180),
+      strictPort: true,
+      // Allow Vite to read the private adapter source outside the project root (dev).
+      fs: { allow: [cloudDir] },
+    },
+    // In dev, Vite resolves/processes the workspace TS packages itself. In the
+    // production build we do NOT bundle `@pitchbox/*`: they stay external and load
+    // at runtime under `node --import tsx`, which keeps their CJS deps (ajv via the
+    // MCP SDK, the reddit stealth stack) out of the ESM bundle where `require()`
+    // would be undefined. The alias only matters for dev.
+    resolve: { alias: isDev ? cloudAlias : {} },
+    ssr: {
+      external: isDev
+        ? []
+        : ['@pitchbox/shared', '@pitchbox/cli', '@pitchbox/daemon', '@pitchbox/cloud-adapter'],
+      // Packages that ship `.svelte` source files must be bundled by Vite for SSR
+      // instead of being loaded by Node as ESM.
+      noExternal: ['svelte-sonner', 'bits-ui', 'lucide-svelte'],
+    },
+  };
 });

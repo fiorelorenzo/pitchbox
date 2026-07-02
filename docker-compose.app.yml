@@ -16,7 +16,8 @@ services:
       context: .
       dockerfile: Dockerfile.app
     environment:
-      # Vite reads WEB_PORT (defaults to 5180).
+      # adapter-node (prod build) reads PORT; Vite (dev) reads WEB_PORT. Same value.
+      PORT: ${WEB_PORT:-5180}
       WEB_PORT: ${WEB_PORT:-5180}
       PITCHBOX_ROOT: /app
       DATABASE_URL: ${DATABASE_URL:-postgresql://pitchbox:pitchbox@postgres:5432/pitchbox}
