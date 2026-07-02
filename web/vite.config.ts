@@ -21,6 +21,10 @@ export default defineConfig(({ command }) => {
     // writable when the app runs from a read-only image dir; allow an override.
     cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
     server: {
+      // Bind localhost (IPv4) so the dev server is NOT exposed on the network/public
+      // IP, while staying reachable at 127.0.0.1 (which the daemon and tooling use;
+      // a bare `localhost` can resolve to ::1 and miss IPv4-only callers).
+      host: '127.0.0.1',
       port: Number(process.env.WEB_PORT ?? 5180),
       strictPort: true,
       // Allow Vite to read the private adapter source outside the project root (dev).

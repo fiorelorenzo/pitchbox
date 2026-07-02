@@ -29,7 +29,7 @@
     "reseed": "pnpm -F @pitchbox/shared seed:core && pnpm run seed:embertold",
     "build:extension": "pnpm -F @pitchbox/extension build",
     "zip:extension": "pnpm -F @pitchbox/extension zip",
-    "docs:dev": "vitepress dev docs --port 5181 --host",
+    "docs:dev": "vitepress dev docs --port 5181",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "brand:render": "tsx scripts/render-brand.ts"
