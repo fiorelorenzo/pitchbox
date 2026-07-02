@@ -4,7 +4,7 @@ import { getDb } from '$lib/server/db.js';
 import { saveWebhooks } from '@pitchbox/shared/notifications';
 
 const Body = z.object({
-  url: z.string().url().nullable(),
+  url: z.url().nullable(),
 });
 
 export async function PUT({ request }: { request: Request }) {

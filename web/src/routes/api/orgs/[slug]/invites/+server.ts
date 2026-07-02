@@ -4,7 +4,7 @@ import { getDb } from '$lib/server/db.js';
 import { createInvite, findOrgBySlug, isOrgAdmin } from '@pitchbox/shared/orgs';
 
 const Body = z.object({
-  email: z.string().email().optional(),
+  email: z.email().optional(),
   role: z.enum(['owner', 'admin', 'member']).default('member'),
 });
 
