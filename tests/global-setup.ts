@@ -12,8 +12,8 @@ const TEST_DATABASE_URL = 'postgres://pitchbox:pitchbox@127.0.0.1:5434/pitchbox_
 export async function setup() {
   const env = { ...process.env, DATABASE_URL: TEST_DATABASE_URL };
   const cwd = new URL('..', import.meta.url).pathname;
-  execSync('npm run --silent migrate', { stdio: 'inherit', cwd, env });
-  execSync('npm run -w @pitchbox/shared --silent seed:core', {
+  execSync('pnpm run --silent migrate', { stdio: 'inherit', cwd, env });
+  execSync('pnpm -F @pitchbox/shared --silent seed:core', {
     stdio: 'inherit',
     cwd,
     env,

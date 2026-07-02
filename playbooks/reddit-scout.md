@@ -5,44 +5,39 @@ description: Run a Reddit outreach scout for a Pitchbox campaign. Fetches candid
 
 # Pitchbox - Reddit Scout Playbook
 
-You are acting inside a Pitchbox campaign run. All state lives in Postgres; the `pitchbox` CLI is the only way to read or write it. Stay strictly within the steps below.
+You are acting inside a Pitchbox campaign run. All state lives in Postgres; you read and write it exclusively through the **`pitchbox` MCP server** (its tools are named `mcp__pitchbox__*`). Do not shell out and do not touch the database directly. Stay strictly within the steps below.
 
 ## Inputs
 
-Environment variables available to you:
+The run is already bound to a campaign and run through the environment, so the tools default to the right ids when you omit them. Step 1 returns the canonical `runId` - thread it explicitly into every later tool call.
 
-- `PITCHBOX_CAMPAIGN_ID` - the campaign id to run.
-- `PITCHBOX_RUN_ID` - the run id created by the scheduler (may be absent if the CLI was invoked directly; in that case the first step creates one).
+## Tools
+
+- `run_start` - create/resume the run and load campaign context.
+- `reddit_scout` - fetch Reddit candidates and stage them.
+- `staging_candidates` - read the staged candidates.
+- `drafts_create` - write the drafts back.
+- `run_finish` - close the run.
+
+Every tool returns JSON. On failure a tool returns an error result (see Failure modes).
 
 ## Steps
 
-1. **Start the run and load context.** Shell out:
+1. **Start the run and load context.** Call `run_start` (no arguments; it defaults to this session's campaign).
 
-   ```
-   pitchbox run:start --campaign=$PITCHBOX_CAMPAIGN_ID
-   ```
+   From the result extract: `runId`, `project` (includes `description` - the project's markdown briefing), `platform`, `campaign.config` (the strict-validated structured scout profile), `accounts`, `blocklist`, `contactedRecently`. Remember `runId` for every later call.
 
-   Parse the JSON. Extract: `runId`, `project` (includes `description` - the project's markdown briefing), `platform`, `campaign.config` (the strict-validated structured scout profile), `accounts`, `blocklist`, `contactedRecently`.
+2. **Fetch raw candidates.** Call `reddit_scout` with `{ "runId": <runId> }`.
 
-2. **Fetch raw candidates.** Shell out:
+   This fetches Reddit via the Pitchbox backend, applies blocklist + contact-history filters, and stages `staging_scout_candidates` rows.
 
-   ```
-   pitchbox reddit:scout --run=<runId>
-   ```
-
-   This fetches Reddit via the Pitchbox backend, applies blocklist + contact-history filters, and writes `staging_scout_candidates` rows.
-
-3. **Read the staged candidates.** Shell out:
-
-   ```
-   pitchbox staging:candidates --run=<runId>
-   ```
+3. **Read the staged candidates.** Call `staging_candidates` with `{ "run": <runId> }`.
 
    This returns an array of candidate objects, each with `user`, `post`, `profileUrl`, `composeUrlBase`, `matchedBy`.
 
 4. **For each candidate, do the following:**
 
-   **a. Score them 1–5 (fit).** Factors:
+   **a. Score them 1-5 (fit).** Factors:
    - Topical relevance of the matched post to the project's `description` and the target subreddits in `campaign.config.targetSubreddits`. Use `campaign.config.systemInstructions` as additional scoring guidance.
    - Engagement signal (karma, post score, comments).
    - Tone (genuine curiosity > dismissive > hostile). Skip hostile.
@@ -50,7 +45,7 @@ Environment variables available to you:
 
    Skip candidates scoring below `campaign.config.fitScoreThreshold` (default 3 if absent).
 
-   **b. Draft a DM.** English, first-person, casual, ~80–100 words. Reference a concrete detail from the candidate's matched post. The DM **must** follow the voice rules in `campaign.config.voice`:
+   **b. Draft a DM.** English, first-person, casual, ~80-100 words. Reference a concrete detail from the candidate's matched post. The DM **must** follow the voice rules in `campaign.config.voice`:
    - `voice.hardBans` - banned words/phrases. Never use them.
    - `voice.dos` - required stylistic elements (e.g. contractions, lowercase opener).
    - `voice.tone` - overall tone (e.g. `casual`).
@@ -65,13 +60,9 @@ Environment variables available to you:
 
 5. **Pick the account.** Use the first account from `accounts` whose `role === 'personal'`. Record its `id` as `accountId`.
 
-6. **Write drafts back.** Build a JSON array of draft objects, one per candidate you scored at or above the threshold, and pipe it to:
+6. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`, one draft object per candidate you scored at or above the threshold.
 
-   ```
-   echo '<json>' | pitchbox drafts:create --run=<runId>
-   ```
-
-   > Response: `{ ok, inserted, skipped: [{targetUser, reason}] }` - blocklisted targets are silently skipped, log them and do not retry.
+   > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
 
    Each draft object:
 
@@ -84,16 +75,13 @@ Environment variables available to you:
      "targetUser": "alice",
      "body": "<DM markdown>",
      "composeUrl": "https://www.reddit.com/message/compose?to=alice&subject=...&message=...",
-     "reasoning": "2–4 sentences citing specific words from their post.",
+     "reasoning": "2-4 sentences citing specific words from their post.",
      "sourceRef": { "permalink": "/r/rpg/comments/abc/.../" },
      "metadata": { "matchedBy": "search" }
    }
    ```
 
-7. **Finish the run.** Shell out:
-   ```
-   pitchbox run:finish --run=<runId> --status=success
-   ```
+7. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 
@@ -105,5 +93,5 @@ Environment variables available to you:
 
 ## Failure modes
 
-- If any CLI step returns `{"ok": false, ...}`, stop and finish the run with `--status=failed --error="<message>"`.
-- If Reddit returns 401/403 (visible in the `reddit:scout` error), finish with `failed` and include the error message; the daemon's safety brake handles it.
+- If any tool call returns an error result, stop and call `run_finish` with `{ "runId": <runId>, "status": "failed", "error": "<message>" }`.
+- If Reddit returns 401/403 (visible in the `reddit_scout` error), finish with `failed` and include the error message; the daemon's safety brake handles it.

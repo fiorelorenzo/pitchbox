@@ -2,7 +2,7 @@
 	// Placeholder Appearance card. Persists the chosen UI locale in
 	// `localStorage` until `app_config.ui_locale` server-side plumbing lands.
 	import * as Card from '$lib/components/ui/card';
-	import { Languages } from 'lucide-svelte';
+	import { Languages } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import SelectField from '$lib/components/ui/select-field/select-field.svelte';
 	import { LOCALES, locale, setLocale, t, type Locale } from '$lib/i18n';

@@ -2,13 +2,7 @@ import { ulid } from './ulid.js';
 
 export type ActivityLevel = 'info' | 'warn' | 'error';
 export type ActivitySource =
-  | 'pairing'
-  | 'dm-sync'
-  | 'chat-sync'
-  | 'matrix-token'
-  | 'reddit-action'
-  | 'settings'
-  | 'system';
+  'pairing' | 'dm-sync' | 'chat-sync' | 'matrix-token' | 'reddit-action' | 'settings' | 'system';
 
 export type ActivityEvent = {
   id: string;
@@ -33,9 +27,7 @@ async function write(next: ActivityEvent[]): Promise<void> {
   await chrome.storage.local.set({ [KEY]: next });
 }
 
-export async function logEvent(
-  input: Omit<ActivityEvent, 'id' | 'ts'>,
-): Promise<ActivityEvent> {
+export async function logEvent(input: Omit<ActivityEvent, 'id' | 'ts'>): Promise<ActivityEvent> {
   const ev: ActivityEvent = { id: ulid(), ts: new Date().toISOString(), ...input };
   const current = await read();
   // Newest first; trim from the tail (oldest) when exceeding cap.

@@ -5,23 +5,22 @@ description: Generate a detailed English markdown description for a Pitchbox pro
 
 # Pitchbox - Project Extractor Playbook
 
-You are acting inside a Pitchbox project_extraction run. Your job is to read the source files at `sourcePath`, produce a detailed English markdown description for the project, and propose 0-10 campaign starters that fit the project. Both outputs are submitted back via the `pitchbox` CLI.
+You are acting inside a Pitchbox project_extraction run. Your job is to read the source files at `sourcePath`, produce a detailed English markdown description for the project, and propose 0-10 campaign starters that fit the project. Both outputs are submitted back through the **`pitchbox` MCP server** (tools named `mcp__pitchbox__*`). Use your native tools (`Read`, `Bash`, `Grep`) only to inspect the source folder; all Pitchbox state goes through the MCP tools.
 
 ## Inputs
 
-Environment variables:
+The run is bound to this session through the environment, so the tools default to the right run.
 
-- `PITCHBOX_RUN_ID` - the run id created by the web server.
+## Tools
+
+- `project_extract_start` - load context (sourcePath, scaffold, scenarios, existing campaigns).
+- `project_extract_finish` - submit the description + recommendations.
 
 ## Steps
 
-1. **Start the run and load context.** Shell out:
+1. **Start the run and load context.** Call `project_extract_start` (no arguments needed).
 
-   ```
-   pitchbox project:extract:start --run=$PITCHBOX_RUN_ID
-   ```
-
-   Parse the JSON. Extract: `projectId`, `sourcePath`, `scaffoldTemplate`, `currentDescription`, `scenarios`, `existingCampaigns`.
+   From the result extract: `projectId`, `sourcePath`, `scaffoldTemplate`, `currentDescription`, `scenarios`, `existingCampaigns`.
 
 2. **Explore the source.** Use your native tools (`Read`, `Bash` for `ls -la`, `find <sourcePath> -type f -name '*.md'`, `Grep`) to inspect what is at `sourcePath`. **Stay strictly inside `sourcePath`.** Prefer files likely to describe the product: `README*`, `package.json`, `pyproject.toml`, top-level docs, marketing pages under `docs/`, `app/landing*`, `index.html`, etc. Do not perform network calls.
 
@@ -43,13 +42,7 @@ Environment variables:
    - If `existingCampaigns` already covers every reasonable angle, propose **0**.
    - Otherwise propose **1-10**, aiming for variety (different scenarios, different angles).
 
-5. **Submit the description and recommendations.** Shell out:
-
-   ```
-   echo '<your-json>' | pitchbox project:extract:finish --run=$PITCHBOX_RUN_ID
-   ```
-
-   Where `<your-json>` is a JSON object:
+5. **Submit the description and recommendations.** Call `project_extract_finish` with:
 
    ```json
    {
@@ -58,6 +51,6 @@ Environment variables:
    }
    ```
 
-   The CLI validates that `description` is non-empty and validates each recommendation individually. Invalid recommendations are silently dropped (warnings on stderr) and the description is always saved if non-empty.
+   The tool validates that `description` is non-empty and validates each recommendation individually. Invalid recommendations are silently dropped (warnings) and the description is always saved if non-empty.
 
-   **If the CLI errors with `{"ok": false}`**, inspect the error message, fix the payload, and try again. **Maximum two retries.** Do not call any other Pitchbox CLI command.
+   **If the tool returns an error result**, inspect the message, fix the payload, and try again. **Maximum two retries.** Do not call any other Pitchbox MCP tool.

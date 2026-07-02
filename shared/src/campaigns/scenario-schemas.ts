@@ -18,7 +18,7 @@ const RedditScoutSchema = z
       .strict(),
     offer: z
       .object({
-        productUrl: z.string().url(),
+        productUrl: z.url(),
         subject: z.string().min(1).max(120),
         text: z.string().min(1),
       })
@@ -41,7 +41,7 @@ const RedditCommenterSchema = z
       })
       .strict(),
     valuePropositions: z.array(z.string().min(1)),
-    productUrl: z.string().url(),
+    productUrl: z.url(),
     systemInstructions: z.string().min(1),
   })
   .strict();
@@ -61,7 +61,7 @@ const RedditPosterSchema = z
       })
       .strict(),
     valuePropositions: z.array(z.string().min(1)),
-    productUrl: z.string().url(),
+    productUrl: z.url(),
     systemInstructions: z.string().min(1),
   })
   .strict();
@@ -82,7 +82,7 @@ const HnCommenterSchema = z
       })
       .strict(),
     valuePropositions: z.array(z.string().min(1)),
-    productUrl: z.string().url(),
+    productUrl: z.url(),
     systemInstructions: z.string().min(1),
   })
   .strict();
@@ -102,7 +102,7 @@ const HnPosterSchema = z
       })
       .strict(),
     valuePropositions: z.array(z.string().min(1)),
-    productUrl: z.string().url(),
+    productUrl: z.url(),
     systemInstructions: z.string().min(1),
   })
   .strict();

@@ -77,9 +77,7 @@ export function dbEventToTimeline(ev: {
           text: p.text as string,
           parsedEnvelope:
             (p.parsedEnvelope as
-              | import('@pitchbox/shared/runlog').CliEnvelope
-              | null
-              | undefined) ?? null,
+              import('@pitchbox/shared/runlog').CliEnvelope | null | undefined) ?? null,
           isError,
           toolUseId: p.toolUseId as string | undefined,
         },

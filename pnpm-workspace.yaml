@@ -1,0 +1,6 @@
+packages:
+  - 'shared'
+  - 'cli'
+  - 'web'
+  - 'daemon'
+  - 'extension'

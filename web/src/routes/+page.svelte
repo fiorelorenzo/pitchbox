@@ -10,7 +10,7 @@
 		TrendingUp,
 		AlertTriangle,
 		DollarSign,
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import StatCard from '$lib/components/StatCard.svelte';

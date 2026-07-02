@@ -14,7 +14,12 @@ import {
   type AcpStopReasonKind,
   type AcpUsage,
 } from './event-normalizer.js';
-import { AutoAllowPolicy, type PermissionPolicy } from './permission.js';
+import {
+  AutoAllowPolicy,
+  selectPermissionOption,
+  type PermissionOption,
+  type PermissionPolicy,
+} from './permission.js';
 
 type SpawnFn = typeof nodeSpawn;
 
@@ -43,8 +48,8 @@ export class AcpRunner implements AgentRunner {
   private readonly logDir: string;
   private readonly policy: PermissionPolicy;
   private readonly initializeTimeoutMs: number;
-  // Placeholder for per-run config that future tasks will use.
-  // eslint-disable-next-line @typescript-eslint/no-unused-private-class-members
+  // Per-runner config (model, maxTurns). Applied to the claude-code backend via
+  // session/new `_meta.claudeCode.options` - see buildClaudeCodeMeta.
   private readonly config: RunnerConfig;
 
   constructor(opts: AcpRunnerOptions) {
@@ -224,18 +229,29 @@ export class AcpRunner implements AgentRunner {
         }
         if (msg.method === 'session/request_permission' && msg.id != null) {
           const params = msg.params as
-            | { toolCall?: { toolName?: string; args?: Record<string, unknown> } }
+            | {
+                toolCall?: { toolName?: string; args?: Record<string, unknown> };
+                options?: PermissionOption[];
+              }
             | undefined;
           const tc = params?.toolCall;
           const decision = policy.decide({
             toolName: tc?.toolName ?? 'unknown',
             args: tc?.args ?? {},
           });
-          sendResponse(msg.id, { outcome: { type: decision } });
+          // ACP expects a selected optionId, not a bare verdict. Map the decision
+          // onto one of the offered options; if none matches, cancel rather than
+          // send a shape the agent will reject.
+          const selected = selectPermissionOption(params?.options ?? [], decision);
+          sendResponse(
+            msg.id,
+            selected
+              ? { outcome: { outcome: 'selected', optionId: selected.optionId } }
+              : { outcome: { outcome: 'cancelled' } },
+          );
           return;
         }
       };
-
 
       let stdoutBuf = '';
       child.stdout.setEncoding('utf8');
@@ -290,11 +306,16 @@ export class AcpRunner implements AgentRunner {
       );
       await Promise.race([initPromise, initTimeoutPromise]);
 
-      // 2. session/new
-      const sessionResult = await sendRequest<{ sessionId: string }>('session/new', {
+      // 2. session/new. For the claude-code backend, forward the per-runner model
+      // / maxTurns through `_meta.claudeCode.options` (the ACP adapter spreads it
+      // into the Agent SDK query). Other backends keep their own defaults today.
+      const sessionParams: Record<string, unknown> = {
         cwd: opts.cwd,
-        mcpServers: [],
-      });
+        mcpServers: [buildPitchboxMcpServer(opts)],
+      };
+      const claudeMeta = buildClaudeCodeMeta(this.slug, this.config);
+      if (claudeMeta) sessionParams._meta = claudeMeta;
+      const sessionResult = await sendRequest<{ sessionId: string }>('session/new', sessionParams);
       sessionId = sessionResult.sessionId;
 
       // 3. session/prompt
@@ -347,6 +368,60 @@ export class AcpRunner implements AgentRunner {
 function buildPrompt(opts: AgentRunOptions, playbook: string): string {
   const campaign = opts.env.PITCHBOX_CAMPAIGN_ID ?? '';
   return `You are running the Pitchbox playbook '${opts.slug}' for campaign ${campaign}.\n\n${playbook}`;
+}
+
+/**
+ * Build the ACP `mcpServers` entry for the Pitchbox MCP server. Every run hands
+ * the agent this stdio server so it can reach Pitchbox data through MCP tools
+ * (the data-access boundary shared with the cloud runner; see
+ * docs/cloud-runner.md). It is spawned from the repo's `bin/pitchbox-mcp`
+ * wrapper and reads its DB config from the forwarded env (or the repo `.env`).
+ */
+function buildPitchboxMcpServer(opts: AgentRunOptions): {
+  name: string;
+  command: string;
+  args: string[];
+  env: { name: string; value: string }[];
+} {
+  const root = opts.env.PITCHBOX_ROOT || opts.cwd;
+  const merged: Record<string, string | undefined> = { ...process.env, ...opts.env };
+  // Forward the run/campaign binding so the MCP tools default to this session's
+  // run without the agent having to know or choose the ids.
+  const env: { name: string; value: string }[] = [];
+  for (const key of [
+    'DATABASE_URL',
+    'PITCHBOX_ROOT',
+    'PITCHBOX_RUN_ID',
+    'PITCHBOX_CAMPAIGN_ID',
+    'PITCHBOX_PROJECT_ID',
+    'PROJECT_ID',
+    'ENCRYPTION_KEY',
+    'PATH',
+    'NODE_ENV',
+  ]) {
+    const value = merged[key];
+    if (typeof value === 'string' && value.length > 0) env.push({ name: key, value });
+  }
+  return { name: 'pitchbox', command: join(root, 'bin', 'pitchbox-mcp'), args: [], env };
+}
+
+/**
+ * Build the `session/new` `_meta` that carries per-runner model / maxTurns to the
+ * claude-code ACP backend. The `@agentclientprotocol/claude-agent-acp` adapter
+ * reads `_meta.claudeCode.options` and spreads it into the Agent SDK `query()`
+ * options, so this is how a configured model actually reaches the LLM. Returns
+ * `undefined` when nothing is configured (or for non-claude backends, which use
+ * their own model mechanisms), leaving the agent on its default model.
+ */
+function buildClaudeCodeMeta(
+  slug: AcpBackendSlug,
+  config: RunnerConfig,
+): { claudeCode: { options: Record<string, unknown> } } | undefined {
+  if (slug !== 'claude-code') return undefined;
+  const options: Record<string, unknown> = {};
+  if (config.model) options.model = config.model;
+  if (typeof config.maxTurns === 'number') options.maxTurns = config.maxTurns;
+  return Object.keys(options).length > 0 ? { claudeCode: { options } } : undefined;
 }
 
 function buildUsage(u: AcpUsage | undefined) {

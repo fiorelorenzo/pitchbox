@@ -13,7 +13,7 @@ The side panel is a Svelte 5 app (runes mode) bundled with `@crxjs/vite-plugin` 
 ## Install
 
 ```bash
-npm run build:extension
+pnpm run build:extension
 # then load extension/dist/ unpacked in chrome://extensions
 ```
 

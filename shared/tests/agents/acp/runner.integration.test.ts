@@ -42,7 +42,10 @@ function makeFakeChild(): {
   return { child, stdin, stdout, emitExit };
 }
 
-function makeRunner(handlers: MockHandlers = {}) {
+function makeRunner(
+  handlers: MockHandlers = {},
+  config?: { model?: string; maxTurns?: number; extraArgs?: string[] },
+) {
   const { child, stdin, stdout, emitExit } = makeFakeChild();
   // From the runner's POV: it writes to child.stdin and reads from child.stdout.
   // The mock server's POV is the opposite: it reads from child.stdin (what the
@@ -58,6 +61,7 @@ function makeRunner(handlers: MockHandlers = {}) {
     spawn: fakeSpawn,
     initializeTimeoutMs: 1000,
     logDir: mkdtempSync(join(tmpdir(), 'acp-test-log-')),
+    config,
   });
   return { runner, server, emitExit };
 }
@@ -128,7 +132,85 @@ describe('AcpRunner integration', () => {
       timeoutMs: 5000,
     });
     await handle.result;
-    expect(ack).toMatchObject({ outcome: { type: 'allow' } });
+    expect(ack).toMatchObject({ outcome: { outcome: 'selected', optionId: 'allow_always' } });
+  });
+
+  it('hands the agent the Pitchbox MCP server in session/new', async () => {
+    const captured: Array<{ mcpServers?: unknown }> = [];
+    const { runner } = makeRunner({
+      onSessionNew: (params) => {
+        captured.push(params as { mcpServers?: unknown });
+        return { sessionId: 'sess-mock-1' };
+      },
+      onSessionPrompt: () => ({ stopReason: 'end_turn' }),
+    });
+    const handle = runner.run({
+      playbookPath,
+      slug: 'reddit-scout',
+      env: { PITCHBOX_ROOT: '/repo/root' },
+      cwd: '/repo/root',
+      timeoutMs: 5000,
+    });
+    await handle.result;
+    const servers = (captured[0]?.mcpServers ?? []) as Array<{
+      name: string;
+      command: string;
+      args: unknown;
+      env: unknown;
+    }>;
+    const pitchbox = servers.find((s) => s.name === 'pitchbox');
+    expect(pitchbox).toBeDefined();
+    expect(pitchbox!.command).toContain('pitchbox-mcp');
+    // ACP's stdio mcpServer schema requires args + env to be arrays.
+    expect(Array.isArray(pitchbox!.args)).toBe(true);
+    expect(Array.isArray(pitchbox!.env)).toBe(true);
+  });
+
+  it('forwards the configured model + maxTurns via session/new _meta (claude-code)', async () => {
+    const captured: Array<{ _meta?: unknown }> = [];
+    const { runner } = makeRunner(
+      {
+        onSessionNew: (params) => {
+          captured.push(params as { _meta?: unknown });
+          return { sessionId: 'sess-mock-1' };
+        },
+        onSessionPrompt: () => ({ stopReason: 'end_turn' }),
+      },
+      { model: 'claude-opus-4-7', maxTurns: 12 },
+    );
+    const handle = runner.run({
+      playbookPath,
+      slug: 'reddit-scout',
+      env: {},
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+    });
+    await handle.result;
+    // The claude-agent-acp adapter reads _meta.claudeCode.options and spreads it
+    // into the Agent SDK query, so this is how the model actually reaches the LLM.
+    expect(captured[0]?._meta).toMatchObject({
+      claudeCode: { options: { model: 'claude-opus-4-7', maxTurns: 12 } },
+    });
+  });
+
+  it('omits session/new _meta when no model/maxTurns is configured', async () => {
+    const captured: Array<{ _meta?: unknown }> = [];
+    const { runner } = makeRunner({
+      onSessionNew: (params) => {
+        captured.push(params as { _meta?: unknown });
+        return { sessionId: 'sess-mock-1' };
+      },
+      onSessionPrompt: () => ({ stopReason: 'end_turn' }),
+    });
+    const handle = runner.run({
+      playbookPath,
+      slug: 'reddit-scout',
+      env: {},
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+    });
+    await handle.result;
+    expect(captured[0]?._meta).toBeUndefined();
   });
 
   it('treats stop_reason: error as success=false', async () => {

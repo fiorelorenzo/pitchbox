@@ -1,6 +1,8 @@
 import { defineConfig } from 'vitepress';
 
 export default defineConfig({
+  // Bind the dev server to localhost (IPv4) so it is not exposed on the network.
+  vite: { server: { host: '127.0.0.1' } },
   // Served from https://fiorelorenzo.github.io/pitchbox/ - without this prefix
   // the built site requests assets from the apex domain and renders unstyled.
   base: '/pitchbox/',

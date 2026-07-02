@@ -3,7 +3,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
-	import { Info } from 'lucide-svelte';
+	import { Info } from '@lucide/svelte';
 
 	type QuotaWindow = { perDay: number; perWeek: number };
 	type PlatformQuota = { dm: QuotaWindow; comment: QuotaWindow; post: QuotaWindow };

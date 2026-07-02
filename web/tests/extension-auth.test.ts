@@ -68,7 +68,6 @@ describe('extension auth', () => {
       status: 401,
     });
   });
-
 });
 
 afterAll(async () => {

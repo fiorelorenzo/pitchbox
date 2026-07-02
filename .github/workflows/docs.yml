@@ -2,7 +2,7 @@ name: docs
 
 on:
   push:
-    branches: [main]
+    branches: [main, development]
     paths:
       - 'docs/**'
       - 'README.md'
@@ -22,15 +22,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6.0.9
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run docs:build
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run docs:build
       - uses: actions/configure-pages@v5
         with:
           enablement: true
@@ -39,6 +40,9 @@ jobs:
           path: docs/.vitepress/dist
 
   deploy:
+    # Publish to the live Pages site only from the default branch; other branches
+    # just build the docs (so the badge reflects it) without deploying.
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:

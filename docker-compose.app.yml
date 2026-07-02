@@ -1,0 +1,59 @@
+# Pitchbox client stack (cloud edition) - base compose for the app (web + daemon).
+# Layers on the postgres service in docker-compose.yml. Compute runs on the cloud
+# runner (its own image/compose); this stack holds the data and dispatches runs.
+#
+#   dev :  docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.app.dev.yml up
+#   prod:  docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.app.prod.yml up -d
+#
+# Parametric via .env (see .env.docker.example). Local-runner users run the app
+# WITHOUT Docker (pnpm dev) - this image is cloud-edition only.
+name: pitchbox
+
+services:
+  web:
+    image: ${APP_IMAGE:-pitchbox-app:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    environment:
+      # adapter-node (prod build) reads PORT; Vite (dev) reads WEB_PORT. Same value.
+      PORT: ${WEB_PORT:-5180}
+      WEB_PORT: ${WEB_PORT:-5180}
+      PITCHBOX_ROOT: /app
+      DATABASE_URL: ${DATABASE_URL:-postgresql://pitchbox:pitchbox@postgres:5432/pitchbox}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      # Cloud edition: dispatch runs to the cloud runner.
+      PITCHBOX_EDITION: cloud
+      PITCHBOX_RUNNER_URL: ${PITCHBOX_RUNNER_URL:?set PITCHBOX_RUNNER_URL in .env}
+      PITCHBOX_RUNNER_TOKEN: ${PITCHBOX_RUNNER_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:'+(process.env.WEB_PORT||5180)+'/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  daemon:
+    image: ${APP_IMAGE:-pitchbox-app:latest}
+    # Scheduler + reply poller. Runs the TS source under tsx (no build needed).
+    command: ['node', '--import', 'tsx', 'daemon/src/index.ts']
+    environment:
+      PITCHBOX_ROOT: /app
+      DATABASE_URL: ${DATABASE_URL:-postgresql://pitchbox:pitchbox@postgres:5432/pitchbox}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      # Reaches the web app over the compose network to trigger scheduled runs.
+      PITCHBOX_WEB_URL: http://web:${WEB_PORT:-5180}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      web:
+        condition: service_started

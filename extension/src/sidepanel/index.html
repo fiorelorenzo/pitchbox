@@ -17,8 +17,7 @@
           const density = s.density || 'comfortable';
           const isDark =
             theme === 'dark' ||
-            (theme === 'system' &&
-              window.matchMedia('(prefers-color-scheme: dark)').matches);
+            (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
           if (isDark) document.documentElement.classList.add('dark');
           if (density === 'compact') document.documentElement.classList.add('density-compact');
         } finally {
