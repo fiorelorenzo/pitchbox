@@ -47,9 +47,9 @@ Auto-memory **is** active for this project - keep using it. The split:
 
 ### PRs
 
-PRs target the `development` branch, not `main` - pass `--base development` to
-`gh pr create`. The nested private repos (below) use the same `main` +
-`development` workflow.
+Work on short-lived feature branches and open a PR into `main` (the default base
+for `gh pr create`). The nested private repos (below) are separate git repos with
+their own branching.
 
 ### Nested private repos (cloud/)
 
