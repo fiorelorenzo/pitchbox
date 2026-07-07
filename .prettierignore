@@ -17,3 +17,4 @@ extension/dist/
 web/build/
 daemon/tmp/
 .claude/
+.superpowers/
