@@ -99,6 +99,7 @@ export interface PendingReplyDraft {
   body: string;
   state: string;
   parentMessageId: number | null;
+  draftingRunId: number | null;
 }
 
 export async function loadPendingReplyDraft(
@@ -134,6 +135,7 @@ export async function loadPendingReplyDraft(
         body: row.body,
         state: row.state,
         parentMessageId: row.parentMessageId,
+        draftingRunId: row.draftingRunId,
       };
     }
   }

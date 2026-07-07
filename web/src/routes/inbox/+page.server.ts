@@ -121,6 +121,8 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       variantLabel: schema.drafts.variantLabel,
       regenerationCount: schema.drafts.regenerationCount,
       regeneratingRunId: schema.drafts.regeneratingRunId,
+      draftingRunId: schema.drafts.draftingRunId,
+      draftingRunStatus: schema.runs.status,
       projectSlug: schema.projects.slug,
       projectName: schema.projects.name,
       platformSlug: schema.platforms.slug,
@@ -128,6 +130,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     .from(schema.drafts)
     .innerJoin(schema.projects, eq(schema.projects.id, schema.drafts.projectId))
     .innerJoin(schema.platforms, eq(schema.platforms.id, schema.drafts.platformId))
+    .leftJoin(schema.runs, eq(schema.runs.id, schema.drafts.draftingRunId))
     .where(filters.length > 0 ? and(...filters) : undefined)
     .orderBy(desc(schema.drafts.createdAt))
     .limit(200);

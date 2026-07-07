@@ -48,6 +48,7 @@
       body: string;
       state: string;
       parentMessageId: number | null;
+      draftingRunId: number | null;
     } | null;
   };
 
@@ -170,17 +171,21 @@
             }}>Reject</Button
           >
         </form>
-        <Button
-          size="sm"
-          onclick={async () => {
-            await fetch(`/inbox/${data.replyDraft!.id}`, {
-              method: 'PATCH',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ state: 'approved' }),
-            });
-            location.reload();
-          }}>Approve</Button
-        >
+        {#if data.replyDraft.draftingRunId != null}
+          <span class="text-xs text-muted-foreground">Drafting reply…</span>
+        {:else}
+          <Button
+            size="sm"
+            onclick={async () => {
+              await fetch(`/inbox/${data.replyDraft!.id}`, {
+                method: 'PATCH',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ state: 'approved' }),
+              });
+              location.reload();
+            }}>Approve</Button
+          >
+        {/if}
       </div>
     </Card.Content>
   </Card.Root>

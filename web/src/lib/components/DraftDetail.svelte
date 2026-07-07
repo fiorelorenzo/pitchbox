@@ -41,6 +41,8 @@
 		sentContent: string | null;
 		regeneratingRunId?: number | null;
 		regenerationCount?: number;
+		draftingRunId?: number | null;
+		draftingRunStatus?: string | null;
 	};
 
 	let {
@@ -205,6 +207,27 @@
 	}
 
 	const isRegenerating = $derived(!!draft && draft.regeneratingRunId != null);
+	const isDrafting = $derived(
+		!!draft && draft.draftingRunId != null && draft.draftingRunStatus === 'running',
+	);
+	const draftingFailed = $derived(
+		!!draft &&
+			draft.draftingRunId != null &&
+			draft.draftingRunStatus != null &&
+			draft.draftingRunStatus !== 'running',
+	);
+
+	async function retryReplyDraft() {
+		if (!draft) return;
+		try {
+			const res = await fetch(`/api/drafts/${draft.id}/reply-draft/retry`, { method: 'POST' });
+			if (!res.ok) throw new Error(await res.text());
+			toast.success('Drafting the reply again');
+			await invalidateAll();
+		} catch (e) {
+			toast.error('Could not retry', { description: (e as Error).message });
+		}
+	}
 
 	async function cancelRegenerate() {
 		if (!draft) return;
@@ -360,7 +383,17 @@
 					{/if}
 				</Button>
 				{#if draft.state === 'pending_review' || draft.state === 'proposed'}
-					{#if isRegenerating}
+					{#if isDrafting}
+						<span class="text-muted-foreground inline-flex items-center gap-2 text-sm">
+							<span
+								class="border-muted-foreground/40 border-t-foreground h-3 w-3 animate-spin rounded-full border-2"
+							></span>
+							Drafting reply…
+						</span>
+					{:else if draftingFailed}
+						<span class="text-destructive text-sm">Reply drafting failed</span>
+						<Button onclick={retryReplyDraft} variant="outline" size="sm">Retry</Button>
+					{:else if isRegenerating}
 						<span class="text-muted-foreground inline-flex items-center gap-2 text-sm">
 							<span
 								class="border-muted-foreground/40 border-t-foreground h-3 w-3 animate-spin rounded-full border-2"
@@ -380,7 +413,7 @@
 					<Button
 						onclick={approve}
 						loading={approving}
-						disabled={isRegenerating}
+						disabled={isRegenerating || isDrafting || draftingFailed}
 						variant="default"
 						size="sm"
 					>
