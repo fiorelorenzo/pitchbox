@@ -107,4 +107,47 @@ describe('startDraftRegeneration', () => {
     expect(fresh.regeneratingRunId).toBeNull();
     expect(run.id).toBeGreaterThan(0);
   });
+
+  it('starts a regeneration run when the originating run has no campaign (e.g. reply drafts)', async () => {
+    const db = getDb();
+    const [proj] = await db
+      .insert(schema.projects)
+      .values({ slug: 'regen-nocampaign', name: 'regen-nocampaign' })
+      .returning();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({ projectId: proj.id, platformId: platform.id, handle: 'tester-nocampaign' })
+      .returning();
+    const [origin] = await db
+      .insert(schema.runs)
+      .values({
+        kind: 'project_extraction',
+        projectId: proj.id,
+        trigger: 'manual',
+        status: 'success',
+      })
+      .returning();
+    const [draft] = await db
+      .insert(schema.drafts)
+      .values({
+        runId: origin.id,
+        projectId: proj.id,
+        platformId: platform.id,
+        accountId: account.id,
+        kind: 'dm',
+        body: 'reply take',
+        targetUser: 'someone',
+        state: 'pending_review',
+      })
+      .returning();
+
+    const { run, alreadyRunning } = await startDraftRegeneration(db, { draftId: draft.id });
+    expect(alreadyRunning).toBe(false);
+    expect(run.campaignId).toBeNull();
+    expect(run.projectId).toBe(draft.projectId);
+  });
 });
