@@ -1,9 +1,8 @@
 import { Command } from 'commander';
 import { z } from 'zod';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { isBlocklisted } from '@pitchbox/shared/blocklist';
-import { regenerateDraft } from '@pitchbox/shared/draft-regenerate';
 import { scoreDraft } from '@pitchbox/shared/quality-judge';
 import { groupVariants } from '@pitchbox/shared/draft-variants';
 import {
@@ -205,6 +204,109 @@ export async function updateDraftBody(id: number, body: string) {
   return { id: updated.id, updated: true };
 }
 
+export async function draftRegenStart(runId: number) {
+  if (!Number.isInteger(runId)) throw new Error('invalid run id');
+  const db = getDb();
+  const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+  if (!run) throw new Error(`run ${runId} not found`);
+  if (run.kind !== 'draft_regeneration')
+    throw new Error(`run ${runId} is not a draft_regeneration run`);
+  const params = (run.params ?? {}) as { draftId?: number; hint?: string | null };
+  const draftId = params.draftId;
+  if (!draftId) throw new Error(`run ${runId} has no draftId in params`);
+
+  const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draftId));
+  if (!draft) throw new Error(`draft ${draftId} not found`);
+  if (draft.state !== 'pending_review')
+    throw new Error(`draft ${draftId} is ${draft.state}; not regeneratable`);
+
+  const [platform] = await db
+    .select({ slug: schema.platforms.slug })
+    .from(schema.platforms)
+    .where(eq(schema.platforms.id, draft.platformId));
+
+  // Persona: the playbook that created this draft, so the rewrite keeps voice + rules.
+  const [origin] = await db.select().from(schema.runs).where(eq(schema.runs.id, draft.runId));
+  let persona: string | null = origin?.playbookBody ?? null;
+  if (!persona && origin?.campaignId != null) {
+    const [campaign] = await db
+      .select({ skillSlug: schema.campaigns.skillSlug })
+      .from(schema.campaigns)
+      .where(eq(schema.campaigns.id, origin.campaignId));
+    if (campaign) {
+      const [pb] = await db
+        .select({ body: schema.playbooks.body })
+        .from(schema.playbooks)
+        .where(eq(schema.playbooks.slug, campaign.skillSlug));
+      persona = pb?.body ?? null;
+    }
+  }
+
+  return {
+    runId,
+    draftId,
+    hint: params.hint ?? null,
+    platform: platform?.slug ?? null,
+    draft: {
+      kind: draft.kind,
+      title: draft.title,
+      body: draft.body,
+      targetUser: draft.targetUser,
+      reasoning: draft.reasoning,
+      sourceRef: draft.sourceRef,
+    },
+    persona,
+  };
+}
+
+export async function draftRegenFinish(runId: number, body: string, title?: string | null) {
+  if (!Number.isInteger(runId)) throw new Error('invalid run id');
+  if (!body || !body.trim()) throw new Error('body is empty');
+  const db = getDb();
+  const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+  if (!run) throw new Error(`run ${runId} not found`);
+  if (run.kind !== 'draft_regeneration')
+    throw new Error(`run ${runId} is not a draft_regeneration run`);
+  if (run.status !== 'running') throw new Error(`run ${runId} is already ${run.status}`);
+  const params = (run.params ?? {}) as { draftId?: number; hint?: string | null };
+  const draftId = params.draftId;
+  if (!draftId) throw new Error(`run ${runId} has no draftId in params`);
+
+  const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draftId));
+  if (!draft) throw new Error(`draft ${draftId} not found`);
+
+  const newCount = draft.regenerationCount + 1;
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.draftEvents).values({
+      draftId,
+      event: 'regenerated',
+      actor: 'agent',
+      details: {
+        hint: params.hint ?? null,
+        previousBody: draft.body,
+        previousTitle: draft.title,
+        regenerationCount: newCount,
+      },
+    });
+    await tx
+      .update(schema.drafts)
+      .set({
+        body,
+        title: title ?? draft.title,
+        version: sql`${schema.drafts.version} + 1`,
+        regenerationCount: newCount,
+        regeneratingRunId: null,
+      })
+      .where(eq(schema.drafts.id, draftId));
+    await tx
+      .update(schema.runs)
+      .set({ status: 'success', finishedAt: new Date() })
+      .where(eq(schema.runs.id, runId));
+  });
+
+  return { draftId, version: draft.version + 1, regenerationCount: newCount };
+}
+
 export function registerDraftCommands(program: Command) {
   program
     .command('drafts:create')
@@ -229,21 +331,10 @@ export function registerDraftCommands(program: Command) {
     .command('drafts:regenerate')
     .argument('<id>', 'draft id')
     .option('--hint <text>', 'reviewer hint to bias the regeneration')
-    .action(async (idArg: string, opts: { hint?: string }) => {
-      const draftId = Number(idArg);
-      if (!Number.isInteger(draftId)) return fail('invalid draft id');
-      const db = getDb();
-      const [existing] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draftId));
-      if (!existing) return fail(`draft ${draftId} not found`);
-      // Runner invocation is stubbed; we bump the counter, persist the hint,
-      // and append a `regenerated` draft_event. The agent runner will plug in
-      // here once the `regenerate-single` mode lands in the playbook layer.
-      const res = await regenerateDraft(db, {
-        draftId,
-        hint: opts.hint ?? null,
-        actor: 'cli',
-      });
-      ok(res);
+    .action(async () => {
+      fail(
+        'regeneration runs in the web app; POST /api/drafts/<id>/regenerate or use the dashboard',
+      );
     });
 
   program
@@ -289,6 +380,38 @@ export function registerDraftCommands(program: Command) {
       const body = typeof json.body === 'string' ? json.body : '';
       try {
         ok(await updateDraftBody(Number(opts.id), body));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
+    });
+
+  program
+    .command('drafts:regen:start')
+    .requiredOption('--run <id>', 'run id')
+    .action(async (opts: { run: string }) => {
+      try {
+        ok(await draftRegenStart(Number(opts.run)));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
+    });
+
+  program
+    .command('drafts:regen:finish')
+    .requiredOption('--run <id>', 'run id')
+    .action(async (opts: { run: string }) => {
+      const raw = await readStdin();
+      if (!raw || !raw.trim()) return fail('empty payload on stdin');
+      let payload: { body?: unknown; title?: unknown };
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        return fail('payload is not valid JSON');
+      }
+      const body = typeof payload.body === 'string' ? payload.body : '';
+      const title = typeof payload.title === 'string' ? payload.title : undefined;
+      try {
+        ok(await draftRegenFinish(Number(opts.run), body, title));
       } catch (err) {
         fail(String(err instanceof Error ? err.message : err));
       }

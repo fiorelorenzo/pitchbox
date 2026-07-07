@@ -8,6 +8,8 @@ import {
   getDraftById,
   listDrafts,
   updateDraftBody,
+  draftRegenStart,
+  draftRegenFinish,
 } from '../commands/drafts.js';
 import { scoutRun, snapshotSubreddit } from '../commands/reddit.js';
 import { searchHn, HN_LISTINGS } from '../commands/hn.js';
@@ -254,6 +256,60 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     async ({ id, body }) => {
       try {
         return jsonResult(await updateDraftBody(id, body));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'draft_regen_start',
+    {
+      title: 'Start a draft regeneration',
+      description:
+        'Load the regeneration context: the draft body/title, its target, the reviewer hint, the platform, and the originating persona (playbook). Defaults to this session run.',
+      inputSchema: {
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ runId }) => {
+      const rid = runId ?? defaultRunId();
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        return jsonResult(await draftRegenStart(rid));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'draft_regen_finish',
+    {
+      title: 'Finish a draft regeneration',
+      description:
+        'Persist the rewritten draft body (and title for post drafts). Bumps the draft version, records the previous body for undo, and marks the run success. Returns { draftId, version, regenerationCount }.',
+      inputSchema: {
+        body: z.string().min(1).describe('the rewritten draft body'),
+        title: z.string().optional().describe('new title (post drafts only)'),
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ body, title, runId }) => {
+      const rid = runId ?? defaultRunId();
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        return jsonResult(await draftRegenFinish(rid, body, title));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }
