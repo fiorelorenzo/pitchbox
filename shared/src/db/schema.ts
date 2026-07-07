@@ -208,7 +208,7 @@ export const runs = pgTable(
   'runs',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction' | 'campaign_skill_generation'
+    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction' | 'campaign_skill_generation' | 'draft_regeneration'
     campaignId: integer('campaign_id').references(() => campaigns.id, { onDelete: 'cascade' }),
     projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     params: jsonb('params').notNull().default({}),
@@ -301,6 +301,13 @@ export const drafts = pgTable(
     scheduledSendAfter: timestamp('scheduled_send_after', { withTimezone: true }),
     // Number of times the draft body has been regenerated via the runner.
     regenerationCount: integer('regeneration_count').notNull().default(0),
+    // When set, a draft_regeneration run is in flight rewriting this draft's
+    // body; drives the inbox "regenerating" state and the single-flight guard.
+    // Cleared when the run finishes (in draft_regen_finish on success, else by
+    // the dispatcher).
+    regeneratingRunId: integer('regenerating_run_id').references(() => runs.id, {
+      onDelete: 'set null',
+    }),
     // LLM-judge quality scoring (issue #41). Score is 0-100; reason and model
     // are recorded for audit. Nullable when scoring is disabled or pending.
     qualityScore: smallint('quality_score'),

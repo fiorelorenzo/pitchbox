@@ -316,6 +316,13 @@
       "when": 1778561000000,
       "tag": "0044_drop_legacy_extension_token",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1778562000000,
+      "tag": "0045_drafts_regenerating_run_id",
+      "breakpoints": true
     }
   ]
 }
