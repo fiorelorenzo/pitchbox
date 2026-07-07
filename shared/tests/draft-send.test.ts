@@ -262,6 +262,23 @@ describe('evaluateDraftSend', () => {
     }
   });
 
+  it('returns drafting when the draft has an in-flight drafting run', async () => {
+    const db = getDb();
+    const { proj, platform, account, run } = await setup();
+
+    const draft: DraftLike = {
+      platformId: platform.id,
+      projectId: proj.id,
+      accountId: account.id,
+      targetUser: 'someuser',
+      kind: 'reply_dm',
+      draftingRunId: run.id,
+    };
+
+    const result = await evaluateDraftSend(db, draft);
+    expect(result.kind).toBe('drafting');
+  });
+
   it('returns ok with null quotaEventDetails for an unknown draft kind', async () => {
     const db = getDb();
     const { proj, platform, account } = await setup();

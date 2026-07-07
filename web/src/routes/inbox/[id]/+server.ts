@@ -25,6 +25,10 @@ export async function PATCH({ params, request }: { params: { id: string }; reque
   const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, id));
   if (!draft) throw error(404, 'draft not found');
 
+  if (newState === 'approved' && draft.draftingRunId != null) {
+    throw error(409, 'draft is still being drafted');
+  }
+
   // Optimistic-locking: callers MAY pass the version they observed. When the
   // client omits it we fall back to the row's current version so the dashboard
   // (which doesn't surface the field yet) keeps working - but cross-tab races
@@ -40,6 +44,9 @@ export async function PATCH({ params, request }: { params: { id: string }; reque
     }
     if (evald.kind === 'scheduled') {
       throw error(409, `scheduled_send_after:${evald.sendAfter.toISOString()}`);
+    }
+    if (evald.kind === 'drafting') {
+      throw error(409, 'draft is still being drafted');
     }
 
     const edited = typeof body.sentContent === 'string' && body.sentContent.trim().length > 0;

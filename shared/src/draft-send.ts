@@ -10,9 +10,11 @@ export type DraftLike = {
   targetUser: string | null;
   kind: string;
   scheduledSendAfter?: Date | null;
+  draftingRunId?: number | null;
 };
 
 export type SendEvaluation =
+  | { kind: 'drafting' }
   | { kind: 'blocked'; reason: string | null }
   | { kind: 'scheduled'; sendAfter: Date }
   | { kind: 'ok'; quotaEventDetails: Record<string, unknown> | null };
@@ -34,6 +36,13 @@ export async function evaluateDraftSend(
   draft: DraftLike,
   now: Date = new Date(),
 ): Promise<SendEvaluation> {
+  // Placeholder reply drafts (drafting_run_id set) are still being written by
+  // the agent - never approvable or sendable until the run finishes and
+  // clears the flag.
+  if (draft.draftingRunId != null) {
+    return { kind: 'drafting' as const };
+  }
+
   // Scheduled send-after: drafts with a future scheduled_send_after are not
   // considered ready to send.
   if (draft.scheduledSendAfter && draft.scheduledSendAfter.getTime() > now.getTime()) {
