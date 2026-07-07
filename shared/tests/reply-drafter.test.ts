@@ -122,11 +122,11 @@ describe('reply-drafter', () => {
     expect(found!.parentMessageId).toBe(inboundMsg.id);
   });
 
-  it('playbook prompt references conversation history and parent message id', () => {
+  it('playbook prompt binds via the reply_draft start/finish tools and reads the thread', () => {
     const path = join(process.cwd(), 'playbooks', 'reply-drafter.md');
     const body = readFileSync(path, 'utf8');
-    expect(body).toContain('PITCHBOX_REPLY_DRAFT_ID');
-    expect(body).toContain('PITCHBOX_PARENT_MESSAGE_ID');
-    expect(body.toLowerCase()).toContain('conversation history');
+    expect(body).toContain('reply_draft_start');
+    expect(body).toContain('reply_draft_finish');
+    expect(body.toLowerCase()).toContain('thread');
   });
 });
