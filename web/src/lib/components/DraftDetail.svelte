@@ -229,6 +229,18 @@
 		}
 	}
 
+	async function cancelReplyDraft() {
+		if (!draft) return;
+		try {
+			const res = await fetch(`/api/drafts/${draft.id}/reply-draft/cancel`, { method: 'POST' });
+			if (!res.ok) throw new Error(await res.text());
+			toast.success('Drafting cancelled');
+			await invalidateAll();
+		} catch (e) {
+			toast.error('Could not cancel', { description: (e as Error).message });
+		}
+	}
+
 	async function cancelRegenerate() {
 		if (!draft) return;
 		try {
@@ -390,6 +402,7 @@
 							></span>
 							Drafting reply…
 						</span>
+						<Button onclick={cancelReplyDraft} variant="outline" size="sm">Cancel</Button>
 					{:else if draftingFailed}
 						<span class="text-destructive text-sm">Reply drafting failed</span>
 						<Button onclick={retryReplyDraft} variant="outline" size="sm">Retry</Button>
