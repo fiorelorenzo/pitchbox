@@ -4,6 +4,7 @@ import { getDb, schema } from '@pitchbox/shared/db';
 import {
   startDraftRegeneration,
   clearDraftRegeneration,
+  clearDraftRegenerationIfOwned,
   undoDraftRegeneration,
 } from '@pitchbox/shared/draft-regenerate';
 
@@ -190,5 +191,22 @@ describe('undoDraftRegeneration', () => {
     const db = getDb();
     const { draft } = await seedDraft();
     await expect(undoDraftRegeneration(db, draft.id)).rejects.toThrow();
+  });
+});
+
+describe('clearDraftRegenerationIfOwned', () => {
+  beforeEach(reset);
+  it('clears only when the run owns the flag', async () => {
+    const db = getDb();
+    const { draft } = await seedDraft();
+    const { run } = await startDraftRegeneration(db, { draftId: draft.id });
+    const notOwned = await clearDraftRegenerationIfOwned(db, draft.id, run.id + 999);
+    expect(notOwned).toBe(false);
+    const [still] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draft.id));
+    expect(still.regeneratingRunId).toBe(run.id);
+    const owned = await clearDraftRegenerationIfOwned(db, draft.id, run.id);
+    expect(owned).toBe(true);
+    const [cleared] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draft.id));
+    expect(cleared.regeneratingRunId).toBeNull();
   });
 });

@@ -5,7 +5,10 @@ import { notify } from '@pitchbox/shared/notifications';
 import { classifyFailure } from '@pitchbox/shared/runlog/classify-failure';
 import type { ParsedEvent, EventKind, EventPayload } from '@pitchbox/shared/runlog/types';
 import { withCampaignLock } from '@pitchbox/shared/scheduler/dispatch-lock';
-import { startDraftRegeneration, clearDraftRegeneration } from '@pitchbox/shared/draft-regenerate';
+import {
+  startDraftRegeneration,
+  clearDraftRegenerationIfOwned,
+} from '@pitchbox/shared/draft-regenerate';
 import { getDb, schema } from './db.js';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
@@ -72,6 +75,21 @@ async function classifyFailedRun(
   return classifyFailure(events, exitCode);
 }
 
+// Clear the draft_regeneration in-flight flag for a run's draft, but only if the
+// draft still points at THIS run. Called both when runner creation fails early
+// (before the finally chain is registered) and in the terminal finally, so a
+// draft never stays stuck showing "regenerating" with no run behind it.
+async function clearRegenFlag(
+  db: ReturnType<typeof getDb>,
+  run: typeof schema.runs.$inferSelect,
+): Promise<void> {
+  if (run.kind !== 'draft_regeneration') return;
+  const draftId = (run.params as { draftId?: number } | null)?.draftId;
+  if (!draftId) return;
+  const cleared = await clearDraftRegenerationIfOwned(db, draftId, run.id);
+  if (cleared) emit('drafts:changed', {});
+}
+
 /**
  * Kind-agnostic dispatcher: spawns an agent runner for a pre-inserted run row,
  * wires up the stdout dedup pipeline, and updates the run's terminal state.
@@ -110,6 +128,7 @@ async function dispatchRun(
       exitCode: 1,
       error: errMsg,
     });
+    await clearRegenFlag(db, run);
     return;
   }
 
@@ -353,21 +372,9 @@ async function dispatchRun(
             await rm(params.source.value, { recursive: true, force: true }).catch(() => {});
           }
         }
-        if (run.kind === 'draft_regeneration') {
-          const draftId = (run.params as { draftId?: number } | null)?.draftId;
-          if (draftId) {
-            const [d] = await db
-              .select({ regeneratingRunId: schema.drafts.regeneratingRunId })
-              .from(schema.drafts)
-              .where(eq(schema.drafts.id, draftId));
-            // On success draft_regen_finish already cleared the flag; this covers
-            // the failed/cancelled paths so the inbox stops showing "regenerating".
-            if (d && d.regeneratingRunId === run.id) {
-              await clearDraftRegeneration(db, draftId);
-              emit('drafts:changed', {});
-            }
-          }
-        }
+        // On success draft_regen_finish already cleared the flag; this covers
+        // the failed/cancelled paths so the inbox stops showing "regenerating".
+        await clearRegenFlag(db, run);
       } catch {
         // Never let cleanup throw out of finally.
       }

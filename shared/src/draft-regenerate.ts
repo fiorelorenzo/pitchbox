@@ -75,6 +75,26 @@ export async function clearDraftRegeneration(db: Db, draftId: number): Promise<v
   await db.update(drafts).set({ regeneratingRunId: null }).where(eq(drafts.id, draftId));
 }
 
+/**
+ * Clear the in-flight regeneration flag, but only if the draft still points at
+ * `runId` (a newer regeneration may have taken over). Returns whether it cleared.
+ */
+export async function clearDraftRegenerationIfOwned(
+  db: Db,
+  draftId: number,
+  runId: number,
+): Promise<boolean> {
+  const [d] = await db
+    .select({ regeneratingRunId: drafts.regeneratingRunId })
+    .from(drafts)
+    .where(eq(drafts.id, draftId));
+  if (d && d.regeneratingRunId === runId) {
+    await db.update(drafts).set({ regeneratingRunId: null }).where(eq(drafts.id, draftId));
+    return true;
+  }
+  return false;
+}
+
 export interface UndoDraftRegenerationResult {
   draftId: number;
   version: number;
