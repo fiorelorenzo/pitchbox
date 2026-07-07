@@ -5,6 +5,7 @@ import { notify } from '@pitchbox/shared/notifications';
 import { classifyFailure } from '@pitchbox/shared/runlog/classify-failure';
 import type { ParsedEvent, EventKind, EventPayload } from '@pitchbox/shared/runlog/types';
 import { withCampaignLock } from '@pitchbox/shared/scheduler/dispatch-lock';
+import { startDraftRegeneration, clearDraftRegeneration } from '@pitchbox/shared/draft-regenerate';
 import { getDb, schema } from './db.js';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
@@ -206,6 +207,8 @@ async function dispatchRun(
   // `drafts:changed` is only relevant for campaign runs (project_extraction never
   // produces drafts). Emit it strictly on a successful campaign run.
   const isCampaignRun = run.kind === 'campaign';
+  // Campaign and draft_regeneration runs both change drafts; emit on success.
+  const emitsDrafts = isCampaignRun || run.kind === 'draft_regeneration';
 
   handle.result
     .then(async (res) => {
@@ -254,7 +257,7 @@ async function dispatchRun(
           exitCode: finalStatus === 'success' ? 0 : 1,
           error: finalStatus === 'cancelled' ? 'cancelled by user' : undefined,
         });
-        if (isCampaignRun && finalStatus === 'success') emit('drafts:changed', {});
+        if (emitsDrafts && finalStatus === 'success') emit('drafts:changed', {});
         return;
       }
       const finalStatus: 'success' | 'failed' = res.exitCode === 0 ? 'success' : 'failed';
@@ -282,7 +285,7 @@ async function dispatchRun(
         projectId: run.projectId,
         exitCode: res.exitCode,
       });
-      if (isCampaignRun && res.exitCode === 0) emit('drafts:changed', {});
+      if (emitsDrafts && res.exitCode === 0) emit('drafts:changed', {});
       await notify(db, {
         kind: `run.${finalStatus}`,
         title: `Run #${run.id} ${finalStatus}`,
@@ -307,7 +310,7 @@ async function dispatchRun(
           exitCode: finalStatus === 'success' ? 0 : 1,
           error: finalStatus === 'cancelled' ? 'cancelled by user' : undefined,
         });
-        if (isCampaignRun && finalStatus === 'success') emit('drafts:changed', {});
+        if (emitsDrafts && finalStatus === 'success') emit('drafts:changed', {});
         return;
       }
       const failureReason = await classifyFailedRun(run.id, 1, String(err));
@@ -348,6 +351,21 @@ async function dispatchRun(
             .where(eq(schema.runs.id, run.id));
           if (latest && latest.status !== 'success') {
             await rm(params.source.value, { recursive: true, force: true }).catch(() => {});
+          }
+        }
+        if (run.kind === 'draft_regeneration') {
+          const draftId = (run.params as { draftId?: number } | null)?.draftId;
+          if (draftId) {
+            const [d] = await db
+              .select({ regeneratingRunId: schema.drafts.regeneratingRunId })
+              .from(schema.drafts)
+              .where(eq(schema.drafts.id, draftId));
+            // On success draft_regen_finish already cleared the flag; this covers
+            // the failed/cancelled paths so the inbox stops showing "regenerating".
+            if (d && d.regeneratingRunId === run.id) {
+              await clearDraftRegeneration(db, draftId);
+              emit('drafts:changed', {});
+            }
           }
         }
       } catch {
@@ -544,6 +562,25 @@ export async function runProjectExtraction(
     onFinish: (status) => {
       if (status === 'success') emit('project:description:updated', { projectId, runId: run.id });
     },
+  });
+
+  return { runId: run.id };
+}
+
+export async function runDraftRegeneration(
+  draftId: number,
+  hint: string | null = null,
+): Promise<{ runId: number; alreadyRunning?: boolean }> {
+  const db = getDb();
+  const { run, alreadyRunning } = await startDraftRegeneration(db, { draftId, hint });
+  if (alreadyRunning) return { runId: run.id, alreadyRunning: true };
+
+  emit('drafts:changed', { id: draftId });
+  emit('run:started', { runId: run.id, campaignId: run.campaignId, projectId: run.projectId });
+
+  await dispatchRun(run, {
+    playbookSlug: 'draft-regenerator',
+    extraEnv: run.campaignId ? { PITCHBOX_CAMPAIGN_ID: String(run.campaignId) } : {},
   });
 
   return { runId: run.id };

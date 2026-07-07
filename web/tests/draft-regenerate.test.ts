@@ -1,28 +1,31 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { sql, eq, desc } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { POST } from '../src/routes/api/drafts/[id]/regenerate/+server.js';
 
+// The happy path spawns a real agent run, so it is covered by the shared
+// (startDraftRegeneration) + cli (draft_regen_*) tests and the e2e verification.
+// Here we only assert the route's guard/error behaviour, which never dispatches.
+
 async function reset() {
   await getDb().execute(
-    sql`TRUNCATE drafts, runs, campaigns, accounts, projects, blocklist, contact_history, draft_events, draft_regeneration_hints RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE drafts, runs, campaigns, accounts, projects, draft_events, draft_regeneration_hints RESTART IDENTITY CASCADE`,
   );
 }
 
-async function seed() {
+async function seedDraft(state: string) {
   const db = getDb();
-  const [proj] = await db
-    .insert(schema.projects)
-    .values({ slug: 'regen-test', name: 'regen-test' })
-    .returning();
+  const [proj] = await db.insert(schema.projects).values({ slug: 'r', name: 'r' }).returning();
   const [platform] = await db
     .select()
     .from(schema.platforms)
     .where(eq(schema.platforms.slug, 'reddit'));
   const [account] = await db
     .insert(schema.accounts)
-    .values({ projectId: proj.id, platformId: platform.id, handle: 'tester' })
+    .values({ projectId: proj.id, platformId: platform.id, handle: 't' })
     .returning();
+  // The origin run's `kind` defaults to 'campaign', which the
+  // `runs_kind_target_chk` check constraint requires a campaign_id for.
   const [campaign] = await db
     .insert(schema.campaigns)
     .values({ projectId: proj.id, platformId: platform.id, name: 'c', skillSlug: 's' })
@@ -39,15 +42,15 @@ async function seed() {
       platformId: platform.id,
       accountId: account.id,
       kind: 'dm',
-      body: 'first take',
+      body: 'b',
       targetUser: 'someone',
-      state: 'pending_review',
+      state,
     })
     .returning();
-  return { draft };
+  return draft;
 }
 
-function makeRequest(body: unknown): Request {
+function req(body: unknown): Request {
   return new Request('http://localhost/api/drafts/1/regenerate', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -55,55 +58,25 @@ function makeRequest(body: unknown): Request {
   });
 }
 
-describe('POST /api/drafts/[id]/regenerate', () => {
+describe('POST /api/drafts/[id]/regenerate (guards)', () => {
   beforeEach(reset);
 
-  it('increments regeneration_count, persists hint, appends a draft_event', async () => {
-    const { draft } = await seed();
-    const res = await POST({
-      params: { id: String(draft.id) },
-      request: makeRequest({ hint: 'shorter and warmer' }),
-    } as never);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      ok: boolean;
-      regenerationCount: number;
-      hintId: number | null;
-    };
-    expect(body.ok).toBe(true);
-    expect(body.regenerationCount).toBe(1);
-    expect(body.hintId).not.toBeNull();
-
-    const [fresh] = await getDb()
-      .select()
-      .from(schema.drafts)
-      .where(eq(schema.drafts.id, draft.id));
-    expect(fresh.regenerationCount).toBe(1);
-
-    const [hint] = await getDb()
-      .select()
-      .from(schema.draftRegenerationHints)
-      .where(eq(schema.draftRegenerationHints.draftId, draft.id));
-    expect(hint.hintText).toBe('shorter and warmer');
-
-    const [evt] = await getDb()
-      .select()
-      .from(schema.draftEvents)
-      .where(eq(schema.draftEvents.draftId, draft.id))
-      .orderBy(desc(schema.draftEvents.id))
-      .limit(1);
-    expect(evt.event).toBe('regenerated');
+  it('rejects an invalid id with 400', async () => {
+    await expect(POST({ params: { id: 'abc' }, request: req({}) } as never)).rejects.toMatchObject({
+      status: 400,
+    });
   });
 
-  it('works without a hint and still bumps the counter', async () => {
-    const { draft } = await seed();
-    const res = await POST({
-      params: { id: String(draft.id) },
-      request: makeRequest({}),
-    } as never);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { regenerationCount: number; hintId: number | null };
-    expect(body.regenerationCount).toBe(1);
-    expect(body.hintId).toBeNull();
+  it('rejects a non-pending draft (does not dispatch)', async () => {
+    const draft = await seedDraft('approved');
+    await expect(
+      POST({ params: { id: String(draft.id) }, request: req({ hint: 'x' }) } as never),
+    ).rejects.toMatchObject({ status: 400 });
+    // No run was created for the draft.
+    const runs = await getDb()
+      .select()
+      .from(schema.runs)
+      .where(eq(schema.runs.kind, 'draft_regeneration'));
+    expect(runs.length).toBe(0);
   });
 });

@@ -1,14 +1,11 @@
 import { json, error } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
-import { getDb, schema } from '../../../../../lib/server/db.js';
-import { regenerateDraft } from '@pitchbox/shared/draft-regenerate';
-import { emit } from '../../../../../lib/server/events.js';
+import { runDraftRegeneration } from '../../../../../lib/server/runner.js';
 
-// Trigger a regeneration with an optional reviewer hint. For now this delegates
-// to the shared helper which only bumps the counter + records the hint; the
-// actual runner invocation is a future iteration.
 type Body = { hint?: unknown };
 
+// Dispatch a real regeneration run (async). The draft flips to "regenerating"
+// immediately (drafts:changed), and the rewritten body arrives over SSE when the
+// run finishes.
 export async function POST({ params, request }: { params: { id: string }; request: Request }) {
   const id = Number(params.id);
   if (!Number.isInteger(id) || isNaN(id)) throw error(400, 'invalid id');
@@ -17,16 +14,13 @@ export async function POST({ params, request }: { params: { id: string }; reques
   const hint =
     typeof payload.hint === 'string' && payload.hint.trim().length > 0 ? payload.hint : null;
 
-  const db = getDb();
-  const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, id));
-  if (!draft) throw error(404, 'draft not found');
-
-  const res = await regenerateDraft(db, {
-    draftId: id,
-    hint,
-    actor: 'user',
-  });
-
-  emit('drafts:changed', { id, state: draft.state });
-  return json({ ok: true, ...res });
+  try {
+    const out = await runDraftRegeneration(id, hint);
+    if (out.alreadyRunning) {
+      return json({ error: 'already_running', runId: out.runId }, { status: 409 });
+    }
+    return json({ ok: true, runId: out.runId });
+  } catch (e) {
+    throw error(400, String((e as Error).message));
+  }
 }
