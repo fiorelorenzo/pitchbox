@@ -5,6 +5,7 @@ import { requireExtensionAuth } from '$lib/server/extension-auth.js';
 import { emit } from '$lib/server/events.js';
 import { notify } from '@pitchbox/shared/notifications';
 import { enqueueReplyDraft } from '@pitchbox/shared/reply-drafter';
+import { runReplyDrafting } from '$lib/server/runner.js';
 import { matchIncomingDms, type ContactRow, type IncomingDm } from '@pitchbox/shared/dm-sync';
 import {
   matchIncomingCommentReplies,
@@ -326,11 +327,14 @@ export async function POST({ request }: { request: Request }) {
         .sort((a, b) => b.id - a.id)[0];
       if (!newest) continue;
       try {
-        await enqueueReplyDraft(db, {
+        const enq = await enqueueReplyDraft(db, {
           parentDraftId: u.draftId,
           parentMessageId: newest.id,
           replyKind: 'reply_dm',
         });
+        if (enq) {
+          void runReplyDrafting(enq.draftId, enq.parentMessageId).catch(() => {});
+        }
       } catch {
         // swallow - non-fatal
       }
@@ -341,11 +345,14 @@ export async function POST({ request }: { request: Request }) {
         .sort((a, b) => b.id - a.id)[0];
       if (!newest) continue;
       try {
-        await enqueueReplyDraft(db, {
+        const enq = await enqueueReplyDraft(db, {
           parentDraftId: ev.draftId,
           parentMessageId: newest.id,
           replyKind: 'reply_comment',
         });
+        if (enq) {
+          void runReplyDrafting(enq.draftId, enq.parentMessageId).catch(() => {});
+        }
       } catch {
         // swallow - non-fatal
       }

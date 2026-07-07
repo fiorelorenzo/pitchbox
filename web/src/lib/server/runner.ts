@@ -9,6 +9,7 @@ import {
   startDraftRegeneration,
   clearDraftRegenerationIfOwned,
 } from '@pitchbox/shared/draft-regenerate';
+import { startReplyDrafting } from '@pitchbox/shared/reply-drafter';
 import { getDb, schema } from './db.js';
 import { and, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
@@ -90,6 +91,14 @@ async function clearRegenFlag(
   if (cleared) emit('drafts:changed', {});
 }
 
+// Reply drafting keeps drafting_run_id set on failure (so the placeholder stays
+// non-approvable); this refreshes the inbox to the run's current status on every
+// terminal outcome (success, failure, or an early runner-creation failure), so
+// the UI flips from the spinner to the drafted body or the Retry state.
+function refreshReplyDraft(run: typeof schema.runs.$inferSelect): void {
+  if (run.kind === 'reply_drafting') emit('drafts:changed', {});
+}
+
 /**
  * Kind-agnostic dispatcher: spawns an agent runner for a pre-inserted run row,
  * wires up the stdout dedup pipeline, and updates the run's terminal state.
@@ -129,6 +138,7 @@ async function dispatchRun(
       error: errMsg,
     });
     await clearRegenFlag(db, run);
+    refreshReplyDraft(run);
     return;
   }
 
@@ -375,6 +385,7 @@ async function dispatchRun(
         // On success draft_regen_finish already cleared the flag; this covers
         // the failed/cancelled paths so the inbox stops showing "regenerating".
         await clearRegenFlag(db, run);
+        refreshReplyDraft(run);
       } catch {
         // Never let cleanup throw out of finally.
       }
@@ -587,6 +598,25 @@ export async function runDraftRegeneration(
 
   await dispatchRun(run, {
     playbookSlug: 'draft-regenerator',
+    extraEnv: run.campaignId ? { PITCHBOX_CAMPAIGN_ID: String(run.campaignId) } : {},
+  });
+
+  return { runId: run.id };
+}
+
+export async function runReplyDrafting(
+  replyDraftId: number,
+  parentMessageId: number,
+): Promise<{ runId: number; alreadyRunning?: boolean }> {
+  const db = getDb();
+  const { run, alreadyRunning } = await startReplyDrafting(db, { replyDraftId, parentMessageId });
+  if (alreadyRunning) return { runId: run.id, alreadyRunning: true };
+
+  emit('drafts:changed', { id: replyDraftId });
+  emit('run:started', { runId: run.id, campaignId: run.campaignId, projectId: run.projectId });
+
+  await dispatchRun(run, {
+    playbookSlug: 'reply-drafter',
     extraEnv: run.campaignId ? { PITCHBOX_CAMPAIGN_ID: String(run.campaignId) } : {},
   });
 
