@@ -208,7 +208,7 @@ export const runs = pgTable(
   'runs',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction' | 'campaign_skill_generation' | 'draft_regeneration'
+    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction' | 'campaign_skill_generation' | 'draft_regeneration' | 'reply_drafting'
     campaignId: integer('campaign_id').references(() => campaigns.id, { onDelete: 'cascade' }),
     projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     params: jsonb('params').notNull().default({}),
@@ -306,6 +306,14 @@ export const drafts = pgTable(
     // Cleared when the run finishes (in draft_regen_finish on success, else by
     // the dispatcher).
     regeneratingRunId: integer('regenerating_run_id').references(() => runs.id, {
+      onDelete: 'set null',
+    }),
+    // When set, a reply_drafting run is in flight producing this reply draft's
+    // body; drives the inbox "drafting" state, blocks approve/send, and is the
+    // single-flight guard. Cleared only by reply_draft_finish on success; left
+    // set on failure so the placeholder stays non-approvable (the UI offers
+    // Retry).
+    draftingRunId: integer('drafting_run_id').references(() => runs.id, {
       onDelete: 'set null',
     }),
     // LLM-judge quality scoring (issue #41). Score is 0-100; reason and model

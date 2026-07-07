@@ -13,7 +13,7 @@
 // and fill in the real body asynchronously, then bump the draft.
 import { eq, desc, and } from 'drizzle-orm';
 import type { Db } from './db/client.js';
-import { drafts, draftEvents, messages, contactHistory } from './db/schema.js';
+import { drafts, draftEvents, messages, contactHistory, runs } from './db/schema.js';
 
 export type ReplyKind = 'reply_dm' | 'reply_comment';
 
@@ -142,4 +142,55 @@ export async function loadPendingReplyDraft(
   // documents the relationship without affecting runtime behaviour.
   void contactHistory;
   return null;
+}
+
+export interface StartReplyDraftingResult {
+  run: typeof runs.$inferSelect;
+  alreadyRunning: boolean;
+}
+
+/**
+ * Prepare a reply_drafting run for a placeholder reply draft: guard against a
+ * concurrent drafting run, inherit the runner/campaign from the parent draft's
+ * originating run, insert the run row, and flag the draft as drafting. A
+ * non-running (failed/orphaned) drafting_run_id is treated as replaceable so
+ * Retry works after a failure or crash.
+ */
+export async function startReplyDrafting(
+  db: Db,
+  input: { replyDraftId: number; parentMessageId: number },
+): Promise<StartReplyDraftingResult> {
+  const { replyDraftId, parentMessageId } = input;
+  const [draft] = await db.select().from(drafts).where(eq(drafts.id, replyDraftId));
+  if (!draft) throw new Error(`reply draft ${replyDraftId} not found`);
+  if (draft.kind !== 'reply_dm' && draft.kind !== 'reply_comment')
+    throw new Error(`draft ${replyDraftId} is not a reply draft (kind=${draft.kind})`);
+
+  if (draft.draftingRunId != null) {
+    const [existing] = await db.select().from(runs).where(eq(runs.id, draft.draftingRunId));
+    if (existing && existing.status === 'running') {
+      return { run: existing, alreadyRunning: true };
+    }
+  }
+
+  const [origin] = await db.select().from(runs).where(eq(runs.id, draft.runId));
+  const agentRunner = origin?.agentRunner ?? 'claude-code';
+  const campaignId = origin?.campaignId ?? null;
+
+  const [run] = await db
+    .insert(runs)
+    .values({
+      kind: 'reply_drafting',
+      campaignId,
+      projectId: draft.projectId,
+      agentRunner,
+      trigger: 'manual',
+      status: 'running',
+      params: { replyDraftId, parentMessageId },
+    })
+    .returning();
+
+  await db.update(drafts).set({ draftingRunId: run.id }).where(eq(drafts.id, replyDraftId));
+
+  return { run, alreadyRunning: false };
 }
