@@ -39,6 +39,8 @@
 		createdAt: string | Date | null;
 		sentAt: string | Date | null;
 		sentContent: string | null;
+		regeneratingRunId?: number | null;
+		regenerationCount?: number;
 	};
 
 	let {
@@ -202,6 +204,32 @@
 		}
 	}
 
+	const isRegenerating = $derived(!!draft && draft.regeneratingRunId != null);
+
+	async function cancelRegenerate() {
+		if (!draft) return;
+		try {
+			const res = await fetch(`/api/drafts/${draft.id}/regenerate/cancel`, { method: 'POST' });
+			if (!res.ok) throw new Error(await res.text());
+			toast.success('Regeneration cancelled');
+			await invalidateAll();
+		} catch (e) {
+			toast.error('Could not cancel', { description: (e as Error).message });
+		}
+	}
+
+	async function undoRegenerate() {
+		if (!draft) return;
+		try {
+			const res = await fetch(`/api/drafts/${draft.id}/regenerate/undo`, { method: 'POST' });
+			if (!res.ok) throw new Error(await res.text());
+			toast.success('Reverted to the previous version');
+			await invalidateAll();
+		} catch (e) {
+			toast.error('Could not undo', { description: (e as Error).message });
+		}
+	}
+
 	function openSendDialog() {
 		sentDraftText = draft?.body ?? '';
 		sendDialogOpen = true;
@@ -332,13 +360,30 @@
 					{/if}
 				</Button>
 				{#if draft.state === 'pending_review' || draft.state === 'proposed'}
-					{#if !editing}
+					{#if isRegenerating}
+						<span class="text-muted-foreground inline-flex items-center gap-2 text-sm">
+							<span
+								class="border-muted-foreground/40 border-t-foreground h-3 w-3 animate-spin rounded-full border-2"
+							></span>
+							Regenerating…
+						</span>
+						<Button onclick={cancelRegenerate} variant="outline" size="sm">Cancel</Button>
+					{:else if !editing}
 						<Button onclick={startEdit} variant="outline" size="sm">Edit</Button>
 						<Button onclick={() => (regenerateOpen = true)} variant="outline" size="sm">
 							Regenerate
 						</Button>
+						{#if (draft.regenerationCount ?? 0) > 0}
+							<Button onclick={undoRegenerate} variant="ghost" size="sm">Undo</Button>
+						{/if}
 					{/if}
-					<Button onclick={approve} loading={approving} variant="default" size="sm">
+					<Button
+						onclick={approve}
+						loading={approving}
+						disabled={isRegenerating}
+						variant="default"
+						size="sm"
+					>
 						Approve
 					</Button>
 					<Button onclick={reject} loading={rejecting} variant="destructive" size="sm">

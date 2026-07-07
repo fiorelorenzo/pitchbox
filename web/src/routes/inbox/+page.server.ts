@@ -119,6 +119,8 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       qualityReason: schema.drafts.qualityReason,
       variantGroupId: schema.drafts.variantGroupId,
       variantLabel: schema.drafts.variantLabel,
+      regenerationCount: schema.drafts.regenerationCount,
+      regeneratingRunId: schema.drafts.regeneratingRunId,
       projectSlug: schema.projects.slug,
       projectName: schema.projects.name,
       platformSlug: schema.platforms.slug,
