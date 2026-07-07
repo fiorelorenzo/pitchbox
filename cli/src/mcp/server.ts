@@ -10,6 +10,8 @@ import {
   updateDraftBody,
   draftRegenStart,
   draftRegenFinish,
+  replyDraftStart,
+  replyDraftFinish,
 } from '../commands/drafts.js';
 import { scoutRun, snapshotSubreddit } from '../commands/reddit.js';
 import { searchHn, HN_LISTINGS } from '../commands/hn.js';
@@ -310,6 +312,59 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         return jsonResult(await draftRegenFinish(rid, body, title));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'reply_draft_start',
+    {
+      title: 'Start a reply drafting',
+      description:
+        'Load the reply-drafting context: the placeholder reply draft, the parent outbound draft (for voice), the full conversation thread in chronological order, and the platform. Defaults to this session run.',
+      inputSchema: {
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ runId }) => {
+      const rid = runId ?? defaultRunId();
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        return jsonResult(await replyDraftStart(rid));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'reply_draft_finish',
+    {
+      title: 'Finish a reply drafting',
+      description:
+        'Persist the drafted reply body, clear the drafting flag, and mark the run success. Returns { draftId }.',
+      inputSchema: {
+        body: z.string().min(1).describe('the drafted reply body'),
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ body, runId }) => {
+      const rid = runId ?? defaultRunId();
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        return jsonResult(await replyDraftFinish(rid, body));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }

@@ -307,6 +307,103 @@ export async function draftRegenFinish(runId: number, body: string, title?: stri
   return { draftId, version: draft.version + 1, regenerationCount: newCount };
 }
 
+export async function replyDraftStart(runId: number) {
+  if (!Number.isInteger(runId)) throw new Error('invalid run id');
+  const db = getDb();
+  const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+  if (!run) throw new Error(`run ${runId} not found`);
+  if (run.kind !== 'reply_drafting') throw new Error(`run ${runId} is not a reply_drafting run`);
+  const params = (run.params ?? {}) as { replyDraftId?: number; parentMessageId?: number };
+  const replyDraftId = params.replyDraftId;
+  if (!replyDraftId) throw new Error(`run ${runId} has no replyDraftId in params`);
+
+  const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, replyDraftId));
+  if (!draft) throw new Error(`reply draft ${replyDraftId} not found`);
+
+  const [platform] = await db
+    .select({ slug: schema.platforms.slug })
+    .from(schema.platforms)
+    .where(eq(schema.platforms.id, draft.platformId));
+
+  const sourceRef = (draft.sourceRef ?? {}) as { parentDraftId?: number };
+  let parent: { body: string; reasoning: string | null } | null = null;
+  let thread: Array<{
+    id: number;
+    isFromUs: boolean;
+    body: string | null;
+    createdAtPlatform: Date | null;
+  }> = [];
+  if (sourceRef.parentDraftId) {
+    const [p] = await db
+      .select()
+      .from(schema.drafts)
+      .where(eq(schema.drafts.id, sourceRef.parentDraftId));
+    if (p) parent = { body: p.body, reasoning: p.reasoning };
+    // The conversation thread is attached to the PARENT draft, not the reply draft.
+    thread = await db
+      .select({
+        id: schema.messages.id,
+        isFromUs: schema.messages.isFromUs,
+        body: schema.messages.body,
+        createdAtPlatform: schema.messages.createdAtPlatform,
+      })
+      .from(schema.messages)
+      .where(eq(schema.messages.draftId, sourceRef.parentDraftId))
+      .orderBy(schema.messages.createdAtPlatform);
+  }
+
+  return {
+    runId,
+    replyDraftId,
+    parentMessageId: params.parentMessageId ?? draft.parentMessageId ?? null,
+    replyKind: draft.kind,
+    replyDraft: {
+      targetUser: draft.targetUser,
+      accountId: draft.accountId,
+      platformId: draft.platformId,
+      body: draft.body,
+    },
+    parent,
+    thread,
+    platform: platform?.slug ?? null,
+  };
+}
+
+export async function replyDraftFinish(runId: number, body: string) {
+  if (!Number.isInteger(runId)) throw new Error('invalid run id');
+  if (!body || !body.trim()) throw new Error('body is empty');
+  const db = getDb();
+  const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+  if (!run) throw new Error(`run ${runId} not found`);
+  if (run.kind !== 'reply_drafting') throw new Error(`run ${runId} is not a reply_drafting run`);
+  if (run.status !== 'running') throw new Error(`run ${runId} is already ${run.status}`);
+  const params = (run.params ?? {}) as { replyDraftId?: number };
+  const replyDraftId = params.replyDraftId;
+  if (!replyDraftId) throw new Error(`run ${runId} has no replyDraftId in params`);
+
+  const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, replyDraftId));
+  if (!draft) throw new Error(`reply draft ${replyDraftId} not found`);
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(schema.drafts)
+      .set({ body, draftingRunId: null, version: sql`${schema.drafts.version} + 1` })
+      .where(eq(schema.drafts.id, replyDraftId));
+    await tx.insert(schema.draftEvents).values({
+      draftId: replyDraftId,
+      event: 'reply_drafted',
+      actor: 'agent',
+      details: {},
+    });
+    await tx
+      .update(schema.runs)
+      .set({ status: 'success', finishedAt: new Date() })
+      .where(eq(schema.runs.id, runId));
+  });
+
+  return { draftId: replyDraftId };
+}
+
 export function registerDraftCommands(program: Command) {
   program
     .command('drafts:create')
@@ -412,6 +509,37 @@ export function registerDraftCommands(program: Command) {
       const title = typeof payload.title === 'string' ? payload.title : undefined;
       try {
         ok(await draftRegenFinish(Number(opts.run), body, title));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
+    });
+
+  program
+    .command('drafts:reply:start')
+    .requiredOption('--run <id>', 'run id')
+    .action(async (opts: { run: string }) => {
+      try {
+        ok(await replyDraftStart(Number(opts.run)));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
+    });
+
+  program
+    .command('drafts:reply:finish')
+    .requiredOption('--run <id>', 'run id')
+    .action(async (opts: { run: string }) => {
+      const raw = await readStdin();
+      if (!raw || !raw.trim()) return fail('empty payload on stdin');
+      let payload: { body?: unknown };
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        return fail('payload is not valid JSON');
+      }
+      const body = typeof payload.body === 'string' ? payload.body : '';
+      try {
+        ok(await replyDraftFinish(Number(opts.run), body));
       } catch (err) {
         fail(String(err instanceof Error ? err.message : err));
       }
