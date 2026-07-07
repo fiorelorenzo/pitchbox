@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from './db/client.js';
-import { drafts, draftRegenerationHints, runs } from './db/schema.js';
+import { drafts, draftEvents, draftRegenerationHints, runs } from './db/schema.js';
 
 export interface StartDraftRegenerationInput {
   draftId: number;
@@ -73,4 +73,55 @@ export async function startDraftRegeneration(
 /** Clear the in-flight regeneration flag (used by the dispatcher on fail/cancel). */
 export async function clearDraftRegeneration(db: Db, draftId: number): Promise<void> {
   await db.update(drafts).set({ regeneratingRunId: null }).where(eq(drafts.id, draftId));
+}
+
+export interface UndoDraftRegenerationResult {
+  draftId: number;
+  version: number;
+}
+
+/**
+ * Restore the single previous body captured by the last `regenerated` event.
+ * Only valid while the draft is still pending_review and not mid-regeneration.
+ */
+export async function undoDraftRegeneration(
+  db: Db,
+  draftId: number,
+  opts: { actor?: string } = {},
+): Promise<UndoDraftRegenerationResult> {
+  const [draft] = await db.select().from(drafts).where(eq(drafts.id, draftId));
+  if (!draft) throw new Error(`draft ${draftId} not found`);
+  if (draft.state !== 'pending_review')
+    throw new Error(`draft ${draftId} is ${draft.state}; cannot undo`);
+  if (draft.regeneratingRunId != null)
+    throw new Error(`draft ${draftId} is regenerating; cannot undo yet`);
+
+  const [evt] = await db
+    .select()
+    .from(draftEvents)
+    .where(and(eq(draftEvents.draftId, draftId), eq(draftEvents.event, 'regenerated')))
+    .orderBy(desc(draftEvents.id))
+    .limit(1);
+  const details = (evt?.details ?? {}) as { previousBody?: string; previousTitle?: string | null };
+  if (!evt || typeof details.previousBody !== 'string')
+    throw new Error(`draft ${draftId} has no previous body to restore`);
+
+  const [updated] = await db
+    .update(drafts)
+    .set({
+      body: details.previousBody,
+      title: details.previousTitle ?? draft.title,
+      version: sql`${drafts.version} + 1`,
+    })
+    .where(eq(drafts.id, draftId))
+    .returning({ version: drafts.version });
+
+  await db.insert(draftEvents).values({
+    draftId,
+    event: 'regeneration_undone',
+    actor: opts.actor ?? 'user',
+    details: { restoredFromEventId: evt.id },
+  });
+
+  return { draftId, version: updated.version };
 }

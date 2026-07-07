@@ -1,7 +1,11 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { startDraftRegeneration, clearDraftRegeneration } from '@pitchbox/shared/draft-regenerate';
+import {
+  startDraftRegeneration,
+  clearDraftRegeneration,
+  undoDraftRegeneration,
+} from '@pitchbox/shared/draft-regenerate';
 
 async function reset() {
   await getDb().execute(
@@ -149,5 +153,42 @@ describe('startDraftRegeneration', () => {
     expect(alreadyRunning).toBe(false);
     expect(run.campaignId).toBeNull();
     expect(run.projectId).toBe(draft.projectId);
+  });
+});
+
+describe('undoDraftRegeneration', () => {
+  beforeEach(reset);
+
+  it('restores the previous body from the last regenerated event and bumps version', async () => {
+    const db = getDb();
+    const { draft } = await seedDraft();
+    // Simulate a completed regeneration: body rewritten + a regenerated event holding the old body.
+    await db.insert(schema.draftEvents).values({
+      draftId: draft.id,
+      event: 'regenerated',
+      actor: 'agent',
+      details: { previousBody: 'first take', previousTitle: null, regenerationCount: 1 },
+    });
+    await db
+      .update(schema.drafts)
+      .set({ body: 'rewritten', version: 1, regenerationCount: 1 })
+      .where(eq(schema.drafts.id, draft.id));
+
+    const res = await undoDraftRegeneration(db, draft.id, { actor: 'user' });
+    expect(res.version).toBe(2);
+    const [fresh] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draft.id));
+    expect(fresh.body).toBe('first take');
+
+    const evts = await db
+      .select()
+      .from(schema.draftEvents)
+      .where(eq(schema.draftEvents.draftId, draft.id));
+    expect(evts.some((e) => e.event === 'regeneration_undone')).toBe(true);
+  });
+
+  it('throws when there is nothing to undo', async () => {
+    const db = getDb();
+    const { draft } = await seedDraft();
+    await expect(undoDraftRegeneration(db, draft.id)).rejects.toThrow();
   });
 });
