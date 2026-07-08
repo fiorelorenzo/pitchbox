@@ -107,6 +107,7 @@ beforeEach(async () => {
       projectId: proj.id,
       trigger: 'manual',
       status: 'running',
+      agentRunner: 'codex',
       params: { replyDraftId, parentMessageId: inbound.id },
     })
     .returning();
@@ -122,7 +123,7 @@ afterAll(async () => {
 });
 
 describe('pitchbox drafts:reply:*', () => {
-  it('start returns the placeholder, parent voice, and chronological thread', () => {
+  it('start returns the placeholder, parent voice, chronological thread, and rubric template', () => {
     const parsed = lastJson(cli(`drafts:reply:start --run=${runId}`));
     expect(parsed.ok).toBe(true);
     expect(parsed.data.replyDraftId).toBe(replyDraftId);
@@ -131,12 +132,18 @@ describe('pitchbox drafts:reply:*', () => {
     expect(parsed.data.thread.length).toBe(1);
     expect(parsed.data.thread[0].body).toBe('tell me more');
     expect(parsed.data.parentMessageId).toBe(inboundId);
+    expect(typeof parsed.data.rubricTemplate).toBe('string');
+    expect(parsed.data.rubricTemplate.length).toBeGreaterThan(0);
   });
 
-  it('finish sets the body, clears the flag, finalizes the run', async () => {
+  it('finish sets the body, clears the flag, finalizes the run, and scores the reply', async () => {
     const out = cliWithStdin(
       `drafts:reply:finish --run=${runId}`,
-      JSON.stringify({ body: 'Happy to help - here is more.' }),
+      JSON.stringify({
+        body: 'Happy to help - here is more.',
+        qualityScore: 64,
+        qualityReason: 'on tone',
+      }),
     );
     expect(lastJson(out).ok).toBe(true);
     const db = getDb();
@@ -144,6 +151,9 @@ describe('pitchbox drafts:reply:*', () => {
     expect(d.body).toBe('Happy to help - here is more.');
     expect(d.draftingRunId).toBeNull();
     expect(d.state).toBe('pending_review');
+    expect(d.qualityScore).toBe(64);
+    expect(d.qualityReason).toBe('on tone');
+    expect(d.qualityModel).toBe('codex');
     const [r] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
     expect(r.status).toBe('success');
     const [evt] = await db

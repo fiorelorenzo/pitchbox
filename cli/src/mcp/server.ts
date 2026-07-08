@@ -354,6 +354,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
         'Persist the drafted reply body, clear the drafting flag, and mark the run success. Returns { draftId }.',
       inputSchema: {
         body: z.string().min(1).describe('the drafted reply body'),
+        qualityScore: z.number().optional().describe('quality score 0-100 for the drafted reply'),
+        qualityReason: z.string().optional().describe('one-line reason for the score'),
         runId: z
           .number()
           .int()
@@ -362,11 +364,11 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
           .describe('run id (defaults to PITCHBOX_RUN_ID)'),
       },
     },
-    async ({ body, runId }) => {
+    async ({ body, qualityScore, qualityReason, runId }) => {
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
-        return jsonResult(await replyDraftFinish(rid, body));
+        return jsonResult(await replyDraftFinish(rid, body, qualityScore, qualityReason));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }

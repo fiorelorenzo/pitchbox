@@ -382,6 +382,8 @@ export async function replyDraftStart(runId: number) {
       .orderBy(schema.messages.createdAtPlatform);
   }
 
+  const rubric = await loadQualityRubric(db);
+
   return {
     runId,
     replyDraftId,
@@ -396,10 +398,16 @@ export async function replyDraftStart(runId: number) {
     parent,
     thread,
     platform: platform?.slug ?? null,
+    rubricTemplate: rubric.rubric_template,
   };
 }
 
-export async function replyDraftFinish(runId: number, body: string) {
+export async function replyDraftFinish(
+  runId: number,
+  body: string,
+  qualityScore?: number | null,
+  qualityReason?: string | null,
+) {
   if (!Number.isInteger(runId)) throw new Error('invalid run id');
   if (!body || !body.trim()) throw new Error('body is empty');
   const db = getDb();
@@ -414,10 +422,23 @@ export async function replyDraftFinish(runId: number, body: string) {
   const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, replyDraftId));
   if (!draft) throw new Error(`reply draft ${replyDraftId} not found`);
 
+  const qualitySet =
+    qualityScore != null
+      ? {
+          qualityScore: Math.max(0, Math.min(100, Math.round(qualityScore))),
+          qualityReason: qualityReason ?? null,
+          qualityModel: run.agentRunner,
+        }
+      : {};
   await db.transaction(async (tx) => {
     await tx
       .update(schema.drafts)
-      .set({ body, draftingRunId: null, version: sql`${schema.drafts.version} + 1` })
+      .set({
+        body,
+        draftingRunId: null,
+        version: sql`${schema.drafts.version} + 1`,
+        ...qualitySet,
+      })
       .where(eq(schema.drafts.id, replyDraftId));
     await tx.insert(schema.draftEvents).values({
       draftId: replyDraftId,
@@ -554,15 +575,19 @@ export function registerDraftCommands(program: Command) {
     .action(async (opts: { run: string }) => {
       const raw = await readStdin();
       if (!raw || !raw.trim()) return fail('empty payload on stdin');
-      let payload: { body?: unknown };
+      let payload: { body?: unknown; qualityScore?: unknown; qualityReason?: unknown };
       try {
         payload = JSON.parse(raw);
       } catch {
         return fail('payload is not valid JSON');
       }
       const body = typeof payload.body === 'string' ? payload.body : '';
+      const qualityScore =
+        typeof payload.qualityScore === 'number' ? payload.qualityScore : undefined;
+      const qualityReason =
+        typeof payload.qualityReason === 'string' ? payload.qualityReason : undefined;
       try {
-        ok(await replyDraftFinish(Number(opts.run), body));
+        ok(await replyDraftFinish(Number(opts.run), body, qualityScore, qualityReason));
       } catch (err) {
         fail(String(err instanceof Error ? err.message : err));
       }
