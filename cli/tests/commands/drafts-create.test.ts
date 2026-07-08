@@ -75,6 +75,65 @@ describe('pitchbox drafts:create', () => {
     expect(drafts[0].state).toBe('pending_review');
     expect(drafts[0].targetUser).toBe('bob');
     expect(drafts[0].metadata).toMatchObject({ subreddit: 'rpg' });
+    // No qualityScore supplied - persists as null (not scored).
+    expect(drafts[0].qualityScore).toBeNull();
+    expect(drafts[0].qualityReason).toBeNull();
+    expect(drafts[0].qualityModel).toBeNull();
+  });
+
+  it('persists an inline quality score supplied at creation (issue #41)', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ slug: 'demo3', name: 'D3' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({ projectId: project.id, platformId: platform.id, handle: 'carol', role: 'personal' })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c3',
+        skillSlug: 'reddit-scout',
+        config: {},
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    const payload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'dm',
+        targetUser: 'dave',
+        body: 'hey dave, ...',
+        sourceRef: {},
+        metadata: {},
+        qualityScore: 82,
+        qualityReason: 'specific and personal',
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, payload);
+    const lines = out.trim().split('\n');
+    const res = JSON.parse(lines[lines.length - 1]);
+    expect(res.ok).toBe(true);
+    expect(res.data.inserted).toBe(1);
+
+    const drafts = await db.select().from(schema.drafts);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].qualityScore).toBe(82);
+    expect(drafts[0].qualityReason).toBe('specific and personal');
+    expect(drafts[0].qualityModel).toBe(run.agentRunner);
   });
 
   it('skips blocklisted targets and reports them in the response', async () => {

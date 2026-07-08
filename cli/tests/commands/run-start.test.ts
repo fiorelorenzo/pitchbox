@@ -72,6 +72,8 @@ describe('pitchbox run:start', () => {
     expect(parsed.data.runId).toBeGreaterThan(0);
     expect(parsed.data.campaign.name).toBe('Scout');
     expect(parsed.data.accounts[0].handle).toBe('alice');
+    expect(typeof parsed.data.rubricTemplate).toBe('string');
+    expect(parsed.data.rubricTemplate.length).toBeGreaterThan(0);
   });
 });
 

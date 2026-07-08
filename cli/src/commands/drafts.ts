@@ -28,6 +28,10 @@ export const DraftInput = z.object({
   // as the primary (variant A) and `variants` supplies B, C, ... Each entry
   // produces a sibling draft sharing a `variant_group_id`.
   variants: z.array(z.string().min(1)).optional(),
+  // Inline LLM-judge quality score (issue #41), supplied by the creating agent.
+  // Lenient here (clamped at persistence) so one bad score never fails the batch.
+  qualityScore: z.number().optional(),
+  qualityReason: z.string().optional(),
 });
 
 export const Payload = z.array(DraftInput).min(1).max(200);
@@ -121,6 +125,10 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
           dedupWarning: d.dedupWarning ?? null,
           variantGroupId: null as string | null,
           variantLabel: null as string | null,
+          qualityScore:
+            d.qualityScore != null ? Math.max(0, Math.min(100, Math.round(d.qualityScore))) : null,
+          qualityReason: d.qualityScore != null ? (d.qualityReason ?? null) : null,
+          qualityModel: d.qualityScore != null ? run.agentRunner : null,
         },
       ];
     }
@@ -143,6 +151,10 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
       dedupWarning: d.dedupWarning ?? null,
       variantGroupId: r.variantGroupId,
       variantLabel: r.variantLabel,
+      qualityScore:
+        d.qualityScore != null ? Math.max(0, Math.min(100, Math.round(d.qualityScore))) : null,
+      qualityReason: d.qualityScore != null ? (d.qualityReason ?? null) : null,
+      qualityModel: d.qualityScore != null ? run.agentRunner : null,
     }));
   });
 
