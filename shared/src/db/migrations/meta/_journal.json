@@ -337,6 +337,13 @@
       "when": 1778564000000,
       "tag": "0047_drafts_drafting_run_id",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1778565000000,
+      "tag": "0048_project_insights_run_kind",
+      "breakpoints": true
     }
   ]
 }
