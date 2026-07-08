@@ -39,4 +39,3 @@ The run is bound to this session through the environment, so the tools default t
 
 - Send a real message or create `contact_history` rows.
 - Touch any draft other than the reply draft bound to this run.
-- Score quality (a separate pass owns that).

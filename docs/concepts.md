@@ -105,7 +105,7 @@ New drafts can be scored 0-100 by an LLM judge invoked from `shared/src/quality-
 
 The score, reason and judge model are persisted on `drafts.quality_score`, `drafts.quality_reason`, `drafts.quality_model`. The inbox renders a colour-coded `Q<score>` badge next to each draft (red `< threshold_red`, green `>= threshold_green`, amber in between) and exposes a `?minQuality=<n>` filter on the URL.
 
-V1 ships with a deterministic stub runner so the persistence path can be tested without an LLM round-trip; `pitchbox drafts:score <id>` runs the stub. A future iteration will swap in a real agent-runner invocation that consumes `rubric_template`.
+Scoring is inline: the agent that writes a draft body (on creation, regeneration, or reply) scores it 0-100 against `rubric_template` and passes the score back on the same tool call that persists the body, so every draft is scored at write time with no separate scoring pass.
 
 ## A/B variant drafts
 

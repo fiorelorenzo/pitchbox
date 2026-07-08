@@ -197,7 +197,6 @@ already speaks a `{ok, ...}` JSON envelope; many take stdin JSON):
 | `drafts.create`            | `drafts:create`            | read blocklist/contact_history, write drafts/draft_events, notify |
 | `drafts.get`               | `drafts:get`               | read drafts                                                       |
 | `drafts.regenerate`        | `drafts:regenerate`        | write draft_events/runs                                           |
-| `drafts.score`             | `drafts:score`             | LLM judge, write scores                                           |
 | `reddit.scout`             | `reddit:scout`             | **Reddit API (creds)**, write staging_scout_candidates            |
 | `hn.search`                | `hn:search`                | **HN Algolia API**, read-only                                     |
 | `staging.candidates`       | `staging:candidates`       | read staging_scout_candidates                                     |
