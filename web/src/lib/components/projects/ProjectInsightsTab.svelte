@@ -1,6 +1,8 @@
 <script lang="ts">
   import Markdown from '$lib/components/Markdown.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { invalidateAll } from '$app/navigation';
+  import { toast } from 'svelte-sonner';
 
   type Insight = {
     id: number;
@@ -10,7 +12,7 @@
   };
 
   let {
-    projectId: _projectId,
+    projectId,
     latestInsight,
   }: {
     projectId: number;
@@ -20,13 +22,16 @@
   let regenerating = $state(false);
 
   async function regenerate() {
-    // Stub: the daemon's insights worker (TODO #52) and a future
-    // /api/projects/[id]/insights/regenerate endpoint will pick this up.
     regenerating = true;
     try {
-      // Placeholder: surface intent without dispatching a run yet.
-      await new Promise((r) => setTimeout(r, 300));
-      alert('Insights regeneration is not wired yet - daemon worker pending.');
+      const res = await fetch(`/api/projects/${projectId}/insights`, { method: 'POST' });
+      if (!res.ok && res.status !== 409) throw new Error(await res.text());
+      toast.success(
+        res.status === 409 ? 'Insights are already generating' : 'Generating insights (this takes a moment)',
+      );
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not regenerate insights', { description: (e as Error).message });
     } finally {
       regenerating = false;
     }
