@@ -36,7 +36,12 @@ The run is bound to this session through the environment, so the tools default t
 4. **Submit.** Call `draft_regen_finish` with:
 
    ```json
-   { "body": "<the rewritten body>", "title": "<only for post drafts, else omit>", "qualityScore": 74, "qualityReason": "tighter and more specific" }
+   {
+     "body": "<the rewritten body>",
+     "title": "<only for post drafts, else omit>",
+     "qualityScore": 74,
+     "qualityReason": "tighter and more specific"
+   }
    ```
 
    The tool overwrites the draft body, bumps its version, records the previous body for undo, and finalizes the run. **If the tool returns an error**, read the message, fix the payload, and try again. **Maximum two retries.**
