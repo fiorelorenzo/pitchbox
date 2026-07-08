@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { eq, sql } from 'drizzle-orm';
 import { isBlocklisted } from '@pitchbox/shared/blocklist';
-import { scoreDraft } from '@pitchbox/shared/quality-judge';
 import { groupVariants } from '@pitchbox/shared/draft-variants';
 import {
   checkContactDedup,
@@ -432,22 +431,6 @@ export function registerDraftCommands(program: Command) {
       fail(
         'regeneration runs in the web app; POST /api/drafts/<id>/regenerate or use the dashboard',
       );
-    });
-
-  program
-    .command('drafts:score')
-    .argument('<id>', 'draft id')
-    .description('Run the LLM-judge quality scorer against a draft (stub V1).')
-    .action(async (idArg: string) => {
-      const draftId = Number(idArg);
-      if (!Number.isInteger(draftId)) return fail('invalid draft id');
-      const db = getDb();
-      try {
-        const res = await scoreDraft(db, draftId);
-        ok(res);
-      } catch (err) {
-        return fail(String((err as Error).message ?? err));
-      }
     });
 
   program
