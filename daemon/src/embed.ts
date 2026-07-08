@@ -17,6 +17,7 @@ import { tick as replyPollerTick } from './reply-poller.js';
 import { tick as webhookSenderTick } from './webhook-sender.js';
 import { tick as retentionTick } from './retention.js';
 import { tick as keywordWatcherTick } from './keyword-watcher.js';
+import { tick as insightsTick } from './insights.js';
 
 const log = logger('embed');
 
@@ -130,6 +131,21 @@ export function startEmbeddedDaemon(opts: StartOptions = {}): EmbeddedDaemon {
         if (res.checked > 0) {
           logger('reply-poller').info(
             `checked ${res.checked} contacts → ${res.newReplies} new replies, ${res.skipped} skipped`,
+          );
+        }
+      },
+    });
+  }
+
+  if (!config.insightsDisabled) {
+    loops.push({
+      name: 'insights',
+      intervalMs: config.insightsIntervalMs,
+      run: async () => {
+        const res = await insightsTick();
+        if (res.dispatched > 0) {
+          logger('insights').info(
+            `checked ${res.checked} projects → ${res.dispatched} dispatched, ${res.skipped} skipped`,
           );
         }
       },
