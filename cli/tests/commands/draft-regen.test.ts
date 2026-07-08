@@ -85,19 +85,21 @@ afterAll(async () => {
 });
 
 describe('pitchbox drafts:regen:*', () => {
-  it('start returns the draft, hint, and platform', () => {
+  it('start returns the draft, hint, platform, and rubric template', () => {
     const parsed = lastJson(cli(`drafts:regen:start --run=${regenRunId}`));
     expect(parsed.ok).toBe(true);
     expect(parsed.data.draftId).toBe(draftId);
     expect(parsed.data.hint).toBe('shorter');
     expect(parsed.data.platform).toBe('reddit');
     expect(parsed.data.draft.body).toBe('old body');
+    expect(typeof parsed.data.rubricTemplate).toBe('string');
+    expect(parsed.data.rubricTemplate.length).toBeGreaterThan(0);
   });
 
-  it('finish overwrites the body, bumps version + count, clears the flag, ends the run', async () => {
+  it('finish overwrites the body, bumps version + count, clears the flag, ends the run, and re-scores', async () => {
     const out = cliWithStdin(
       `drafts:regen:finish --run=${regenRunId}`,
-      JSON.stringify({ body: 'new body' }),
+      JSON.stringify({ body: 'new body', qualityScore: 70, qualityReason: 'tightened' }),
     );
     const parsed = lastJson(out);
     expect(parsed.ok).toBe(true);
@@ -109,10 +111,13 @@ describe('pitchbox drafts:regen:*', () => {
     expect(d.version).toBe(1);
     expect(d.regenerationCount).toBe(1);
     expect(d.regeneratingRunId).toBeNull();
+    expect(d.qualityScore).toBe(70);
+    expect(d.qualityReason).toBe('tightened');
 
     const [r] = await db.select().from(schema.runs).where(eq(schema.runs.id, regenRunId));
     expect(r.status).toBe('success');
     expect(r.finishedAt).not.toBeNull();
+    expect(d.qualityModel).toBe(r.agentRunner);
 
     const [evt] = await db
       .select()

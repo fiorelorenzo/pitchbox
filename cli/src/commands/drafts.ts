@@ -10,6 +10,7 @@ import {
   DEFAULT_DEDUP_POLICY,
 } from '@pitchbox/shared/contact-dedup';
 import { notify } from '@pitchbox/shared/notifications';
+import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
 import { ok, fail } from '../lib/output.js';
 
 export const DraftInput = z.object({
@@ -253,6 +254,8 @@ export async function draftRegenStart(runId: number) {
     }
   }
 
+  const rubric = await loadQualityRubric(db);
+
   return {
     runId,
     draftId,
@@ -267,10 +270,17 @@ export async function draftRegenStart(runId: number) {
       sourceRef: draft.sourceRef,
     },
     persona,
+    rubricTemplate: rubric.rubric_template,
   };
 }
 
-export async function draftRegenFinish(runId: number, body: string, title?: string | null) {
+export async function draftRegenFinish(
+  runId: number,
+  body: string,
+  title?: string | null,
+  qualityScore?: number | null,
+  qualityReason?: string | null,
+) {
   if (!Number.isInteger(runId)) throw new Error('invalid run id');
   if (!body || !body.trim()) throw new Error('body is empty');
   const db = getDb();
@@ -287,6 +297,14 @@ export async function draftRegenFinish(runId: number, body: string, title?: stri
   if (!draft) throw new Error(`draft ${draftId} not found`);
 
   const newCount = draft.regenerationCount + 1;
+  const qualitySet =
+    qualityScore != null
+      ? {
+          qualityScore: Math.max(0, Math.min(100, Math.round(qualityScore))),
+          qualityReason: qualityReason ?? null,
+          qualityModel: run.agentRunner,
+        }
+      : {};
   await db.transaction(async (tx) => {
     await tx.insert(schema.draftEvents).values({
       draftId,
@@ -307,6 +325,7 @@ export async function draftRegenFinish(runId: number, body: string, title?: stri
         version: sql`${schema.drafts.version} + 1`,
         regenerationCount: newCount,
         regeneratingRunId: null,
+        ...qualitySet,
       })
       .where(eq(schema.drafts.id, draftId));
     await tx
@@ -494,7 +513,12 @@ export function registerDraftCommands(program: Command) {
     .action(async (opts: { run: string }) => {
       const raw = await readStdin();
       if (!raw || !raw.trim()) return fail('empty payload on stdin');
-      let payload: { body?: unknown; title?: unknown };
+      let payload: {
+        body?: unknown;
+        title?: unknown;
+        qualityScore?: unknown;
+        qualityReason?: unknown;
+      };
       try {
         payload = JSON.parse(raw);
       } catch {
@@ -502,8 +526,12 @@ export function registerDraftCommands(program: Command) {
       }
       const body = typeof payload.body === 'string' ? payload.body : '';
       const title = typeof payload.title === 'string' ? payload.title : undefined;
+      const qualityScore =
+        typeof payload.qualityScore === 'number' ? payload.qualityScore : undefined;
+      const qualityReason =
+        typeof payload.qualityReason === 'string' ? payload.qualityReason : undefined;
       try {
-        ok(await draftRegenFinish(Number(opts.run), body, title));
+        ok(await draftRegenFinish(Number(opts.run), body, title, qualityScore, qualityReason));
       } catch (err) {
         fail(String(err instanceof Error ? err.message : err));
       }
