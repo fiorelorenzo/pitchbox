@@ -24,7 +24,7 @@ The run is already bound to a campaign and run through the environment. Step 1 r
 
 1. **Start the run.** Call `run_start` (no arguments needed).
 
-   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform` (should be `hackernews`), `campaign.config` (`postAngle`, `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`, optional `format` hint such as `show-hn` / `ask-hn` / `text`), `accounts`.
+   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform` (should be `hackernews`), `campaign.config` (`postAngle`, `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`, optional `format` hint such as `show-hn` / `ask-hn` / `text`), `accounts`, `rubricTemplate`.
 
 2. **Study what's currently on HN.** Get a feel for what's resonating right now and the formats that already exist on the front page, so you don't ship something that's about to be flagged as duplicate or off-topic. Call `hn_search` three times:
    - `{ "listing": "top", "limit": 30 }`
@@ -50,15 +50,17 @@ The run is already bound to a campaign and run through the environment. Step 1 r
    - The post is a thinly disguised pitch with no substantive content (Show HN that's just a landing page summary, Ask HN that's leading toward "would you pay for X").
    - HN already has a near-identical Show HN from the last 30 days for the same product (search step 2).
 
-5. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` - no secret. Record `accountId`.
+5. **Score each draft.** Using `rubricTemplate` from the run context, score the post 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted posts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
 
-6. **Build the compose URL.** The HN submit form does not honour query-string prefill, so the user pastes title and body manually. Always emit the plain submit URL plus `pitchbox_draft=<draftId>` so the extension's content script can attach:
+6. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` - no secret. Record `accountId`.
+
+7. **Build the compose URL.** The HN submit form does not honour query-string prefill, so the user pastes title and body manually. Always emit the plain submit URL plus `pitchbox_draft=<draftId>` so the extension's content script can attach:
 
    ```
    https://news.ycombinator.com/submit
    ```
 
-7. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+8. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft:
 
@@ -73,11 +75,13 @@ The run is already bound to a campaign and run through the environment. Step 1 r
      "composeUrl": "https://news.ycombinator.com/submit",
      "reasoning": "<one sentence: which format + why this angle now>",
      "sourceRef": { "format": "show-hn | ask-hn | text" },
-     "metadata": { "format": "show-hn", "url": "<productUrl when format=show-hn>" }
+     "metadata": { "format": "show-hn", "url": "<productUrl when format=show-hn>" },
+     "qualityScore": 78,
+     "qualityReason": "specific reference to their post, clear ask"
    }
    ```
 
-8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
+9. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
 
 ## Hard rules
 

@@ -25,7 +25,7 @@ Every tool returns JSON. On failure a tool returns an error result (see Failure 
 
 1. **Start the run and load context.** Call `run_start` (no arguments; it defaults to this session's campaign).
 
-   From the result extract: `runId`, `project` (includes `description` - the project's markdown briefing), `platform`, `campaign.config` (the strict-validated structured scout profile), `accounts`, `blocklist`, `contactedRecently`. Remember `runId` for every later call.
+   From the result extract: `runId`, `project` (includes `description` - the project's markdown briefing), `platform`, `campaign.config` (the strict-validated structured scout profile), `accounts`, `blocklist`, `contactedRecently`, `rubricTemplate`. Remember `runId` for every later call.
 
 2. **Fetch raw candidates.** Call `reddit_scout` with `{ "runId": <runId> }`.
 
@@ -60,7 +60,9 @@ Every tool returns JSON. On failure a tool returns an error result (see Failure 
 
 5. **Pick the account.** Use the first account from `accounts` whose `role === 'personal'`. Record its `id` as `accountId`.
 
-6. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`, one draft object per candidate you scored at or above the threshold.
+6. **Score each draft.** Using `rubricTemplate` from the run context, score the DM 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted DMs and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+
+7. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`, one draft object per candidate you scored at or above the threshold.
 
    > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
 
@@ -77,11 +79,13 @@ Every tool returns JSON. On failure a tool returns an error result (see Failure 
      "composeUrl": "https://www.reddit.com/message/compose?to=alice&subject=...&message=...",
      "reasoning": "2-4 sentences citing specific words from their post.",
      "sourceRef": { "permalink": "/r/rpg/comments/abc/.../" },
-     "metadata": { "matchedBy": "search" }
+     "metadata": { "matchedBy": "search" },
+     "qualityScore": 78,
+     "qualityReason": "specific reference to their post, clear ask"
    }
    ```
 
-7. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 

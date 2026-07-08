@@ -20,7 +20,7 @@ The run is bound to this session through the environment, so the tools default t
 
 ## Steps
 
-1. **Load context.** Call `reply_draft_start` (no arguments needed). From the result read: `replyKind` (`reply_dm` / `reply_comment`), `platform`, `parent` (the original outbound draft's `body` and `reasoning`, for voice), and `thread` (every prior turn in chronological order, `isFromUs` marking ours vs theirs).
+1. **Load context.** Call `reply_draft_start` (no arguments needed). From the result read: `replyKind` (`reply_dm` / `reply_comment`), `platform`, `parent` (the original outbound draft's `body` and `reasoning`, for voice), `rubricTemplate`, and `thread` (every prior turn in chronological order, `isFromUs` marking ours vs theirs).
 
 2. **Draft the reply.** Produce ONE continuation:
    - Answer what the target user actually said in the most recent inbound turn (the last `thread` entry with `isFromUs: false`): address their question or concern, or move the conversation forward.
@@ -29,9 +29,11 @@ The run is bound to this session through the environment, so the tools default t
    - No links unless the prior turn explicitly asked for one. No greeting if the previous turn was recent. End with either a soft question or a clear close, never both.
    - No placeholders, no meta commentary. Output the message text a human would send.
 
-3. **Submit.** Call `reply_draft_finish` with `{ "body": "<your reply>" }`. It writes the body, clears the drafting flag, and marks the run success. If it returns an error, read the message, fix the payload, and try again. **Maximum two retries.**
+3. **Score the reply.** Using `rubricTemplate`, score the reply 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted replies and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason`.
 
-4. **On failure.** If `reply_draft_start` errors or you genuinely cannot draft a reply, call `run_finish` with `{ "status": "failed", "error": "<short reason>" }` and stop. The placeholder stays and the reviewer sees a Retry.
+4. **Submit.** Call `reply_draft_finish` with `{ "body": "<your reply>", "qualityScore": 68, "qualityReason": "answers their question, on tone" }`. It writes the body, clears the drafting flag, and marks the run success. If it returns an error, read the message, fix the payload, and try again. **Maximum two retries.**
+
+5. **On failure.** If `reply_draft_start` errors or you genuinely cannot draft a reply, call `run_finish` with `{ "status": "failed", "error": "<short reason>" }` and stop. The placeholder stays and the reviewer sees a Retry.
 
 ## What this playbook must never do
 

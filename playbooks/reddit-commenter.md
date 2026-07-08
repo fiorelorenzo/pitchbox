@@ -25,7 +25,7 @@ The run is already bound to a campaign and run through the environment, so the t
 
 1. **Start the run.** Call `run_start` (no arguments needed; it defaults to this session's campaign).
 
-   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (the strict-validated commenter profile - `targetSubreddits`, `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`.
+   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (the strict-validated commenter profile - `targetSubreddits`, `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`, `rubricTemplate`.
 
    Treat `campaign.config.systemInstructions` as additional voice & content guidance - it overrides defaults.
 
@@ -65,7 +65,9 @@ The run is already bound to a campaign and run through the environment, so the t
 
    The `pitchbox_draft` query param is how the browser extension finds the draft to auto-fill the comment textarea.
 
-8. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+8. **Score each draft.** Using `rubricTemplate` from the run context, score the comment 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted comments and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+
+9. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
 
@@ -82,13 +84,15 @@ The run is already bound to a campaign and run through the environment, so the t
      "composeUrl": "https://www.reddit.com/r/Solo_Roleplaying/comments/abc/.../",
      "reasoning": "2-3 sentences on why this post, what angle, what value you're adding.",
      "sourceRef": { "permalink": "/r/Solo_Roleplaying/comments/abc/.../", "postTitle": "..." },
-     "metadata": { "matchedBy": "search", "postAgeHours": 8 }
+     "metadata": { "matchedBy": "search", "postAgeHours": 8 },
+     "qualityScore": 78,
+     "qualityReason": "specific reference to their post, clear ask"
    }
    ```
 
    Note `targetUser` is null for post_comment - the audience is the whole thread, not one user.
 
-9. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 

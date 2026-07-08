@@ -24,7 +24,7 @@ The run is already bound to a campaign and run through the environment. Step 1 r
 
 1. **Start the run.** Call `run_start` (no arguments needed).
 
-   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (`targetSubreddits`, `topicKeywords`, `avoidKeywords`, `postAngle`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`.
+   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (`targetSubreddits`, `topicKeywords`, `avoidKeywords`, `postAngle`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`, `rubricTemplate`.
 
 2. **Study each target subreddit.** For every subreddit in `campaign.config.targetSubreddits`, call `subreddit_snapshot` with `{ "subreddit": "<name>" }`.
    - Read the top posts of the week (titles, body excerpts, score, comment counts) from `posts`.
@@ -45,7 +45,9 @@ The run is already bound to a campaign and run through the environment. Step 1 r
    - The title or body contains any term from `campaign.config.avoidKeywords`.
    - The subreddit's `rules` show explicit "no self-promotion" / "no AI-generated content" rules and the draft can't reasonably claim to be human-authored substantive content.
 
-5. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+5. **Score each draft.** Using `rubricTemplate` from the run context, score the post 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted posts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+
+6. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft:
 
@@ -63,11 +65,13 @@ The run is already bound to a campaign and run through the environment. Step 1 r
        "subreddit": "<sub>",
        "format": "<launch | lessons | discussion | comparison>"
      },
-     "metadata": { "subreddit": "<sub>" }
+     "metadata": { "subreddit": "<sub>" },
+     "qualityScore": 78,
+     "qualityReason": "specific reference to their post, clear ask"
    }
    ```
 
-6. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
+7. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
 
 ## Hard rules
 

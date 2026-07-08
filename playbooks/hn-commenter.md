@@ -24,7 +24,7 @@ The run is already bound to a campaign and run through the environment, so the t
 
 1. **Start the run.** Call `run_start` (no arguments needed).
 
-   From the result extract `runId`, `project`, `platform` (should be `hackernews`), `campaign.config` (expects `listing` such as `top` / `new` / `ask` / `show`, optional `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`.
+   From the result extract `runId`, `project`, `platform` (should be `hackernews`), `campaign.config` (expects `listing` such as `top` / `new` / `ask` / `show`, optional `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `rubricTemplate`.
 
 2. **Fetch candidate stories.** Call `hn_search` once per topic keyword (or once with no query) and merge: `{ "listing": "<listing>", "query": "<keyword>", "limit": 30 }`.
 
@@ -52,7 +52,9 @@ The run is already bound to a campaign and run through the environment, so the t
    https://news.ycombinator.com/reply?id=<itemId>&pitchbox_draft=<draftId>
    ```
 
-7. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+7. **Score each draft.** Using `rubricTemplate` from the run context, score the comment 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted comments and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+
+8. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft:
 
@@ -66,13 +68,15 @@ The run is already bound to a campaign and run through the environment, so the t
      "composeUrl": "https://news.ycombinator.com/reply?id=12345",
      "reasoning": "Why this story, what angle, what value you're adding.",
      "sourceRef": { "itemUrl": "https://news.ycombinator.com/item?id=12345", "title": "..." },
-     "metadata": { "itemId": 12345, "listing": "top", "score": 142 }
+     "metadata": { "itemId": 12345, "listing": "top", "score": 142 },
+     "qualityScore": 78,
+     "qualityReason": "specific reference to their post, clear ask"
    }
    ```
 
    `targetUser` is null for `post_comment` - the audience is the thread.
 
-8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+9. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 

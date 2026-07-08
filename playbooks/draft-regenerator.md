@@ -20,7 +20,7 @@ The run is bound to this session through the environment, so the tools default t
 
 ## Steps
 
-1. **Load context.** Call `draft_regen_start` (no arguments needed). From the result read: `hint`, `platform`, `persona`, and `draft` (`kind`, `title`, `body`, `targetUser`, `reasoning`, `sourceRef`).
+1. **Load context.** Call `draft_regen_start` (no arguments needed). From the result read: `hint`, `platform`, `persona`, `rubricTemplate`, and `draft` (`kind`, `title`, `body`, `targetUser`, `reasoning`, `sourceRef`).
 
 2. **Rewrite the draft.** Produce ONE improved version of the draft body.
    - If `hint` is non-empty, treat it as the primary instruction (e.g. "shorter", "less salesy", "reference their last comment"). Satisfy it.
@@ -31,15 +31,17 @@ The run is bound to this session through the environment, so the tools default t
      - Post (`kind` is a post kind): keep it a title + body; only supply a new `title` if you improved it.
    - No placeholders, no "TBD", no meta commentary. Output the message text a human would send.
 
-3. **Submit.** Call `draft_regen_finish` with:
+3. **Score the rewritten draft.** Using `rubricTemplate`, score the rewrite 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted drafts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason`.
+
+4. **Submit.** Call `draft_regen_finish` with:
 
    ```json
-   { "body": "<the rewritten body>", "title": "<only for post drafts, else omit>" }
+   { "body": "<the rewritten body>", "title": "<only for post drafts, else omit>", "qualityScore": 74, "qualityReason": "tighter and more specific" }
    ```
 
    The tool overwrites the draft body, bumps its version, records the previous body for undo, and finalizes the run. **If the tool returns an error**, read the message, fix the payload, and try again. **Maximum two retries.**
 
-4. **On failure.** If `draft_regen_start` reports the draft is gone or no longer pending review, or you genuinely cannot improve it, call `run_finish` with `{ "status": "failed", "error": "<short reason>" }` and stop. The draft keeps its current body.
+5. **On failure.** If `draft_regen_start` reports the draft is gone or no longer pending review, or you genuinely cannot improve it, call `run_finish` with `{ "status": "failed", "error": "<short reason>" }` and stop. The draft keeps its current body.
 
 ## What this playbook must never do
 
