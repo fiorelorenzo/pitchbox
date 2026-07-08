@@ -585,6 +585,54 @@ export async function runProjectExtraction(
   return { runId: run.id };
 }
 
+export async function runProjectInsights(
+  projectId: number,
+): Promise<{ runId: number; alreadyRunning?: boolean }> {
+  const db = getDb();
+  const [project] = await db
+    .select()
+    .from(schema.projects)
+    .where(eq(schema.projects.id, projectId));
+  if (!project) throw new Error(`project ${projectId} not found`);
+
+  // Application-level guard: one running project_insights run per project.
+  const [existing] = await db
+    .select()
+    .from(schema.runs)
+    .where(
+      and(
+        eq(schema.runs.projectId, projectId),
+        eq(schema.runs.kind, 'project_insights'),
+        eq(schema.runs.status, 'running'),
+      ),
+    )
+    .limit(1);
+  if (existing) return { runId: existing.id, alreadyRunning: true };
+
+  const [run] = await db
+    .insert(schema.runs)
+    .values({
+      kind: 'project_insights',
+      projectId,
+      agentRunner: project.defaultAgentRunner,
+      trigger: 'manual',
+      status: 'running',
+    })
+    .returning();
+
+  emit('run:started', { runId: run.id, projectId });
+
+  await dispatchRun(run, {
+    playbookSlug: 'project-insighter',
+    extraEnv: { PITCHBOX_PROJECT_ID: String(projectId) },
+    onFinish: (status) => {
+      if (status === 'success') emit('project:insights:updated', { projectId, runId: run.id });
+    },
+  });
+
+  return { runId: run.id };
+}
+
 export async function runDraftRegeneration(
   draftId: number,
   hint: string | null = null,
