@@ -607,7 +607,14 @@ export async function runProjectInsights(
       ),
     )
     .limit(1);
-  if (existing) return { runId: existing.id, alreadyRunning: true };
+  if (existing) {
+    const STALE_MS = 60 * 60_000;
+    if (Date.now() - existing.startedAt.getTime() < STALE_MS) {
+      return { runId: existing.id, alreadyRunning: true };
+    }
+    // else: the running run is older than 1h and presumed orphaned; fall through
+    // and dispatch a fresh run (the boot reaper / a later finalize handles the old row).
+  }
 
   const [run] = await db
     .insert(schema.runs)

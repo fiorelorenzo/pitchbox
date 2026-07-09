@@ -1,5 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { runProjectInsights } from '$lib/server/runner.js';
+import { getDb, schema } from '$lib/server/db.js';
+import { eq } from 'drizzle-orm';
 
 function parseId(idParam: string): number | null {
   const n = Number(idParam);
@@ -9,6 +11,11 @@ function parseId(idParam: string): number | null {
 export async function POST({ params }: { params: { id: string } }) {
   const id = parseId(params.id);
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
+  const [project] = await getDb()
+    .select({ id: schema.projects.id })
+    .from(schema.projects)
+    .where(eq(schema.projects.id, id));
+  if (!project) return json({ error: 'not_found' }, { status: 404 });
   try {
     const out = await runProjectInsights(id);
     if (out.alreadyRunning) {
