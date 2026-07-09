@@ -3,6 +3,7 @@
 	import { relativeTime } from '$lib/utils/time';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { getPresenter } from '$lib/platforms/presenter';
+	import { scoreBand, DEFAULT_QUALITY_RUBRIC, type QualityRubric } from '@pitchbox/shared/quality-judge';
 
 	type Draft = {
 		id: number;
@@ -21,29 +22,22 @@
 		variantLabel?: string | null;
 	};
 
-	// Color band for the LLM-judge quality score (issue #41). Thresholds mirror
-	// the defaults in shared/src/quality-judge.ts (red <40, green >=75).
-	function qualityBand(score: number | null | undefined): 'red' | 'amber' | 'green' | null {
-		if (score == null) return null;
-		if (score < 40) return 'red';
-		if (score >= 75) return 'green';
-		return 'amber';
-	}
-
 	let {
 		draft,
+		rubric = DEFAULT_QUALITY_RUBRIC,
 		selected = false,
 		runId,
 		onclick,
 	}: {
 		draft: Draft;
+		rubric?: QualityRubric;
 		selected?: boolean;
 		runId?: number;
 		onclick?: () => void;
 	} = $props();
 
 	const presenter = $derived(getPresenter(draft.platformSlug));
-	const band = $derived(qualityBand(draft.qualityScore));
+	const band = $derived(scoreBand(draft.qualityScore, rubric));
 </script>
 
 <button
@@ -64,7 +58,7 @@
 					{draft.variantLabel}
 				</span>
 			{/if}
-			{#if band}
+			{#if band !== 'none'}
 				<span
 					class={cn(
 						'inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium',

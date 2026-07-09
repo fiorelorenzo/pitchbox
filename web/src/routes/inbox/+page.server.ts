@@ -2,6 +2,7 @@ import { getDb, schema } from '$lib/server/db.js';
 import { and, eq, desc, gte, inArray, type SQL } from 'drizzle-orm';
 import { getUsageForAccounts, loadQuotaLimits } from '@pitchbox/shared/quota';
 import { listProjects } from '@pitchbox/shared/projects';
+import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
 import { resolveOrgId } from '$lib/server/auth.js';
 import { hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
 
@@ -19,6 +20,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       ? Math.max(0, Math.min(100, Number(minQualityRaw)))
       : null;
   const db = getDb();
+  const qualityRubric = await loadQualityRubric(db);
 
   const orgId = await resolveOrgId(event);
   const projects = await listProjects(db, { organizationId: orgId });
@@ -49,6 +51,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       platforms: allPlatforms,
       activePlatform: null,
       chatSyncUnauthorized,
+      qualityRubric,
     };
   }
 
@@ -81,6 +84,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
         platforms: allPlatforms,
         activePlatform,
         chatSyncUnauthorized,
+        qualityRubric,
       };
     }
     filters.push(
@@ -207,5 +211,6 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     platforms: allPlatforms,
     activePlatform,
     chatSyncUnauthorized,
+    qualityRubric,
   };
 }

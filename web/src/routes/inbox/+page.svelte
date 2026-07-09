@@ -23,6 +23,7 @@
 	import { SelectField } from '$lib/components/ui/select-field';
 
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
+	import type { QualityRubric } from '@pitchbox/shared/quality-judge';
 
 	let {
 		data,
@@ -61,6 +62,7 @@
 			platforms: Array<{ id: number; slug: string }>;
 			activePlatform: { id: number; slug: string } | null;
 			chatSyncUnauthorized?: boolean;
+			qualityRubric: QualityRubric;
 		};
 	} = $props();
 
@@ -625,6 +627,7 @@
 					<div class="flex-1 min-w-0">
 						<DraftListItem
 							{draft}
+							rubric={data.qualityRubric}
 							selected={isSelected}
 							runId={draft.runId}
 							onclick={() => {
