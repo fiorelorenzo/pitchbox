@@ -1,0 +1,6 @@
+[submodule "cloud/adapter"]
+	path = cloud/adapter
+	url = https://github.com/fiorelorenzo/pitchbox-cloud-adapter.git
+[submodule "cloud/runner"]
+	path = cloud/runner
+	url = https://github.com/fiorelorenzo/pitchbox-runner-service.git
