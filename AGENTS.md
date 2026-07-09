@@ -6,7 +6,7 @@ truth; tool-specific files (e.g. `CLAUDE.md`) point here.
 
 ## Project
 
-Pitchbox: self-hosted outreach agent for Reddit and Hacker News (future: other platforms). Human-in-the-loop - the system researches, drafts, and bookkeeps; the human approves and sends. Alpha, currently `0.4.0`.
+Pitchbox: self-hosted outreach agent for Reddit and Hacker News (future: other platforms). Human-in-the-loop - the system researches, drafts, and bookkeeps; the human approves and sends. Currently `0.5.0`.
 
 ## Commands
 
@@ -42,7 +42,7 @@ Tests share one Postgres DB (`pitchbox_test`) and run sequentially - do **not** 
 
 ## Architecture
 
-pnpm workspaces monorepo (`pnpm-workspace.yaml`). All workspaces share a single version (`0.4.0`), and the dashboard sidebar reads that version from `web/package.json`.
+pnpm workspaces monorepo (`pnpm-workspace.yaml`). All workspaces share a single version (`0.5.0`), and the dashboard sidebar reads that version from `web/package.json`.
 
 **Data flow:** A campaign (scheduled by cron or triggered manually) spawns a run via the web `/api/run` endpoint. The run launches an `AgentRunner`. Local runners go through a single `AcpRunner` that drives a coding-agent backend (`claude-code`, `codex`, `gemini`, `copilot`, `opencode`, `qwen-code`) over the open Agent Client Protocol (ACP); the default `cloud` runner instead dispatches to a managed runner service that runs the agent on its own compute and relays every MCP frame back to the client (see "Cloud runner & repo layout"). The agent executes a markdown playbook from `playbooks/` and reads/writes **all** state through the **Pitchbox MCP server** (`mcp__pitchbox__*` tools) - the single data-access boundary; playbooks no longer shell out to the CLI. A human reviews drafts in the Inbox, approves, sends manually on Reddit/HN, then clicks **Mark as sent** which advances state and logs `contact_history`. The daemon polls sent DMs for replies via a pluggable `ReplyReader`.
 

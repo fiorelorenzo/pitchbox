@@ -28,4 +28,4 @@ The `cli/src/commands/reddit.ts` module exposes Reddit-specific helpers (search 
 pitchbox drafts:regenerate <id> [--hint "..."]
 ```
 
-Bumps `drafts.regeneration_count` for the target draft, optionally records a reviewer hint into `draft_regeneration_hints`, and appends a `regenerated` draft_event. The runner invocation is currently stubbed - the helper is invoked verbatim by the dashboard's `POST /api/drafts/[id]/regenerate` so both surfaces share an audit trail until the `regenerate-single` runner mode lands.
+Regeneration runs as an agent job dispatched by the web app. The dashboard's `POST /api/drafts/[id]/regenerate` (and the Inbox **Regenerate** action) launch a `draft_regeneration` run that rewrites the draft body honoring the reviewer hint, records the hint into `draft_regeneration_hints`, appends a `regenerated` draft_event that snapshots the previous body (so the change is undoable), and re-scores the draft. The CLI command is a thin pointer to that web flow.

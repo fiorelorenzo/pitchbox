@@ -47,7 +47,7 @@ With a local agent CLI installed, the simplest single-host setup runs the dashbo
 PITCHBOX_EMBED_DAEMON=1 pnpm run dev:web    # dashboard on http://127.0.0.1:5180
 ```
 
-`dev:web` is the SvelteKit dev server on its own; `PITCHBOX_EMBED_DAEMON=1` boots the background loops (scheduler, reply poller, retention, keyword-watcher, webhook-sender) inside it. To run the daemon as a separate process instead, drop the env var and start it alongside:
+`dev:web` is the SvelteKit dev server on its own; `PITCHBOX_EMBED_DAEMON=1` boots the background loops (scheduler, reply poller, retention, keyword-watcher, webhook-sender, insights) inside it. To run the daemon as a separate process instead, drop the env var and start it alongside:
 
 ```bash
 pnpm -F daemon dev

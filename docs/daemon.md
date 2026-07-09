@@ -10,13 +10,14 @@ Single-host self-hosters can avoid running a second process by booting the daemo
 PITCHBOX_EMBED_DAEMON=1 pnpm run dev
 ```
 
-The same loops (scheduler, reply-poller, heartbeat, retention, keyword-watcher, webhook-sender) run in the SvelteKit process and stop cleanly on `SIGINT`/`SIGTERM`. Heartbeat rows are tagged `module='web'` so Settings can tell embedded vs. standalone. Run both at once safely - the advisory lock on dispatch (#32) and `SELECT … FOR UPDATE SKIP LOCKED` on webhook deliveries (#36) keep behaviour exactly-once across processes. Standalone mode stays the recommended deploy for HA / multi-host setups.
+The same loops (scheduler, reply-poller, heartbeat, retention, keyword-watcher, webhook-sender, insights) run in the SvelteKit process and stop cleanly on `SIGINT`/`SIGTERM`. Heartbeat rows are tagged `module='web'` so Settings can tell embedded vs. standalone. Run both at once safely - the advisory lock on dispatch (#32) and `SELECT … FOR UPDATE SKIP LOCKED` on webhook deliveries (#36) keep behaviour exactly-once across processes. Standalone mode stays the recommended deploy for HA / multi-host setups.
 
 ## Modules
 
 - `scheduler.ts` - parses `cron_expression` on active campaigns via `cron-parser`. Due campaigns are dispatched by POSTing to the web `/api/run` endpoint, so the daemon never touches agent runners directly.
 - `reply-poller.ts` - drives the `ReplyReader` interface (`shared/src/platforms/base-reply-reader.ts`). Today the null reader is wired (the Chrome extension covers ingestion in practice).
 - `heartbeat.ts` - writes a tick per module to `daemon_heartbeats` every few seconds. Settings shows liveness based on the most recent tick.
+- `insights.ts` - regenerates project insights daily: it iterates projects with recent draft/message activity, skips those with an insight newer than 24h or fewer than 5 drafts, and POSTs a `project_insights` run per eligible project. Set `PITCHBOX_INSIGHTS_DISABLED=1` to turn it off.
 
 ## Shutdown
 

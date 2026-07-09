@@ -210,9 +210,7 @@ already speaks a `{ok, ...}` JSON envelope; many take stdin JSON):
 | `skill.generate.finish`    | `skill:generate:finish`    | write campaigns/runs                                              |
 
 All DB-touching and credential-using tools execute client-side, so data and
-Reddit creds stay local. (`drafts:update` and `reddit:subreddit-snapshot` are
-referenced by playbooks but not yet implemented in the CLI - out of scope here,
-noted for the migration.)
+Reddit creds stay local.
 
 ### 3. Cloud adapter (client-side, OSS build via `cloud/` submodule) [LOCKED location]
 

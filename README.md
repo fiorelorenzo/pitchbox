@@ -8,8 +8,6 @@ Self-hosted, human-in-the-loop outreach agent. The agent does the research and d
 [![Version](https://img.shields.io/github/package-json/v/fiorelorenzo/pitchbox?label=version)](./package.json)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 
-> ⚠️ Alpha - currently at **v0.4.0**. Breaking changes possible until v1.0.0.
-
 **📖 Full documentation:** **<https://fiorelorenzo.github.io/pitchbox/>**
 
 ## Quick start

@@ -33,7 +33,7 @@ A **draft** is the agent's proposed outreach - DM, post, post comment, or commen
 
 ## Contact history & conversations
 
-Once a draft is sent, the row in `contact_history` becomes the per-target source of truth. The Chrome extension picks up replies (DMs and comment-replies) and the **Conversations** page lists every thread; clicking a row opens `/conversations/<thread-id>`, a Matrix/iMessage-style transcript that renders the parent draft and every captured message, with outgoing bubbles right-aligned in the primary color and incoming bubbles left-aligned in muted styling. When an inbound reply lands, `enqueueReplyDraft` materialises an auto-drafted reply (V1 ships a placeholder body) that surfaces at the bottom of the thread with Approve / Reject actions; a textarea lets reviewers edit or override the suggested body before sending.
+Once a draft is sent, the row in `contact_history` becomes the per-target source of truth. The Chrome extension picks up replies (DMs and comment-replies) and the **Conversations** page lists every thread; clicking a row opens `/conversations/<thread-id>`, a Matrix/iMessage-style transcript that renders the parent draft and every captured message, with outgoing bubbles right-aligned in the primary color and incoming bubbles left-aligned in muted styling. When an inbound reply lands, `enqueueReplyDraft` materialises an auto-drafted reply that surfaces at the bottom of the thread with Approve / Reject actions; a textarea lets reviewers edit or override the suggested body before sending.
 
 ## Audit feed
 
@@ -117,4 +117,4 @@ Approving (or sending) one variant cascade-rejects every still-pending sibling i
 
 When the extension's dm-sync flips an outbound draft to `replied`, Pitchbox automatically enqueues a continuation draft via `shared/src/reply-drafter.ts:enqueueReplyDraft`. The new draft uses `kind = 'reply_dm'` (or `'reply_comment'`) and stores the inbound message's id on `drafts.parent_message_id` so the runner / reviewer can rebuild the full conversation history.
 
-V1 inserts a placeholder body and a `reply_drafting_enqueued` draft_event; a future iteration will spawn an agent runner with `playbooks/reply-drafter.md` to fill in the real body. The Conversations page surfaces the pending reply with Approve / Reject buttons.
+`enqueueReplyDraft` inserts the reply draft and a `reply_drafting_enqueued` draft_event, then a `reply_drafting` agent run executes `playbooks/reply-drafter.md` to write (and score) the real body, replacing the placeholder. Until that run succeeds the draft carries a `drafting_run_id` flag so it cannot be approved or sent. The Conversations page surfaces the pending reply with Approve / Reject buttons, plus a Retry if the drafting run failed.

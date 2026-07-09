@@ -65,7 +65,7 @@ export interface PitchboxMcpContext {
 }
 
 export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer {
-  const server = new McpServer({ name: 'pitchbox', version: '0.4.0' });
+  const server = new McpServer({ name: 'pitchbox', version: '0.5.0' });
 
   const defaultRunId = () => ctx.runId ?? posInt(process.env.PITCHBOX_RUN_ID);
   const defaultCampaignId = () => ctx.campaignId ?? posInt(process.env.PITCHBOX_CAMPAIGN_ID);
