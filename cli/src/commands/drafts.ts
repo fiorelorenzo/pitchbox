@@ -323,7 +323,7 @@ export async function draftRegenFinish(
         body,
         title: title ?? draft.title,
         version: sql`${schema.drafts.version} + 1`,
-        regenerationCount: newCount,
+        regenerationCount: sql`${schema.drafts.regenerationCount} + 1`,
         regeneratingRunId: null,
         ...qualitySet,
       })

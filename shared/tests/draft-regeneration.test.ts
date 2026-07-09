@@ -192,6 +192,24 @@ describe('undoDraftRegeneration', () => {
     const { draft } = await seedDraft();
     await expect(undoDraftRegeneration(db, draft.id)).rejects.toThrow();
   });
+
+  it('rejects a second undo attempt on the same draft', async () => {
+    const db = getDb();
+    const { draft } = await seedDraft();
+    await db.insert(schema.draftEvents).values({
+      draftId: draft.id,
+      event: 'regenerated',
+      actor: 'agent',
+      details: { previousBody: 'first take', previousTitle: null, regenerationCount: 1 },
+    });
+    await db
+      .update(schema.drafts)
+      .set({ body: 'rewritten', version: 1, regenerationCount: 1 })
+      .where(eq(schema.drafts.id, draft.id));
+
+    await undoDraftRegeneration(db, draft.id, { actor: 'user' });
+    await expect(undoDraftRegeneration(db, draft.id, { actor: 'user' })).rejects.toThrow();
+  });
 });
 
 describe('clearDraftRegenerationIfOwned', () => {

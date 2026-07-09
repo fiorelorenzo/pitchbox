@@ -116,6 +116,15 @@ export async function undoDraftRegeneration(
   if (draft.regeneratingRunId != null)
     throw new Error(`draft ${draftId} is regenerating; cannot undo yet`);
 
+  const [lastEvt] = await db
+    .select()
+    .from(draftEvents)
+    .where(eq(draftEvents.draftId, draftId))
+    .orderBy(desc(draftEvents.id))
+    .limit(1);
+  if (lastEvt?.event === 'regeneration_undone')
+    throw new Error(`draft ${draftId} regeneration already undone`);
+
   const [evt] = await db
     .select()
     .from(draftEvents)
@@ -126,22 +135,26 @@ export async function undoDraftRegeneration(
   if (!evt || typeof details.previousBody !== 'string')
     throw new Error(`draft ${draftId} has no previous body to restore`);
 
-  const [updated] = await db
-    .update(drafts)
-    .set({
-      body: details.previousBody,
-      title: details.previousTitle ?? draft.title,
-      version: sql`${drafts.version} + 1`,
-    })
-    .where(eq(drafts.id, draftId))
-    .returning({ version: drafts.version });
+  const version = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(drafts)
+      .set({
+        body: details.previousBody,
+        title: details.previousTitle ?? draft.title,
+        version: sql`${drafts.version} + 1`,
+      })
+      .where(eq(drafts.id, draftId))
+      .returning({ version: drafts.version });
 
-  await db.insert(draftEvents).values({
-    draftId,
-    event: 'regeneration_undone',
-    actor: opts.actor ?? 'user',
-    details: { restoredFromEventId: evt.id },
+    await tx.insert(draftEvents).values({
+      draftId,
+      event: 'regeneration_undone',
+      actor: opts.actor ?? 'user',
+      details: { restoredFromEventId: evt.id },
+    });
+
+    return updated.version;
   });
 
-  return { draftId, version: updated.version };
+  return { draftId, version };
 }
