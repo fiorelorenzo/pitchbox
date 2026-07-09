@@ -11,7 +11,7 @@ import {
 } from '@pitchbox/shared/draft-regenerate';
 import { startReplyDrafting } from '@pitchbox/shared/reply-drafter';
 import { getDb, schema } from './db.js';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rm, mkdir, writeFile } from 'node:fs/promises';
@@ -595,25 +595,29 @@ export async function runProjectInsights(
     .where(eq(schema.projects.id, projectId));
   if (!project) throw new Error(`project ${projectId} not found`);
 
-  // Application-level guard: one running project_insights run per project.
-  const [existing] = await db
+  // Application-level guard: one running project_insights run per project. A
+  // running run older than STALE_MS is presumed orphaned and superseded.
+  const STALE_MS = 60 * 60_000;
+  const runningFilter = and(
+    eq(schema.runs.projectId, projectId),
+    eq(schema.runs.kind, 'project_insights'),
+    eq(schema.runs.status, 'running'),
+  );
+  const running = await db
     .select()
     .from(schema.runs)
-    .where(
-      and(
-        eq(schema.runs.projectId, projectId),
-        eq(schema.runs.kind, 'project_insights'),
-        eq(schema.runs.status, 'running'),
-      ),
-    )
-    .limit(1);
-  if (existing) {
-    const STALE_MS = 60 * 60_000;
-    if (Date.now() - existing.startedAt.getTime() < STALE_MS) {
-      return { runId: existing.id, alreadyRunning: true };
-    }
-    // else: the running run is older than 1h and presumed orphaned; fall through
-    // and dispatch a fresh run (the boot reaper / a later finalize handles the old row).
+    .where(runningFilter)
+    .orderBy(desc(schema.runs.startedAt));
+  const newest = running[0];
+  if (newest && Date.now() - newest.startedAt.getTime() < STALE_MS) {
+    return { runId: newest.id, alreadyRunning: true };
+  }
+  if (running.length > 0) {
+    // All running rows are stale/orphaned; fail them so exactly one run stays live.
+    await db
+      .update(schema.runs)
+      .set({ status: 'failed', finishedAt: new Date(), error: 'superseded (orphaned)' })
+      .where(runningFilter);
   }
 
   const [run] = await db

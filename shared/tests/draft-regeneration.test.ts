@@ -210,6 +210,42 @@ describe('undoDraftRegeneration', () => {
     await undoDraftRegeneration(db, draft.id, { actor: 'user' });
     await expect(undoDraftRegeneration(db, draft.id, { actor: 'user' })).rejects.toThrow();
   });
+
+  it('rejects a second undo when a manual edit happened in between, and leaves the edit untouched', async () => {
+    const db = getDb();
+    const { draft } = await seedDraft();
+    await db.insert(schema.draftEvents).values({
+      draftId: draft.id,
+      event: 'regenerated',
+      actor: 'agent',
+      details: { previousBody: 'first take', previousTitle: null, regenerationCount: 1 },
+    });
+    await db
+      .update(schema.drafts)
+      .set({ body: 'rewritten', version: 1, regenerationCount: 1 })
+      .where(eq(schema.drafts.id, draft.id));
+
+    // First undo restores the pre-regeneration body.
+    await undoDraftRegeneration(db, draft.id, { actor: 'user' });
+
+    // The reviewer manually edits the restored body; this is unrelated to regeneration
+    // and must not reset the undo guard.
+    await db.insert(schema.draftEvents).values({
+      draftId: draft.id,
+      event: 'body_edited',
+      actor: 'user',
+      details: {},
+    });
+    await db
+      .update(schema.drafts)
+      .set({ body: 'manually edited body' })
+      .where(eq(schema.drafts.id, draft.id));
+
+    await expect(undoDraftRegeneration(db, draft.id, { actor: 'user' })).rejects.toThrow();
+
+    const [fresh] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draft.id));
+    expect(fresh.body).toBe('manually edited body');
+  });
 });
 
 describe('clearDraftRegenerationIfOwned', () => {

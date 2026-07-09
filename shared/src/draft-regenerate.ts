@@ -116,24 +116,30 @@ export async function undoDraftRegeneration(
   if (draft.regeneratingRunId != null)
     throw new Error(`draft ${draftId} is regenerating; cannot undo yet`);
 
-  const [lastEvt] = await db
-    .select()
-    .from(draftEvents)
-    .where(eq(draftEvents.draftId, draftId))
-    .orderBy(desc(draftEvents.id))
-    .limit(1);
-  if (lastEvt?.event === 'regeneration_undone')
-    throw new Error(`draft ${draftId} regeneration already undone`);
-
-  const [evt] = await db
+  // The regeneration to undo: the latest 'regenerated' event carrying a previous body.
+  const [latestRegen] = await db
     .select()
     .from(draftEvents)
     .where(and(eq(draftEvents.draftId, draftId), eq(draftEvents.event, 'regenerated')))
     .orderBy(desc(draftEvents.id))
     .limit(1);
-  const details = (evt?.details ?? {}) as { previousBody?: string; previousTitle?: string | null };
-  if (!evt || typeof details.previousBody !== 'string')
+  const details = (latestRegen?.details ?? {}) as {
+    previousBody?: string;
+    previousTitle?: string | null;
+  };
+  if (!latestRegen || typeof details.previousBody !== 'string')
     throw new Error(`draft ${draftId} has no previous body to restore`);
+  // Guard: don't undo the same regeneration twice. If the latest 'regeneration_undone'
+  // event is newer than that 'regenerated' event, this regeneration was already undone
+  // (a manual edit or anything else in between must not re-trigger a restore).
+  const [latestUndone] = await db
+    .select({ id: draftEvents.id })
+    .from(draftEvents)
+    .where(and(eq(draftEvents.draftId, draftId), eq(draftEvents.event, 'regeneration_undone')))
+    .orderBy(desc(draftEvents.id))
+    .limit(1);
+  if (latestUndone && latestUndone.id > latestRegen.id)
+    throw new Error(`draft ${draftId} regeneration already undone`);
 
   const version = await db.transaction(async (tx) => {
     const [updated] = await tx
@@ -150,7 +156,7 @@ export async function undoDraftRegeneration(
       draftId,
       event: 'regeneration_undone',
       actor: opts.actor ?? 'user',
-      details: { restoredFromEventId: evt.id },
+      details: { restoredFromEventId: latestRegen.id },
     });
 
     return updated.version;
