@@ -1,0 +1,38 @@
+# web ORIGIN + auth (adapter-node behind Caddy) + self-hosted cloud runner on the
+# same project network (web reaches it at ws://runner:8787).
+services:
+  web:
+    environment:
+      ORIGIN: ${PUBLIC_WEB_ORIGIN:-https://pitchbox.app}
+      PITCHBOX_AUTH: ${PITCHBOX_AUTH:-off}
+
+  runner:
+    build:
+      context: ./cloud/runner
+      dockerfile: Dockerfile
+      target: runtime
+    environment:
+      NODE_ENV: production
+      PORT: "8787"
+      RUNNER_HOST: 0.0.0.0
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN in .env}
+      RUNNER_MODEL: ${RUNNER_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      AGENT_CWD: /tmp/agent
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/runner:mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    mem_limit: ${RUNNER_MEM_LIMIT:-1g}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
