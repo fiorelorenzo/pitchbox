@@ -1,0 +1,55 @@
+# Blue-green web tier. web-blue/web-green share the image and env; only one is
+# "active" (Caddy points at its host port). The base `web` service is disabled
+# here (a profile nothing activates) and the daemon's web dependency is dropped
+# (!override) so it is not pulled back in; the daemon points at the active color
+# via ACTIVE_WEB, set by deploy.sh at cutover.
+x-web-common: &web-common
+  image: ${APP_IMAGE:-pitchbox-app:latest}
+  pull_policy: ${APP_PULL_POLICY:-build}
+  build:
+    context: .
+    dockerfile: Dockerfile.app
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  mem_limit: ${WEB_MEM_LIMIT:-2g}
+  depends_on:
+    postgres:
+      condition: service_healthy
+  environment:
+    PORT: ${WEB_PORT:-5180}
+    WEB_PORT: ${WEB_PORT:-5180}
+    PITCHBOX_ROOT: /app
+    DATABASE_URL: ${DATABASE_URL:-postgresql://pitchbox:pitchbox@postgres:5432/pitchbox}
+    ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+    PITCHBOX_EDITION: cloud
+    PITCHBOX_RUNNER_URL: ${PITCHBOX_RUNNER_URL:?set PITCHBOX_RUNNER_URL in .env}
+    PITCHBOX_RUNNER_TOKEN: ${PITCHBOX_RUNNER_TOKEN:-}
+    ORIGIN: ${PUBLIC_WEB_ORIGIN:-https://pitchbox.app}
+    PITCHBOX_AUTH: ${PITCHBOX_AUTH:-off}
+  healthcheck:
+    test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.WEB_PORT||5180)+'/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+    interval: 15s
+    timeout: 5s
+    retries: 5
+    start_period: 30s
+
+services:
+  web:
+    profiles: ["_disabled"]
+
+  daemon:
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+    environment:
+      PITCHBOX_WEB_URL: http://${ACTIVE_WEB:-web-blue}:${WEB_PORT:-5180}
+
+  web-blue:
+    <<: *web-common
+    container_name: pitchbox-web-blue
+    ports: ["${APP_BIND:-127.0.0.1}:${BLUE_PORT:-5180}:${WEB_PORT:-5180}"]
+
+  web-green:
+    <<: *web-common
+    container_name: pitchbox-web-green
+    ports: ["${APP_BIND:-127.0.0.1}:${GREEN_PORT:-5181}:${WEB_PORT:-5180}"]
