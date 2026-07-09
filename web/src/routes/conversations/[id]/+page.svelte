@@ -49,12 +49,28 @@
       state: string;
       parentMessageId: number | null;
       draftingRunId: number | null;
+      draftingRunStatus: string | null;
     } | null;
   };
 
   let { data }: { data: Data } = $props();
 
   const cp = $derived(getPresenter(data.thread.platform));
+
+  const isDrafting = $derived(
+    data.replyDraft?.draftingRunId != null && data.replyDraft?.draftingRunStatus === 'running',
+  );
+  const draftingFailed = $derived(
+    data.replyDraft?.draftingRunId != null &&
+      data.replyDraft?.draftingRunStatus != null &&
+      data.replyDraft?.draftingRunStatus !== 'running',
+  );
+
+  async function retryReplyDraft() {
+    if (!data.replyDraft) return;
+    await fetch(`/api/drafts/${data.replyDraft.id}/reply-draft/retry`, { method: 'POST' });
+    location.reload();
+  }
 </script>
 
 <Seo
@@ -171,8 +187,11 @@
             }}>Reject</Button
           >
         </form>
-        {#if data.replyDraft.draftingRunId != null}
+        {#if isDrafting}
           <span class="text-xs text-muted-foreground">Drafting reply…</span>
+        {:else if draftingFailed}
+          <span class="text-xs text-destructive">Reply drafting failed</span>
+          <Button size="sm" variant="outline" onclick={retryReplyDraft}>Retry</Button>
         {:else}
           <Button
             size="sm"

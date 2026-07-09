@@ -100,6 +100,7 @@ export interface PendingReplyDraft {
   state: string;
   parentMessageId: number | null;
   draftingRunId: number | null;
+  draftingRunStatus: string | null;
 }
 
 export async function loadPendingReplyDraft(
@@ -129,6 +130,14 @@ export async function loadPendingReplyDraft(
       .orderBy(desc(drafts.createdAt))
       .limit(1);
     if (row) {
+      let draftingRunStatus: string | null = null;
+      if (row.draftingRunId != null) {
+        const [runRow] = await db
+          .select({ status: runs.status })
+          .from(runs)
+          .where(eq(runs.id, row.draftingRunId));
+        draftingRunStatus = runRow?.status ?? null;
+      }
       return {
         id: row.id,
         kind: row.kind as ReplyKind,
@@ -136,6 +145,7 @@ export async function loadPendingReplyDraft(
         state: row.state,
         parentMessageId: row.parentMessageId,
         draftingRunId: row.draftingRunId,
+        draftingRunStatus,
       };
     }
   }
