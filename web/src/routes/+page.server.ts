@@ -1,8 +1,40 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
+import { listProjects } from '@pitchbox/shared/projects';
+import { resolveOrgId } from '$lib/server/auth.js';
 
-export async function load() {
+export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const db = getDb();
+
+  const orgId = await resolveOrgId(event);
+  const projects = await listProjects(db, { organizationId: orgId });
+  const projectIds = projects.map((p) => p.id);
+
+  // No projects in this org - nothing to show, and `inArray(x, [])` is a SQL error.
+  if (projectIds.length === 0) {
+    return {
+      stats: {
+        pending: 0,
+        approved: 0,
+        sent: 0,
+        rejected: 0,
+        total: 0,
+        sentToday: 0,
+        createdToday: 0,
+        uniqueContacts: 0,
+        replies: 0,
+      },
+      runStats7d: {
+        total: 0,
+        success: 0,
+        failed: 0,
+        running: 0,
+      },
+      recentRuns: [],
+      campaigns: [],
+      spend: { cost24h: 0, cost7d: 0 },
+    };
+  }
 
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -16,25 +48,39 @@ export async function load() {
       rejected: sql<number>`COUNT(*) FILTER (WHERE state = 'rejected')::int`,
       total: sql<number>`COUNT(*)::int`,
     })
-    .from(schema.drafts);
+    .from(schema.drafts)
+    .where(inArray(schema.drafts.projectId, projectIds));
 
   const [sentTodayRow] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(schema.drafts)
-    .where(and(eq(schema.drafts.state, 'sent'), gte(schema.drafts.sentAt, since24h)));
+    .where(
+      and(
+        eq(schema.drafts.state, 'sent'),
+        gte(schema.drafts.sentAt, since24h),
+        inArray(schema.drafts.projectId, projectIds),
+      ),
+    );
 
   const [createdTodayRow] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(schema.drafts)
-    .where(gte(schema.drafts.createdAt, since24h));
+    .where(
+      and(gte(schema.drafts.createdAt, since24h), inArray(schema.drafts.projectId, projectIds)),
+    );
 
   // ----- Contacts -----
+  // contact_history has no project_id of its own; every real row is created
+  // with a draft_id (see inbox/[id], extension dm-sync, extension sent
+  // routes), so join through drafts to scope to the org's projects.
   const [contactsRow] = await db
     .select({
-      unique: sql<number>`COUNT(DISTINCT (platform_id, target_user))::int`,
-      replied: sql<number>`COUNT(*) FILTER (WHERE replied_at IS NOT NULL)::int`,
+      unique: sql<number>`COUNT(DISTINCT (${schema.contactHistory.platformId}, ${schema.contactHistory.targetUser}))::int`,
+      replied: sql<number>`COUNT(*) FILTER (WHERE ${schema.contactHistory.repliedAt} IS NOT NULL)::int`,
     })
-    .from(schema.contactHistory);
+    .from(schema.contactHistory)
+    .innerJoin(schema.drafts, eq(schema.drafts.id, schema.contactHistory.draftId))
+    .where(inArray(schema.drafts.projectId, projectIds));
 
   // ----- Recent runs (campaign runs only - the widget is labelled
   // 'Last 5 campaign runs' so project_extraction / skill_generation runs
@@ -53,7 +99,7 @@ export async function load() {
     })
     .from(schema.runs)
     .innerJoin(schema.campaigns, eq(schema.runs.campaignId, schema.campaigns.id))
-    .where(eq(schema.runs.kind, 'campaign'))
+    .where(and(eq(schema.runs.kind, 'campaign'), inArray(schema.runs.projectId, projectIds)))
     .orderBy(desc(schema.runs.startedAt))
     .limit(5);
 
@@ -67,7 +113,8 @@ export async function load() {
         string | null
       >`COALESCE(SUM(cost_usd) FILTER (WHERE started_at >= ${since7d}), 0)`,
     })
-    .from(schema.runs);
+    .from(schema.runs)
+    .where(inArray(schema.runs.projectId, projectIds));
   const spend = {
     cost24h: Number(spendRow?.cost24h ?? 0),
     cost7d: Number(spendRow?.cost7d ?? 0),
@@ -85,7 +132,13 @@ export async function load() {
       running: sql<number>`COUNT(*) FILTER (WHERE status = 'running')::int`,
     })
     .from(schema.runs)
-    .where(and(gte(schema.runs.startedAt, since7d), eq(schema.runs.kind, 'campaign')));
+    .where(
+      and(
+        gte(schema.runs.startedAt, since7d),
+        eq(schema.runs.kind, 'campaign'),
+        inArray(schema.runs.projectId, projectIds),
+      ),
+    );
 
   // ----- Campaigns with derived last-run info -----
   // Derive from runs table so we don't depend on campaigns.last_run_at, which is
@@ -97,7 +150,8 @@ export async function load() {
       status: schema.campaigns.status,
       platformId: schema.campaigns.platformId,
     })
-    .from(schema.campaigns);
+    .from(schema.campaigns)
+    .where(inArray(schema.campaigns.projectId, projectIds));
 
   const allRuns = await db
     .select({
@@ -107,7 +161,7 @@ export async function load() {
       startedAt: schema.runs.startedAt,
     })
     .from(schema.runs)
-    .where(isNotNull(schema.runs.campaignId))
+    .where(and(isNotNull(schema.runs.campaignId), inArray(schema.runs.projectId, projectIds)))
     .orderBy(desc(schema.runs.startedAt));
 
   const latestRunByCampaign = new Map<number, (typeof allRuns)[number]>();

@@ -3,11 +3,16 @@ import { desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 import { detectAllRunners } from '@pitchbox/shared/agents/detect';
+import { listProjects } from '@pitchbox/shared/projects';
+import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
+import { resolveOrgId } from '$lib/server/auth.js';
 
-export const load: PageServerLoad = async ({ url }) => {
+export const load: PageServerLoad = async (event) => {
+  const { url } = event;
   const db = getDb();
+  const orgId = await resolveOrgId(event);
   const [projects, platforms] = await Promise.all([
-    db.select().from(schema.projects),
+    listProjects(db, { organizationId: orgId }),
     db.select().from(schema.platforms),
   ]);
 
@@ -26,7 +31,10 @@ export const load: PageServerLoad = async ({ url }) => {
         .select()
         .from(schema.campaignRecommendations)
         .where(eq(schema.campaignRecommendations.id, recId));
-      if (rec) {
+      // Only trust a recommendation resolved from a raw query-param id if its
+      // project belongs to the caller's org - otherwise silently ignore it
+      // rather than leaking another org's recommendation into the picker.
+      if (rec && orgId != null && (await projectBelongsToOrg(db, rec.projectId, orgId))) {
         preselected = {
           id: rec.id,
           projectId: rec.projectId,

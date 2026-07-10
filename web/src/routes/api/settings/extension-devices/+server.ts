@@ -1,8 +1,10 @@
-import { json } from '@sveltejs/kit';
-import { desc } from 'drizzle-orm';
+import { json, type RequestEvent } from '@sveltejs/kit';
+import { desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
+import { requireOrgId } from '$lib/server/auth.js';
 
-export async function GET() {
+export async function GET(event: RequestEvent) {
+  const orgId = await requireOrgId(event);
   const db = getDb();
   const rows = await db
     .select({
@@ -13,6 +15,7 @@ export async function GET() {
       revokedAt: schema.extensionDevices.revokedAt,
     })
     .from(schema.extensionDevices)
+    .where(eq(schema.extensionDevices.organizationId, orgId))
     .orderBy(desc(schema.extensionDevices.createdAt));
   return json({ devices: rows });
 }
