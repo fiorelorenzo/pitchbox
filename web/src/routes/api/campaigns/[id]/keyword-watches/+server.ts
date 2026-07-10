@@ -1,7 +1,10 @@
-import { json } from '@sveltejs/kit';
+import { json, error } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
+import { requireOrgId } from '$lib/server/auth.js';
+import { campaignBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const PostBody = z.object({
   subreddit: z
@@ -20,14 +23,19 @@ const PostBody = z.object({
     .optional(),
 });
 
-function parseId(idParam: string): number | null {
+function parseId(idParam: string | undefined): number | null {
   const n = Number(idParam);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-export async function GET({ params }) {
+export async function GET(event: RequestEvent) {
+  const { params } = event;
   const id = parseId(params.id);
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
+
+  const orgId = await requireOrgId(event);
+  if (!(await campaignBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+
   const db = getDb();
   const rows = await db
     .select()
@@ -37,9 +45,14 @@ export async function GET({ params }) {
   return json({ watches: rows });
 }
 
-export async function POST({ params, request }) {
+export async function POST(event: RequestEvent) {
+  const { params, request } = event;
   const id = parseId(params.id);
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
+
+  const orgId = await requireOrgId(event);
+  if (!(await campaignBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+
   const raw = await request.json().catch(() => null);
   const parsed = PostBody.safeParse(raw);
   if (!parsed.success) {
@@ -77,9 +90,14 @@ const PatchBody = z.object({
     .optional(),
 });
 
-export async function PATCH({ params, request }) {
+export async function PATCH(event: RequestEvent) {
+  const { params, request } = event;
   const id = parseId(params.id);
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
+
+  const orgId = await requireOrgId(event);
+  if (!(await campaignBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+
   const raw = await request.json().catch(() => null);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
@@ -96,9 +114,14 @@ export async function PATCH({ params, request }) {
   return json({ watch: row });
 }
 
-export async function DELETE({ params, url }) {
+export async function DELETE(event: RequestEvent) {
+  const { params, url } = event;
   const id = parseId(params.id);
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
+
+  const orgId = await requireOrgId(event);
+  if (!(await campaignBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+
   const watchId = Number(url.searchParams.get('watchId'));
   if (!Number.isInteger(watchId) || watchId <= 0) {
     return json({ error: 'invalid_watch_id' }, { status: 400 });

@@ -1,8 +1,11 @@
-import { json } from '@sveltejs/kit';
+import { json, error } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema } from '../../../../../../../lib/server/db.js';
+import { requireOrgId } from '$lib/server/auth.js';
+import { campaignBelongsToOrg } from '@pitchbox/shared/orgs';
 
-function parseId(idParam: string): number | null {
+function parseId(idParam: string | undefined): number | null {
   const n = Number(idParam);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
@@ -12,10 +15,14 @@ function parseId(idParam: string): number | null {
  * `run.params.generatedConfig` into `campaigns.config` and marks the run
  * `params.adopted = true`. The user pins the tuned skill body to the campaign.
  */
-export async function POST({ params }) {
+export async function POST(event: RequestEvent) {
+  const { params } = event;
   const id = parseId(params.id);
   const runId = parseId(params.runId);
   if (!id || !runId) return json({ error: 'invalid_id' }, { status: 400 });
+
+  const orgId = await requireOrgId(event);
+  if (!(await campaignBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
 
   const db = getDb();
   const [run] = await db

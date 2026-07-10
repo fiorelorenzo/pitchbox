@@ -1,8 +1,11 @@
-import { json } from '@sveltejs/kit';
+import { json, error } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { runCampaignSkillGeneration } from '$lib/server/runner.js';
+import { requireOrgId } from '$lib/server/auth.js';
+import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const Body = z.object({
   projectId: z.number().int().positive(),
@@ -14,7 +17,8 @@ const Body = z.object({
   cronExpression: z.string().min(1).optional(),
 });
 
-export async function POST({ request }) {
+export async function POST(event: RequestEvent) {
+  const { request } = event;
   const raw = await request.json().catch(() => null);
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
@@ -22,6 +26,9 @@ export async function POST({ request }) {
   }
   const body = parsed.data;
   const db = getDb();
+
+  const orgId = await requireOrgId(event);
+  if (!(await projectBelongsToOrg(db, body.projectId, orgId))) throw error(404, 'not_found');
 
   const [project] = await db
     .select()

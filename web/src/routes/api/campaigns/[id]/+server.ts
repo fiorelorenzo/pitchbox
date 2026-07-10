@@ -1,8 +1,11 @@
-import { json } from '@sveltejs/kit';
+import { json, error } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { getSchema } from '@pitchbox/shared/campaigns';
+import { requireOrgId } from '$lib/server/auth.js';
+import { campaignBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const Patch = z.object({
   name: z.string().min(1).max(120).optional(),
@@ -12,14 +15,19 @@ const Patch = z.object({
   config: z.unknown().optional(),
 });
 
-function parseId(idParam: string): number | null {
+function parseId(idParam: string | undefined): number | null {
   const n = Number(idParam);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-export async function PATCH({ params, request }) {
+export async function PATCH(event: RequestEvent) {
+  const { params, request } = event;
   const id = parseId(params.id);
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
+
+  const orgId = await requireOrgId(event);
+  if (!(await campaignBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+
   const raw = await request.json().catch(() => null);
   const parsed = Patch.safeParse(raw);
   if (!parsed.success) {

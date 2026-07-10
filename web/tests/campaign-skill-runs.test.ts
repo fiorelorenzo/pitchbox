@@ -62,10 +62,12 @@ async function seedCampaignAndRun(generated: Record<string, unknown> | null) {
 }
 
 function eventFor(id: number, runId: number) {
-  return { params: { id: String(id), runId: String(runId) } } as unknown as Parameters<
-    typeof adopt
-  >[0] &
-    Parameters<typeof discard>[0];
+  // `locals: {}` (no `org`) mirrors auth-off self-host: requireOrgId falls
+  // back to the seeded `default` org, under which these campaigns live.
+  return {
+    locals: {},
+    params: { id: String(id), runId: String(runId) },
+  } as unknown as Parameters<typeof adopt>[0] & Parameters<typeof discard>[0];
 }
 
 describe('campaign skill-runs adopt/discard', () => {
