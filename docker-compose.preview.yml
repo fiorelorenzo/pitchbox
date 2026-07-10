@@ -1,6 +1,13 @@
 # Preview-only overrides. Isolation comes from the compose project name
-# (`-p pitchbox-preview`); this file only removes the host Postgres port so it
-# does not clash with prod's 127.0.0.1:5434.
+# (`-p pitchbox-preview`), but the hardcoded container_names (postgres and the
+# web colors) are global, so they are re-scoped here to avoid clashing with
+# prod's containers. This file also drops the host Postgres port (prod binds
+# 127.0.0.1:5434).
 services:
   postgres:
+    container_name: pitchbox-preview-postgres
     ports: !override []
+  web-blue:
+    container_name: pitchbox-preview-web-blue
+  web-green:
+    container_name: pitchbox-preview-web-green

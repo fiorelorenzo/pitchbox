@@ -45,9 +45,20 @@ log "building..."; "${COMPOSE[@]}" build "web-$idle"
 
 # 3. start the idle color (image already built -> --no-build to skip slow re-export)
 log "starting web-$idle..."; "${COMPOSE[@]}" up -d --no-deps --no-build --force-recreate "web-$idle"
-
-# 4. health-check the idle color directly
 cid="$("${COMPOSE[@]}" ps -q "web-$idle")"
+
+# 4. migrate + seed BEFORE the health check: the healthcheck fetches / which queries
+#    the DB, so a fresh (unmigrated) DB would 500 and never go healthy. exec only
+#    needs the container running, not healthy.
+for _ in $(seq 1 20); do
+  rs="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || echo none)"
+  [ "$rs" = running ] && break; sleep 2
+done
+log "migrating..."
+"${COMPOSE[@]}" exec -T "web-$idle" pnpm -F @pitchbox/shared migrate
+"${COMPOSE[@]}" exec -T "web-$idle" pnpm -F @pitchbox/shared seed:core
+
+# 5. health-check the idle color (now that the DB is migrated)
 ok=0
 for _ in $(seq 1 40); do
   h="$(docker inspect -f '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo starting)"
@@ -58,11 +69,6 @@ if [ "$ok" != 1 ]; then
   "${COMPOSE[@]}" stop "web-$idle" || true; exit 1
 fi
 log "web-$idle healthy"
-
-# 5. migrate + seed against the new color
-log "migrating..."
-"${COMPOSE[@]}" exec -T "web-$idle" pnpm -F @pitchbox/shared migrate
-"${COMPOSE[@]}" exec -T "web-$idle" pnpm -F @pitchbox/shared seed:core
 
 # 6. flip caddy to idle (graceful reload = zero downtime)
 log "switching Caddy -> :$idle_port"
