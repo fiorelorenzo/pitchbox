@@ -1,5 +1,5 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
 
@@ -46,6 +46,11 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     .innerJoin(schema.platforms, eq(schema.platforms.id, schema.campaigns.platformId))
     .where(campaignScope);
 
+  // Runs carry their project either directly (runs.projectId) or transitively
+  // via their campaign (runs.campaignId -> campaigns.projectId - the
+  // kind:'campaign' runs shown here always take this second path, so
+  // runs.projectId is NULL for every one of them). Match on either, mirroring
+  // runBelongsToOrg (shared/src/orgs.ts).
   const latestRuns = await db
     .select({
       campaignId: schema.runs.campaignId,
@@ -56,7 +61,16 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       tokensUsed: schema.runs.tokensUsed,
     })
     .from(schema.runs)
-    .where(and(isNotNull(schema.runs.campaignId), inArray(schema.runs.projectId, projectIds)))
+    .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
+    .where(
+      and(
+        isNotNull(schema.runs.campaignId),
+        or(
+          inArray(schema.runs.projectId, projectIds),
+          inArray(schema.campaigns.projectId, projectIds),
+        ),
+      ),
+    )
     .orderBy(desc(schema.runs.startedAt));
 
   const latestRunByCampaign = new Map<number, (typeof latestRuns)[0]>();

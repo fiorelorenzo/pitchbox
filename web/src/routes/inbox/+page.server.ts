@@ -3,6 +3,7 @@ import { and, eq, desc, gte, inArray, type SQL } from 'drizzle-orm';
 import { getUsageForAccounts, loadQuotaLimits } from '@pitchbox/shared/quota';
 import { listProjects } from '@pitchbox/shared/projects';
 import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
+import { runBelongsToOrg } from '@pitchbox/shared/orgs';
 import { resolveOrgId } from '$lib/server/auth.js';
 import { hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
 
@@ -193,28 +194,27 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   } | null = null;
   let campaignInfo: { id: number; name: string } | null = null;
 
-  if (run) {
-    const [r] = await db
-      .select()
-      .from(schema.runs)
-      .where(and(eq(schema.runs.id, Number(run)), inArray(schema.runs.projectId, projectIds)));
-    if (r && r.campaignId != null) {
-      const [c] = await db
-        .select()
-        .from(schema.campaigns)
-        .where(
-          and(
-            eq(schema.campaigns.id, r.campaignId),
-            inArray(schema.campaigns.projectId, projectIds),
-          ),
-        );
-      runInfo = {
-        id: r.id,
-        campaignId: r.campaignId,
-        status: r.status,
-        startedAt: r.startedAt,
-        campaignName: c?.name ?? null,
-      };
+  if (run && orgId != null) {
+    // A run-scoped `inArray(runs.projectId, projectIds)` filter misses every
+    // kind:'campaign' run (runs.projectId is NULL for those - the project
+    // lives on runs.campaignId -> campaigns.projectId instead), so gate this
+    // by-id lookup with the helper that already matches both paths instead.
+    const runId = Number(run);
+    if (await runBelongsToOrg(db, runId, orgId)) {
+      const [r] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+      if (r && r.campaignId != null) {
+        const [c] = await db
+          .select()
+          .from(schema.campaigns)
+          .where(eq(schema.campaigns.id, r.campaignId));
+        runInfo = {
+          id: r.id,
+          campaignId: r.campaignId,
+          status: r.status,
+          startedAt: r.startedAt,
+          campaignName: c?.name ?? null,
+        };
+      }
     }
   }
   if (campaign) {

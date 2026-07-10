@@ -172,6 +172,45 @@ describe('route guards on aggregate/list loaders and extension-devices', () => {
       expect(data.stats.total).toBe(1);
     });
 
+    it('counts a campaign-kind run that only has campaignId set (no projectId), the way runCampaign actually creates it', async () => {
+      // Task 13c regression: runCampaign (web/src/lib/server/runner.ts) inserts
+      // runs with ONLY campaignId set - projectId is left NULL - so a filter on
+      // runs.projectId alone (`inArray`) silently drops every campaign run. The
+      // fixture above sets projectId explicitly and does not cover this.
+      const a = await seedOrgWithProject('rga-camp-a');
+      const b = await seedOrgWithProject('rga-camp-b');
+      const db = getDb();
+      const [bareRun] = await db
+        .insert(schema.runs)
+        .values({
+          campaignId: a.campaignId,
+          agentRunner: 'claude-code',
+          kind: 'campaign',
+          trigger: 'manual',
+          status: 'succeeded',
+          costUsd: '1.5000',
+        })
+        .returning();
+
+      const dataA = (await homeLoad(fakeEvent(a.orgId))) as {
+        recentRuns: { id: number }[];
+        campaigns: { id: number; lastRunId: number | null }[];
+        runStats7d: { total: number };
+        spend: { cost24h: number; cost7d: number };
+      };
+      const recentRunIdsA = dataA.recentRuns.map((r) => r.id);
+      expect(recentRunIdsA).toContain(bareRun.id);
+      const campaignA = dataA.campaigns.find((c) => c.id === a.campaignId);
+      expect(campaignA?.lastRunId).toBe(bareRun.id);
+      expect(dataA.runStats7d.total).toBeGreaterThanOrEqual(1);
+      expect(dataA.spend.cost7d).toBeGreaterThanOrEqual(1.5);
+
+      const dataB = (await homeLoad(fakeEvent(b.orgId))) as {
+        recentRuns: { id: number }[];
+      };
+      expect(dataB.recentRuns.map((r) => r.id)).not.toContain(bareRun.id);
+    });
+
     it('returns zeroed stats and empty lists for an org with no projects', async () => {
       const [org] = await getDb()
         .insert(schema.organizations)

@@ -1,5 +1,5 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { and, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
 
@@ -38,6 +38,18 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
 
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  // Runs carry their project either directly (runs.projectId - project_extraction,
+  // project_insights, draft_regeneration, reply_drafting) or transitively via their
+  // campaign (runs.campaignId -> campaigns.projectId - kind:'campaign',
+  // campaign_skill_generation). runs.campaignId is nullable and runs.projectId is
+  // NULL for every campaign run, so an `inArray(runs.projectId, ...)`-only filter
+  // silently drops the dominant run kind. Match on either path, mirroring
+  // runBelongsToOrg (shared/src/orgs.ts).
+  const runOrgMatch = or(
+    inArray(schema.runs.projectId, projectIds),
+    inArray(schema.campaigns.projectId, projectIds),
+  );
 
   // ----- Draft counts (single scan) -----
   const [draftCountsRow] = await db
@@ -99,7 +111,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     })
     .from(schema.runs)
     .innerJoin(schema.campaigns, eq(schema.runs.campaignId, schema.campaigns.id))
-    .where(and(eq(schema.runs.kind, 'campaign'), inArray(schema.runs.projectId, projectIds)))
+    .where(and(eq(schema.runs.kind, 'campaign'), runOrgMatch))
     .orderBy(desc(schema.runs.startedAt))
     .limit(5);
 
@@ -114,7 +126,8 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       >`COALESCE(SUM(cost_usd) FILTER (WHERE started_at >= ${since7d}), 0)`,
     })
     .from(schema.runs)
-    .where(inArray(schema.runs.projectId, projectIds));
+    .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
+    .where(runOrgMatch);
   const spend = {
     cost24h: Number(spendRow?.cost24h ?? 0),
     cost7d: Number(spendRow?.cost7d ?? 0),
@@ -127,18 +140,13 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const [runStats7d] = await db
     .select({
       total: sql<number>`COUNT(*)::int`,
-      success: sql<number>`COUNT(*) FILTER (WHERE status = 'success')::int`,
-      failed: sql<number>`COUNT(*) FILTER (WHERE status IN ('failed','error','cancelled'))::int`,
-      running: sql<number>`COUNT(*) FILTER (WHERE status = 'running')::int`,
+      success: sql<number>`COUNT(*) FILTER (WHERE ${schema.runs.status} = 'success')::int`,
+      failed: sql<number>`COUNT(*) FILTER (WHERE ${schema.runs.status} IN ('failed','error','cancelled'))::int`,
+      running: sql<number>`COUNT(*) FILTER (WHERE ${schema.runs.status} = 'running')::int`,
     })
     .from(schema.runs)
-    .where(
-      and(
-        gte(schema.runs.startedAt, since7d),
-        eq(schema.runs.kind, 'campaign'),
-        inArray(schema.runs.projectId, projectIds),
-      ),
-    );
+    .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
+    .where(and(gte(schema.runs.startedAt, since7d), eq(schema.runs.kind, 'campaign'), runOrgMatch));
 
   // ----- Campaigns with derived last-run info -----
   // Derive from runs table so we don't depend on campaigns.last_run_at, which is
@@ -161,7 +169,8 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       startedAt: schema.runs.startedAt,
     })
     .from(schema.runs)
-    .where(and(isNotNull(schema.runs.campaignId), inArray(schema.runs.projectId, projectIds)))
+    .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
+    .where(and(isNotNull(schema.runs.campaignId), runOrgMatch))
     .orderBy(desc(schema.runs.startedAt));
 
   const latestRunByCampaign = new Map<number, (typeof allRuns)[number]>();
