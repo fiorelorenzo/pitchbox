@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import type { RequestEvent } from '@sveltejs/kit';
+import { error, type RequestEvent } from '@sveltejs/kit';
 import { loadOrganizationForUser } from '@pitchbox/shared/auth';
 import { getDb, schema } from './db.js';
 
@@ -29,4 +29,15 @@ export async function resolveOrgId(event: RequestEvent): Promise<number | null> 
     .where(eq(schema.organizations.slug, 'default'))
     .limit(1);
   return row?.id ?? null;
+}
+
+/**
+ * Resolve the active organization id or fail the request. Use this at the top of
+ * every route that reads or mutates tenant-scoped data. With auth off it returns
+ * the default org, preserving single-tenant self-host behaviour.
+ */
+export async function requireOrgId(event: RequestEvent): Promise<number> {
+  const orgId = await resolveOrgId(event);
+  if (orgId == null) throw error(404, 'not_found');
+  return orgId;
 }

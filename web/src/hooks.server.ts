@@ -1,6 +1,7 @@
 import { getDb, schema } from '$lib/server/db.js';
 import { eq } from 'drizzle-orm';
-import { loadSession, loadOrganizationForUser } from '@pitchbox/shared/auth';
+import { loadSession } from '@pitchbox/shared/auth';
+import { loadActiveOrganization } from '@pitchbox/shared/orgs';
 
 /**
  * One-shot cleanup on server boot.
@@ -149,7 +150,11 @@ export const handle = async ({ event, resolve }) => {
     // accepting an invite has no membership yet.
     const path = event.url.pathname;
     const orgExempt = path.startsWith('/invite/') || path.startsWith('/api/orgs/');
-    const org = await loadOrganizationForUser(getDb(), session.userId);
+    const org = await loadActiveOrganization(
+      getDb(),
+      session.userId,
+      session.activeOrganizationId ?? null,
+    );
     if (org) {
       event.locals.org = org;
     } else if (!orgExempt) {
