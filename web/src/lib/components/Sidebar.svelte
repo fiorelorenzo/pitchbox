@@ -18,7 +18,7 @@
 		type LucideIcon,
 	} from '@lucide/svelte';
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { dev } from '$app/environment';
 	import { cn } from '$lib/utils';
 	import SystemStatusCard from '$lib/components/SystemStatusCard.svelte';
@@ -78,6 +78,39 @@
 	// Surfaced by web/src/routes/+layout.server.ts; falls back to `true` so
 	// nothing breaks if the loader hasn't run yet.
 	const authOn = $derived(($page.data?.authOn ?? true) as boolean);
+
+	// Organization switcher: only meaningful when auth is on and the caller
+	// has at least one membership (both surfaced by the root layout loader).
+	type OrgSummary = { id: number; slug: string; name: string; role: string };
+	const orgs = $derived(($page.data?.orgs ?? []) as OrgSummary[]);
+	const activeOrgId = $derived(($page.data?.org as { id: number } | undefined)?.id);
+
+	async function switchOrg(e: Event) {
+		const organizationId = Number((e.currentTarget as HTMLSelectElement).value);
+		await fetch('/api/orgs/switch', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ organizationId }),
+		});
+		await invalidateAll();
+	}
+
+	async function createOrg() {
+		const name = prompt('Organization name');
+		if (!name) return;
+		const slug = name
+			.trim()
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-|-$/g, '');
+		const res = await fetch('/api/orgs', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ slug, name }),
+		});
+		if (res.ok) await invalidateAll();
+		else alert('Could not create organization');
+	}
 </script>
 
 <aside class="w-60 h-full bg-background border-r border-border flex flex-col p-4 overflow-hidden min-h-0">
@@ -86,6 +119,30 @@
 		<img src="/favicon.svg" alt="" class="size-7 shrink-0" aria-hidden="true" />
 		<h1 class="font-semibold text-lg">Pitchbox</h1>
 	</div>
+
+	<!-- Organization switcher: shown only when auth is on and the caller has
+	     at least one membership. -->
+	{#if authOn && orgs.length > 0}
+		<div class="mb-4">
+			<select
+				class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+				value={activeOrgId}
+				onchange={switchOrg}
+				aria-label="Active organization"
+			>
+				{#each orgs as org (org.id)}
+					<option value={org.id}>{org.name}</option>
+				{/each}
+			</select>
+			<button
+				type="button"
+				onclick={createOrg}
+				class="mt-1 px-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+			>
+				+ New organization
+			</button>
+		</div>
+	{/if}
 
 	<!-- Nav links. min-h-0 lets nav shrink under flex pressure so the footer
 	     status card always stays visible; only the nav itself can scroll if a
