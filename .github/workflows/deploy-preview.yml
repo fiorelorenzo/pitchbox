@@ -1,0 +1,27 @@
+name: deploy-preview
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+concurrency:
+  group: prodbox-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: [self-hosted, prodbox]
+    steps:
+      - name: Checkout the tested commit (umbrella only)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          submodules: false
+      - name: Fetch private submodules via deploy keys
+        run: git submodule update --init --recursive
+      - name: Sync source into the preview deploy dir
+        run: |
+          rsync -a --exclude '.git' --exclude '.env' --exclude 'node_modules' \
+            ./ /opt/apps/pitchbox-preview/
+      - name: Blue-green deploy (preview)
+        run: /opt/apps/pitchbox-preview/scripts/deploy.sh preview "main-${{ github.event.workflow_run.head_sha }}"
