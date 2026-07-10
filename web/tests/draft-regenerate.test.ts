@@ -69,7 +69,9 @@ describe('POST /api/drafts/[id]/regenerate (guards)', () => {
   beforeEach(reset);
 
   it('rejects an invalid id with 400', async () => {
-    await expect(POST({ params: { id: 'abc' }, request: req({}) } as never)).rejects.toMatchObject({
+    await expect(
+      POST({ params: { id: 'abc' }, request: req({}), locals: {} } as never),
+    ).rejects.toMatchObject({
       status: 400,
     });
   });
@@ -77,7 +79,7 @@ describe('POST /api/drafts/[id]/regenerate (guards)', () => {
   it('rejects a non-pending draft (does not dispatch)', async () => {
     const draft = await seedDraft('approved');
     await expect(
-      POST({ params: { id: String(draft.id) }, request: req({ hint: 'x' }) } as never),
+      POST({ params: { id: String(draft.id) }, request: req({ hint: 'x' }), locals: {} } as never),
     ).rejects.toMatchObject({ status: 400 });
     // No run was created for the draft.
     const runs = await getDb()

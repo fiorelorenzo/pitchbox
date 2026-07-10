@@ -67,6 +67,7 @@ describe('PATCH /api/drafts/[id]', () => {
     const res = await PATCH({
       params: { id: String(draft.id) },
       request: makeRequest({ body: 'rewritten body', version: draft.version }),
+      locals: {},
     } as never);
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -95,6 +96,7 @@ describe('PATCH /api/drafts/[id]', () => {
     const res = await PATCH({
       params: { id: String(draft.id) },
       request: makeRequest({ body: 'late edit', version: draft.version }),
+      locals: {},
     } as never);
     expect(res.status).toBe(409);
     const body = await res.json();

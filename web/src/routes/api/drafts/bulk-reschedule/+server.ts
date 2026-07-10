@@ -1,8 +1,10 @@
 import { json, error } from '@sveltejs/kit';
-import { inArray } from 'drizzle-orm';
+import type { RequestEvent } from '@sveltejs/kit';
+import { and, eq, inArray } from 'drizzle-orm';
 import { getDb, schema } from '../../../../lib/server/db.js';
 import { updateDraftWithVersion } from '../../../../lib/server/draft-state.js';
 import { emit } from '../../../../lib/server/events.js';
+import { requireOrgId } from '$lib/server/auth.js';
 
 // Bulk reschedule: set `scheduled_send_after` so a batch of drafts is held back
 // from "ready to send" until the chosen timestamp. Only meaningful while the
@@ -11,7 +13,8 @@ type BulkBody = { ids?: unknown; send_after?: unknown };
 
 const RESCHEDULABLE_STATES = new Set(['proposed', 'pending_review', 'approved']);
 
-export async function POST({ request }: { request: Request }) {
+export async function POST(event: RequestEvent) {
+  const { request } = event;
   const payload = (await request.json().catch(() => null)) as BulkBody | null;
   if (!payload || !Array.isArray(payload.ids) || payload.ids.length === 0) {
     throw error(400, 'ids is required');
@@ -28,9 +31,14 @@ export async function POST({ request }: { request: Request }) {
     .filter((n) => Number.isInteger(n) && n > 0);
   if (ids.length === 0) throw error(400, 'no valid ids');
 
+  const orgId = await requireOrgId(event);
   const db = getDb();
-  const drafts = await db.select().from(schema.drafts).where(inArray(schema.drafts.id, ids));
-  const byId = new Map(drafts.map((d) => [d.id, d]));
+  const drafts = await db
+    .select()
+    .from(schema.drafts)
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.drafts.projectId))
+    .where(and(inArray(schema.drafts.id, ids), eq(schema.projects.organizationId, orgId)));
+  const byId = new Map(drafts.map((row) => [row.drafts.id, row.drafts]));
 
   const results: Array<{ id: number; status: 'ok' | 'skipped'; reason?: string }> = [];
 

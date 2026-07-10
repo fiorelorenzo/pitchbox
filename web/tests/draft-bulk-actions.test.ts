@@ -72,6 +72,7 @@ describe('POST /api/drafts/bulk-approve', () => {
     const ids = drafts.map((d) => d.id);
     const res = await bulkApprove({
       request: makeRequest('/api/drafts/bulk-approve', { ids }),
+      locals: {},
     } as never);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -102,6 +103,7 @@ describe('POST /api/drafts/bulk-reschedule', () => {
     const sendAfter = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const res = await bulkReschedule({
       request: makeRequest('/api/drafts/bulk-reschedule', { ids, send_after: sendAfter }),
+      locals: {},
     } as never);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {

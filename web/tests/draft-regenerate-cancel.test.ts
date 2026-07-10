@@ -71,7 +71,7 @@ describe('POST /api/drafts/[id]/regenerate/cancel', () => {
   it('clears a stale regenerating flag when the in-memory cancel handle is gone', async () => {
     const { draft } = await seedRegenerating();
     // In a fresh test process the runCancels map is empty, so cancelRun returns false.
-    const res = await POST({ params: { id: String(draft.id) } } as never);
+    const res = await POST({ params: { id: String(draft.id) }, locals: {} } as never);
     expect(res.status).toBe(200);
     const [fresh] = await getDb()
       .select()
@@ -86,7 +86,7 @@ describe('POST /api/drafts/[id]/regenerate/cancel', () => {
       .update(schema.drafts)
       .set({ regeneratingRunId: null })
       .where(eq(schema.drafts.id, draft.id));
-    const res = await POST({ params: { id: String(draft.id) } } as never);
+    const res = await POST({ params: { id: String(draft.id) }, locals: {} } as never);
     expect(res.status).toBe(409);
   });
 });

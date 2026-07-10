@@ -72,7 +72,7 @@ describe('POST /api/drafts/[id]/reply-draft/cancel', () => {
   it('marks an orphaned running drafting run cancelled WITHOUT clearing the flag', async () => {
     const { reply, run } = await seedDrafting();
     // Fresh test process: runCancels map is empty, so cancelRun returns false (orphaned).
-    const res = await POST({ params: { id: String(reply.id) } } as never);
+    const res = await POST({ params: { id: String(reply.id) }, locals: {} } as never);
     expect(res.status).toBe(200);
     const [freshRun] = await getDb().select().from(schema.runs).where(eq(schema.runs.id, run.id));
     expect(freshRun.status).toBe('cancelled');
@@ -90,7 +90,7 @@ describe('POST /api/drafts/[id]/reply-draft/cancel', () => {
       .update(schema.drafts)
       .set({ draftingRunId: null })
       .where(eq(schema.drafts.id, reply.id));
-    const res = await POST({ params: { id: String(reply.id) } } as never);
+    const res = await POST({ params: { id: String(reply.id) }, locals: {} } as never);
     expect(res.status).toBe(409);
   });
 });

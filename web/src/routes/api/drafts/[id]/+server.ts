@@ -1,8 +1,11 @@
 import { json, error } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '../../../../lib/server/db.js';
 import { updateDraftWithVersion } from '../../../../lib/server/draft-state.js';
 import { emit } from '../../../../lib/server/events.js';
+import { requireOrgId } from '$lib/server/auth.js';
+import { draftBelongsToOrg } from '@pitchbox/shared/orgs';
 
 // Inline body edit before approval. Allowed only while the draft is in
 // `proposed` or `pending_review`. Bumps version + sets body_edited and emits a
@@ -11,9 +14,13 @@ const EDITABLE_STATES = new Set(['proposed', 'pending_review']);
 
 type PatchBody = { body?: string; version?: number };
 
-export async function PATCH({ params, request }: { params: { id: string }; request: Request }) {
+export async function PATCH(event: RequestEvent) {
+  const { params, request } = event;
   const id = Number(params.id);
   if (!Number.isInteger(id) || isNaN(id)) throw error(400, 'invalid id');
+
+  const orgId = await requireOrgId(event);
+  if (!(await draftBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
 
   const payload = (await request.json().catch(() => null)) as PatchBody | null;
   if (!payload || typeof payload.body !== 'string' || payload.body.trim().length === 0) {
