@@ -1,0 +1,23 @@
+name: deploy-prod
+on:
+  push:
+    tags: ['v*']
+concurrency:
+  group: prodbox-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: [self-hosted, prodbox]
+    steps:
+      - name: Checkout tag (umbrella only)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Fetch private submodules via deploy keys
+        run: git submodule update --init --recursive
+      - name: Sync source into the deploy dir
+        run: |
+          rsync -a --exclude '.git' --exclude '.env' --exclude 'node_modules' \
+            ./ /opt/apps/pitchbox/
+      - name: Blue-green deploy
+        run: /opt/apps/pitchbox/scripts/deploy.sh prod "${GITHUB_REF_NAME}"
