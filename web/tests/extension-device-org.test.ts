@@ -14,6 +14,10 @@ import { GET as extensionDevicesGet } from '../src/routes/api/settings/extension
  * (auto-pair GET, which used the deprecated loadOrganizationForUser).
  */
 
+// Captured at import time (before any test mutates it) so afterAll can restore
+// it and this file doesn't leak PITCHBOX_AUTH into other test files' workers.
+const originalAuth = process.env.PITCHBOX_AUTH;
+
 async function reset() {
   const db = getDb();
   await db.execute(sql`DELETE FROM extension_pairings`);
@@ -126,5 +130,7 @@ describe('extension device/pairing org attribution', () => {
 });
 
 afterAll(async () => {
+  if (originalAuth === undefined) delete process.env.PITCHBOX_AUTH;
+  else process.env.PITCHBOX_AUTH = originalAuth;
   await getPool().end();
 });
