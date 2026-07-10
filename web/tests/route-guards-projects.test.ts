@@ -72,6 +72,34 @@ async function seedOrgWithProject(slug: string) {
   };
 }
 
+// A project_extraction run has projectId set and campaignId NULL (see
+// runProjectExtraction in web/src/lib/server/runner.ts). runBelongsToOrg must
+// resolve the org for this shape too, not just campaign-backed runs.
+async function seedOrgWithExtractionRun(slug: string) {
+  const db = getDb();
+  const [org] = await db.insert(schema.organizations).values({ slug, name: slug }).returning();
+  const [project] = await db
+    .insert(schema.projects)
+    .values({
+      organizationId: org.id,
+      slug: `${slug}-proj`,
+      name: `${slug} project`,
+      defaultAgentRunner: 'claude-code',
+    })
+    .returning();
+  const [run] = await db
+    .insert(schema.runs)
+    .values({
+      kind: 'project_extraction',
+      projectId: project.id,
+      agentRunner: 'claude-code',
+      trigger: 'manual',
+      status: 'succeeded',
+    })
+    .returning();
+  return { orgId: org.id, projectId: project.id, runId: run.id };
+}
+
 function orgLocals(orgId: number) {
   return { org: { id: orgId, slug: 'x', role: 'owner' } };
 }
@@ -125,5 +153,21 @@ describe('projects subtree and runs route guards', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.runId).toBe(a.runId);
+  });
+
+  it('GET /api/runs/[id]/events succeeds for a non-campaign run (project_extraction) owned by the caller org', async () => {
+    const a = await seedOrgWithExtractionRun('rgr-pe-a');
+    const res = await runEventsGet(runEventsEvent(a.orgId, a.runId));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.runId).toBe(a.runId);
+  });
+
+  it('GET /api/runs/[id]/events rejects a non-campaign run (project_extraction) owned by another org with 404', async () => {
+    const a = await seedOrgWithExtractionRun('rgr-pe-b');
+    const b = await seedOrgWithExtractionRun('rgr-pe-c');
+    await expect(runEventsGet(runEventsEvent(b.orgId, a.runId))).rejects.toMatchObject({
+      status: 404,
+    });
   });
 });

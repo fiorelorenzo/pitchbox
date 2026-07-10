@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import {
   campaigns,
@@ -60,12 +60,21 @@ export async function draftBelongsToOrg(db: Db, draftId: number, orgId: number):
   return !!row;
 }
 
+/**
+ * Resolves a run's org and checks it matches `orgId`. Runs carry their
+ * project either directly (`runs.projectId` - project_extraction,
+ * project_insights, draft_regeneration, reply_drafting) or transitively via
+ * their campaign (`runs.campaignId` -> campaigns.projectId - campaign,
+ * campaign_skill_generation runs). `runs.campaignId` is nullable, so a plain
+ * inner join through `campaigns` misses every non-campaign run kind; match on
+ * either path instead.
+ */
 export async function runBelongsToOrg(db: Db, runId: number, orgId: number): Promise<boolean> {
   const [row] = await db
     .select({ id: runs.id })
     .from(runs)
-    .innerJoin(campaigns, eq(campaigns.id, runs.campaignId))
-    .innerJoin(projects, eq(projects.id, campaigns.projectId))
+    .leftJoin(campaigns, eq(campaigns.id, runs.campaignId))
+    .innerJoin(projects, or(eq(projects.id, runs.projectId), eq(projects.id, campaigns.projectId)))
     .where(and(eq(runs.id, runId), eq(projects.organizationId, orgId)))
     .limit(1);
   return !!row;
