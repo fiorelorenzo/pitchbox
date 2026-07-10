@@ -1,0 +1,6 @@
+# Preview-only overrides. Isolation comes from the compose project name
+# (`-p pitchbox-preview`); this file only removes the host Postgres port so it
+# does not clash with prod's 127.0.0.1:5434.
+services:
+  postgres:
+    ports: !override []

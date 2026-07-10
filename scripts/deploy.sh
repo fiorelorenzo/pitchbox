@@ -27,6 +27,10 @@ COMPOSE=(docker compose -p "$PROJECT"
   -f docker-compose.app.runner.yml -f docker-compose.bluegreen.yml "${EXTRA[@]}")
 log(){ echo "[deploy $ENV $REF] $*"; }
 
+# 0. ensure shared services are up (postgres + runner); builds runner if its image is missing
+log "ensuring postgres + runner up..."
+"${COMPOSE[@]}" up -d postgres runner
+
 # 1. active/idle from the caddy upstream file
 active_port="$(grep -oE '127\.0\.0\.1:[0-9]+' "$UPSTREAM" 2>/dev/null | head -1 | cut -d: -f2 || true)"
 if [ "$active_port" = "$GREEN_PORT" ]; then
