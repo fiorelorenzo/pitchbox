@@ -1,5 +1,13 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 export default defineConfig({
+  // SvelteKit's `$lib` alias so tests can import server route handlers
+  // (`web/src/routes/**/+server.ts`) that resolve `$lib/server/...` at module load.
+  resolve: {
+    alias: {
+      $lib: fileURLToPath(new URL('./web/src/lib', import.meta.url)),
+    },
+  },
   test: {
     include: ['**/tests/**/*.test.ts'],
     environment: 'node',
