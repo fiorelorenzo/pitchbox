@@ -1,5 +1,8 @@
 import { error } from '@sveltejs/kit';
+import { getDb } from '$lib/server/db.js';
 import { streamCsv, type ResourceName } from '$lib/server/export-csv.js';
+import { listProjects } from '@pitchbox/shared/projects';
+import { resolveOrgId } from '$lib/server/auth.js';
 
 const SUPPORTED: ResourceName[] = ['drafts', 'contacts', 'conversations'];
 
@@ -13,5 +16,8 @@ export async function GET(event: import('@sveltejs/kit').RequestEvent): Promise<
   if (format !== 'csv') {
     throw error(400, `Unsupported format: ${format}`);
   }
-  return streamCsv(resource, url.searchParams);
+  const orgId = await resolveOrgId(event);
+  const projects = await listProjects(getDb(), { organizationId: orgId });
+  const projectIds = projects.map((p) => p.id);
+  return streamCsv(resource, url.searchParams, projectIds);
 }

@@ -118,7 +118,7 @@ describe('streamCsv', () => {
   beforeEach(reset);
 
   it('drafts: emits header in the documented column order', async () => {
-    const res = streamCsv('drafts', new URLSearchParams('state=all'));
+    const res = streamCsv('drafts', new URLSearchParams('state=all'), []);
     const rows = parseCsv(await bodyOf(res));
     expect(rows[0]).toEqual([...DRAFTS_COLUMNS]);
   });
@@ -183,7 +183,7 @@ describe('streamCsv', () => {
       metadata: { subreddit: 'rpg' },
     });
 
-    const res = streamCsv('drafts', new URLSearchParams('state=all'));
+    const res = streamCsv('drafts', new URLSearchParams('state=all'), [project.id]);
     const text = await bodyOf(res);
     const rows = parseCsv(text);
     expect(rows[0]).toEqual([...DRAFTS_COLUMNS]);
@@ -261,12 +261,16 @@ describe('streamCsv', () => {
       },
     ]);
 
-    const sentOnly = parseCsv(await bodyOf(streamCsv('drafts', new URLSearchParams('state=sent'))));
+    const sentOnly = parseCsv(
+      await bodyOf(streamCsv('drafts', new URLSearchParams('state=sent'), [project.id])),
+    );
     // Header + 1 data row.
     expect(sentOnly.length).toBe(2);
     expect(sentOnly[1][2]).toBe('sent');
 
-    const allRows = parseCsv(await bodyOf(streamCsv('drafts', new URLSearchParams('state=all'))));
+    const allRows = parseCsv(
+      await bodyOf(streamCsv('drafts', new URLSearchParams('state=all'), [project.id])),
+    );
     expect(allRows.length).toBe(3);
   });
 
@@ -299,7 +303,7 @@ describe('streamCsv', () => {
       },
     ]);
 
-    const rows = parseCsv(await bodyOf(streamCsv('contacts', new URLSearchParams())));
+    const rows = parseCsv(await bodyOf(streamCsv('contacts', new URLSearchParams(), [])));
     expect(rows[0]).toEqual([...CONTACTS_COLUMNS]);
     expect(rows.length).toBe(4);
 
@@ -338,7 +342,7 @@ describe('streamCsv', () => {
       },
     ]);
 
-    const rows = parseCsv(await bodyOf(streamCsv('contacts', new URLSearchParams('q=alice'))));
+    const rows = parseCsv(await bodyOf(streamCsv('contacts', new URLSearchParams('q=alice'), [])));
     expect(rows.length).toBe(2);
     expect(rows[1][3]).toBe('alice_smith');
   });
@@ -426,7 +430,7 @@ describe('streamCsv', () => {
       },
     ]);
 
-    const rows = parseCsv(await bodyOf(streamCsv('conversations', new URLSearchParams())));
+    const rows = parseCsv(await bodyOf(streamCsv('conversations', new URLSearchParams(), [])));
     expect(rows[0]).toEqual([...CONVERSATIONS_COLUMNS]);
     expect(rows.length).toBe(2);
     const row = rows[1];
@@ -461,7 +465,7 @@ describe('streamCsv', () => {
     ]);
 
     const rows = parseCsv(
-      await bodyOf(streamCsv('conversations', new URLSearchParams('filter=replied'))),
+      await bodyOf(streamCsv('conversations', new URLSearchParams('filter=replied'), [])),
     );
     // Header + alice only.
     expect(rows.length).toBe(2);
@@ -469,7 +473,7 @@ describe('streamCsv', () => {
   });
 
   it('Content-Disposition advertises a .csv attachment', async () => {
-    const res = streamCsv('drafts', new URLSearchParams('state=all'));
+    const res = streamCsv('drafts', new URLSearchParams('state=all'), []);
     expect(res.headers.get('content-type')).toContain('text/csv');
     expect(res.headers.get('content-disposition')).toMatch(/attachment; filename="drafts-.*\.csv"/);
   });

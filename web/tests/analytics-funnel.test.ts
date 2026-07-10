@@ -68,7 +68,7 @@ describe('GET /api/analytics/funnel', () => {
     const { campaignId } = await seed();
 
     const url = new URL(`http://localhost/api/analytics/funnel?campaign_id=${campaignId}`);
-    const response = await GET({ url } as Parameters<typeof GET>[0]);
+    const response = await GET({ url, locals: {} } as Parameters<typeof GET>[0]);
     const body = (await response.json()) as { stages: { stage: string; count: number }[] };
 
     // Manual SQL aggregation against the same dataset.

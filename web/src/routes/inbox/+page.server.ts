@@ -27,6 +27,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const chatSyncUnauthorized = await hasChatUnauthorizedDevice();
   const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
   const projectsForUi = projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name }));
+  const projectIds = projects.map((p) => p.id);
 
   const allPlatforms = await db
     .select({ id: schema.platforms.id, slug: schema.platforms.slug })
@@ -34,6 +35,27 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const activePlatform = platformSlugFilter
     ? (allPlatforms.find((p) => p.slug === platformSlugFilter) ?? null)
     : null;
+
+  // No projects in this org - render an empty inbox. `inArray(x, [])` is a SQL error.
+  if (projectIds.length === 0) {
+    return {
+      drafts: [],
+      state,
+      kind,
+      run: null,
+      campaign,
+      runInfo: null,
+      campaignInfo: null,
+      usage: {},
+      quotaLimitsByPlatform: {},
+      projects: projectsForUi,
+      activeProject,
+      platforms: allPlatforms,
+      activePlatform,
+      chatSyncUnauthorized,
+      qualityRubric,
+    };
+  }
 
   if (platformSlugFilter && !activePlatform) {
     return {
@@ -55,7 +77,9 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     };
   }
 
-  const filters: SQL[] = state !== 'all' ? [eq(schema.drafts.state, state)] : [];
+  // Mandatory org scope - applies even with no project selected.
+  const filters: SQL[] = [inArray(schema.drafts.projectId, projectIds)];
+  if (state !== 'all') filters.push(eq(schema.drafts.state, state));
   if (kind) filters.push(eq(schema.drafts.kind, kind));
   if (activeProject) filters.push(eq(schema.drafts.projectId, activeProject.id));
   if (activePlatform) filters.push(eq(schema.drafts.platformId, activePlatform.id));

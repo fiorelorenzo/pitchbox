@@ -104,9 +104,12 @@ export function parseConversationFilters(params: URLSearchParams): ConversationF
 
 async function* draftRows(
   filters: DraftFilters,
+  projectIds: number[],
 ): AsyncGenerator<readonly unknown[], void, unknown> {
+  // No projects in this org - nothing to export. `inArray(x, [])` is a SQL error.
+  if (projectIds.length === 0) return;
   const db = getDb();
-  const sqlFilters: SQL[] = [];
+  const sqlFilters: SQL[] = [inArray(schema.drafts.projectId, projectIds)];
   if (filters.state && filters.state !== 'all') {
     sqlFilters.push(eq(schema.drafts.state, filters.state));
   }
@@ -314,13 +317,24 @@ async function* conversationRows(
   }
 }
 
-export function streamCsv(resource: ResourceName, params: URLSearchParams): Response {
+/**
+ * `projectIds` scopes the export to the active organization's projects. Only
+ * `drafts` carries a `project_id` column directly, so it is the only resource
+ * filtered here; `contacts`/`conversations` are backed by `contact_history` /
+ * `messages`, which have no project column and stay global by design (see
+ * "Residual risks" in `docs/organization-isolation-design.md`).
+ */
+export function streamCsv(
+  resource: ResourceName,
+  params: URLSearchParams,
+  projectIds: number[],
+): Response {
   let header: readonly string[];
   let gen: AsyncGenerator<readonly unknown[], void, unknown>;
   switch (resource) {
     case 'drafts':
       header = DRAFTS_COLUMNS;
-      gen = draftRows(parseDraftFilters(params));
+      gen = draftRows(parseDraftFilters(params), projectIds);
       break;
     case 'contacts':
       header = CONTACTS_COLUMNS;

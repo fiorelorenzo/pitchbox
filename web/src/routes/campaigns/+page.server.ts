@@ -1,5 +1,5 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
 
@@ -11,6 +11,16 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const orgId = await resolveOrgId(event);
   const projects = await listProjects(db, { organizationId: orgId });
   const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
+  const projectIds = projects.map((p) => p.id);
+
+  // No projects in this org - nothing to show, and `inArray(x, [])` is a SQL error.
+  if (projectIds.length === 0) {
+    return { campaigns: [], projects: [], activeProject: null };
+  }
+
+  const campaignScope = activeProject
+    ? eq(schema.campaigns.projectId, activeProject.id)
+    : inArray(schema.campaigns.projectId, projectIds);
 
   const campaignRows = await db
     .select({
@@ -34,7 +44,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     .from(schema.campaigns)
     .innerJoin(schema.projects, eq(schema.projects.id, schema.campaigns.projectId))
     .innerJoin(schema.platforms, eq(schema.platforms.id, schema.campaigns.platformId))
-    .where(activeProject ? eq(schema.campaigns.projectId, activeProject.id) : undefined);
+    .where(campaignScope);
 
   const latestRuns = await db
     .select({
@@ -46,7 +56,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       tokensUsed: schema.runs.tokensUsed,
     })
     .from(schema.runs)
-    .where(isNotNull(schema.runs.campaignId))
+    .where(and(isNotNull(schema.runs.campaignId), inArray(schema.runs.projectId, projectIds)))
     .orderBy(desc(schema.runs.startedAt));
 
   const latestRunByCampaign = new Map<number, (typeof latestRuns)[0]>();
@@ -67,7 +77,12 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
         count: sql<number>`cast(count(*) as int)`,
       })
       .from(schema.drafts)
-      .where(inArray(schema.drafts.runId, latestRunIds))
+      .where(
+        and(
+          inArray(schema.drafts.runId, latestRunIds),
+          inArray(schema.drafts.projectId, projectIds),
+        ),
+      )
       .groupBy(schema.drafts.runId);
     for (const row of counts) draftCounts[row.runId] = row.count;
   }
