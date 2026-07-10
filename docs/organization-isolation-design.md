@@ -41,7 +41,7 @@ organization, there is no switcher, and behaviour is unchanged.
   runtime assumes one org per user. `resolveOrgId` (`web/src/lib/server/auth.ts:17-32`)
   falls back to the `default` org when there is no session (self-host path).
 - Two concrete leaks: `campaigns/+page.server.ts:34-37` and
-  `inbox/+page.server.ts:58-61` only filter by the *selected project*, so with no
+  `inbox/+page.server.ts:58-61` only filter by the _selected project_, so with no
   project selected they return rows across all orgs. By-id routes such as
   `/api/drafts/[id]` and `/api/run` fetch by raw id with no tenant check.
 - The auth/orgs feature is gated by `PITCHBOX_AUTH` (`web/src/hooks.server.ts:75`);
@@ -85,7 +85,7 @@ Edit `shared/src/db/schema.ts`, then `pnpm run migrate:generate` and
   validating that the user is a member of the active org. If the stored active org
   is no longer valid (membership removed), fall back to the first membership.
 - The request hook (`web/src/hooks.server.ts:128-164`) keeps populating
-  `locals.org = { id, slug, role }`, where `role` is the role for the *active* org.
+  `locals.org = { id, slug, role }`, where `role` is the role for the _active_ org.
 - **`POST /api/orgs/switch`** — body `{ organizationId }`. Verifies the user has a
   membership in the target org, writes `sessions.active_organization_id`, returns
   the new active org. Rejects with 403 if the user is not a member.

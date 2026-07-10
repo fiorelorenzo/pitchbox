@@ -33,7 +33,12 @@ describe('pitchbox skill:generate:start', () => {
       .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ organizationId: org.id, slug: 'p', name: 'P', description: '# Hello\nA test project.' })
+      .values({
+        organizationId: org.id,
+        slug: 'p',
+        name: 'P',
+        description: '# Hello\nA test project.',
+      })
       .returning();
     projectId = project.id;
     const [campaign] = await db

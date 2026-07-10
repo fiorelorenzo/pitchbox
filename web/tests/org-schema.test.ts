@@ -13,8 +13,14 @@ describe('project org constraints', () => {
 
   it('allows the same project slug in two different orgs', async () => {
     const db = getDb();
-    const [a] = await db.insert(schema.organizations).values({ slug: 'sc-a', name: 'A' }).returning();
-    const [b] = await db.insert(schema.organizations).values({ slug: 'sc-b', name: 'B' }).returning();
+    const [a] = await db
+      .insert(schema.organizations)
+      .values({ slug: 'sc-a', name: 'A' })
+      .returning();
+    const [b] = await db
+      .insert(schema.organizations)
+      .values({ slug: 'sc-b', name: 'B' })
+      .returning();
     await db.insert(schema.projects).values({ organizationId: a.id, slug: 'dup', name: 'dup A' });
     await expect(
       db.insert(schema.projects).values({ organizationId: b.id, slug: 'dup', name: 'dup B' }),
@@ -23,7 +29,10 @@ describe('project org constraints', () => {
 
   it('rejects a duplicate project slug within the same org', async () => {
     const db = getDb();
-    const [a] = await db.insert(schema.organizations).values({ slug: 'sc-c', name: 'C' }).returning();
+    const [a] = await db
+      .insert(schema.organizations)
+      .values({ slug: 'sc-c', name: 'C' })
+      .returning();
     await db.insert(schema.projects).values({ organizationId: a.id, slug: 'same', name: 'one' });
     await expect(
       db.insert(schema.projects).values({ organizationId: a.id, slug: 'same', name: 'two' }),

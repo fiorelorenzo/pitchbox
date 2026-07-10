@@ -54,11 +54,13 @@
 ## Task 1: Schema and migration (active org, org-owned projects, per-org slug)
 
 **Files:**
+
 - Modify: `shared/src/db/schema.ts` (`sessions` at 84-97, `projects` at 127-138)
 - Create: `shared/src/db/migrations/<generated>.sql`
 - Test: `web/tests/org-schema.test.ts`
 
 **Interfaces:**
+
 - Produces: `sessions.active_organization_id` (nullable FK), `projects.organization_id` NOT NULL, unique index `projects_org_slug_unique (organization_id, slug)`.
 
 - [ ] **Step 1: Write the failing test**
@@ -81,8 +83,14 @@ describe('project org constraints', () => {
 
   it('allows the same project slug in two different orgs', async () => {
     const db = getDb();
-    const [a] = await db.insert(schema.organizations).values({ slug: 'sc-a', name: 'A' }).returning();
-    const [b] = await db.insert(schema.organizations).values({ slug: 'sc-b', name: 'B' }).returning();
+    const [a] = await db
+      .insert(schema.organizations)
+      .values({ slug: 'sc-a', name: 'A' })
+      .returning();
+    const [b] = await db
+      .insert(schema.organizations)
+      .values({ slug: 'sc-b', name: 'B' })
+      .returning();
     await db.insert(schema.projects).values({ organizationId: a.id, slug: 'dup', name: 'dup A' });
     await expect(
       db.insert(schema.projects).values({ organizationId: b.id, slug: 'dup', name: 'dup B' }),
@@ -91,7 +99,10 @@ describe('project org constraints', () => {
 
   it('rejects a duplicate project slug within the same org', async () => {
     const db = getDb();
-    const [a] = await db.insert(schema.organizations).values({ slug: 'sc-c', name: 'C' }).returning();
+    const [a] = await db
+      .insert(schema.organizations)
+      .values({ slug: 'sc-c', name: 'C' })
+      .returning();
     await db.insert(schema.projects).values({ organizationId: a.id, slug: 'same', name: 'one' });
     await expect(
       db.insert(schema.projects).values({ organizationId: a.id, slug: 'same', name: 'two' }),
@@ -196,10 +207,12 @@ git commit -m "feat(db): active-org column, org-owned projects, per-org project 
 ## Task 2: Shared active-org resolution helpers
 
 **Files:**
+
 - Modify: `shared/src/orgs.ts`
 - Test: `web/tests/active-org.test.ts`
 
 **Interfaces:**
+
 - Consumes: `organizations`, `memberships` from schema (already imported in `orgs.ts`).
 - Produces:
   - `listUserOrganizations(db, userId): Promise<{ id: number; slug: string; name: string; role: string }[]>`
@@ -229,7 +242,10 @@ async function reset() {
 }
 
 async function seedUser(username: string) {
-  const [u] = await getDb().insert(schema.users).values({ username, passwordHash: 'x' }).returning();
+  const [u] = await getDb()
+    .insert(schema.users)
+    .values({ username, passwordHash: 'x' })
+    .returning();
   return u.id;
 }
 async function seedOrgMember(slug: string, userId: number, role = 'member') {
@@ -273,7 +289,11 @@ describe('active-org resolution', () => {
 
   it('creates an org with an owner membership', async () => {
     const uid = await seedUser('u5');
-    const org = await createOrganization(getDb(), { slug: 'ao-new', name: 'New', ownerUserId: uid });
+    const org = await createOrganization(getDb(), {
+      slug: 'ao-new',
+      name: 'New',
+      ownerUserId: uid,
+    });
     expect(org.role).toBe('owner');
     const orgs = await listUserOrganizations(getDb(), uid);
     expect(orgs.some((o) => o.id === org.id)).toBe(true);
@@ -360,10 +380,12 @@ git commit -m "feat(orgs): multi-org membership listing, active-org resolution, 
 ## Task 3: Session-stored active org
 
 **Files:**
+
 - Modify: `shared/src/auth.ts` (`loadSession` at 156-171; add `setSessionActiveOrg`)
 - Test: `web/tests/session-active-org.test.ts`
 
 **Interfaces:**
+
 - Consumes: `sessions.activeOrganizationId` (from Task 1).
 - Produces:
   - `loadSession` return extended to `{ userId, username, activeOrganizationId: number | null }`.
@@ -392,8 +414,14 @@ describe('session active org', () => {
 
   it('starts with a null active org and stores a chosen one', async () => {
     const db = getDb();
-    const [u] = await db.insert(schema.users).values({ username: 'sa', passwordHash: 'x' }).returning();
-    const [o] = await db.insert(schema.organizations).values({ slug: 'sa-o', name: 'O' }).returning();
+    const [u] = await db
+      .insert(schema.users)
+      .values({ username: 'sa', passwordHash: 'x' })
+      .returning();
+    const [o] = await db
+      .insert(schema.organizations)
+      .values({ slug: 'sa-o', name: 'O' })
+      .returning();
     const s = await createSession(db, u.id);
 
     const before = await loadSession(db, s.id);
@@ -445,7 +473,10 @@ export async function setSessionActiveOrg(
   sessionId: string,
   organizationId: number,
 ): Promise<void> {
-  await db.update(sessions).set({ activeOrganizationId: organizationId }).where(eq(sessions.id, sessionId));
+  await db
+    .update(sessions)
+    .set({ activeOrganizationId: organizationId })
+    .where(eq(sessions.id, sessionId));
 }
 ```
 
@@ -466,11 +497,13 @@ git commit -m "feat(auth): store and read the active organization on the session
 ## Task 4: Hook resolves the active org; add `requireOrgId`
 
 **Files:**
+
 - Modify: `web/src/hooks.server.ts` (imports at 1-3; enforcement block at 128-164)
 - Modify: `web/src/lib/server/auth.ts` (add `requireOrgId`)
 - Test: `web/tests/require-org.test.ts`
 
 **Interfaces:**
+
 - Consumes: `loadActiveOrganization` (Task 2), `loadSession` extended (Task 3).
 - Produces: `requireOrgId(event: RequestEvent): Promise<number>` (throws `error(404)` if no org resolves).
 
@@ -568,10 +601,12 @@ git commit -m "feat(web): resolve active org in the hook, add requireOrgId guard
 ## Task 5: `POST /api/orgs/switch`
 
 **Files:**
+
 - Create: `web/src/routes/api/orgs/switch/+server.ts`
 - Test: `web/tests/orgs-switch.test.ts`
 
 **Interfaces:**
+
 - Consumes: `loadActiveOrganization` (Task 2), `setSessionActiveOrg` (Task 3).
 - Produces: `POST /api/orgs/switch` body `{ organizationId }` -> `{ org }`; 403 for non-members.
 
@@ -598,7 +633,10 @@ async function reset() {
 function event(sessionId: string, userId: number, body: unknown): RequestEvent {
   return {
     locals: { user: { id: userId, username: 'x' } },
-    request: new Request('http://x/api/orgs/switch', { method: 'POST', body: JSON.stringify(body) }),
+    request: new Request('http://x/api/orgs/switch', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
     cookies: { get: (n: string) => (n === 'pitchbox_session' ? sessionId : undefined) },
   } as unknown as RequestEvent;
 }
@@ -618,20 +656,33 @@ describe('POST /api/orgs/switch', () => {
   it('switches to an org the user belongs to', async () => {
     const a = await seed('sw1', 'sw-a');
     const db = getDb();
-    const [b] = await db.insert(schema.organizations).values({ slug: 'sw-b', name: 'B' }).returning();
-    await db.insert(schema.memberships).values({ organizationId: b.id, userId: a.userId, role: 'member' });
+    const [b] = await db
+      .insert(schema.organizations)
+      .values({ slug: 'sw-b', name: 'B' })
+      .returning();
+    await db
+      .insert(schema.memberships)
+      .values({ organizationId: b.id, userId: a.userId, role: 'member' });
 
     const res = await POST(event(a.sessionId, a.userId, { organizationId: b.id }));
     expect(res.status).toBe(200);
-    const stored = await db.select().from(schema.sessions).where(sql`id = ${a.sessionId}`);
+    const stored = await db
+      .select()
+      .from(schema.sessions)
+      .where(sql`id = ${a.sessionId}`);
     expect(stored[0].activeOrganizationId).toBe(b.id);
   });
 
   it('rejects switching to an org the user is not a member of', async () => {
     const a = await seed('sw2', 'sw-c');
     const db = getDb();
-    const [foreign] = await db.insert(schema.organizations).values({ slug: 'sw-x', name: 'X' }).returning();
-    await expect(POST(event(a.sessionId, a.userId, { organizationId: foreign.id }))).rejects.toMatchObject({
+    const [foreign] = await db
+      .insert(schema.organizations)
+      .values({ slug: 'sw-x', name: 'X' })
+      .returning();
+    await expect(
+      POST(event(a.sessionId, a.userId, { organizationId: foreign.id })),
+    ).rejects.toMatchObject({
       status: 403,
     });
   });
@@ -688,10 +739,12 @@ git commit -m "feat(web): POST /api/orgs/switch to change the active organizatio
 ## Task 6: `POST /api/orgs` (create organization)
 
 **Files:**
+
 - Create: `web/src/routes/api/orgs/+server.ts`
 - Test: `web/tests/orgs-create.test.ts`
 
 **Interfaces:**
+
 - Consumes: `createOrganization` (Task 2), `setSessionActiveOrg` (Task 3).
 - Produces: `POST /api/orgs` body `{ slug, name }` -> 201 `{ org }`; 409 on duplicate slug; switches active org to the new one.
 
@@ -737,24 +790,30 @@ describe('POST /api/orgs', () => {
     const res = await POST(event(u.sessionId, u.userId, { slug: 'cr-new', name: 'New Co' }));
     expect(res.status).toBe(201);
     const db = getDb();
-    const [stored] = await db.select().from(schema.sessions).where(sql`id = ${u.sessionId}`);
-    const [org] = await db.select().from(schema.organizations).where(sql`slug = 'cr-new'`);
+    const [stored] = await db
+      .select()
+      .from(schema.sessions)
+      .where(sql`id = ${u.sessionId}`);
+    const [org] = await db
+      .select()
+      .from(schema.organizations)
+      .where(sql`slug = 'cr-new'`);
     expect(stored.activeOrganizationId).toBe(org.id);
   });
 
   it('rejects a duplicate slug', async () => {
     const u = await seedUser('cr2');
     await POST(event(u.sessionId, u.userId, { slug: 'cr-dup', name: 'One' }));
-    await expect(POST(event(u.sessionId, u.userId, { slug: 'cr-dup', name: 'Two' }))).rejects.toMatchObject(
-      { status: 409 },
-    );
+    await expect(
+      POST(event(u.sessionId, u.userId, { slug: 'cr-dup', name: 'Two' })),
+    ).rejects.toMatchObject({ status: 409 });
   });
 
   it('rejects an invalid slug', async () => {
     const u = await seedUser('cr3');
-    await expect(POST(event(u.sessionId, u.userId, { slug: 'Bad Slug!', name: 'X' }))).rejects.toMatchObject(
-      { status: 400 },
-    );
+    await expect(
+      POST(event(u.sessionId, u.userId, { slug: 'Bad Slug!', name: 'X' })),
+    ).rejects.toMatchObject({ status: 400 });
   });
 });
 ```
@@ -816,10 +875,12 @@ git commit -m "feat(web): POST /api/orgs to create an organization"
 ## Task 7: Guard the drafts routes
 
 **Files:**
+
 - Modify (add guard to each): `web/src/routes/api/drafts/[id]/+server.ts`, `.../[id]/regenerate/+server.ts`, `.../[id]/regenerate/cancel/+server.ts`, `.../[id]/regenerate/undo/+server.ts`, `.../[id]/reply-draft/cancel/+server.ts`, `.../[id]/reply-draft/retry/+server.ts`, `web/src/routes/api/drafts/bulk-approve/+server.ts`, `web/src/routes/api/drafts/bulk-reschedule/+server.ts`
 - Test: `web/tests/route-guards-drafts.test.ts`
 
 **Interfaces:**
+
 - Consumes: `requireOrgId` (Task 4), `draftBelongsToOrg` (`@pitchbox/shared/orgs`).
 
 **The guard pattern (single-id routes).** In each handler, after the id is parsed and before any DB read/mutation, insert:
@@ -863,7 +924,9 @@ import { PATCH } from '../src/routes/api/drafts/[id]/+server.js';
 
 async function reset() {
   const db = getDb();
-  await db.execute(sql`TRUNCATE drafts, runs, campaigns, accounts, projects RESTART IDENTITY CASCADE`);
+  await db.execute(
+    sql`TRUNCATE drafts, runs, campaigns, accounts, projects RESTART IDENTITY CASCADE`,
+  );
   await db.execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
 }
 
@@ -873,20 +936,49 @@ async function seedOrgWithProject(slug: string) {
   const [org] = await db.insert(schema.organizations).values({ slug, name: slug }).returning();
   const [project] = await db
     .insert(schema.projects)
-    .values({ organizationId: org.id, slug: `${slug}-proj`, name: `${slug} p`, defaultAgentRunner: 'claude-code' })
+    .values({
+      organizationId: org.id,
+      slug: `${slug}-proj`,
+      name: `${slug} p`,
+      defaultAgentRunner: 'claude-code',
+    })
     .returning();
-  const [platform] = await db.select().from(schema.platforms).where(sql`slug = 'reddit'`);
+  const [platform] = await db
+    .select()
+    .from(schema.platforms)
+    .where(sql`slug = 'reddit'`);
   const [account] = await db
     .insert(schema.accounts)
-    .values({ projectId: project.id, platformId: platform.id, handle: `${slug}-a`, role: 'personal' })
+    .values({
+      projectId: project.id,
+      platformId: platform.id,
+      handle: `${slug}-a`,
+      role: 'personal',
+    })
     .returning();
   const [run] = await db
     .insert(schema.runs)
-    .values({ projectId: project.id, agentRunner: 'claude-code', kind: 'campaign', trigger: 'manual', status: 'succeeded' })
+    .values({
+      projectId: project.id,
+      agentRunner: 'claude-code',
+      kind: 'campaign',
+      trigger: 'manual',
+      status: 'succeeded',
+    })
     .returning();
   const [draft] = await db
     .insert(schema.drafts)
-    .values({ runId: run.id, projectId: project.id, platformId: platform.id, accountId: account.id, kind: 'dm', state: 'pending_review', targetUser: 'u', body: 'hi', version: 1 })
+    .values({
+      runId: run.id,
+      projectId: project.id,
+      platformId: platform.id,
+      accountId: account.id,
+      kind: 'dm',
+      state: 'pending_review',
+      targetUser: 'u',
+      body: 'hi',
+      version: 1,
+    })
     .returning();
   return { orgId: org.id, draftId: draft.id, version: draft.version };
 }
@@ -906,9 +998,9 @@ describe('drafts PATCH tenant guard', () => {
     const a = await seedOrgWithProject('rg-a');
     const b = await seedOrgWithProject('rg-b');
     // Caller is org B, target draft belongs to org A.
-    await expect(PATCH(patchEvent(b.orgId, a.draftId, { expectedVersion: a.version, body: 'x' }))).rejects.toMatchObject(
-      { status: 404 },
-    );
+    await expect(
+      PATCH(patchEvent(b.orgId, a.draftId, { expectedVersion: a.version, body: 'x' })),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });
 ```
@@ -953,10 +1045,12 @@ git commit -m "feat(web): enforce org isolation on all drafts routes"
 ## Task 8: Guard the campaigns routes and add the run-dispatch tenant check
 
 **Files:**
+
 - Modify: `web/src/routes/api/campaigns/[id]/+server.ts`, `.../[id]/skill-runs/+server.ts`, `.../[id]/skill-runs/[runId]/adopt/+server.ts`, `.../[id]/skill-runs/[runId]/discard/+server.ts`, `.../[id]/keyword-watches/+server.ts`, `web/src/routes/api/campaigns/+server.ts`, `web/src/routes/api/run/+server.ts`
 - Test: `web/tests/route-guards-campaigns.test.ts`
 
 **Interfaces:**
+
 - Consumes: `requireOrgId`, `campaignBelongsToOrg`, `projectBelongsToOrg`.
 
 **Campaign by-id routes** (`[id]/**`): the guard is `campaignBelongsToOrg(getDb(), id, orgId)` with `id = Number(params.id)`, inserted at the top of every exported handler (GET, POST, PATCH, DELETE) in these files:
@@ -978,7 +1072,11 @@ if (!(await projectBelongsToOrg(getDb(), body.projectId, orgId))) throw error(40
 ```ts
 export async function POST(event) {
   const { request, locals } = event;
-  const body = (await request.json()) as { campaignId?: number; trigger?: string; scheduledFor?: string };
+  const body = (await request.json()) as {
+    campaignId?: number;
+    trigger?: string;
+    scheduledFor?: string;
+  };
   if (!body.campaignId) throw error(400, 'campaignId required');
   const trigger = body.trigger && ALLOWED_TRIGGERS.has(body.trigger) ? body.trigger : 'manual';
 
@@ -998,14 +1096,21 @@ export async function POST(event) {
 - [ ] **Step 1: Write the failing test**
 
 Create `web/tests/route-guards-campaigns.test.ts` mirroring Task 7's structure. Import `PATCH` from `api/campaigns/[id]/+server.js` and `POST` from `api/run/+server.js`. Seed two orgs with a campaign each (extend the `seedOrgWithProject` copy to also return `campaignId`, as in `org-isolation.test.ts`). Assert:
-  - `PATCH` on org A's campaign as org B rejects with 404.
-  - `POST /api/run` with `locals.org = B` and org A's `campaignId` rejects with 404.
-  - `POST /api/run` with no `locals.org` (daemon/self-host) does NOT throw 404 for the org reason (it may fail later for readiness; assert it is not a 404 tenant rejection, e.g. by giving a ready campaign and expecting a `runId`, or by asserting the thrown error is not status 404).
+
+- `PATCH` on org A's campaign as org B rejects with 404.
+- `POST /api/run` with `locals.org = B` and org A's `campaignId` rejects with 404.
+- `POST /api/run` with no `locals.org` (daemon/self-host) does NOT throw 404 for the org reason (it may fail later for readiness; assert it is not a 404 tenant rejection, e.g. by giving a ready campaign and expecting a `runId`, or by asserting the thrown error is not status 404).
 
 ```ts
 // Representative assertion for the run-dispatch guard:
 await expect(
-  runPost({ locals: { org: { id: b.orgId, slug: 'b', role: 'owner' } }, request: new Request('http://x/', { method: 'POST', body: JSON.stringify({ campaignId: a.campaignId }) }) } as unknown as RequestEvent),
+  runPost({
+    locals: { org: { id: b.orgId, slug: 'b', role: 'owner' } },
+    request: new Request('http://x/', {
+      method: 'POST',
+      body: JSON.stringify({ campaignId: a.campaignId }),
+    }),
+  } as unknown as RequestEvent),
 ).rejects.toMatchObject({ status: 404 });
 ```
 
@@ -1036,12 +1141,14 @@ git commit -m "feat(web): enforce org isolation on campaign routes and run dispa
 ## Task 9: Guard the projects subtree, runs, blocklist, and recommendations routes
 
 **Files:**
+
 - Modify (guard = `projectBelongsToOrg(getDb(), Number(params.id), orgId)` in every exported handler): `web/src/routes/api/projects/[id]/+server.ts`, `.../[id]/extraction-uploads/+server.ts`, `.../[id]/runs/+server.ts`, `.../[id]/accounts/+server.ts`, `.../[id]/accounts/[accountId]/+server.ts`, `.../[id]/templates/+server.ts`, `.../[id]/templates/[templateId]/+server.ts`, `.../[id]/insights/+server.ts`, `.../[id]/recommendations/+server.ts`, `.../[id]/recommendations/[recId]/+server.ts`
 - Modify (guard = `runBelongsToOrg`): `web/src/routes/api/runs/[id]/events/+server.ts`, `web/src/routes/api/run/[id]/+server.ts`
 - Modify (blocklist, special-cased): `web/src/routes/api/blocklist/[id]/+server.ts`, `web/src/routes/api/blocklist/+server.ts`
 - Test: `web/tests/route-guards-projects.test.ts`
 
 **Interfaces:**
+
 - Consumes: `requireOrgId`, `projectBelongsToOrg`, `runBelongsToOrg`.
 
 **Projects subtree.** For every `projects/[id]/**` file, the parent project id is `Number(params.id)`, and any nested `[accountId]`/`[templateId]`/`[recId]` is already constrained by `projectId` in the existing query. So a single guard per handler suffices:
@@ -1059,14 +1166,19 @@ if (!(await projectBelongsToOrg(getDb(), Number(params.id), orgId))) throw error
 const orgId = await requireOrgId(event);
 const [row] = await getDb().select().from(schema.blocklist).where(eq(schema.blocklist.id, id));
 if (!row) throw error(404, 'not_found');
-if (row.projectId && !(await projectBelongsToOrg(getDb(), row.projectId, orgId))) throw error(404, 'not_found');
+if (row.projectId && !(await projectBelongsToOrg(getDb(), row.projectId, orgId)))
+  throw error(404, 'not_found');
 ```
 
 **Blocklist POST** (`blocklist/+server.ts`): when `scope === 'project'` and `body.projectId` is set, guard the project:
 
 ```ts
 const orgId = await requireOrgId(event);
-if (scope === 'project' && body.projectId && !(await projectBelongsToOrg(getDb(), body.projectId, orgId))) {
+if (
+  scope === 'project' &&
+  body.projectId &&
+  !(await projectBelongsToOrg(getDb(), body.projectId, orgId))
+) {
   throw error(404, 'not_found');
 }
 ```
@@ -1102,6 +1214,7 @@ git commit -m "feat(web): enforce org isolation on project subtree, runs, and bl
 ## Task 10: Fix the list-page and export leaks
 
 **Files:**
+
 - Modify: `web/src/routes/campaigns/+page.server.ts` (leak at line 37; also `latestRuns` :39-50 and `draftCounts` :63-73)
 - Modify: `web/src/routes/inbox/+page.server.ts` (filters at 58-62; main query at 134-140)
 - Modify: `web/src/routes/api/analytics/funnel/+server.ts`
@@ -1109,6 +1222,7 @@ git commit -m "feat(web): enforce org isolation on project subtree, runs, and bl
 - Test: `web/tests/list-leaks.test.ts`
 
 **Interfaces:**
+
 - Consumes: `resolveOrgId` (existing), the active org's project ids.
 
 **Approach.** Every one of these reads must be constrained to the active org's projects. The projects list is already org-scoped via `listProjects(db, { organizationId: orgId })`; derive `const projectIds = projects.map((p) => p.id);` and constrain the tenant queries with `inArray(schema.<table>.projectId, projectIds)` (guarding for the empty case: if `projectIds.length === 0`, return empty results without querying, since `inArray(x, [])` is a SQL error).
@@ -1181,11 +1295,13 @@ git commit -m "fix(web): scope campaign/inbox/analytics/export reads to the acti
 ## Task 11: Organization switcher UI
 
 **Files:**
+
 - Modify: `web/src/routes/+layout.server.ts` (expose active org + membership list when auth is on)
 - Modify: `web/src/lib/components/Sidebar.svelte` (render the switcher + create-org control)
 - Test: `web/tests/layout-orgs.test.ts`
 
 **Interfaces:**
+
 - Consumes: `listUserOrganizations` (Task 2), `POST /api/orgs/switch` (Task 5), `POST /api/orgs` (Task 6).
 
 - [ ] **Step 1: Write the failing test (layout loader)**
