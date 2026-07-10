@@ -27,7 +27,13 @@ x-web-common: &web-common
     ORIGIN: ${PUBLIC_WEB_ORIGIN:-https://pitchbox.app}
     PITCHBOX_AUTH: ${PITCHBOX_AUTH:-off}
   healthcheck:
-    test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.WEB_PORT||5180)+'/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+    test:
+      [
+        'CMD',
+        'node',
+        '-e',
+        "fetch('http://127.0.0.1:'+(process.env.WEB_PORT||5180)+'/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+      ]
     interval: 15s
     timeout: 5s
     retries: 5
@@ -35,7 +41,7 @@ x-web-common: &web-common
 
 services:
   web:
-    profiles: ["_disabled"]
+    profiles: ['_disabled']
 
   daemon:
     depends_on: !override
@@ -47,9 +53,9 @@ services:
   web-blue:
     <<: *web-common
     container_name: pitchbox-web-blue
-    ports: ["${APP_BIND:-127.0.0.1}:${BLUE_PORT:-5180}:${WEB_PORT:-5180}"]
+    ports: ['${APP_BIND:-127.0.0.1}:${BLUE_PORT:-5180}:${WEB_PORT:-5180}']
 
   web-green:
     <<: *web-common
     container_name: pitchbox-web-green
-    ports: ["${APP_BIND:-127.0.0.1}:${GREEN_PORT:-5181}:${WEB_PORT:-5180}"]
+    ports: ['${APP_BIND:-127.0.0.1}:${GREEN_PORT:-5181}:${WEB_PORT:-5180}']

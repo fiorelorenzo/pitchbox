@@ -13,7 +13,7 @@ services:
       target: runtime
     environment:
       NODE_ENV: production
-      PORT: "8787"
+      PORT: '8787'
       RUNNER_HOST: 0.0.0.0
       RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN in .env}
       RUNNER_MODEL: ${RUNNER_MODEL:-}
@@ -31,7 +31,13 @@ services:
     restart: unless-stopped
     mem_limit: ${RUNNER_MEM_LIMIT:-1g}
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
