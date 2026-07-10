@@ -197,12 +197,17 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     const [r] = await db
       .select()
       .from(schema.runs)
-      .where(eq(schema.runs.id, Number(run)));
+      .where(and(eq(schema.runs.id, Number(run)), inArray(schema.runs.projectId, projectIds)));
     if (r && r.campaignId != null) {
       const [c] = await db
         .select()
         .from(schema.campaigns)
-        .where(eq(schema.campaigns.id, r.campaignId));
+        .where(
+          and(
+            eq(schema.campaigns.id, r.campaignId),
+            inArray(schema.campaigns.projectId, projectIds),
+          ),
+        );
       runInfo = {
         id: r.id,
         campaignId: r.campaignId,
@@ -216,7 +221,12 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     const [c] = await db
       .select()
       .from(schema.campaigns)
-      .where(eq(schema.campaigns.id, Number(campaign)));
+      .where(
+        and(
+          eq(schema.campaigns.id, Number(campaign)),
+          inArray(schema.campaigns.projectId, projectIds),
+        ),
+      );
     if (c) campaignInfo = c;
   }
 

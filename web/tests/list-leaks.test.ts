@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { load } from '../src/routes/campaigns/+page.server.js';
+import { load as loadInbox } from '../src/routes/inbox/+page.server.js';
 
 async function reset() {
   const db = getDb();
@@ -40,7 +41,18 @@ async function seedOrgWithProject(slug: string) {
       config: {},
     })
     .returning();
-  return { orgId: org.id, projectId: project.id, campaignId: campaign.id };
+  const [run] = await db
+    .insert(schema.runs)
+    .values({
+      campaignId: campaign.id,
+      projectId: project.id,
+      agentRunner: 'claude-code',
+      kind: 'campaign',
+      trigger: 'manual',
+      status: 'succeeded',
+    })
+    .returning();
+  return { orgId: org.id, projectId: project.id, campaignId: campaign.id, runId: run.id };
 }
 
 function fakeEvent(orgId: number, url: string): RequestEvent {
@@ -73,5 +85,33 @@ describe('campaigns list is scoped to the active org', () => {
     const data = await load(fakeEvent(org.id, 'http://x/campaigns'));
     expect(data.campaigns).toEqual([]);
     expect(data.projects).toEqual([]);
+  });
+});
+
+describe('inbox run/campaign context is scoped to the active org', () => {
+  beforeEach(reset);
+
+  it('does not leak another org campaign via ?campaign=<id>', async () => {
+    const a = await seedOrgWithProject('inbox-leak-a');
+    const b = await seedOrgWithProject('inbox-leak-b');
+
+    const data = await loadInbox(fakeEvent(a.orgId, `http://x/inbox?campaign=${b.campaignId}`));
+    expect(data.campaignInfo).toBeFalsy();
+  });
+
+  it('does not leak another org run via ?run=<id>', async () => {
+    const a = await seedOrgWithProject('inbox-leak-c');
+    const b = await seedOrgWithProject('inbox-leak-d');
+
+    const data = await loadInbox(fakeEvent(a.orgId, `http://x/inbox?run=${b.runId}`));
+    expect(data.runInfo).toBeFalsy();
+  });
+
+  it('returns campaign context for a same-org campaign id', async () => {
+    const a = await seedOrgWithProject('inbox-leak-e');
+
+    const data = await loadInbox(fakeEvent(a.orgId, `http://x/inbox?campaign=${a.campaignId}`));
+    expect(data.campaignInfo).toBeTruthy();
+    expect((data.campaignInfo as { id: number }).id).toBe(a.campaignId);
   });
 });
