@@ -27,9 +27,13 @@ describe('pitchbox skill:generate:start', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: 'p', name: 'P', description: '# Hello\nA test project.' })
+      .values({ organizationId: org.id, slug: 'p', name: 'P', description: '# Hello\nA test project.' })
       .returning();
     projectId = project.id;
     const [campaign] = await db

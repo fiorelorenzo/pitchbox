@@ -344,6 +344,13 @@
       "when": 1778565000000,
       "tag": "0048_project_insights_run_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1778566000000,
+      "tag": "0049_org_isolation",
+      "breakpoints": true
     }
   ]
 }

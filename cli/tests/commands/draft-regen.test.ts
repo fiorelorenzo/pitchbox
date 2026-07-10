@@ -29,7 +29,14 @@ async function reset() {
 beforeEach(async () => {
   await reset();
   const db = getDb();
-  const [proj] = await db.insert(schema.projects).values({ slug: 'p', name: 'P' }).returning();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
+  const [proj] = await db
+    .insert(schema.projects)
+    .values({ organizationId: org.id, slug: 'p', name: 'P' })
+    .returning();
   const [platform] = await db
     .select()
     .from(schema.platforms)

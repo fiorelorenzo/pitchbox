@@ -11,7 +11,14 @@ describe('project_insights run kind', () => {
 
   it('accepts a project_insights run with a project_id', async () => {
     const db = getDb();
-    const [proj] = await db.insert(schema.projects).values({ slug: 'pi', name: 'pi' }).returning();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [proj] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'pi', name: 'pi' })
+      .returning();
     const [run] = await db
       .insert(schema.runs)
       .values({

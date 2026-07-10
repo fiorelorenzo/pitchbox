@@ -11,7 +11,14 @@ async function reset() {
 
 async function seedRegenerating() {
   const db = getDb();
-  const [proj] = await db.insert(schema.projects).values({ slug: 'c', name: 'c' }).returning();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
+  const [proj] = await db
+    .insert(schema.projects)
+    .values({ organizationId: org.id, slug: 'c', name: 'c' })
+    .returning();
   const [platform] = await db
     .select()
     .from(schema.platforms)

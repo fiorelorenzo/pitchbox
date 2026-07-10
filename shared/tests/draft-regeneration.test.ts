@@ -16,9 +16,13 @@ async function reset() {
 
 async function seedDraft(state = 'pending_review') {
   const db = getDb();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
   const [proj] = await db
     .insert(schema.projects)
-    .values({ slug: 'regen', name: 'regen' })
+    .values({ organizationId: org.id, slug: 'regen', name: 'regen' })
     .returning();
   const [platform] = await db
     .select()
@@ -115,9 +119,13 @@ describe('startDraftRegeneration', () => {
 
   it('starts a regeneration run when the originating run has no campaign (e.g. reply drafts)', async () => {
     const db = getDb();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [proj] = await db
       .insert(schema.projects)
-      .values({ slug: 'regen-nocampaign', name: 'regen-nocampaign' })
+      .values({ organizationId: org.id, slug: 'regen-nocampaign', name: 'regen-nocampaign' })
       .returning();
     const [platform] = await db
       .select()

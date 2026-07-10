@@ -34,7 +34,14 @@ describe('project_extraction with kind=upload', () => {
     await writeFile(join(upload, 'README.md'), '# Demo\nA demo product.\n');
 
     const db = getDb();
-    const [project] = await db.insert(schema.projects).values({ slug: 'p', name: 'P' }).returning();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'p', name: 'P' })
+      .returning();
     const [run] = await db
       .insert(schema.runs)
       .values({

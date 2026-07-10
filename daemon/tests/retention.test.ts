@@ -12,9 +12,13 @@ async function reset() {
 
 async function setupFixtures() {
   const db = getDb();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
   const [proj] = await db
     .insert(schema.projects)
-    .values({ slug: 'ret-test', name: 'ret-test' })
+    .values({ organizationId: org.id, slug: 'ret-test', name: 'ret-test' })
     .returning();
   const [platform] = await db
     .select()

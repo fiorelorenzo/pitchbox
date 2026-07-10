@@ -88,6 +88,9 @@ export const sessions = pgTable(
     userId: integer('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    activeOrganizationId: integer('active_organization_id').references(() => organizations.id, {
+      onDelete: 'set null',
+    }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -124,18 +127,24 @@ export const playbooks = pgTable('playbooks', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const projects = pgTable('projects', {
-  id: serial('id').primaryKey(),
-  organizationId: integer('organization_id').references(() => organizations.id, {
-    onDelete: 'cascade',
+export const projects = pgTable(
+  'projects',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    slug: text('slug').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    defaultAgentRunner: text('default_agent_runner').notNull().default('claude-code'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgSlugUnique: uniqueIndex('projects_org_slug_unique').on(t.organizationId, t.slug),
   }),
-  slug: text('slug').notNull().unique(),
-  name: text('name').notNull(),
-  description: text('description'),
-  defaultAgentRunner: text('default_agent_runner').notNull().default('claude-code'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+);
 
 export const accounts = pgTable('accounts', {
   id: serial('id').primaryKey(),

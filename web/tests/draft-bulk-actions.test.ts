@@ -12,9 +12,13 @@ async function reset() {
 
 async function seedMany() {
   const db = getDb();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
   const [proj] = await db
     .insert(schema.projects)
-    .values({ slug: 'bulk-test', name: 'bulk-test' })
+    .values({ organizationId: org.id, slug: 'bulk-test', name: 'bulk-test' })
     .returning();
   const [platform] = await db
     .select()

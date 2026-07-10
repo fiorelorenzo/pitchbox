@@ -11,9 +11,13 @@ async function platformId(slug: string) {
 
 async function makeProject(slug: string) {
   const db = getDb();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
   const [p] = await db
     .insert(schema.projects)
-    .values({ slug, name: slug })
+    .values({ organizationId: org.id, slug, name: slug })
     .returning({ id: schema.projects.id });
   return p.id;
 }

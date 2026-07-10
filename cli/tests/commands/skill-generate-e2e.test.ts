@@ -45,9 +45,13 @@ describe('skill_generation end-to-end (stub)', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: 'p', name: 'P', description: '# Demo' })
+      .values({ organizationId: org.id, slug: 'p', name: 'P', description: '# Demo' })
       .returning();
     const [campaign] = await db
       .insert(schema.campaigns)

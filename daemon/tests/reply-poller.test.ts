@@ -26,9 +26,13 @@ describe('reply-poller', () => {
   it('null-reader path skips contacts and bumps reply_checked_at', async () => {
     const db = getDb();
     const pid = await platformId('reddit');
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [proj] = await db
       .insert(schema.projects)
-      .values({ slug: 'rp-test', name: 'rp-test' })
+      .values({ organizationId: org.id, slug: 'rp-test', name: 'rp-test' })
       .returning();
     const [account] = await db
       .insert(schema.accounts)

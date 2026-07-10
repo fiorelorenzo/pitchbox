@@ -28,9 +28,13 @@ describe('pitchbox project:extract:start', () => {
     const db = getDb();
     folder = await mkdtemp(join(tmpdir(), 'pbfolder-'));
     await writeFile(join(folder, 'README.md'), '# Test');
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: 'p1', name: 'P1' })
+      .values({ organizationId: org.id, slug: 'p1', name: 'P1' })
       .returning();
     projectId = project.id;
     const [run] = await db

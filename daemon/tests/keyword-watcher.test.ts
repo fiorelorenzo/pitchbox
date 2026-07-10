@@ -17,9 +17,13 @@ async function seedWatch(opts: {
   lastSeenAt?: Date | null;
 }) {
   const db = getDb();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
   const [proj] = await db
     .insert(schema.projects)
-    .values({ slug: 'kw-test', name: 'kw-test' })
+    .values({ organizationId: org.id, slug: 'kw-test', name: 'kw-test' })
     .returning();
   const [platform] = await db
     .select()

@@ -26,9 +26,13 @@ describe('pitchbox drafts:create', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: 'demo', name: 'D' })
+      .values({ organizationId: org.id, slug: 'demo', name: 'D' })
       .returning();
     const [account] = await db
       .insert(schema.accounts)
@@ -87,9 +91,13 @@ describe('pitchbox drafts:create', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: 'demo3', name: 'D3' })
+      .values({ organizationId: org.id, slug: 'demo3', name: 'D3' })
       .returning();
     const [account] = await db
       .insert(schema.accounts)
@@ -142,9 +150,13 @@ describe('pitchbox drafts:create', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: 'demo2', name: 'D2' })
+      .values({ organizationId: org.id, slug: 'demo2', name: 'D2' })
       .returning();
     const [account] = await db
       .insert(schema.accounts)

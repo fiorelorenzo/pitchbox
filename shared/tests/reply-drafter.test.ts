@@ -13,9 +13,13 @@ async function reset() {
 
 async function setup() {
   const db = getDb();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
   const [proj] = await db
     .insert(schema.projects)
-    .values({ slug: 'rd-test', name: 'rd-test' })
+    .values({ organizationId: org.id, slug: 'rd-test', name: 'rd-test' })
     .returning();
   const [platform] = await db
     .select()

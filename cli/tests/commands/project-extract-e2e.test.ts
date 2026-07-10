@@ -27,7 +27,14 @@ describe('project_extraction end-to-end (no real agent)', () => {
     await writeFile(join(folder, 'README.md'), '# Demo product');
 
     const db = getDb();
-    const [project] = await db.insert(schema.projects).values({ slug: 'p', name: 'P' }).returning();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'p', name: 'P' })
+      .returning();
     const [run] = await db
       .insert(schema.runs)
       .values({

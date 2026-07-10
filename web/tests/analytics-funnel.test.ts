@@ -11,9 +11,13 @@ async function reset() {
 
 async function seed() {
   const db = getDb();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
   const [proj] = await db
     .insert(schema.projects)
-    .values({ slug: 'funnel-test', name: 'funnel-test' })
+    .values({ organizationId: org.id, slug: 'funnel-test', name: 'funnel-test' })
     .returning();
   const [platform] = await db
     .select()

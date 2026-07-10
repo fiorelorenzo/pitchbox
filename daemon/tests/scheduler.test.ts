@@ -16,9 +16,13 @@ async function setupCampaign(opts: {
   consecutiveFailures?: number;
 }) {
   const db = getDb();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
   const [proj] = await db
     .insert(schema.projects)
-    .values({ slug: 'sched-test', name: 'sched-test' })
+    .values({ organizationId: org.id, slug: 'sched-test', name: 'sched-test' })
     .returning();
   const [platform] = await db
     .select()
@@ -175,9 +179,13 @@ describe('scheduler tick', () => {
     const past = new Date(Date.now() - 60_000);
     const future = new Date(Date.now() + 5 * 60_000);
     const db = getDb();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [proj] = await db
       .insert(schema.projects)
-      .values({ slug: 'sched-backoff', name: 'sched-backoff' })
+      .values({ organizationId: org.id, slug: 'sched-backoff', name: 'sched-backoff' })
       .returning();
     const [platform] = await db
       .select()
@@ -205,9 +213,13 @@ describe('scheduler tick', () => {
 
     const past = new Date(Date.now() - 60_000);
     const db = getDb();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [proj] = await db
       .insert(schema.projects)
-      .values({ slug: 'sched-recover', name: 'sched-recover' })
+      .values({ organizationId: org.id, slug: 'sched-recover', name: 'sched-recover' })
       .returning();
     const [platform] = await db
       .select()
@@ -244,9 +256,13 @@ describe('scheduler tick', () => {
 
     const past = new Date(Date.now() - 60_000);
     const db = getDb();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [proj] = await db
       .insert(schema.projects)
-      .values({ slug: 'sched-pause', name: 'sched-pause' })
+      .values({ organizationId: org.id, slug: 'sched-pause', name: 'sched-pause' })
       .returning();
     const [platform] = await db
       .select()
@@ -289,9 +305,13 @@ describe('scheduler tick', () => {
 
     const past = new Date(Date.now() - 60_000);
     const db = getDb();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [proj] = await db
       .insert(schema.projects)
-      .values({ slug: 'sched-skip', name: 'sched-skip' })
+      .values({ organizationId: org.id, slug: 'sched-skip', name: 'sched-skip' })
       .returning();
     const [platform] = await db
       .select()

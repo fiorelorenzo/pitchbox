@@ -146,9 +146,13 @@ const SCOUT_PROFILE = {
 async function seedScoutCampaign() {
   const db = getDb();
   const platformId = await redditPlatformId();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
   const [project] = await db
     .insert(schema.projects)
-    .values({ slug: 'mcp-test', name: 'MCP Test' })
+    .values({ organizationId: org.id, slug: 'mcp-test', name: 'MCP Test' })
     .returning();
   const [account] = await db
     .insert(schema.accounts)
@@ -267,9 +271,13 @@ describe('pitchbox MCP server (project + skill tools)', () => {
 
   it('project_extract_start exposes the source path; finish persists the description', async () => {
     const db = getDb();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: 'extract', name: 'Extract' })
+      .values({ organizationId: org.id, slug: 'extract', name: 'Extract' })
       .returning();
     const dir = mkdtempSync(join(tmpdir(), 'pb-src-'));
     writeFileSync(join(dir, 'README.md'), '# Cool Product\nDoes things.', 'utf8');
@@ -311,9 +319,13 @@ describe('pitchbox MCP server (project + skill tools)', () => {
 
   it('project_insights_context reports counts; project_insights persists a summary', async () => {
     const db = getDb();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: 'ins', name: 'Ins' })
+      .values({ organizationId: org.id, slug: 'ins', name: 'Ins' })
       .returning();
     const client = await connectClient();
     const ctx = parse(
@@ -337,9 +349,13 @@ describe('pitchbox MCP server (project + skill tools)', () => {
   it('skill_generate validates the profile: invalid is a tool error, valid writes config', async () => {
     const db = getDb();
     const platformId = await redditPlatformId();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: 'skill', name: 'Skill', description: 'desc' })
+      .values({ organizationId: org.id, slug: 'skill', name: 'Skill', description: 'desc' })
       .returning();
     const [campaign] = await db
       .insert(schema.campaigns)

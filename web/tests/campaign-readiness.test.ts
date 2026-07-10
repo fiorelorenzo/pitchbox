@@ -20,9 +20,17 @@ async function makeCampaign(opts: {
     .select()
     .from(schema.platforms)
     .where(eq(schema.platforms.slug, 'reddit'));
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
   const [project] = await db
     .insert(schema.projects)
-    .values({ slug: `p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: 'P' })
+    .values({
+      organizationId: org.id,
+      slug: `p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: 'P',
+    })
     .returning();
   if (opts.withAccount) {
     await db.insert(schema.accounts).values({

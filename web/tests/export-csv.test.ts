@@ -129,9 +129,13 @@ describe('streamCsv', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: `p-${Date.now()}`, name: 'Proj' })
+      .values({ organizationId: org.id, slug: `p-${Date.now()}`, name: 'Proj' })
       .returning();
     const [account] = await db
       .insert(schema.accounts)
@@ -206,9 +210,13 @@ describe('streamCsv', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: `p-${Date.now()}`, name: 'P' })
+      .values({ organizationId: org.id, slug: `p-${Date.now()}`, name: 'P' })
       .returning();
     const [account] = await db
       .insert(schema.accounts)
@@ -341,9 +349,13 @@ describe('streamCsv', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     const [project] = await db
       .insert(schema.projects)
-      .values({ slug: `p-${Date.now()}`, name: 'P' })
+      .values({ organizationId: org.id, slug: `p-${Date.now()}`, name: 'P' })
       .returning();
     const [account] = await db
       .insert(schema.accounts)
