@@ -1,5 +1,8 @@
 import { json, error } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
+import { requireOrgId } from '$lib/server/auth.js';
+import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const KINDS = ['subreddit', 'user', 'keyword'] as const;
 type Kind = (typeof KINDS)[number];
@@ -16,7 +19,8 @@ type CreateBody = {
   projectId?: number | null;
 };
 
-export async function POST({ request }: { request: Request }) {
+export async function POST(event: RequestEvent) {
+  const { request } = event;
   const body = (await request.json()) as CreateBody;
 
   if (!body.platformId || !Number.isInteger(body.platformId)) {
@@ -32,6 +36,13 @@ export async function POST({ request }: { request: Request }) {
   if (!SCOPES.includes(scope)) throw error(400, 'invalid scope');
   if (scope === 'project' && !body.projectId) {
     throw error(400, 'projectId required when scope=project');
+  }
+
+  if (scope === 'project' && body.projectId) {
+    const orgId = await requireOrgId(event);
+    if (!(await projectBelongsToOrg(getDb(), body.projectId, orgId))) {
+      throw error(404, 'not_found');
+    }
   }
 
   const db = getDb();

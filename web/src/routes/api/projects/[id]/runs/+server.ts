@@ -1,8 +1,11 @@
-import { json } from '@sveltejs/kit';
+import { json, error } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { runProjectExtraction } from '$lib/server/runner.js';
+import { requireOrgId } from '$lib/server/auth.js';
+import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const SourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('folder'), value: z.string().min(1) }),
@@ -11,14 +14,17 @@ const SourceSchema = z.discriminatedUnion('kind', [
 ]);
 const PostBody = z.object({ source: SourceSchema });
 
-function parseId(idParam: string): number | null {
+function parseId(idParam: string | undefined): number | null {
   const n = Number(idParam);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-export async function POST({ params, request }) {
+export async function POST(event: RequestEvent) {
+  const { params, request } = event;
   const id = parseId(params.id);
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
+  const orgId = await requireOrgId(event);
+  if (!(await projectBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
   const raw = await request.json().catch(() => null);
   const parsed = PostBody.safeParse(raw);
   if (!parsed.success) {
@@ -38,9 +44,12 @@ export async function POST({ params, request }) {
   }
 }
 
-export async function GET({ params, url }) {
+export async function GET(event: RequestEvent) {
+  const { params, url } = event;
   const id = parseId(params.id);
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
+  const orgId = await requireOrgId(event);
+  if (!(await projectBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? '5'), 1), 50);
   const db = getDb();
   const rows = await db

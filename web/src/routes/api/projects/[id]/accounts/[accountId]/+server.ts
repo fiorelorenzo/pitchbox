@@ -1,7 +1,10 @@
-import { json } from '@sveltejs/kit';
+import { json, error } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
+import { requireOrgId } from '$lib/server/auth.js';
+import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const PatchBody = z.object({
   handle: z.string().min(1).max(64).optional(),
@@ -11,15 +14,18 @@ const PatchBody = z.object({
   weeklyLimit: z.number().int().positive().nullable().optional(),
 });
 
-function parseId(p: string): number | null {
+function parseId(p: string | undefined): number | null {
   const n = Number(p);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-export async function PATCH({ params, request }) {
+export async function PATCH(event: RequestEvent) {
+  const { params, request } = event;
   const projectId = parseId(params.id);
   const accountId = parseId(params.accountId);
   if (!projectId || !accountId) return json({ error: 'invalid_id' }, { status: 400 });
+  const orgId = await requireOrgId(event);
+  if (!(await projectBelongsToOrg(getDb(), projectId, orgId))) throw error(404, 'not_found');
   const raw = await request.json().catch(() => null);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
@@ -52,10 +58,13 @@ export async function PATCH({ params, request }) {
   return json({ ok: true });
 }
 
-export async function DELETE({ params }) {
+export async function DELETE(event: RequestEvent) {
+  const { params } = event;
   const projectId = parseId(params.id);
   const accountId = parseId(params.accountId);
   if (!projectId || !accountId) return json({ error: 'invalid_id' }, { status: 400 });
+  const orgId = await requireOrgId(event);
+  if (!(await projectBelongsToOrg(getDb(), projectId, orgId))) throw error(404, 'not_found');
   await getDb()
     .delete(schema.accounts)
     .where(and(eq(schema.accounts.id, accountId), eq(schema.accounts.projectId, projectId)));

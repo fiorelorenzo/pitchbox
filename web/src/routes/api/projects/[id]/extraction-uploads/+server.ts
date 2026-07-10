@@ -1,9 +1,12 @@
-import { json } from '@sveltejs/kit';
+import { json, error } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, normalize, relative, resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
+import { requireOrgId } from '$lib/server/auth.js';
+import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const MAX_FILES = 200;
 const MAX_FILE_BYTES = 200 * 1024;
@@ -24,7 +27,7 @@ const EXT_ALLOW = new Set([
 ]);
 const EXTLESS_ALLOW = /^(README|LICENSE|CHANGELOG|NOTICE|AUTHORS)([._-].*)?$/i;
 
-function parseId(idParam: string): number | null {
+function parseId(idParam: string | undefined): number | null {
   const n = Number(idParam);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
@@ -55,9 +58,13 @@ function isAcceptableName(rel: string): boolean {
   return EXT_ALLOW.has(ext);
 }
 
-export async function POST({ params, request }) {
+export async function POST(event: RequestEvent) {
+  const { params, request } = event;
   const id = parseId(params.id);
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
+
+  const orgId = await requireOrgId(event);
+  if (!(await projectBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
 
   const db = getDb();
   const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, id));
