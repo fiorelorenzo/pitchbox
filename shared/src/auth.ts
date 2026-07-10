@@ -157,11 +157,12 @@ export async function loadSession(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: PgDatabase<any, any, any>,
   id: string,
-): Promise<{ userId: number; username: string } | null> {
+): Promise<{ userId: number; username: string; activeOrganizationId: number | null } | null> {
   const rows = await db
     .select({
       userId: sessions.userId,
       username: users.username,
+      activeOrganizationId: sessions.activeOrganizationId,
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
@@ -176,6 +177,18 @@ export async function deleteSession(
   id: string,
 ): Promise<void> {
   await db.delete(sessions).where(eq(sessions.id, id));
+}
+
+export async function setSessionActiveOrg(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+  sessionId: string,
+  organizationId: number,
+): Promise<void> {
+  await db
+    .update(sessions)
+    .set({ activeOrganizationId: organizationId })
+    .where(eq(sessions.id, sessionId));
 }
 
 export async function countUsers(
