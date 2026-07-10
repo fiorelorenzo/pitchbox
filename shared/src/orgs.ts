@@ -152,3 +152,54 @@ export async function findOrgBySlug(db: Db, slug: string) {
   const [row] = await db.select().from(organizations).where(eq(organizations.slug, slug)).limit(1);
   return row ?? null;
 }
+
+export async function listUserOrganizations(
+  db: Db,
+  userId: number,
+): Promise<{ id: number; slug: string; name: string; role: string }[]> {
+  return db
+    .select({
+      id: organizations.id,
+      slug: organizations.slug,
+      name: organizations.name,
+      role: memberships.role,
+    })
+    .from(memberships)
+    .innerJoin(organizations, eq(organizations.id, memberships.organizationId))
+    .where(eq(memberships.userId, userId))
+    .orderBy(organizations.id);
+}
+
+export async function loadActiveOrganization(
+  db: Db,
+  userId: number,
+  preferredOrgId?: number | null,
+): Promise<{ id: number; slug: string; role: string } | null> {
+  const rows = await db
+    .select({ id: organizations.id, slug: organizations.slug, role: memberships.role })
+    .from(memberships)
+    .innerJoin(organizations, eq(organizations.id, memberships.organizationId))
+    .where(eq(memberships.userId, userId))
+    .orderBy(organizations.id);
+  if (rows.length === 0) return null;
+  if (preferredOrgId != null) {
+    const match = rows.find((r) => r.id === preferredOrgId);
+    if (match) return match;
+  }
+  return rows[0];
+}
+
+export async function createOrganization(
+  db: Db,
+  args: { slug: string; name: string; ownerUserId: number },
+): Promise<{ id: number; slug: string; role: string }> {
+  const [org] = await db
+    .insert(organizations)
+    .values({ slug: args.slug, name: args.name })
+    .returning();
+  await db
+    .insert(memberships)
+    .values({ organizationId: org.id, userId: args.ownerUserId, role: 'owner' })
+    .onConflictDoNothing();
+  return { id: org.id, slug: org.slug, role: 'owner' };
+}
