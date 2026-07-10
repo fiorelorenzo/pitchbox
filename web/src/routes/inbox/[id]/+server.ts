@@ -1,19 +1,25 @@
-import { json, error } from '@sveltejs/kit';
+import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
 import { eq } from 'drizzle-orm';
 import { emit } from '$lib/server/events.js';
 import { evaluateDraftSend } from '@pitchbox/shared/draft-send';
 import { updateDraftWithVersion } from '$lib/server/draft-state.js';
 import { cascadeRejectSiblings } from '@pitchbox/shared/draft-variants';
+import { requireOrgId } from '$lib/server/auth.js';
+import { draftBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const ALLOWED = ['approved', 'rejected', 'sent'] as const;
 type AllowedState = (typeof ALLOWED)[number];
 
 type PatchBody = { state?: string; sentContent?: string; version?: number };
 
-export async function PATCH({ params, request }: { params: { id: string }; request: Request }) {
+export async function PATCH(event: RequestEvent) {
+  const { params, request } = event;
   const id = Number(params.id);
   if (!Number.isInteger(id) || isNaN(id)) throw error(400, 'invalid id');
+
+  const orgId = await requireOrgId(event);
+  if (!(await draftBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
 
   const body = (await request.json()) as PatchBody;
   if (!body.state || !ALLOWED.includes(body.state as AllowedState)) {

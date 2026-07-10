@@ -2,10 +2,16 @@ import { error } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
 import { getCampaignReadiness } from '$lib/server/campaign-readiness.js';
 import { desc, eq, count, inArray } from 'drizzle-orm';
+import { requireOrgId } from '$lib/server/auth.js';
+import { campaignBelongsToOrg } from '@pitchbox/shared/orgs';
+import type { PageServerLoad } from './$types';
 
-export async function load({ params }: { params: { id: string } }) {
+export const load: PageServerLoad = async (event) => {
+  const { params } = event;
   const id = Number(params.id);
   if (!Number.isInteger(id) || isNaN(id)) throw error(400, 'invalid id');
+  const orgId = await requireOrgId(event);
+  if (!(await campaignBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
   const db = getDb();
   const [campaign] = await db.select().from(schema.campaigns).where(eq(schema.campaigns.id, id));
   if (!campaign) throw error(404, 'campaign not found');
@@ -66,4 +72,4 @@ export async function load({ params }: { params: { id: string } }) {
     tuningRuns,
     readiness,
   };
-}
+};

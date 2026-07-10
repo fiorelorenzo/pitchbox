@@ -3,10 +3,15 @@ import { error } from '@sveltejs/kit';
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { getProjectById } from '@pitchbox/shared/projects';
+import { requireOrgId } from '$lib/server/auth.js';
+import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async (event) => {
+  const { params } = event;
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) throw error(400, 'invalid id');
+  const orgId = await requireOrgId(event);
+  if (!(await projectBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
   const db = getDb();
   const project = await getProjectById(db, id);
   if (!project) throw error(404, 'project not found');

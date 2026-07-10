@@ -1,11 +1,15 @@
-import { json, error } from '@sveltejs/kit';
+import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
 import { and, desc, eq } from 'drizzle-orm';
-import type { RequestHandler } from './$types';
+import { requireOrgId } from '$lib/server/auth.js';
+import { draftBelongsToOrg } from '@pitchbox/shared/orgs';
 
-export const GET: RequestHandler = async ({ params }) => {
+export async function GET(event: RequestEvent) {
+  const { params } = event;
   const id = Number(params.id);
   if (!Number.isInteger(id) || isNaN(id)) throw error(400, 'invalid id');
+  const orgId = await requireOrgId(event);
+  if (!(await draftBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
   const db = getDb();
   const [msg] = await db
     .select({
@@ -23,4 +27,4 @@ export const GET: RequestHandler = async ({ params }) => {
     .orderBy(desc(schema.messages.createdAtPlatform))
     .limit(1);
   return json(msg ?? null);
-};
+}
