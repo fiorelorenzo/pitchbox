@@ -1,7 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import { randomBytes, createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { loadSession, loadOrganizationForUser } from '@pitchbox/shared/auth';
+import { loadSession } from '@pitchbox/shared/auth';
+import { loadActiveOrganization } from '@pitchbox/shared/orgs';
 import { getDb, schema } from '$lib/server/db.js';
 
 /**
@@ -14,7 +15,7 @@ import { getDb, schema } from '$lib/server/db.js';
  *
  * Auth modes:
  *  - PITCHBOX_AUTH=on: requires a valid session cookie. Token is bound to the
- *    user's primary org.
+ *    caller's active org.
  *  - PITCHBOX_AUTH off: single-user mode. Anyone with access to the dashboard
  *    origin already passed whatever boundary the operator set up (LAN /
  *    Tailscale / reverse proxy), so we bind the token to the default org.
@@ -54,7 +55,14 @@ export async function GET({
     const cookie = cookies.get(SESSION_COOKIE);
     const session = cookie ? await loadSession(db, cookie) : null;
     if (!session) throw error(401, 'unauthenticated');
-    const org = await loadOrganizationForUser(db, session.userId);
+    // Honor the session's active org (switchable via the org switcher), not
+    // just the user's first membership - loadOrganizationForUser ignores
+    // activeOrganizationId entirely.
+    const org = await loadActiveOrganization(
+      db,
+      session.userId,
+      session.activeOrganizationId ?? null,
+    );
     organizationId = org?.id ?? (await defaultOrgId(db));
   } else {
     organizationId = await defaultOrgId(db);
