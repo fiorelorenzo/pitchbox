@@ -1,6 +1,6 @@
--- Baseline migration: faithful snapshot of the live schema (organization-isolation era).
+-- Baseline migration: faithful snapshot of the live schema (org-isolation era, 0049).
 -- Generated from pg_dump of the live DB so a fresh deploy reproduces it EXACTLY
--- (historical constraint names, all indexes, the runs_kind_target_chk CHECK).
+-- (historical constraint names, all indexes, the runs_kind_target_chk CHECK, org-isolation).
 -- The meta/0000_snapshot.json is drizzle's schema.ts view, used only by 'generate'.
 -- Prior per-migration history is preserved under ../migrations_archive/.
 
@@ -577,7 +577,7 @@ CREATE TABLE public.projects (
     default_agent_runner text DEFAULT 'claude-code'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    organization_id integer
+    organization_id integer NOT NULL
 );
 
 
@@ -665,7 +665,8 @@ CREATE TABLE public.sessions (
     id text NOT NULL,
     user_id integer NOT NULL,
     expires_at timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    active_organization_id integer
 );
 
 
@@ -1010,11 +1011,6 @@ ALTER TABLE ONLY public.projects
 
 
 
-ALTER TABLE ONLY public.projects
-    ADD CONSTRAINT projects_slug_unique UNIQUE (slug);
-
-
-
 ALTER TABLE ONLY public.run_events
     ADD CONSTRAINT run_events_pkey PRIMARY KEY (id);
 
@@ -1160,6 +1156,10 @@ CREATE INDEX project_insights_project_idx ON public.project_insights USING btree
 
 
 CREATE INDEX projects_org_idx ON public.projects USING btree (organization_id);
+
+
+
+CREATE UNIQUE INDEX projects_org_slug_unique ON public.projects USING btree (organization_id, slug);
 
 
 
@@ -1365,6 +1365,11 @@ ALTER TABLE ONLY public.runs
 
 ALTER TABLE ONLY public.runs
     ADD CONSTRAINT runs_project_id_projects_id_fk FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.sessions
+    ADD CONSTRAINT sessions_active_organization_id_fkey FOREIGN KEY (active_organization_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
 
 
 
