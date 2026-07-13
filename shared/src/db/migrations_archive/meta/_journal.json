@@ -1,0 +1,356 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1777026851964,
+      "tag": "0000_outstanding_skullbuster",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777035744617,
+      "tag": "0001_add-run-events",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777038400000,
+      "tag": "0002_one_running_per_campaign",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777042000000,
+      "tag": "0003_agent_runner",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777042500000,
+      "tag": "0004_reply_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777043000000,
+      "tag": "0005_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777067900000,
+      "tag": "0006_messages_message_id_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777068700000,
+      "tag": "0007_contact_history_chat_room_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777153000000,
+      "tag": "0008_drafts_platform_comment_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777153100000,
+      "tag": "0009_contact_history_platform_context_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777153200000,
+      "tag": "0010_runs_kind_project_extraction",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1777890000000,
+      "tag": "0011_runs_kind_skill_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1778050000000,
+      "tag": "0012_campaign_recommendations",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778495500000,
+      "tag": "0013_drop_project_configs",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1778500000000,
+      "tag": "0014_drop_drafts_subreddit",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1778525000000,
+      "tag": "0015_accounts_is_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1778525500000,
+      "tag": "0016_playbooks",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1778525800000,
+      "tag": "0017_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1778526100000,
+      "tag": "0018_users_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1778527000000,
+      "tag": "0019_drafts_platform_post_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1778527500000,
+      "tag": "0020_orgs_memberships",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1778527800000,
+      "tag": "0021_extension_devices",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1778528000000,
+      "tag": "0022_perf_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1778540000000,
+      "tag": "0023_auth_failures",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1778541000000,
+      "tag": "0024_extension_sync_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1778542000000,
+      "tag": "0025_drafts_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1778543000000,
+      "tag": "0026_runs_failure_reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1778544000000,
+      "tag": "0027_campaigns_backoff",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1778545000000,
+      "tag": "0028_runs_scheduled_for_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1778546000000,
+      "tag": "0029_runs_cost_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1778547000000,
+      "tag": "0030_index_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1778548000000,
+      "tag": "0031_webhook_deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1778549000000,
+      "tag": "0032_account_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1778550000000,
+      "tag": "0033_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1778561000001,
+      "tag": "0034_keyword_watches",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1778552000000,
+      "tag": "0035_project_insights",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1778553000000,
+      "tag": "0036_drafts_dedup_warning",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1778554000000,
+      "tag": "0037_drafts_body_edited",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1778555000000,
+      "tag": "0038_drafts_scheduled_send_after",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1778556000000,
+      "tag": "0039_drafts_regeneration",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1778557000000,
+      "tag": "0040_drafts_quality_score",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1778558000000,
+      "tag": "0041_drafts_variant_group",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1778559000000,
+      "tag": "0042_drafts_reply_drafting",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1778560000000,
+      "tag": "0043_org_invites",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1778561000000,
+      "tag": "0044_drop_legacy_extension_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1778562000000,
+      "tag": "0045_drafts_regenerating_run_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1778563000000,
+      "tag": "0046_fix_draft_regen_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1778564000000,
+      "tag": "0047_drafts_drafting_run_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1778565000000,
+      "tag": "0048_project_insights_run_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1778566000000,
+      "tag": "0049_org_isolation",
+      "breakpoints": true
+    }
+  ]
+}
