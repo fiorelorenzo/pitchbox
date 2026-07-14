@@ -1,10 +1,11 @@
-import { json } from '@sveltejs/kit';
+import { json, type RequestEvent } from '@sveltejs/kit';
 import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 import {
   detectAllRunners,
   clearDetectionCache,
   type DetectResult,
 } from '@pitchbox/shared/agents/detect';
+import { requireRole } from '$lib/server/auth.js';
 
 type RunnerInfo = {
   slug: string;
@@ -38,7 +39,8 @@ export async function GET() {
   return json({ runners: shape(detections) });
 }
 
-export async function POST() {
+export async function POST(event: RequestEvent) {
+  requireRole(event, 'admin');
   clearDetectionCache();
   const detections = await detectAllRunners();
   return json({ runners: shape(detections) });

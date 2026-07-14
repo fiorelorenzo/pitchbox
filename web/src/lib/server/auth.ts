@@ -41,3 +41,18 @@ export async function requireOrgId(event: RequestEvent): Promise<number> {
   if (orgId == null) throw error(404, 'not_found');
   return orgId;
 }
+
+const ROLE_RANK: Record<string, number> = { member: 1, admin: 2, owner: 3 };
+
+/**
+ * Require the active-org role to rank at least `minRole`, else throw 403. A
+ * no-op when auth is off (no `locals.org`), so single-user self-host keeps full
+ * access. Call after the tenant guards (`requireOrgId` + `*BelongsToOrg`).
+ */
+export function requireRole(event: RequestEvent, minRole: 'member' | 'admin' | 'owner'): void {
+  const role = event.locals.org?.role;
+  if (!role) return; // auth off / no org context -> self-host, full access
+  if ((ROLE_RANK[role] ?? 0) < ROLE_RANK[minRole]) {
+    throw error(403, 'forbidden');
+  }
+}

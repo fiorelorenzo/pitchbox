@@ -3,7 +3,7 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import { requireOrgId } from '$lib/server/auth.js';
+import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const PatchBody = z.object({
@@ -26,6 +26,7 @@ export async function PATCH(event: RequestEvent) {
   if (!projectId || !accountId) return json({ error: 'invalid_id' }, { status: 400 });
   const orgId = await requireOrgId(event);
   if (!(await projectBelongsToOrg(getDb(), projectId, orgId))) throw error(404, 'not_found');
+  requireRole(event, 'admin');
   const raw = await request.json().catch(() => null);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
@@ -65,6 +66,7 @@ export async function DELETE(event: RequestEvent) {
   if (!projectId || !accountId) return json({ error: 'invalid_id' }, { status: 400 });
   const orgId = await requireOrgId(event);
   if (!(await projectBelongsToOrg(getDb(), projectId, orgId))) throw error(404, 'not_found');
+  requireRole(event, 'admin');
   await getDb()
     .delete(schema.accounts)
     .where(and(eq(schema.accounts.id, accountId), eq(schema.accounts.projectId, projectId)));

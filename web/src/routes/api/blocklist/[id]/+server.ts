@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
 import { eq } from 'drizzle-orm';
-import { requireOrgId } from '$lib/server/auth.js';
+import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 
 export async function DELETE(event: RequestEvent) {
@@ -18,6 +18,7 @@ export async function DELETE(event: RequestEvent) {
   if (row.projectId && !(await projectBelongsToOrg(db, row.projectId, orgId))) {
     throw error(404, 'not_found');
   }
+  requireRole(event, 'admin');
   const deleted = await db.delete(schema.blocklist).where(eq(schema.blocklist.id, id)).returning();
   if (deleted.length === 0) throw error(404, 'not found');
   return json({ ok: true, id });

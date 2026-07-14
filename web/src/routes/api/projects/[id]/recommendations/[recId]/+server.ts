@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import { requireOrgId } from '$lib/server/auth.js';
+import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 
 function parseId(s: string | undefined): number | null {
@@ -17,6 +17,7 @@ export async function DELETE(event: RequestEvent) {
   if (!id || !recId) return json({ error: 'invalid_id' }, { status: 400 });
   const orgId = await requireOrgId(event);
   if (!(await projectBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+  requireRole(event, 'admin');
   const db = getDb();
   const result = await db
     .delete(schema.campaignRecommendations)

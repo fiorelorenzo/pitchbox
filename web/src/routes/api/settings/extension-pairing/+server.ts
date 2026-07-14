@@ -1,7 +1,7 @@
-import { json } from '@sveltejs/kit';
+import { json, type RequestEvent } from '@sveltejs/kit';
 import { randomBytes } from 'node:crypto';
 import { getDb, schema } from '$lib/server/db.js';
-import { resolveOrgId } from '$lib/server/auth.js';
+import { resolveOrgId, requireRole } from '$lib/server/auth.js';
 
 const TTL_MS = 10 * 60 * 1000;
 
@@ -11,7 +11,8 @@ function generateCode(): string {
   return `${raw.slice(0, 4)}-${raw.slice(4)}`;
 }
 
-export async function POST(event: import('@sveltejs/kit').RequestEvent) {
+export async function POST(event: RequestEvent) {
+  requireRole(event, 'admin');
   const db = getDb();
   // Attribute the pairing to the caller's active org (falls back to the
   // default org when auth is off / no membership exists yet), not always the

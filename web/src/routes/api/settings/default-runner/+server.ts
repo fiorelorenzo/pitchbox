@@ -1,8 +1,9 @@
-import { json, error } from '@sveltejs/kit';
+import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
+import { requireRole } from '$lib/server/auth.js';
 
 const Body = z.object({ slug: z.string() });
 
@@ -17,7 +18,9 @@ export async function GET() {
   return json({ slug: (row?.value as { slug?: string })?.slug ?? null });
 }
 
-export async function PUT({ request }: { request: Request }) {
+export async function PUT(event: RequestEvent) {
+  const { request } = event;
+  requireRole(event, 'admin');
   const raw = await request.json().catch(() => null);
   const parsed = Body.safeParse(raw);
   if (!parsed.success) throw error(400, 'invalid_body');

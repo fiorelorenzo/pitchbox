@@ -1,13 +1,14 @@
 <script lang="ts">
   import * as Card from '$lib/components/ui/card';
   import * as Dialog from '$lib/components/ui/dialog';
+  import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
-  import { UserPlus, Copy, Trash2 } from '@lucide/svelte';
+  import { UserPlus, Copy, Trash2, MoreHorizontal } from '@lucide/svelte';
 
   type Member = { userId: number; username: string; role: string; joinedAt: string };
   type Invite = {
@@ -115,6 +116,65 @@
       revoking = null;
     }
   }
+
+  // Member management: what the current user (role in data.role) may do to a
+  // target. Admins cannot touch owners and cannot grant the owner role; the API
+  // enforces the same rules, this just hides controls that would 403.
+  function canActOn(targetRole: string): boolean {
+    if (!data.canManage) return false;
+    if (data.role === 'owner') return true;
+    return data.role === 'admin' && targetRole !== 'owner';
+  }
+  function assignableRoles(): string[] {
+    return data.role === 'owner' ? ['member', 'admin', 'owner'] : ['member', 'admin'];
+  }
+
+  let acting = $state<number | null>(null);
+  async function changeRole(userId: number, role: string) {
+    if (!data.org || acting) return;
+    acting = userId;
+    try {
+      const res = await fetch(`/api/orgs/${data.org.slug}/members/${userId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ role }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(
+          res.status === 403 || res.status === 400 ? (body.error ?? 'Not allowed') : 'Could not change the role',
+        );
+        return;
+      }
+      toast.success('Role updated');
+      await invalidateAll();
+    } catch {
+      toast.error('Could not change the role');
+    } finally {
+      acting = null;
+    }
+  }
+  async function removeMemberAction(userId: number, username: string) {
+    if (!data.org || acting) return;
+    if (!confirm(`Remove ${username} from ${data.org.name}?`)) return;
+    acting = userId;
+    try {
+      const res = await fetch(`/api/orgs/${data.org.slug}/members/${userId}`, { method: 'DELETE' });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(
+          res.status === 403 || res.status === 400 ? (body.error ?? 'Not allowed') : 'Could not remove the member',
+        );
+        return;
+      }
+      toast.success(`${username} removed`);
+      await invalidateAll();
+    } catch {
+      toast.error('Could not remove the member');
+    } finally {
+      acting = null;
+    }
+  }
 </script>
 
 <Seo title="Settings - Members" description="People in your organization and pending invites." />
@@ -169,7 +229,44 @@
             >
               {m.role}
             </span>
-            <span class="hidden text-xs text-muted-foreground sm:inline">joined {joinedLabel(m.joinedAt)}</span>
+            <span class="hidden text-xs text-muted-foreground sm:inline"
+              >joined {joinedLabel(m.joinedAt)}</span
+            >
+            {#if m.userId !== data.currentUserId && canActOn(m.role)}
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger>
+                  {#snippet child({ props })}
+                    <button
+                      {...props}
+                      class="grid size-7 flex-none place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      aria-label={`Manage ${m.username}`}
+                    >
+                      <MoreHorizontal class="size-4" />
+                    </button>
+                  {/snippet}
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content align="end" class="w-52">
+                  <DropdownMenu.Label class="text-xs font-normal text-muted-foreground">
+                    Change role
+                  </DropdownMenu.Label>
+                  {#each assignableRoles() as r (r)}
+                    {#if r !== m.role}
+                      <DropdownMenu.Item class="capitalize" onclick={() => changeRole(m.userId, r)}>
+                        Make {r}
+                      </DropdownMenu.Item>
+                    {/if}
+                  {/each}
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.Item
+                    class="gap-2 text-destructive"
+                    onclick={() => removeMemberAction(m.userId, m.username)}
+                  >
+                    <Trash2 class="size-4" />
+                    Remove from organization
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>
+            {/if}
           </div>
         {/each}
       </Card.Content>

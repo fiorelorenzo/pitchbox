@@ -1,7 +1,8 @@
-import { json, error } from '@sveltejs/kit';
+import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
+import { requireRole } from '$lib/server/auth.js';
 
 const Window = z
   .object({ perDay: z.number().int().min(0), perWeek: z.number().int().min(0) })
@@ -27,7 +28,9 @@ export async function GET() {
   return json(row?.value ?? {});
 }
 
-export async function POST({ request }: { request: Request }) {
+export async function POST(event: RequestEvent) {
+  const { request } = event;
+  requireRole(event, 'admin');
   const raw = await request.json().catch(() => null);
   const parsed = Body.safeParse(raw);
   if (!parsed.success)

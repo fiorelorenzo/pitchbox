@@ -255,3 +255,46 @@ export async function createOrganization(
     .onConflictDoNothing();
   return { id: org.id, slug: org.slug, role: 'owner' };
 }
+
+/** The role of a user in an org, or null if they are not a member. */
+export async function getMemberRole(db: Db, orgId: number, userId: number): Promise<string | null> {
+  const [row] = await db
+    .select({ role: memberships.role })
+    .from(memberships)
+    .where(and(eq(memberships.organizationId, orgId), eq(memberships.userId, userId)))
+    .limit(1);
+  return row?.role ?? null;
+}
+
+/** How many owners the org currently has (used to protect the last owner). */
+export async function countOrgOwners(db: Db, orgId: number): Promise<number> {
+  const rows = await db
+    .select({ userId: memberships.userId })
+    .from(memberships)
+    .where(and(eq(memberships.organizationId, orgId), eq(memberships.role, 'owner')));
+  return rows.length;
+}
+
+/** Update a member's role. Returns true if a membership row was changed. */
+export async function setMemberRole(
+  db: Db,
+  orgId: number,
+  userId: number,
+  role: OrgRole,
+): Promise<boolean> {
+  const rows = await db
+    .update(memberships)
+    .set({ role })
+    .where(and(eq(memberships.organizationId, orgId), eq(memberships.userId, userId)))
+    .returning({ userId: memberships.userId });
+  return rows.length > 0;
+}
+
+/** Remove a member from an org. Returns true if a membership row was removed. */
+export async function removeMember(db: Db, orgId: number, userId: number): Promise<boolean> {
+  const rows = await db
+    .delete(memberships)
+    .where(and(eq(memberships.organizationId, orgId), eq(memberships.userId, userId)))
+    .returning({ userId: memberships.userId });
+  return rows.length > 0;
+}

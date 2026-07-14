@@ -1,4 +1,4 @@
-import { json, error } from '@sveltejs/kit';
+import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db.js';
 import {
   loadRunnerConfigs,
@@ -7,6 +7,7 @@ import {
 } from '@pitchbox/shared/agents/config';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { z } from 'zod';
+import { requireRole } from '$lib/server/auth.js';
 
 const ConfigSchema = z.object({
   model: z.string().min(1).optional(),
@@ -29,7 +30,9 @@ export async function GET() {
   return json({ configs });
 }
 
-export async function PUT({ request }: { request: Request }) {
+export async function PUT(event: RequestEvent) {
+  const { request } = event;
+  requireRole(event, 'admin');
   const body = await request.json();
   const parsed = PutBody.safeParse(body);
   if (!parsed.success) throw error(400, 'invalid body');

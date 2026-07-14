@@ -1,7 +1,8 @@
-import { json, error } from '@sveltejs/kit';
+import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
 import { z } from 'zod';
 import { desc, eq } from 'drizzle-orm';
+import { requireRole } from '$lib/server/auth.js';
 
 const PostBody = z.object({
   slug: z
@@ -20,7 +21,9 @@ export async function GET() {
   return json({ playbooks: rows });
 }
 
-export async function POST({ request }: { request: Request }) {
+export async function POST(event: RequestEvent) {
+  const { request } = event;
+  requireRole(event, 'admin');
   const body = await request.json().catch(() => null);
   const parsed = PostBody.safeParse(body);
   if (!parsed.success) throw error(400, 'invalid_body');

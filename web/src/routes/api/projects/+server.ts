@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import { resolveOrgId, requireOrgId } from '$lib/server/auth.js';
+import { resolveOrgId, requireOrgId, requireRole } from '$lib/server/auth.js';
 import { listProjects, createProjectTx, ProjectSlugConflictError } from '@pitchbox/shared/projects';
 
 const slugRegex = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
@@ -67,6 +67,7 @@ export async function POST(event) {
   }
 
   const organizationId = await requireOrgId(event);
+  requireRole(event, 'admin');
 
   try {
     const out = await createProjectTx(db, {

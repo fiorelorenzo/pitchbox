@@ -9,7 +9,7 @@ import {
   deleteProject,
   ProjectDeleteSlugMismatchError,
 } from '@pitchbox/shared/projects';
-import { requireOrgId } from '$lib/server/auth.js';
+import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const PatchBody = z.object({
@@ -44,6 +44,7 @@ export async function PATCH(event: RequestEvent) {
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
   const orgId = await requireOrgId(event);
   if (!(await projectBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+  requireRole(event, 'admin');
   const raw = await request.json().catch(() => null);
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
@@ -62,6 +63,7 @@ export async function DELETE(event: RequestEvent) {
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
   const orgId = await requireOrgId(event);
   if (!(await projectBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+  requireRole(event, 'admin');
   const raw = await request.json().catch(() => null);
   const parsed = DeleteBody.safeParse(raw);
   if (!parsed.success) {
