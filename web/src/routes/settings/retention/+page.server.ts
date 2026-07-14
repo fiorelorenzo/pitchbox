@@ -1,6 +1,7 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
 import { getDb } from '../../../lib/server/db.js';
+import { requireRole } from '../../../lib/server/auth.js';
 import {
   loadRetention,
   saveRetention,
@@ -22,8 +23,9 @@ function parseDays(form: FormData, key: keyof RetentionPolicy): number | null {
 }
 
 export const actions: Actions = {
-  default: async ({ request }) => {
-    const form = await request.formData();
+  default: async (event) => {
+    requireRole(event, 'admin'); // editing retention is admin-only
+    const form = await event.request.formData();
     const drafts_days = parseDays(form, 'drafts_days');
     const run_events_days = parseDays(form, 'run_events_days');
     const draft_events_days = parseDays(form, 'draft_events_days');
