@@ -4,8 +4,8 @@
   import * as Avatar from '$lib/components/ui/avatar';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
-  import { Check, ChevronsUpDown, Plus } from '@lucide/svelte';
-  import { invalidateAll } from '$app/navigation';
+  import { Check, ChevronsUpDown, Plus, Users } from '@lucide/svelte';
+  import { goto, invalidateAll } from '$app/navigation';
   import { toast } from 'svelte-sonner';
 
   type OrgSummary = { id: number; slug: string; name: string; role: string };
@@ -134,6 +134,10 @@
       </DropdownMenu.Item>
     {/each}
     <DropdownMenu.Separator />
+    <DropdownMenu.Item class="gap-2" onclick={() => goto('/settings/members')}>
+      <Users class="size-4" />
+      Members
+    </DropdownMenu.Item>
     <DropdownMenu.Item class="gap-2" onclick={openCreate}>
       <Plus class="size-4" />
       Create organization

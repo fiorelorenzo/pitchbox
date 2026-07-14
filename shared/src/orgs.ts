@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, or } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import {
   campaigns,
@@ -9,6 +9,7 @@ import {
   orgInvites,
   projects,
   runs,
+  users,
 } from './db/schema.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -84,11 +85,53 @@ export async function listOrgMembers(db: Db, orgId: number) {
   return db
     .select({
       userId: memberships.userId,
+      username: users.username,
       role: memberships.role,
       createdAt: memberships.createdAt,
     })
     .from(memberships)
-    .where(eq(memberships.organizationId, orgId));
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(eq(memberships.organizationId, orgId))
+    .orderBy(memberships.createdAt);
+}
+
+/** Invites for an org that have not been accepted and have not expired. */
+export async function listPendingInvites(db: Db, orgId: number) {
+  return db
+    .select({
+      token: orgInvites.token,
+      role: orgInvites.role,
+      email: orgInvites.email,
+      expiresAt: orgInvites.expiresAt,
+      createdAt: orgInvites.createdAt,
+    })
+    .from(orgInvites)
+    .where(
+      and(
+        eq(orgInvites.organizationId, orgId),
+        isNull(orgInvites.acceptedAt),
+        gt(orgInvites.expiresAt, new Date()),
+      ),
+    )
+    .orderBy(desc(orgInvites.createdAt));
+}
+
+/**
+ * Delete a pending invite by token, scoped to the org (so one org cannot revoke
+ * another org's invite). Returns true if an invite was actually removed.
+ */
+export async function revokeInvite(db: Db, orgId: number, token: string): Promise<boolean> {
+  const rows = await db
+    .delete(orgInvites)
+    .where(
+      and(
+        eq(orgInvites.token, token),
+        eq(orgInvites.organizationId, orgId),
+        isNull(orgInvites.acceptedAt),
+      ),
+    )
+    .returning({ token: orgInvites.token });
+  return rows.length > 0;
 }
 
 export async function isOrgAdmin(db: Db, userId: number, orgId: number): Promise<boolean> {
