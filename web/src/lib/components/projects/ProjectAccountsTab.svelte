@@ -21,8 +21,9 @@
     accounts: Account[];
     platforms: Platform[];
     platformDefaults?: Record<number, PlatformDefaults>;
+    isAdmin: boolean;
   };
-  let { projectId, accounts, platforms, platformDefaults = {} }: Props = $props();
+  let { projectId, accounts, platforms, platformDefaults = {}, isAdmin }: Props = $props();
 
   let addOpen = $state(false);
   let newHandle = $state('');
@@ -44,7 +45,7 @@
         body: JSON.stringify({ handle: newHandle, role: newRole, platformSlug: newPlatform }),
       });
       if (!res.ok) {
-        toast.error('Failed to add account');
+        toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to add account');
         return;
       }
       newHandle = '';
@@ -58,7 +59,7 @@
   async function remove(id: number) {
     if (!confirm('Delete account?')) return;
     const res = await fetch(`/api/projects/${projectId}/accounts/${id}`, { method: 'DELETE' });
-    if (!res.ok) toast.error('Failed to delete');
+    if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
     else await invalidateAll();
   }
 
@@ -68,7 +69,7 @@
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ role }),
     });
-    if (!res.ok) toast.error('Failed to update');
+    if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to update');
     else await invalidateAll();
   }
 
@@ -78,7 +79,7 @@
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ isDefault: true }),
     });
-    if (!res.ok) toast.error('Failed to set default');
+    if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to set default');
     else await invalidateAll();
   }
 </script>
@@ -92,7 +93,7 @@
         <span class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
           default
         </span>
-      {:else}
+      {:else if isAdmin}
         <Button size="sm" variant="ghost" onclick={() => setDefault(a.id)} class="text-xs">
           Set default
         </Button>
@@ -106,40 +107,45 @@
         ]}
         size="sm"
         class="ml-auto"
+        disabled={!isAdmin}
       />
-      <Button size="sm" variant="ghost" onclick={() => remove(a.id)}>Delete</Button>
+      {#if isAdmin}
+        <Button size="sm" variant="ghost" onclick={() => remove(a.id)}>Delete</Button>
+      {/if}
     </div>
   {/each}
 
-  {#if addOpen}
-    <div class="border border-border rounded-md p-3 space-y-2">
-      <label class="flex flex-col gap-1 text-xs">Handle<Input bind:value={newHandle} /></label>
-      <label class="flex flex-col gap-1 text-xs">
-        Role
-        <SelectField
-          value={newRole}
-          onValueChange={(v) => (newRole = v as 'personal' | 'brand')}
-          options={[
-            { value: 'personal', label: 'personal' },
-            { value: 'brand', label: 'brand' },
-          ]}
-          fullWidth
-        />
-      </label>
-      <label class="flex flex-col gap-1 text-xs">
-        Platform
-        <SelectField
-          bind:value={newPlatform}
-          options={platforms.map((p) => ({ value: p.slug, label: p.slug }))}
-          fullWidth
-        />
-      </label>
-      <div class="flex gap-2">
-        <Button size="sm" onclick={add} disabled={busy || !newHandle.trim()}>Add</Button>
-        <Button size="sm" variant="ghost" onclick={() => (addOpen = false)}>Cancel</Button>
+  {#if isAdmin}
+    {#if addOpen}
+      <div class="border border-border rounded-md p-3 space-y-2">
+        <label class="flex flex-col gap-1 text-xs">Handle<Input bind:value={newHandle} /></label>
+        <label class="flex flex-col gap-1 text-xs">
+          Role
+          <SelectField
+            value={newRole}
+            onValueChange={(v) => (newRole = v as 'personal' | 'brand')}
+            options={[
+              { value: 'personal', label: 'personal' },
+              { value: 'brand', label: 'brand' },
+            ]}
+            fullWidth
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-xs">
+          Platform
+          <SelectField
+            bind:value={newPlatform}
+            options={platforms.map((p) => ({ value: p.slug, label: p.slug }))}
+            fullWidth
+          />
+        </label>
+        <div class="flex gap-2">
+          <Button size="sm" onclick={add} disabled={busy || !newHandle.trim()}>Add</Button>
+          <Button size="sm" variant="ghost" onclick={() => (addOpen = false)}>Cancel</Button>
+        </div>
       </div>
-    </div>
-  {:else}
-    <Button size="sm" variant="outline" onclick={() => (addOpen = true)}>Add account</Button>
+    {:else}
+      <Button size="sm" variant="outline" onclick={() => (addOpen = true)}>Add account</Button>
+    {/if}
   {/if}
 </div>

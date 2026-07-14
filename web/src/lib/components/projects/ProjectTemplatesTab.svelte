@@ -13,8 +13,8 @@
     isActive: boolean;
     createdAt: string | Date;
   };
-  type Props = { projectId: number; templates: Template[] };
-  let { projectId, templates }: Props = $props();
+  type Props = { projectId: number; templates: Template[]; isAdmin: boolean };
+  let { projectId, templates, isAdmin }: Props = $props();
 
   let addOpen = $state(false);
   let newKind = $state<'dm' | 'comment' | 'post'>('comment');
@@ -68,7 +68,7 @@
     const res = await fetch(`/api/projects/${projectId}/templates/${t.id}`, {
       method: 'DELETE',
     });
-    if (!res.ok) toast.error('Failed to delete');
+    if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
     else await invalidateAll();
   }
 </script>
@@ -125,7 +125,9 @@
             <Button variant="outline" size="sm" onclick={() => toggleActive(t)}>
               {t.isActive ? 'Archive' : 'Restore'}
             </Button>
-            <Button variant="outline" size="sm" onclick={() => remove(t)}>Delete</Button>
+            {#if isAdmin}
+              <Button variant="outline" size="sm" onclick={() => remove(t)}>Delete</Button>
+            {/if}
           </div>
         </div>
         <pre class="text-sm whitespace-pre-wrap text-muted-foreground">{t.body}</pre>

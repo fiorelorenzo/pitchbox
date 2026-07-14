@@ -46,8 +46,9 @@
     project: Project;
     extractionRuns: ExtractionRun[];
     recommendations: Recommendation[];
+    isAdmin: boolean;
   };
-  let { project, extractionRuns, recommendations }: Props = $props();
+  let { project, extractionRuns, recommendations, isAdmin }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let name = $state(project.name);
@@ -117,7 +118,7 @@
         }),
       });
       if (!res.ok) {
-        toast.error('Failed to save');
+        toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to save');
         return;
       }
       toast.success('Saved');
@@ -134,7 +135,7 @@
       body: JSON.stringify({ confirmSlug: project.slug }),
     });
     if (!res.ok) {
-      toast.error('Failed to delete');
+      toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
       return;
     }
     toast.success('Project deleted');
@@ -193,7 +194,7 @@
     </label>
     <label class="flex flex-col gap-1 text-xs">
       Name
-      <Input bind:value={name} />
+      <Input bind:value={name} disabled={!isAdmin} title={isAdmin ? undefined : 'Admin access required'} />
     </label>
     <label class="flex flex-col gap-1 text-xs">
       Default agent runner
@@ -202,6 +203,7 @@
         onValueChange={(v) => (runner = v as string)}
         options={RUNNER_OPTIONS}
         fullWidth
+        disabled={!isAdmin}
       />
     </label>
   </div>
@@ -280,28 +282,30 @@
     </div>
   {/if}
 
-  <div class="flex justify-end pt-2 border-t">
-    <Button onclick={save} disabled={extractionRunning} loading={saving}>Save</Button>
-  </div>
-
-  <div
-    class="mt-10 rounded-md border border-destructive/40 bg-destructive/5 p-4 flex items-start justify-between gap-4"
-  >
-    <div class="flex flex-col gap-1">
-      <h3 class="text-sm font-medium text-destructive">Danger zone</h3>
-      <p class="text-xs text-muted-foreground">
-        Permanently delete this project and all its data. This cannot be undone.
-      </p>
+  {#if isAdmin}
+    <div class="flex justify-end pt-2 border-t">
+      <Button onclick={save} disabled={extractionRunning} loading={saving}>Save</Button>
     </div>
-    <Button
-      variant="outline"
-      size="sm"
-      class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
-      onclick={() => (deleteOpen = true)}
+
+    <div
+      class="mt-10 rounded-md border border-destructive/40 bg-destructive/5 p-4 flex items-start justify-between gap-4"
     >
-      Delete project
-    </Button>
-  </div>
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-medium text-destructive">Danger zone</h3>
+        <p class="text-xs text-muted-foreground">
+          Permanently delete this project and all its data. This cannot be undone.
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
+        onclick={() => (deleteOpen = true)}
+      >
+        Delete project
+      </Button>
+    </div>
+  {/if}
 </div>
 
 <DeleteProjectDialog

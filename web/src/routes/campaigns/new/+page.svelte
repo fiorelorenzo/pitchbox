@@ -14,6 +14,7 @@
 	import { untrack } from 'svelte';
 
 	let { data }: { data: PageData } = $props();
+	const isAdmin = $derived(data.isAdmin ?? true);
 
 	// Seed every form-field state from `data` exactly once. Wrapping in
 	// untrack() silences state_referenced_locally - the initial value should
@@ -107,7 +108,10 @@
 				return;
 			}
 			toast.success('Campaign created - generating profile');
-			if (preselectedRecId !== null) {
+			// Deleting the used recommendation is an admin-only action (cleanup only,
+			// non-critical to the campaign-creation flow). Members skip it - the
+			// recommendation just stays around unused.
+			if (preselectedRecId !== null && isAdmin) {
 				fetch(`/api/projects/${projectId}/recommendations/${preselectedRecId}`, {
 					method: 'DELETE',
 				}).catch(() => {});

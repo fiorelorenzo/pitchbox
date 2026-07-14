@@ -19,14 +19,16 @@
 		updatedAt: string | Date;
 	};
 
-	let { data }: { data: { playbook: Playbook } } = $props();
+	let { data }: { data: { playbook: Playbook; isAdmin?: boolean } } = $props();
+	const isAdmin = $derived(data.isAdmin ?? true);
 
 	let name = $state(untrack(() => data.playbook.name));
 	let description = $state(untrack(() => data.playbook.description ?? ''));
 	let body = $state(untrack(() => data.playbook.body));
 	let saving = $state(false);
 
-	const readOnly = $derived(data.playbook.isBuiltin);
+	const builtin = $derived(data.playbook.isBuiltin);
+	const readOnly = $derived(builtin || !isAdmin);
 	const dirty = $derived(
 		name !== data.playbook.name ||
 			(description || null) !== data.playbook.description ||
@@ -46,7 +48,7 @@
 				}),
 			});
 			if (!res.ok) {
-				toast.error('Save failed');
+				toast.error(res.status === 403 ? 'You need admin access for that' : 'Save failed');
 				return;
 			}
 			toast.success('Saved');
@@ -70,7 +72,8 @@
 			}),
 		});
 		if (!res.ok) {
-			toast.error(res.status === 409 ? 'Slug already taken' : 'Duplicate failed');
+			if (res.status === 403) toast.error('You need admin access for that');
+			else toast.error(res.status === 409 ? 'Slug already taken' : 'Duplicate failed');
 			return;
 		}
 		const payload = await res.json();
@@ -83,17 +86,21 @@
 <PageHeader title={data.playbook.name} description={`Slug: ${data.playbook.slug}`}>
 	{#snippet actions()}
 		<Button variant="outline" onclick={() => goto('/playbooks')}>Back</Button>
-		<Button variant="outline" onclick={duplicate}>Duplicate</Button>
+		{#if isAdmin}
+			<Button variant="outline" onclick={duplicate}>Duplicate</Button>
+		{/if}
 		{#if !readOnly}
 			<Button onclick={save} disabled={!dirty} loading={saving}>Save</Button>
 		{/if}
 	{/snippet}
 </PageHeader>
 
-{#if readOnly}
+{#if builtin}
 	<p class="mt-3 text-xs text-muted-foreground">
 		This is a built-in playbook and cannot be edited in place. Duplicate it to customise.
 	</p>
+{:else if !isAdmin}
+	<p class="mt-3 text-xs text-muted-foreground">You need admin access to edit this playbook.</p>
 {/if}
 
 <Card.Root size="sm" class="mt-4">

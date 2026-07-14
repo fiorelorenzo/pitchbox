@@ -7,11 +7,14 @@
   import { FolderKanban } from '@lucide/svelte';
 
   let { data }: { data: PageData } = $props();
+  const isAdmin = $derived(data.isAdmin ?? true);
 </script>
 
 <PageHeader title="Projects">
   {#snippet actions()}
-    <a href="/projects/new"><Button size="sm">New project</Button></a>
+    {#if isAdmin}
+      <a href="/projects/new"><Button size="sm">New project</Button></a>
+    {/if}
   {/snippet}
 </PageHeader>
 
@@ -22,7 +25,9 @@
     description="A project groups the accounts, campaigns and contact history for one product or brand. Create the first one to start drafting outreach."
     size="lg"
   >
-    <a href="/projects/new"><Button size="sm">Create project</Button></a>
+    {#if isAdmin}
+      <a href="/projects/new"><Button size="sm">Create project</Button></a>
+    {/if}
   </EmptyState>
 {:else}
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

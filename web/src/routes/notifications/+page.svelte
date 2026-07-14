@@ -36,9 +36,11 @@
 		notifications: Notification[];
 		webhooks: { url?: string };
 		deliveries: WebhookDelivery[];
+		isAdmin?: boolean;
 	};
 
 	let { data }: { data: PageData } = $props();
+	const isAdmin = $derived(data.isAdmin ?? true);
 	let webhookUrl = $state(untrack(() => data.webhooks.url ?? ''));
 	let savingWebhook = $state(false);
 	let retrying = $state<Record<number, boolean>>({});
@@ -47,7 +49,7 @@
 		retrying[id] = true;
 		try {
 			const res = await fetch(`/api/webhooks/deliveries/${id}/retry`, { method: 'POST' });
-			if (!res.ok) toast.error('Retry failed');
+			if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Retry failed');
 			else {
 				toast.success('Re-queued');
 				await invalidateAll();
@@ -77,7 +79,7 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ url: webhookUrl.trim() || null }),
 			});
-			if (!res.ok) toast.error('Save failed');
+			if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Save failed');
 			else toast.success('Webhook saved');
 		} finally {
 			savingWebhook = false;
@@ -139,8 +141,10 @@
 					POST a JSON payload to a URL for every notification. Leave empty to disable. Wire this to
 					Slack, Discord, or your own service.
 				</p>
-				<Input bind:value={webhookUrl} placeholder="https://hooks.example.com/..." />
-				<Button onclick={saveWebhook} disabled={savingWebhook}>Save</Button>
+				<Input bind:value={webhookUrl} placeholder="https://hooks.example.com/..." disabled={!isAdmin} />
+				{#if isAdmin}
+					<Button onclick={saveWebhook} disabled={savingWebhook}>Save</Button>
+				{/if}
 			</Card.Content>
 		</Card.Root>
 
@@ -168,7 +172,7 @@
 										</p>
 									{/if}
 								</div>
-								{#if d.status === 'dead'}
+								{#if d.status === 'dead' && isAdmin}
 									<Button
 										size="sm"
 										variant="outline"

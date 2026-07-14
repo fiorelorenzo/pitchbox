@@ -7,6 +7,7 @@
   import ProjectInsightsTab from '$lib/components/projects/ProjectInsightsTab.svelte';
 
   let { data }: { data: PageData } = $props();
+  const isAdmin = $derived(data.isAdmin ?? true);
   const tabParam = page.url.searchParams.get('tab');
   const initialTab =
     tabParam === 'accounts'
@@ -48,15 +49,17 @@
     project={data.project}
     extractionRuns={data.extractionRuns}
     recommendations={data.recommendations}
+    {isAdmin}
   />
 {:else if tab === 'accounts'}
   <ProjectAccountsTab
     projectId={data.project.id}
     accounts={data.accounts}
     platforms={data.platforms}
+    {isAdmin}
   />
 {:else if tab === 'templates'}
-  <ProjectTemplatesTab projectId={data.project.id} templates={data.templates} />
+  <ProjectTemplatesTab projectId={data.project.id} templates={data.templates} {isAdmin} />
 {:else}
   <ProjectInsightsTab projectId={data.project.id} latestInsight={data.latestInsight} />
 {/if}

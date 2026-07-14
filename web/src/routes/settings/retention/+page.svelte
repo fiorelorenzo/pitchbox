@@ -9,9 +9,10 @@
 	import { untrack } from 'svelte';
 
 	type Policy = { drafts_days: number; run_events_days: number; draft_events_days: number };
-	type PageData = { policy: Policy; floor: number };
+	type PageData = { policy: Policy; floor: number; isAdmin?: boolean };
 
 	let { data, form }: { data: PageData; form: { saved?: Policy; error?: string } | null } = $props();
+	const isAdmin = $derived(data.isAdmin ?? true);
 
 	let drafts_days = $state(untrack(() => data.policy.drafts_days));
 	let run_events_days = $state(untrack(() => data.policy.run_events_days));
@@ -59,19 +60,21 @@
 			>
 				<div class="grid gap-1.5">
 					<label class="text-sm font-medium" for="drafts_days">Drafts (sent / rejected / replied)</label>
-					<Input id="drafts_days" name="drafts_days" type="number" min={data.floor} bind:value={drafts_days} />
+					<Input id="drafts_days" name="drafts_days" type="number" min={data.floor} bind:value={drafts_days} disabled={!isAdmin} />
 				</div>
 				<div class="grid gap-1.5">
 					<label class="text-sm font-medium" for="run_events_days">Run events</label>
-					<Input id="run_events_days" name="run_events_days" type="number" min={data.floor} bind:value={run_events_days} />
+					<Input id="run_events_days" name="run_events_days" type="number" min={data.floor} bind:value={run_events_days} disabled={!isAdmin} />
 				</div>
 				<div class="grid gap-1.5">
 					<label class="text-sm font-medium" for="draft_events_days">Draft events</label>
-					<Input id="draft_events_days" name="draft_events_days" type="number" min={data.floor} bind:value={draft_events_days} />
+					<Input id="draft_events_days" name="draft_events_days" type="number" min={data.floor} bind:value={draft_events_days} disabled={!isAdmin} />
 				</div>
-				<div>
-					<Button type="submit" disabled={busy}>Save</Button>
-				</div>
+				{#if isAdmin}
+					<div>
+						<Button type="submit" disabled={busy}>Save</Button>
+					</div>
+				{/if}
 			</form>
 		</Card.Content>
 	</Card.Root>

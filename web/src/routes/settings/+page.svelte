@@ -37,9 +37,11 @@
 		quota: Record<string, PlatformQuota>;
 		runners: RunnerInfo[];
 		defaultRunner: string | null;
+		isAdmin?: boolean;
 	};
 
 	let { data }: { data: PageData } = $props();
+	const isAdmin = $derived(data.isAdmin ?? true);
 
 	let runners = $state(untrack(() => data.runners));
 	let defaultRunner = $state(untrack(() => data.defaultRunner));
@@ -99,6 +101,8 @@
 			if (res.ok) {
 				initial = structuredClone(q);
 				toast.success('Limits saved');
+			} else if (res.status === 403) {
+				toast.error('You need admin access for that');
 			} else {
 				const text = await res.text();
 				toast.error('Save failed', { description: text });
@@ -189,7 +193,7 @@
 		<!-- Runners tab -->
 		<Tabs.Content value="runners" class="mt-4">
 			<div class="max-w-3xl">
-				<SettingsRunnersCard bind:runners bind:defaultRunner />
+				<SettingsRunnersCard bind:runners bind:defaultRunner {isAdmin} />
 			</div>
 		</Tabs.Content>
 
@@ -223,7 +227,9 @@
 		>
 			<span class="text-sm">You have unsaved changes</span>
 			<Button variant="outline" size="sm" onclick={discard}>Discard</Button>
-			<Button size="sm" onclick={save} disabled={saving}>Save</Button>
+			{#if isAdmin}
+				<Button size="sm" onclick={save} disabled={saving}>Save</Button>
+			{/if}
 		</div>
 	{/if}
 </Tooltip.Provider>

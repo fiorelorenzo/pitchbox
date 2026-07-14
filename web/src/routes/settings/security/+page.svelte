@@ -11,9 +11,10 @@
 
 	type Failure = { id: number; identifier: string; failedAt: string; kind: string };
 	type Policy = { maxAttempts: number; windowMinutes: number; lockoutMinutes: number };
-	type PageData = { policy: Policy; failures: Failure[] };
+	type PageData = { policy: Policy; failures: Failure[]; isAdmin?: boolean };
 
 	let { data }: { data: PageData } = $props();
+	const isAdmin = $derived(data.isAdmin ?? true);
 	let unlockTarget = $state('');
 	let busy = $state(false);
 
@@ -45,6 +46,8 @@
 				toast.success(`Cleared ${body.cleared} failure(s) for ${name}`);
 				unlockTarget = '';
 				await invalidateAll();
+			} else if (res.status === 403) {
+				toast.error('You need admin access for that');
 			} else {
 				toast.error('Unlock failed', { description: await res.text() });
 			}
@@ -73,26 +76,28 @@
 		</Card.Header>
 	</Card.Root>
 
-	<Card.Root>
-		<Card.Header>
-			<Card.Title>Unlock account</Card.Title>
-			<Card.Description>Clears the rolling failure counter for the given username.</Card.Description>
-		</Card.Header>
-		<Card.Content>
-			<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-				<Input
-					type="text"
-					placeholder="username"
-					bind:value={unlockTarget}
-					disabled={busy}
-					class="sm:max-w-xs"
-				/>
-				<Button onclick={unlock} disabled={busy || unlockTarget.trim().length === 0}>
-					Unlock account
-				</Button>
-			</div>
-		</Card.Content>
-	</Card.Root>
+	{#if isAdmin}
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>Unlock account</Card.Title>
+				<Card.Description>Clears the rolling failure counter for the given username.</Card.Description>
+			</Card.Header>
+			<Card.Content>
+				<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+					<Input
+						type="text"
+						placeholder="username"
+						bind:value={unlockTarget}
+						disabled={busy}
+						class="sm:max-w-xs"
+					/>
+					<Button onclick={unlock} disabled={busy || unlockTarget.trim().length === 0}>
+						Unlock account
+					</Button>
+				</div>
+			</Card.Content>
+		</Card.Root>
+	{/if}
 
 	<Card.Root>
 		<Card.Header>

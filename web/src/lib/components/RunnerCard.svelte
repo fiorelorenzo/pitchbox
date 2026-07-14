@@ -29,10 +29,12 @@
 		runner = $bindable(),
 		isDefault,
 		onSetDefault,
+		isAdmin,
 	}: {
 		runner: Runner;
 		isDefault: boolean;
 		onSetDefault: () => void;
+		isAdmin: boolean;
 	} = $props();
 
 	let saving = $state(false);
@@ -55,7 +57,7 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ slug: runner.slug, config: runner.config }),
 			});
-			if (!res.ok) toast.error('Save failed');
+			if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Save failed');
 			else toast.success('Runner config saved');
 		} finally {
 			saving = false;
@@ -98,7 +100,7 @@
 				<p class="text-[11px] text-rose-700 dark:text-rose-300 mt-1.5">{runner.error}</p>
 			{/if}
 		</div>
-		{#if runner.implemented && runner.available && !isDefault}
+		{#if runner.implemented && runner.available && !isDefault && isAdmin}
 			<Button size="sm" variant="outline" onclick={onSetDefault} class="shrink-0">
 				Set as default
 			</Button>
@@ -125,6 +127,7 @@
 								onValueChange={(v) => setField(f.key, v || undefined)}
 								options={opts}
 								size="sm"
+								disabled={!isAdmin}
 							/>
 							{#if f.allowCustom}
 								<Input
@@ -134,6 +137,7 @@
 										const v = e.currentTarget.value.trim();
 										setField(f.key, v || undefined);
 									}}
+									disabled={!isAdmin}
 									class="h-7 text-xs mt-1 font-mono"
 								/>
 							{/if}
@@ -148,6 +152,7 @@
 									const n = Number(e.currentTarget.value);
 									setField(f.key, Number.isFinite(n) && n > 0 ? n : undefined);
 								}}
+								disabled={!isAdmin}
 								class="h-7 text-xs"
 							/>
 						{:else if f.kind === 'string'}
@@ -155,15 +160,18 @@
 								value={(runner.config[f.key] as string | undefined) ?? ''}
 								placeholder={f.placeholder ?? ''}
 								oninput={(e) => setField(f.key, e.currentTarget.value || undefined)}
+								disabled={!isAdmin}
 								class="h-7 text-xs"
 							/>
 						{/if}
 					</label>
 				{/each}
 			</div>
-			<div class="flex justify-end">
-				<Button size="sm" onclick={save} loading={saving}>Save config</Button>
-			</div>
+			{#if isAdmin}
+				<div class="flex justify-end">
+					<Button size="sm" onclick={save} loading={saving}>Save config</Button>
+				</div>
+			{/if}
 		</Card.Content>
 	{/if}
 </Card.Root>

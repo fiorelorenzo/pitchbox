@@ -31,8 +31,9 @@
 	let {
 		data,
 	}: {
-		data: { entries: Entry[]; platforms: Platform[]; projects: Project[] };
+		data: { entries: Entry[]; platforms: Platform[]; projects: Project[]; isAdmin?: boolean };
 	} = $props();
+	const isAdmin = $derived(data.isAdmin ?? true);
 
 	const KINDS = [
 		{ value: 'subreddit', label: 'Subreddit' },
@@ -99,7 +100,13 @@
 	async function remove(id: number) {
 		try {
 			const res = await fetch(`/api/blocklist/${id}`, { method: 'DELETE' });
-			if (!res.ok) throw new Error(await res.text());
+			if (!res.ok) {
+				if (res.status === 403) {
+					toast.error('You need admin access for that');
+					return;
+				}
+				throw new Error(await res.text());
+			}
 			toast.success('Removed');
 			await invalidateAll();
 		} catch (err) {
@@ -217,15 +224,17 @@
 									{relativeTime(e.addedAt)}
 								</Table.Cell>
 								<Table.Cell>
-									<Button
-										variant="ghost"
-										size="icon"
-										aria-label="Remove"
-										onclick={() => remove(e.id)}
-										class="text-muted-foreground hover:text-destructive"
-									>
-										<Trash2 class="size-4" />
-									</Button>
+									{#if isAdmin}
+										<Button
+											variant="ghost"
+											size="icon"
+											aria-label="Remove"
+											onclick={() => remove(e.id)}
+											class="text-muted-foreground hover:text-destructive"
+										>
+											<Trash2 class="size-4" />
+										</Button>
+									{/if}
 								</Table.Cell>
 							</Table.Row>
 						{/each}

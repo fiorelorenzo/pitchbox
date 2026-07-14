@@ -19,7 +19,8 @@
 		updatedAt: string | Date;
 	};
 
-	let { data }: { data: { playbooks: PlaybookRow[] } } = $props();
+	let { data }: { data: { playbooks: PlaybookRow[]; isAdmin?: boolean } } = $props();
+	const isAdmin = $derived(data.isAdmin ?? true);
 
 	let createOpen = $state(false);
 	let slug = $state('');
@@ -42,7 +43,8 @@
 				}),
 			});
 			if (!res.ok) {
-				toast.error('Create failed', { description: res.status === 409 ? 'Slug already taken' : '' });
+				if (res.status === 403) toast.error('You need admin access for that');
+				else toast.error('Create failed', { description: res.status === 409 ? 'Slug already taken' : '' });
 				return;
 			}
 			const payload = await res.json();
@@ -58,7 +60,7 @@
 	async function remove(id: number) {
 		if (!confirm('Delete this playbook?')) return;
 		const res = await fetch(`/api/playbooks/${id}`, { method: 'DELETE' });
-		if (!res.ok) toast.error('Delete failed');
+		if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Delete failed');
 		else await invalidateAll();
 	}
 </script>
@@ -70,7 +72,9 @@
 	description="Markdown instructions the agent runner executes. Built-in entries are read-only - duplicate to customise."
 >
 	{#snippet actions()}
-		<Button onclick={() => (createOpen = true)}>New playbook</Button>
+		{#if isAdmin}
+			<Button onclick={() => (createOpen = true)}>New playbook</Button>
+		{/if}
 	{/snippet}
 </PageHeader>
 
@@ -101,7 +105,7 @@
 					<Button size="sm" variant="outline" onclick={() => goto(`/playbooks/${p.id}`)}>
 						{p.isBuiltin ? 'View' : 'Edit'}
 					</Button>
-					{#if !p.isBuiltin}
+					{#if !p.isBuiltin && isAdmin}
 						<Button size="sm" variant="ghost" onclick={() => remove(p.id)}>Delete</Button>
 					{/if}
 				</div>

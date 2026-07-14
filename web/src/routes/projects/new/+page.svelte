@@ -35,7 +35,8 @@
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (body.error === 'slug_conflict') toast.error(`Slug "${body.slug ?? slug}" already taken`);
+        if (res.status === 403) toast.error('You need admin access for that');
+        else if (body.error === 'slug_conflict') toast.error(`Slug "${body.slug ?? slug}" already taken`);
         else toast.error(body.error ?? 'Failed to create project');
         return;
       }

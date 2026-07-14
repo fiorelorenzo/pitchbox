@@ -25,9 +25,11 @@
 	let {
 		runners = $bindable(),
 		defaultRunner = $bindable(),
+		isAdmin,
 	}: {
 		runners: Runner[];
 		defaultRunner: string | null;
+		isAdmin: boolean;
 	} = $props();
 
 	let detecting = $state(false);
@@ -38,7 +40,7 @@
 		try {
 			const res = await fetch('/api/runners', { method: 'POST' });
 			if (!res.ok) {
-				toast.error('Re-detection failed');
+				toast.error(res.status === 403 ? 'You need admin access for that' : 'Re-detection failed');
 				return;
 			}
 			const body = await res.json();
@@ -59,7 +61,7 @@
 			body: JSON.stringify({ slug }),
 		});
 		if (!res.ok) {
-			toast.error('Failed to set default');
+			toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to set default');
 			return;
 		}
 		defaultRunner = slug;
@@ -78,10 +80,12 @@
 				Detected by probing each runner CLI at startup. Re-detect after installing or upgrading.
 			</p>
 		</div>
-		<Button variant="outline" size="sm" onclick={redetect} disabled={detecting}>
-			<RefreshCw class="size-3 {detecting ? 'animate-spin' : ''}" />
-			Re-detect
-		</Button>
+		{#if isAdmin}
+			<Button variant="outline" size="sm" onclick={redetect} disabled={detecting}>
+				<RefreshCw class="size-3 {detecting ? 'animate-spin' : ''}" />
+				Re-detect
+			</Button>
+		{/if}
 	</header>
 
 	{#if usable.length === 0}
@@ -100,6 +104,7 @@
 					bind:runner={runners[runners.indexOf(r)]}
 					isDefault={defaultRunner === r.slug || (defaultRunner === null && i === 0)}
 					onSetDefault={() => setDefault(r.slug)}
+					{isAdmin}
 				/>
 			{/each}
 		</div>
@@ -112,6 +117,7 @@
 					bind:runner={runners[runners.indexOf(r)]}
 					isDefault={false}
 					onSetDefault={() => {}}
+					{isAdmin}
 				/>
 			{/each}
 		</div>
