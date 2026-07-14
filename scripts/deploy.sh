@@ -10,12 +10,12 @@ case "$ENV" in
   prod)
     DIR=/opt/apps/pitchbox; PROJECT=pitchbox; DOMAIN=pitchbox.app
     BLUE_PORT=5180; GREEN_PORT=5181
-    UPSTREAM=/etc/caddy/upstreams/prod.conf; EXTRA=()
+    UPSTREAM=/etc/caddy/upstreams/pitchbox-prod.conf; EXTRA=()
     ;;
   preview)
     DIR=/opt/apps/pitchbox-preview; PROJECT=pitchbox-preview; DOMAIN=preview.pitchbox.app
     BLUE_PORT=5190; GREEN_PORT=5191
-    UPSTREAM=/etc/caddy/upstreams/preview.conf; EXTRA=(-f docker-compose.preview.yml)
+    UPSTREAM=/etc/caddy/upstreams/pitchbox-preview.conf; EXTRA=(-f docker-compose.preview.yml)
     ;;
   *) echo "unknown env: $ENV" >&2; exit 2 ;;
 esac
