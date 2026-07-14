@@ -40,6 +40,34 @@ pnpm exec vitest run -t "pattern"         # single test by name
 
 Tests share one Postgres DB (`pitchbox_test`) and run sequentially - do **not** re-enable `fileParallelism`. Global setup (`tests/global-setup.ts`) migrates + seeds core; teardown intentionally leaves data for inspection.
 
+### Local verification: run the minimal covering subset
+
+CI (`.github/workflows/ci.yml`) runs the full lint + typecheck + build + test
+matrix on every push and PR - that's the gate at merge. Locally, don't re-run
+the whole matrix; run just enough to catch an obviously broken PR in the code
+you touched. Scope by **amount** (narrow to your diff), never by **category**
+(don't skip a check CI runs - e.g. typecheck or a sub-workspace's own `check`):
+
+```bash
+# Tests - filter to the file(s)/pattern you touched, not the full suite
+pnpm exec vitest run path/to/changed.test.ts
+pnpm exec vitest run -t "pattern"
+
+# Lint - `pnpm run lint` hardcodes `.` (whole repo); call the tools directly
+# on your changed files instead
+npx eslint path/to/changed/file.ts
+npx prettier --check path/to/changed/file.ts
+
+# Typecheck - tsc/svelte-check are whole-project by nature (no per-file mode),
+# but still scope to the workspace(s) you touched, not every workspace
+pnpm -F @pitchbox/shared typecheck    # or cli / daemon
+pnpm -F web check                     # or @pitchbox/extension check
+```
+
+Run the full `pnpm run lint`, `pnpm run typecheck`, and `pnpm test` only for
+release-critical changes (migrations, auth, the runner protocol) or when the
+change is genuinely repo-wide.
+
 ## Architecture
 
 pnpm workspaces monorepo (`pnpm-workspace.yaml`). All workspaces share a single version (`0.5.0`), and the dashboard sidebar reads that version from `web/package.json`.
