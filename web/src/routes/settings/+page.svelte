@@ -127,7 +127,7 @@
 
 <Tooltip.Provider>
 	<PageHeader
-		title="Settings"
+		title="General"
 		description="Daemon status, agent runner configuration, and browser extension hookup."
 	/>
 
