@@ -171,7 +171,7 @@ describe('auth hardening', () => {
     });
     const unlockRes = await unlock({
       request: unlockReq,
-
+      locals: { org: { id: 1, slug: 'default', role: 'owner' } },
       cookies: makeCookies(adminJar) as any,
       getClientAddress: () => '10.0.0.2',
     } as any);
@@ -201,7 +201,7 @@ describe('auth hardening', () => {
     const req = new Request('http://localhost/api/auth/failures');
     const res = await listFailures({
       request: req,
-
+      locals: { org: { id: 1, slug: 'default', role: 'owner' } },
       cookies: makeCookies(adminJar) as any,
       getClientAddress: () => '10.0.0.2',
     } as any);

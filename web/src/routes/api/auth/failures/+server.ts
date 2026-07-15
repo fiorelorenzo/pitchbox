@@ -1,6 +1,7 @@
 import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { loadSession } from '@pitchbox/shared/auth';
 import { getDb } from '../../../../lib/server/db.js';
+import { requireRole } from '../../../../lib/server/auth.js';
 import { listRecentAuthFailures } from '@pitchbox/shared/auth';
 
 const COOKIE = 'pitchbox_session';
@@ -18,6 +19,7 @@ async function requireSession(event: RequestEvent): Promise<void> {
 // Surface the last 50 failed login attempts to the Security settings page.
 export async function GET(event: RequestEvent) {
   await requireSession(event);
+  requireRole(event, 'admin'); // the failed-login list is admin-only
   const rows = await listRecentAuthFailures(getDb(), 50);
   return json({
     failures: rows.map((r) => ({

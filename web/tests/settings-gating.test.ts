@@ -3,6 +3,7 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { load as retentionLoad } from '../src/routes/settings/retention/+page.server.js';
 import { load as securityLoad } from '../src/routes/settings/security/+page.server.js';
 import { POST as unlockPost } from '../src/routes/api/auth/unlock/+server.js';
+import { GET as failuresGet } from '../src/routes/api/auth/failures/+server.js';
 
 // requireRole reads locals.org.role. PITCHBOX_AUTH is unset in the test env, so
 // requireSession (in the unlock endpoint) is a no-op and requireRole is the gate.
@@ -77,6 +78,19 @@ describe('settings gating', () => {
     it('auth off (no org context) has full access (200)', async () => {
       const res = await unlockPost(unlockEvent(null, { username: 'someone' }));
       expect(res.status).toBe(200);
+    });
+  });
+
+  // The security page reads failures via its own loader, but this API endpoint
+  // exposes the same list and had no role check, so it is gated too.
+  describe('GET /api/auth/failures', () => {
+    it('a member is forbidden (403)', async () => {
+      expect(await statusOf(() => failuresGet(loaderEvent('member')))).toBe(403);
+    });
+    it('an admin can read the failures list (200)', async () => {
+      const res = await failuresGet(loaderEvent('admin'));
+      expect(res.status).toBe(200);
+      expect(Array.isArray((await res.json()).failures)).toBe(true);
     });
   });
 });
