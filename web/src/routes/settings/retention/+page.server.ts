@@ -9,7 +9,8 @@ import {
   type RetentionPolicy,
 } from '@pitchbox/shared/retention';
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async (event) => {
+  requireRole(event, 'admin'); // viewing retention is admin-only
   const policy = await loadRetention(getDb());
   return { policy, floor: RETENTION_FLOOR_DAYS };
 };

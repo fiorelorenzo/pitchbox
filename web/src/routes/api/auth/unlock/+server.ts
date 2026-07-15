@@ -2,6 +2,7 @@ import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { getDb } from '../../../../lib/server/db.js';
 import { clearAuthFailures, loadSession } from '@pitchbox/shared/auth';
+import { requireRole } from '../../../../lib/server/auth.js';
 
 const COOKIE = 'pitchbox_session';
 
@@ -22,6 +23,7 @@ const Body = z.object({
 // a locked-out account can sign in again without waiting out the window.
 export async function POST(event: RequestEvent) {
   await requireSession(event);
+  requireRole(event, 'admin'); // clearing lockouts is admin-only
   const { request } = event;
   const raw = await request.json().catch(() => null);
   const parsed = Body.safeParse(raw);
