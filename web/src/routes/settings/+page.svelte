@@ -123,7 +123,10 @@
 	}
 </script>
 
-<Seo title="Settings" description="Daemon status, agent runner, and extension configuration." />
+<Seo
+		title="Settings - General"
+		description="Daemon status, agent runner, and extension configuration."
+	/>
 
 <Tooltip.Provider>
 	<PageHeader
