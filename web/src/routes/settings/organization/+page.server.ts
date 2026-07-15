@@ -35,6 +35,7 @@ export const load: PageServerLoad = async (event) => {
     org: org ?? null,
     role,
     canManage,
+    isOwner: role === 'owner',
     currentUserId: event.locals.user?.id ?? null,
     members: members.map((m) => ({
       userId: m.userId,

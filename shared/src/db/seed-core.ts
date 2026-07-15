@@ -67,7 +67,9 @@ export async function seedCore() {
     .onConflictDoNothing();
   await db
     .insert(schema.organizations)
-    .values({ slug: 'default', name: 'Default' })
+    // Placeholder name; the first user that signs up renames it after themselves
+    // (see createUser). The slug 'default' is load-bearing (auth-off fallback).
+    .values({ slug: 'default', name: 'My Organization' })
     .onConflictDoNothing();
   await db
     .insert(schema.appConfig)

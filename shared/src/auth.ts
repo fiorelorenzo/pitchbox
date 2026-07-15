@@ -10,6 +10,7 @@ import {
   organizations,
   memberships,
 } from './db/schema.js';
+import { defaultOrgName } from './orgs.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = PgDatabase<any, any, any>;
@@ -210,8 +211,12 @@ export async function createUser(
   // First user implicitly joins the default org as owner. If the default org
   // doesn't exist yet (fresh install without seed:core), create it inline.
   let [org] = await db.select().from(organizations).where(eq(organizations.slug, 'default'));
+  const orgName = defaultOrgName(username);
   if (!org) {
-    [org] = await db.insert(organizations).values({ slug: 'default', name: 'Default' }).returning();
+    [org] = await db.insert(organizations).values({ slug: 'default', name: orgName }).returning();
+  } else if (org.name === 'Default' || org.name === 'My Organization') {
+    // The first real user takes over the seeded placeholder name.
+    await db.update(organizations).set({ name: orgName }).where(eq(organizations.id, org.id));
   }
   await db
     .insert(memberships)

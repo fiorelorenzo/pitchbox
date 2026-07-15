@@ -298,3 +298,33 @@ export async function removeMember(db: Db, orgId: number, userId: number): Promi
     .returning({ userId: memberships.userId });
   return rows.length > 0;
 }
+
+/** Friendly default org name derived from a username or email (local part). */
+export function defaultOrgName(username: string): string {
+  const local = username.includes('@') ? username.split('@')[0] : username;
+  const clean = local.trim() || 'My';
+  return `${clean}'s Organization`;
+}
+
+/** Rename an org. Returns true if a row was updated. */
+export async function renameOrg(db: Db, orgId: number, name: string): Promise<boolean> {
+  const rows = await db
+    .update(organizations)
+    .set({ name })
+    .where(eq(organizations.id, orgId))
+    .returning({ id: organizations.id });
+  return rows.length > 0;
+}
+
+/**
+ * Delete an org row. FK cascades wipe its projects/campaigns/drafts/memberships/
+ * invites. Returns true if a row was removed. The caller must refuse the
+ * `default` org (it is the auth-off fallback) and gate this to owners.
+ */
+export async function deleteOrganization(db: Db, orgId: number): Promise<boolean> {
+  const rows = await db
+    .delete(organizations)
+    .where(eq(organizations.id, orgId))
+    .returning({ id: organizations.id });
+  return rows.length > 0;
+}

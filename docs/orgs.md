@@ -63,9 +63,9 @@ Each returns `false` for cross-tenant access; the route then returns 404.
 
    Same effect as visiting the page. Returns `{ organizationId, role }` or 404 if the token is invalid/expired/consumed.
 
-## Members management
+## Organization management
 
-`/settings/members` (deferred to a follow-up) lists members and lets admins change roles or remove members. Until shipped, manage memberships directly in the `memberships` table.
+`/settings/organization` (reached from the org switcher) is the org home: rename the org (admin+), a roles reference, the member list with role change and removal (owner/admin, owner-protected), pending invites with revoke, and a danger zone to leave the org (blocked for the sole owner) or delete it (owner, non-`default`, typed confirm). Roles are enforced server-side; see [permissions.md](permissions.md).
 
 ## Database
 

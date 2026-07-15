@@ -134,9 +134,9 @@
       </DropdownMenu.Item>
     {/each}
     <DropdownMenu.Separator />
-    <DropdownMenu.Item class="gap-2" onclick={() => goto('/settings/members')}>
+    <DropdownMenu.Item class="gap-2" onclick={() => goto('/settings/organization')}>
       <Users class="size-4" />
-      Members
+      Organization
     </DropdownMenu.Item>
     <DropdownMenu.Item class="gap-2" onclick={openCreate}>
       <Plus class="size-4" />

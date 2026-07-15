@@ -7,8 +7,8 @@
   import PageHeader from '$lib/components/PageHeader.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import { toast } from 'svelte-sonner';
-  import { invalidateAll } from '$app/navigation';
-  import { UserPlus, Copy, Trash2, MoreHorizontal } from '@lucide/svelte';
+  import { goto, invalidateAll } from '$app/navigation';
+  import { UserPlus, Copy, Trash2, MoreHorizontal, Pencil } from '@lucide/svelte';
 
   type Member = { userId: number; username: string; role: string; joinedAt: string };
   type Invite = {
@@ -23,17 +23,36 @@
     org: Org;
     role: string | null;
     canManage: boolean;
+    isOwner: boolean;
     currentUserId: number | null;
     members: Member[];
     invites: Invite[];
   };
   let { data }: { data: PageData } = $props();
 
+  const ROLE_CAPS = [
+    {
+      role: 'member',
+      can: 'Work campaigns and drafts, run agents, manage keyword watches and templates.',
+      cant: 'Manage projects, accounts, org settings, or members.',
+    },
+    {
+      role: 'admin',
+      can: 'Everything a member can, plus projects, accounts, deletes, org settings, and members.',
+      cant: 'Manage owners or delete the organization.',
+    },
+    {
+      role: 'owner',
+      can: 'Full control: everything an admin can, plus managing owners and deleting the org.',
+      cant: null,
+    },
+  ] as const;
+
   const ROLES = ['member', 'admin', 'owner'] as const;
   const ROLE_HINT: Record<string, string> = {
     member: 'Can view and work in the organization.',
     admin: 'Can also invite people and manage members.',
-    owner: 'Full control, including billing and deletion.',
+    owner: 'Full control, including managing owners and deleting the org.',
   };
 
   function initials(name: string): string {
@@ -175,15 +194,103 @@
       acting = null;
     }
   }
+
+  // Rename the organization (admin+).
+  let editingName = $state(false);
+  let nameDraft = $state('');
+  let renaming = $state(false);
+  function startRename() {
+    nameDraft = data.org?.name ?? '';
+    editingName = true;
+  }
+  async function saveName() {
+    if (!data.org || renaming) return;
+    const name = nameDraft.trim();
+    if (!name) {
+      toast.error('Enter an organization name');
+      return;
+    }
+    renaming = true;
+    try {
+      const res = await fetch(`/api/orgs/${data.org.slug}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(res.status === 404 ? 'You need admin access to rename' : (body.error ?? 'Could not rename'));
+        return;
+      }
+      toast.success('Organization renamed');
+      editingName = false;
+      await invalidateAll();
+    } catch {
+      toast.error('Could not rename the organization');
+    } finally {
+      renaming = false;
+    }
+  }
+
+  // Leave the organization (self-remove).
+  let leaving = $state(false);
+  async function leaveOrg() {
+    if (!data.org || leaving) return;
+    if (!confirm(`Leave ${data.org.name}?`)) return;
+    leaving = true;
+    try {
+      const res = await fetch(`/api/orgs/${data.org.slug}/leave`, { method: 'POST' });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(res.status === 400 ? (body.error ?? 'Cannot leave') : 'Could not leave the organization');
+        return;
+      }
+      toast.success('You left the organization');
+      await goto('/', { invalidateAll: true });
+    } catch {
+      toast.error('Could not leave the organization');
+    } finally {
+      leaving = false;
+    }
+  }
+
+  // Delete the organization (owner only), guarded by a typed-name confirmation.
+  let deleteOpen = $state(false);
+  let deleteConfirm = $state('');
+  let deleting = $state(false);
+  async function deleteOrg() {
+    if (!data.org || deleting) return;
+    deleting = true;
+    try {
+      const res = await fetch(`/api/orgs/${data.org.slug}`, { method: 'DELETE' });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(
+          res.status === 403
+            ? 'Only an owner can delete the organization'
+            : (body.error ?? 'Could not delete the organization'),
+        );
+        return;
+      }
+      toast.success('Organization deleted');
+      deleteOpen = false;
+      await goto('/', { invalidateAll: true });
+    } catch {
+      toast.error('Could not delete the organization');
+    } finally {
+      deleting = false;
+    }
+  }
 </script>
 
-<Seo title="Settings - Members" description="People in your organization and pending invites." />
+<Seo
+  title="Settings - Organization"
+  description="Organization name, roles, members, invites, and danger zone."
+/>
 
 <PageHeader
-  title="Members"
-  description={data.org
-    ? `People in ${data.org.name} and pending invites.`
-    : 'Organization members.'}
+  title="Organization"
+  description={data.org ? data.org.name : 'Your organization settings.'}
 />
 
 {#if !data.org}
@@ -194,6 +301,70 @@
   </Card.Root>
 {:else}
   <div class="mt-4 flex flex-col gap-4">
+    <Card.Root>
+      <Card.Header>
+        <Card.Title class="text-base">Organization</Card.Title>
+      </Card.Header>
+      <Card.Content class="flex flex-col gap-4">
+        <div class="flex flex-col gap-1.5">
+          <span class="text-sm font-medium">Name</span>
+          {#if data.canManage && editingName}
+            <div class="flex flex-wrap gap-2">
+              <Input
+                bind:value={nameDraft}
+                maxlength={80}
+                class="max-w-xs"
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') saveName();
+                  if (e.key === 'Escape') editingName = false;
+                }}
+              />
+              <Button onclick={saveName} loading={renaming}>Save</Button>
+              <Button variant="ghost" onclick={() => (editingName = false)} disabled={renaming}>
+                Cancel
+              </Button>
+            </div>
+          {:else}
+            <div class="flex items-center gap-2">
+              <span class="text-sm">{data.org.name}</span>
+              {#if data.canManage}
+                <Button variant="ghost" size="sm" onclick={startRename}>
+                  <Pencil class="size-3.5" />
+                  Rename
+                </Button>
+              {/if}
+            </div>
+          {/if}
+        </div>
+        <div class="flex flex-col gap-1">
+          <span class="text-sm font-medium">URL slug</span>
+          <span class="font-mono text-xs text-muted-foreground">{data.org.slug}</span>
+        </div>
+      </Card.Content>
+    </Card.Root>
+
+    <Card.Root>
+      <Card.Header>
+        <Card.Title class="text-base">Roles</Card.Title>
+        <p class="text-sm text-muted-foreground">What each role can do in this organization.</p>
+      </Card.Header>
+      <Card.Content class="flex flex-col divide-y divide-border">
+        {#each ROLE_CAPS as rc (rc.role)}
+          <div class="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
+            <span
+              class="w-fit rounded-full border border-border px-2 py-0.5 text-xs font-medium capitalize text-foreground"
+            >
+              {rc.role}
+            </span>
+            <p class="text-sm">{rc.can}</p>
+            {#if rc.cant}
+              <p class="text-xs text-muted-foreground">Cannot: {rc.cant}</p>
+            {/if}
+          </div>
+        {/each}
+      </Card.Content>
+    </Card.Root>
+
     <Card.Root>
       <Card.Header class="flex flex-row items-center justify-between space-y-0">
         <div class="min-w-0">
@@ -314,6 +485,43 @@
         </Card.Content>
       </Card.Root>
     {/if}
+
+    <Card.Root class="border-destructive/40">
+      <Card.Header>
+        <Card.Title class="text-base text-destructive">Danger zone</Card.Title>
+      </Card.Header>
+      <Card.Content class="flex flex-col gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-sm font-medium">Leave organization</p>
+            <p class="text-xs text-muted-foreground">Remove yourself from {data.org.name}.</p>
+          </div>
+          <Button variant="outline" onclick={leaveOrg} loading={leaving}>Leave</Button>
+        </div>
+        {#if data.isOwner && data.org.slug !== 'default'}
+          <div
+            class="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3"
+          >
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-destructive">Delete organization</p>
+              <p class="text-xs text-muted-foreground">
+                Permanently delete {data.org.name} and all its projects, campaigns, and drafts.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              class="border-destructive/50 text-destructive hover:bg-destructive/10"
+              onclick={() => {
+                deleteConfirm = '';
+                deleteOpen = true;
+              }}
+            >
+              Delete
+            </Button>
+          </div>
+        {/if}
+      </Card.Content>
+    </Card.Root>
   </div>
 {/if}
 
@@ -369,6 +577,35 @@
         <Button variant="ghost" onclick={() => (inviteOpen = false)}>Cancel</Button>
         <Button onclick={generateInvite} loading={generating}>Generate link</Button>
       {/if}
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={deleteOpen}>
+  <Dialog.Content class="sm:max-w-md">
+    <Dialog.Header>
+      <Dialog.Title>Delete organization</Dialog.Title>
+      <Dialog.Description>
+        This permanently deletes {data.org?.name} and all its projects, campaigns, and drafts. This
+        cannot be undone.
+      </Dialog.Description>
+    </Dialog.Header>
+    <div class="flex flex-col gap-2 py-2">
+      <label for="del-confirm" class="text-sm">
+        Type <span class="font-medium">{data.org?.name}</span> to confirm
+      </label>
+      <Input id="del-confirm" bind:value={deleteConfirm} placeholder={data.org?.name} />
+    </div>
+    <Dialog.Footer>
+      <Button variant="ghost" onclick={() => (deleteOpen = false)} disabled={deleting}>Cancel</Button>
+      <Button
+        class="bg-destructive text-white hover:bg-destructive/90"
+        onclick={deleteOrg}
+        loading={deleting}
+        disabled={deleteConfirm !== data.org?.name}
+      >
+        Delete organization
+      </Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
