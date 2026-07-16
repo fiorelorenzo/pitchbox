@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { and, ilike, inArray, or } from 'drizzle-orm';
 import { getDb, schema } from './db.js';
 
 export type SearchResult = {
@@ -9,23 +9,40 @@ export type SearchResult = {
   href: string;
 };
 
-export async function search(q: string): Promise<SearchResult[]> {
+/**
+ * Full-text-ish search scoped to the given projects. `projectIds` must be the
+ * active org's project ids (see `requireOrgId` + `listProjects` in the caller) -
+ * the drafts/campaigns/projects legs never cross that boundary. `contact_history`
+ * stays global by design (accepted residual, see
+ * docs/organization-isolation-design.md) since contact dedup is shared across
+ * orgs. `inArray(x, [])` is a SQL error, so an empty `projectIds` short-circuits
+ * those three legs to empty results instead of querying.
+ */
+export async function search(q: string, projectIds: number[]): Promise<SearchResult[]> {
   const trimmed = q.trim();
   if (!trimmed) return [];
   const db = getDb();
   const like = `%${trimmed}%`;
+  const hasProjects = projectIds.length > 0;
 
   const [draftRows, contactRows, campaignRows, projectRows] = await Promise.all([
-    db
-      .select({
-        id: schema.drafts.id,
-        targetUser: schema.drafts.targetUser,
-        title: schema.drafts.title,
-        body: schema.drafts.body,
-      })
-      .from(schema.drafts)
-      .where(sql`${schema.drafts.body} ILIKE ${like} OR ${schema.drafts.targetUser} ILIKE ${like}`)
-      .limit(5),
+    hasProjects
+      ? db
+          .select({
+            id: schema.drafts.id,
+            targetUser: schema.drafts.targetUser,
+            title: schema.drafts.title,
+            body: schema.drafts.body,
+          })
+          .from(schema.drafts)
+          .where(
+            and(
+              inArray(schema.drafts.projectId, projectIds),
+              or(ilike(schema.drafts.body, like), ilike(schema.drafts.targetUser, like)),
+            ),
+          )
+          .limit(5)
+      : [],
     db
       .select({
         id: schema.contactHistory.id,
@@ -33,18 +50,31 @@ export async function search(q: string): Promise<SearchResult[]> {
         accountHandle: schema.contactHistory.accountHandle,
       })
       .from(schema.contactHistory)
-      .where(sql`${schema.contactHistory.targetUser} ILIKE ${like}`)
+      .where(ilike(schema.contactHistory.targetUser, like))
       .limit(5),
-    db
-      .select({ id: schema.campaigns.id, name: schema.campaigns.name })
-      .from(schema.campaigns)
-      .where(sql`${schema.campaigns.name} ILIKE ${like}`)
-      .limit(5),
-    db
-      .select({ id: schema.projects.id, name: schema.projects.name, slug: schema.projects.slug })
-      .from(schema.projects)
-      .where(sql`${schema.projects.name} ILIKE ${like}`)
-      .limit(5),
+    hasProjects
+      ? db
+          .select({ id: schema.campaigns.id, name: schema.campaigns.name })
+          .from(schema.campaigns)
+          .where(
+            and(
+              inArray(schema.campaigns.projectId, projectIds),
+              ilike(schema.campaigns.name, like),
+            ),
+          )
+          .limit(5)
+      : [],
+    hasProjects
+      ? db
+          .select({
+            id: schema.projects.id,
+            name: schema.projects.name,
+            slug: schema.projects.slug,
+          })
+          .from(schema.projects)
+          .where(and(inArray(schema.projects.id, projectIds), ilike(schema.projects.name, like)))
+          .limit(5)
+      : [],
   ]);
 
   const results: SearchResult[] = [];
