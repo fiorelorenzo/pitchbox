@@ -229,6 +229,166 @@ describe('pitchbox drafts:create', () => {
     expect(events[0].draftId).toBe(drafts[0].id);
   });
 
+  it('skips drafts targeting a blocklisted subreddit and reports them in the response', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'demo-sub', name: 'DemoSub' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        handle: 'sender-sub',
+        role: 'personal',
+      })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c-sub',
+        skillSlug: 'reddit-scout',
+        config: {},
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    await db.insert(schema.blocklist).values({
+      platformId: platform.id,
+      projectId: project.id,
+      kind: 'subreddit',
+      value: 'CryptoCurrency',
+      scope: 'global',
+      reason: 'off-topic subreddit',
+    });
+
+    const payload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'post',
+        subreddit: 'rpg',
+        body: 'a post about rpgs',
+        sourceRef: {},
+        metadata: {},
+      },
+      {
+        accountId: account.id,
+        kind: 'post',
+        subreddit: 'cryptocurrency',
+        body: 'a post about crypto',
+        sourceRef: {},
+        metadata: {},
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, payload);
+    const lines = out.trim().split('\n');
+    const res = JSON.parse(lines[lines.length - 1]);
+    expect(res.ok).toBe(true);
+    expect(res.data.inserted).toBe(1);
+    expect(res.data.skipped).toHaveLength(1);
+    expect(res.data.skipped[0].reason).toBe('off-topic subreddit');
+
+    const drafts = await db.select().from(schema.drafts);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].metadata).toMatchObject({ subreddit: 'rpg' });
+  });
+
+  it('skips drafts whose body or title contains a blocklisted keyword and reports them in the response', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'demo-kw', name: 'DemoKw' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        handle: 'sender-kw',
+        role: 'personal',
+      })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c-kw',
+        skillSlug: 'reddit-scout',
+        config: {},
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    await db.insert(schema.blocklist).values({
+      platformId: platform.id,
+      projectId: project.id,
+      kind: 'keyword',
+      value: 'giveaway',
+      scope: 'global',
+      reason: 'spammy keyword',
+    });
+
+    const payload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'post',
+        subreddit: 'rpg',
+        title: 'A normal post',
+        body: 'nothing special here',
+        sourceRef: {},
+        metadata: {},
+      },
+      {
+        accountId: account.id,
+        kind: 'post',
+        subreddit: 'rpg',
+        title: 'Huge Giveaway inside!',
+        body: 'come check it out',
+        sourceRef: {},
+        metadata: {},
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, payload);
+    const lines = out.trim().split('\n');
+    const res = JSON.parse(lines[lines.length - 1]);
+    expect(res.ok).toBe(true);
+    expect(res.data.inserted).toBe(1);
+    expect(res.data.skipped).toHaveLength(1);
+    expect(res.data.skipped[0].reason).toBe('spammy keyword');
+
+    const drafts = await db.select().from(schema.drafts);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].title).toBe('A normal post');
+  });
+
   it('rejects a draft whose accountId belongs to a different project (issue #107)', async () => {
     const db = getDb();
     const [platform] = await db

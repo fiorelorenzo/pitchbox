@@ -77,15 +77,23 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     {
       title: 'Check blocklist',
       description:
-        'Check whether a user handle is blocklisted on a platform. Returns { blocked, reason }.',
+        'Check whether a user handle is blocklisted on a platform (global or project scope). Returns { blocked, reason }.',
       inputSchema: {
         platform: z.string().describe('platform slug, e.g. "reddit"'),
         user: z.string().describe('user handle to check'),
+        projectId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            'project id, for project-scoped blocklist entries (defaults to PITCHBOX_PROJECT_ID / PROJECT_ID)',
+          ),
       },
     },
-    async ({ platform, user }) => {
+    async ({ platform, user, projectId }) => {
       try {
-        return jsonResult(await checkBlocklist(platform, user));
+        return jsonResult(await checkBlocklist(platform, user, projectId ?? defaultProjectId()));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }

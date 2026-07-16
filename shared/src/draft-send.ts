@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
-import { isBlocklisted } from './blocklist.js';
+import { isBlocklisted, isKeywordBlocklisted, isSubredditBlocklisted } from './blocklist.js';
 import {
   checkQuota,
   getAccountUsage,
@@ -16,9 +16,19 @@ export type DraftLike = {
   accountId: number;
   targetUser: string | null;
   kind: string;
+  title?: string | null;
+  body?: string | null;
+  metadata?: unknown;
   scheduledSendAfter?: Date | null;
   draftingRunId?: number | null;
 };
+
+/** Pulls `metadata.subreddit` out of a draft's jsonb metadata, if present. */
+function extractSubreddit(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const value = (metadata as Record<string, unknown>).subreddit;
+  return typeof value === 'string' && value.trim() ? value : null;
+}
 
 export type SendEvaluation =
   | { kind: 'drafting' }
@@ -72,12 +82,36 @@ export async function evaluateDraftSend(
     return { kind: 'scheduled', sendAfter: draft.scheduledSendAfter };
   }
 
-  // Blocklist check (skip when no targetUser)
+  // Blocklist check: user (skip when no targetUser)
   if (draft.targetUser) {
     const r = await isBlocklisted(db, {
       platformId: draft.platformId,
       projectId: draft.projectId,
       targetUser: draft.targetUser,
+    });
+    if (r.blocked) return { kind: 'blocked', reason: r.reason };
+  }
+
+  // Blocklist check: subreddit, for post/post_comment drafts only.
+  if (draft.kind === 'post' || draft.kind === 'post_comment') {
+    const subreddit = extractSubreddit(draft.metadata);
+    if (subreddit) {
+      const r = await isSubredditBlocklisted(db, {
+        platformId: draft.platformId,
+        projectId: draft.projectId,
+        subreddit,
+      });
+      if (r.blocked) return { kind: 'blocked', reason: r.reason };
+    }
+  }
+
+  // Blocklist check: keyword, against the draft's title + body.
+  const scanText = [draft.title, draft.body].filter(Boolean).join('\n');
+  if (scanText) {
+    const r = await isKeywordBlocklisted(db, {
+      platformId: draft.platformId,
+      projectId: draft.projectId,
+      text: scanText,
     });
     if (r.blocked) return { kind: 'blocked', reason: r.reason };
   }

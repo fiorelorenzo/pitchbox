@@ -2,7 +2,11 @@ import { Command } from 'commander';
 import { z } from 'zod';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { eq, inArray, sql } from 'drizzle-orm';
-import { isBlocklisted } from '@pitchbox/shared/blocklist';
+import {
+  isBlocklisted,
+  isSubredditBlocklisted,
+  isKeywordBlocklisted,
+} from '@pitchbox/shared/blocklist';
 import { groupVariants } from '@pitchbox/shared/draft-variants';
 import {
   checkContactDedup,
@@ -85,7 +89,7 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
     .where(eq(schema.appConfig.key, 'dedup_policy'));
   const dedupPolicy = policyRow ? parseDedupPolicy(policyRow.value) : { ...DEFAULT_DEDUP_POLICY };
 
-  const skipped: Array<{ targetUser: string; reason: string | null }> = [];
+  const skipped: Array<{ targetUser: string | null; reason: string | null }> = [];
   const dedupSkipped: Array<{ targetUser: string; priorContactedAt: string }> = [];
   const allowed: Array<(typeof draftsInput)[number] & { dedupWarning?: string }> = [];
   for (const d of draftsInput) {
@@ -99,6 +103,36 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
         skipped.push({ targetUser: d.targetUser, reason: r.reason });
         continue;
       }
+    }
+
+    // Subreddit blocklist: only applies to drafts that post into a subreddit.
+    if ((d.kind === 'post' || d.kind === 'post_comment') && d.subreddit) {
+      const r = await isSubredditBlocklisted(db, {
+        platformId: campaign.platformId,
+        projectId: campaign.projectId,
+        subreddit: d.subreddit,
+      });
+      if (r.blocked) {
+        skipped.push({ targetUser: d.targetUser ?? null, reason: r.reason });
+        continue;
+      }
+    }
+
+    // Keyword blocklist: scans the draft's title + body regardless of kind.
+    const scanText = [d.title, d.body].filter(Boolean).join('\n');
+    if (scanText) {
+      const r = await isKeywordBlocklisted(db, {
+        platformId: campaign.platformId,
+        projectId: campaign.projectId,
+        text: scanText,
+      });
+      if (r.blocked) {
+        skipped.push({ targetUser: d.targetUser ?? null, reason: r.reason });
+        continue;
+      }
+    }
+
+    if (d.targetUser) {
       // Dedup check: warn or skip when the same target was contacted within
       // the policy window on this platform.
       const dedup = await checkContactDedup(db, {

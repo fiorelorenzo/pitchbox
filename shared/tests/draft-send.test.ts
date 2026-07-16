@@ -320,6 +320,116 @@ describe('evaluateDraftSend', () => {
     }
   });
 
+  it('returns blocked when the draft subreddit is on the subreddit blocklist', async () => {
+    const db = getDb();
+    const { proj, platform, account } = await setup();
+
+    await db.insert(schema.blocklist).values({
+      platformId: platform.id,
+      kind: 'subreddit',
+      value: 'CryptoCurrency',
+      scope: 'global',
+      reason: 'off-topic subreddit',
+    });
+
+    const draft: DraftLike = {
+      platformId: platform.id,
+      projectId: proj.id,
+      accountId: account.id,
+      targetUser: null,
+      kind: 'post',
+      metadata: { subreddit: 'cryptocurrency' },
+    };
+
+    const result = await evaluateDraftSend(db, draft);
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.reason).toBe('off-topic subreddit');
+    }
+  });
+
+  it('does not check the subreddit blocklist for non-post draft kinds', async () => {
+    const db = getDb();
+    const { proj, platform, account } = await setup();
+
+    await db.insert(schema.blocklist).values({
+      platformId: platform.id,
+      kind: 'subreddit',
+      value: 'cryptocurrency',
+      scope: 'global',
+      reason: 'off-topic subreddit',
+    });
+
+    const draft: DraftLike = {
+      platformId: platform.id,
+      projectId: proj.id,
+      accountId: account.id,
+      targetUser: 'someuser',
+      kind: 'dm',
+      metadata: { subreddit: 'cryptocurrency' },
+    };
+
+    const result = await evaluateDraftSend(db, draft);
+    expect(result.kind).not.toBe('blocked');
+  });
+
+  it('returns blocked when the draft body contains a blocklisted keyword', async () => {
+    const db = getDb();
+    const { proj, platform, account } = await setup();
+
+    await db.insert(schema.blocklist).values({
+      platformId: platform.id,
+      kind: 'keyword',
+      value: 'nsfw',
+      scope: 'global',
+      reason: 'banned topic',
+    });
+
+    const draft: DraftLike = {
+      platformId: platform.id,
+      projectId: proj.id,
+      accountId: account.id,
+      targetUser: 'someuser',
+      kind: 'dm',
+      body: 'this message mentions NSFW content',
+    };
+
+    const result = await evaluateDraftSend(db, draft);
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.reason).toBe('banned topic');
+    }
+  });
+
+  it('returns blocked when the draft title contains a blocklisted keyword', async () => {
+    const db = getDb();
+    const { proj, platform, account } = await setup();
+
+    await db.insert(schema.blocklist).values({
+      platformId: platform.id,
+      kind: 'keyword',
+      value: 'giveaway',
+      scope: 'global',
+      reason: 'spammy title',
+    });
+
+    const draft: DraftLike = {
+      platformId: platform.id,
+      projectId: proj.id,
+      accountId: account.id,
+      targetUser: null,
+      kind: 'post',
+      title: 'Huge Giveaway inside!',
+      body: 'come check it out',
+    };
+
+    const result = await evaluateDraftSend(db, draft);
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.reason).toBe('spammy title');
+    }
+  });
+
   it('skips blocklist check when targetUser is null', async () => {
     const db = getDb();
     const { proj, platform, account } = await setup();

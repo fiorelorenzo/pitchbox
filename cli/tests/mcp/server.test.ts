@@ -87,6 +87,62 @@ describe('pitchbox MCP server (read-only tools)', () => {
     expect(res.content[0]?.text ?? '').toContain('not found');
   });
 
+  it('blocklist_check matches case-insensitively', async () => {
+    const pid = await redditPlatformId();
+    await getDb()
+      .insert(schema.blocklist)
+      .values({ platformId: pid, kind: 'user', value: 'Spammer', reason: 'spam' });
+    const client = await connectClient();
+    const res = await call(client, 'blocklist_check', { platform: 'reddit', user: 'SPAMMER' });
+    expect(parse(res)).toEqual({ blocked: true, reason: 'spam' });
+  });
+
+  it('blocklist_check respects project scope when a projectId is given', async () => {
+    const db = getDb();
+    const pid = await redditPlatformId();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [projA] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'mcp-blk-a', name: 'MCP Blk A' })
+      .returning();
+    const [projB] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'mcp-blk-b', name: 'MCP Blk B' })
+      .returning();
+    await db.insert(schema.blocklist).values({
+      platformId: pid,
+      kind: 'user',
+      value: 'scoped',
+      scope: 'project',
+      projectId: projA.id,
+      reason: 'project-only',
+    });
+
+    const client = await connectClient();
+    const resA = await call(client, 'blocklist_check', {
+      platform: 'reddit',
+      user: 'scoped',
+      projectId: projA.id,
+    });
+    expect(parse(resA)).toEqual({ blocked: true, reason: 'project-only' });
+
+    const resB = await call(client, 'blocklist_check', {
+      platform: 'reddit',
+      user: 'scoped',
+      projectId: projB.id,
+    });
+    expect(parse(resB)).toEqual({ blocked: false, reason: null });
+
+    const resNoProject = await call(client, 'blocklist_check', {
+      platform: 'reddit',
+      user: 'scoped',
+    });
+    expect(parse(resNoProject)).toEqual({ blocked: false, reason: null });
+  });
+
   it('contact_history_check reports a prior contact', async () => {
     const pid = await redditPlatformId();
     await getDb()

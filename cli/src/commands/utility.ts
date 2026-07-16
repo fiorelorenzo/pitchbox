@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { and, eq } from 'drizzle-orm';
+import { isBlocklisted } from '@pitchbox/shared/blocklist';
 import { ok, fail } from '../lib/output.js';
 
 async function platformIdBySlug(slug: string): Promise<number | null> {
@@ -26,21 +27,15 @@ export async function getStagingCandidates(runId: number): Promise<unknown[]> {
 export async function checkBlocklist(
   platformSlug: string,
   user: string,
+  projectId?: number | null,
 ): Promise<{ blocked: boolean; reason: string | null }> {
   const pid = await platformIdBySlug(platformSlug);
   if (!pid) throw new Error(`platform ${platformSlug} not found`);
   const db = getDb();
-  const [row] = await db
-    .select()
-    .from(schema.blocklist)
-    .where(
-      and(
-        eq(schema.blocklist.platformId, pid),
-        eq(schema.blocklist.kind, 'user'),
-        eq(schema.blocklist.value, user),
-      ),
-    );
-  return { blocked: !!row, reason: row?.reason ?? null };
+  // Delegates to the authoritative isBlocklisted (lowercase compare +
+  // global-or-project scope) so this MCP-facing check never diverges from
+  // the checks enforced at draft-create and draft-send time.
+  return isBlocklisted(db, { platformId: pid, projectId: projectId ?? null, targetUser: user });
 }
 
 export async function checkContactHistory(
@@ -71,9 +66,11 @@ export function registerUtilityCommands(program: Command) {
     .command('blocklist:check')
     .requiredOption('--platform <slug>')
     .requiredOption('--user <handle>')
-    .action(async (opts: { platform: string; user: string }) => {
+    .option('--project <id>', 'project id, for project-scoped blocklist entries')
+    .action(async (opts: { platform: string; user: string; project?: string }) => {
       try {
-        ok(await checkBlocklist(opts.platform, opts.user));
+        const projectId = opts.project ? Number(opts.project) : null;
+        ok(await checkBlocklist(opts.platform, opts.user, projectId));
       } catch (err) {
         fail(String(err instanceof Error ? err.message : err));
       }
