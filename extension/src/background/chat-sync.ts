@@ -183,13 +183,22 @@ export async function runChatSync(): Promise<SyncResult> {
     }
   }
 
-  await setSettings({
-    matrixSince: data.next_batch,
-    matrixDisplayNames: displayNames,
-    matrixRoomMembers: roomMembers,
-  });
+  // Don't commit the cursor yet: if delivery to every paired backend fails
+  // below, the next /sync must be able to replay this batch, which only
+  // works if `since` wasn't already advanced past it.
+  const persistCursor = () =>
+    setSettings({
+      matrixSince: data.next_batch,
+      matrixDisplayNames: displayNames,
+      matrixRoomMembers: roomMembers,
+    });
 
-  if (items.length === 0) return { ok: true, inserted: 0, replied: 0, chatStatus: 'ok' };
+  if (items.length === 0) {
+    // Nothing to deliver, so there's no batch to lose: safe to advance
+    // immediately (mirrors inbox-sync.ts bumping its cursor on an empty poll).
+    await persistCursor();
+    return { ok: true, inserted: 0, replied: 0, chatStatus: 'ok' };
+  }
 
   // Fan-out to every paired backend; aggregate counts and take the worst
   // outcome as the channel status (any backend failing surfaces a warning).
@@ -197,6 +206,8 @@ export async function runChatSync(): Promise<SyncResult> {
   if (results.length === 0) return { ok: false, reason: 'not configured', chatStatus: 'ok' };
   const successes = results.filter((r) => r.ok);
   if (successes.length === 0) {
+    // No pairing confirmed delivery: leave matrixSince untouched so the next
+    // sync re-fetches and re-delivers this same batch.
     const first = results.find((r) => !r.ok);
     return {
       ok: false,
@@ -204,6 +215,10 @@ export async function runChatSync(): Promise<SyncResult> {
       chatStatus: 'ok',
     };
   }
+  // Advance on the FIRST successful pairing delivery (matches the previous
+  // single-pairing-equivalent behavior) rather than waiting for every paired
+  // backend, which could block the cursor forever on one dead backend.
+  await persistCursor();
   const inserted = successes.reduce((acc, r) => acc + (r.ok ? r.data.inserted : 0), 0);
   const replied = successes.reduce((acc, r) => acc + (r.ok ? r.data.replied : 0), 0);
   return { ok: true, inserted, replied, chatStatus: 'ok' };

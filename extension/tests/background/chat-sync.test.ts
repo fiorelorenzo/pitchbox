@@ -315,6 +315,72 @@ describe('runChatSync', () => {
     });
   });
 
+  it('does not persist matrixSince when the paired backend dmSync call fails', async () => {
+    const sync = syncResponse({
+      messages: [
+        { sender: ME, body: 'ciao', eventId: '$ev1', ts: Date.parse('2026-04-24T11:00:00Z') },
+      ],
+    });
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes('/whoami')) {
+        return new Response(JSON.stringify({ user_id: ME }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (String(url).includes('matrix.redditspace.com')) {
+        return new Response(JSON.stringify(sync), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      // Simulate a backend outage on the dm-sync POST.
+      return new Response('service unavailable', { status: 503 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { runChatSync } = await importModule();
+    const r = await runChatSync();
+    expect(r.ok).toBe(false);
+
+    const stored = ((globalThis as any).chrome.storage.local as any)._s;
+    expect(stored.matrixSince).toBeUndefined();
+  });
+
+  it('persists matrixSince once a paired backend dmSync call succeeds', async () => {
+    const sync = syncResponse({
+      messages: [
+        { sender: ME, body: 'ciao', eventId: '$ev1', ts: Date.parse('2026-04-24T11:00:00Z') },
+      ],
+    });
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).includes('/whoami')) {
+        return new Response(JSON.stringify({ user_id: ME }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (String(url).includes('matrix.redditspace.com')) {
+        return new Response(JSON.stringify(sync), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true, inserted: 1, replied: 0 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { runChatSync } = await importModule();
+    const r = await runChatSync();
+    expect(r.ok).toBe(true);
+
+    const stored = ((globalThis as any).chrome.storage.local as any)._s;
+    expect(stored.matrixSince).toBe('s_next_123');
+  });
+
   it('sends since= cursor on subsequent calls', async () => {
     ((globalThis as any).chrome.storage.local as any)._s.matrixSince = 's_prev_999';
     const fetchMock = vi.fn(
