@@ -3,10 +3,25 @@ import { sql, eq } from 'drizzle-orm';
 import { getDb, schema } from '../src/db/client.js';
 import { evaluateDraftSend, type DraftLike } from '../src/draft-send.js';
 
+// Seeded quota defaults (mirror seed-core). Re-applied in reset() so these tests
+// stay independent of any other file (e.g. quota.test.ts) that mutates the shared
+// app_config.quota_defaults row - the suite shares one DB and vitest file order
+// is not guaranteed.
+const QUOTA_DEFAULTS = {
+  dm: { perDay: 10, perWeek: 50 },
+  comment: { perDay: 50, perWeek: 200 },
+  post: { perDay: 5, perWeek: 20 },
+};
+
 async function reset() {
-  await getDb().execute(
+  const db = getDb();
+  await db.execute(
     sql`TRUNCATE drafts, runs, campaigns, accounts, projects, blocklist, contact_history RESTART IDENTITY CASCADE`,
   );
+  await db
+    .insert(schema.appConfig)
+    .values({ key: 'quota_defaults', value: QUOTA_DEFAULTS })
+    .onConflictDoUpdate({ target: schema.appConfig.key, set: { value: QUOTA_DEFAULTS } });
 }
 
 async function setup() {
