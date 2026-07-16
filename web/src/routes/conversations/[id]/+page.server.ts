@@ -5,7 +5,7 @@ import { decodeThreadId } from './thread-id.js';
 import { loadPendingReplyDraft } from '@pitchbox/shared/reply-drafter';
 import { listProjects } from '@pitchbox/shared/projects';
 import { draftBelongsToOrg } from '@pitchbox/shared/orgs';
-import { resolveOrgId } from '$lib/server/auth.js';
+import { requireOrgId } from '$lib/server/auth.js';
 
 export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const { params } = event;
@@ -17,7 +17,10 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   }
 
   const db = getDb();
-  const orgId = await resolveOrgId(event);
+  // requireOrgId (not resolveOrgId) so an unresolved org 404s instead of
+  // silently falling through to listProjects({ organizationId: null }),
+  // which returns every org's projects and defeats the scoping below.
+  const orgId = await requireOrgId(event);
   const projects = await listProjects(db, { organizationId: orgId });
   const projectIds = projects.map((p) => p.id);
   const hasProjects = projectIds.length > 0;
@@ -56,11 +59,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   // user can point at an org-A contact whose draft belongs to org A - never
   // return that draft to a caller outside its org.
   let parentDraft: typeof schema.drafts.$inferSelect | null = null;
-  if (
-    latest.draftId != null &&
-    orgId != null &&
-    (await draftBelongsToOrg(db, latest.draftId, orgId))
-  ) {
+  if (latest.draftId != null && (await draftBelongsToOrg(db, latest.draftId, orgId))) {
     const [d] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, latest.draftId));
     parentDraft = d ?? null;
   }
@@ -110,7 +109,10 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   }
 
   // Reply drafting (issue #49): show the pending auto-drafted reply (if any)
-  // attached to one of this thread's inbound messages.
+  // attached to one of this thread's inbound messages. Same residual risk as
+  // parentDraft above - contactIds come from the global contact_history, so
+  // the reply draft they resolve to can belong to another org; never return
+  // it to a caller outside its org.
   let replyDraft = null as Awaited<ReturnType<typeof loadPendingReplyDraft>> | null;
   for (const cid of contactIds) {
     const found = await loadPendingReplyDraft(db, cid);
@@ -118,6 +120,9 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       replyDraft = found;
       break;
     }
+  }
+  if (replyDraft && !(await draftBelongsToOrg(db, replyDraft.id, orgId))) {
+    replyDraft = null;
   }
 
   return {

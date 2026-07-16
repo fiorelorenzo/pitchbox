@@ -26,7 +26,10 @@ async function reset() {
 
 // Seeds an org with a project, a sent DM draft, a contact_history row
 // attributed to that draft, and a message attributed to that draft too.
-async function seedOrgConversation(slug: string) {
+// With `withPendingReply`, also seeds a pending-review reply draft attached
+// (via parentMessageId) to the inbound message, so loadPendingReplyDraft
+// finds it.
+async function seedOrgConversation(slug: string, opts: { withPendingReply?: boolean } = {}) {
   const db = getDb();
   const [org] = await db.insert(schema.organizations).values({ slug, name: slug }).returning();
   const [project] = await db
@@ -97,30 +100,53 @@ async function seedOrgConversation(slug: string) {
       repliedAt: new Date('2026-05-02T10:00:00Z'),
     })
     .returning();
-  await db.insert(schema.messages).values([
-    {
-      contactId: contact.id,
-      draftId: draft.id,
-      platformId: platform.id,
-      author: `${slug}-acc`,
-      isFromUs: true,
-      body: `${slug}-secret-message-out`,
-      platformMessageId: `${slug}-m1`,
-      createdAtPlatform: new Date('2026-05-01T10:00:00Z'),
-      source: 'test',
-    },
-    {
-      contactId: contact.id,
-      draftId: draft.id,
-      platformId: platform.id,
-      author: `${slug}-target`,
-      isFromUs: false,
-      body: `${slug}-secret-message-in`,
-      platformMessageId: `${slug}-m2`,
-      createdAtPlatform: new Date('2026-05-02T10:00:00Z'),
-      source: 'test',
-    },
-  ]);
+  const [, msgIn] = await db
+    .insert(schema.messages)
+    .values([
+      {
+        contactId: contact.id,
+        draftId: draft.id,
+        platformId: platform.id,
+        author: `${slug}-acc`,
+        isFromUs: true,
+        body: `${slug}-secret-message-out`,
+        platformMessageId: `${slug}-m1`,
+        createdAtPlatform: new Date('2026-05-01T10:00:00Z'),
+        source: 'test',
+      },
+      {
+        contactId: contact.id,
+        draftId: draft.id,
+        platformId: platform.id,
+        author: `${slug}-target`,
+        isFromUs: false,
+        body: `${slug}-secret-message-in`,
+        platformMessageId: `${slug}-m2`,
+        createdAtPlatform: new Date('2026-05-02T10:00:00Z'),
+        source: 'test',
+      },
+    ])
+    .returning();
+
+  let pendingReplyDraftId: number | null = null;
+  if (opts.withPendingReply) {
+    const [replyDraft] = await db
+      .insert(schema.drafts)
+      .values({
+        runId: run.id,
+        projectId: project.id,
+        platformId: platform.id,
+        accountId: account.id,
+        kind: 'reply_dm',
+        state: 'pending_review',
+        targetUser: `${slug}-target`,
+        body: `${slug}-secret-reply-body`,
+        parentMessageId: msgIn.id,
+      })
+      .returning();
+    pendingReplyDraftId = replyDraft.id;
+  }
+
   const threadId = encodeThreadId({
     accountHandle: `${slug}-acc`,
     targetUser: `${slug}-target`,
@@ -132,6 +158,7 @@ async function seedOrgConversation(slug: string) {
     draftId: draft.id,
     contactId: contact.id,
     threadId,
+    pendingReplyDraftId,
   };
 }
 
@@ -216,5 +243,27 @@ describe('conversation thread detail is scoped to the active org', () => {
     const bodies = data.messages.map((m: { body: string }) => m.body);
     expect(bodies).not.toContain('conv-thread-e-secret-message-in');
     expect(bodies).not.toContain('conv-thread-e-secret-message-out');
+  });
+
+  it('returns a null replyDraft for a thread whose pending reply belongs to another org', async () => {
+    const a = await seedOrgConversation('conv-thread-f');
+    const b = await seedOrgConversation('conv-thread-g', { withPendingReply: true });
+
+    const data = await loadThread(
+      fakeEvent(a.orgId, 'http://x/conversations/x', { id: b.threadId }),
+    );
+
+    expect(data.replyDraft).toBeNull();
+  });
+
+  it('returns the replyDraft for a same-org pending reply', async () => {
+    const a = await seedOrgConversation('conv-thread-h', { withPendingReply: true });
+
+    const data = await loadThread(
+      fakeEvent(a.orgId, 'http://x/conversations/x', { id: a.threadId }),
+    );
+
+    expect(data.replyDraft).toBeTruthy();
+    expect(data.replyDraft?.body).toBe('conv-thread-h-secret-reply-body');
   });
 });
