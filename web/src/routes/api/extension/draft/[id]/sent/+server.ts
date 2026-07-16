@@ -43,6 +43,12 @@ export async function POST({ params, request }: { params: { id: string }; reques
   if (evald.kind === 'drafting') {
     throw error(409, 'draft is still being drafted');
   }
+  if (evald.kind === 'quota_exceeded') {
+    throw error(
+      409,
+      `quota_exceeded: ${evald.quotaKind} ${evald.window} limit ${evald.limit} (would be ${evald.used})`,
+    );
+  }
 
   const edited = typeof body.sentContent === 'string' && body.sentContent.trim().length > 0;
   const sentContent = edited ? body.sentContent! : draft.body;

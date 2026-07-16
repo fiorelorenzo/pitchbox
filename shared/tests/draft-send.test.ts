@@ -239,6 +239,87 @@ describe('evaluateDraftSend', () => {
     }
   });
 
+  it('blocks the send when a tighter per-account daily limit is breached, even though the platform default alone would allow it', async () => {
+    const db = getDb();
+    const { proj, platform, account, run } = await setup();
+    const now = new Date('2026-04-27T12:00:00Z');
+
+    // Pre-seed 3 sent DM drafts in last 24h - well under the platform default
+    // of 10/day, but at the account's tighter override of 3/day.
+    for (let i = 0; i < 3; i++) {
+      const sentAt = new Date(now.getTime() - (i + 1) * 60 * 60 * 1000);
+      await makeSentDraft({
+        account: account.id,
+        proj: proj.id,
+        platform: platform.id,
+        run: run.id,
+        kind: 'dm',
+        sentAt,
+      });
+    }
+
+    await db
+      .update(schema.accounts)
+      .set({ dailyLimit: 3 })
+      .where(eq(schema.accounts.id, account.id));
+
+    const draft: DraftLike = {
+      platformId: platform.id,
+      projectId: proj.id,
+      accountId: account.id,
+      targetUser: 'tightuser',
+      kind: 'dm',
+    };
+
+    const result = await evaluateDraftSend(db, draft, now);
+    expect(result.kind).toBe('quota_exceeded');
+    if (result.kind === 'quota_exceeded') {
+      expect(result.window).toBe('day');
+      expect(result.quotaKind).toBe('dm');
+      expect(result.limit).toBe(3);
+      expect(result.used).toBe(4);
+    }
+  });
+
+  it('allows the send once the tighter per-account limit is loosened back above usage', async () => {
+    const db = getDb();
+    const { proj, platform, account, run } = await setup();
+    const now = new Date('2026-04-27T12:00:00Z');
+
+    for (let i = 0; i < 3; i++) {
+      const sentAt = new Date(now.getTime() - (i + 1) * 60 * 60 * 1000);
+      await makeSentDraft({
+        account: account.id,
+        proj: proj.id,
+        platform: platform.id,
+        run: run.id,
+        kind: 'dm',
+        sentAt,
+      });
+    }
+
+    // Loosen the account override above the would-be usage (4) - still tighter
+    // than the platform default of 10, but the send should be allowed again.
+    await db
+      .update(schema.accounts)
+      .set({ dailyLimit: 5 })
+      .where(eq(schema.accounts.id, account.id));
+
+    const draft: DraftLike = {
+      platformId: platform.id,
+      projectId: proj.id,
+      accountId: account.id,
+      targetUser: 'loosereduser',
+      kind: 'dm',
+    };
+
+    const result = await evaluateDraftSend(db, draft, now);
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.quotaEventDetails).toBeNull();
+    }
+  });
+
   it('skips blocklist check when targetUser is null', async () => {
     const db = getDb();
     const { proj, platform, account } = await setup();

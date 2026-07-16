@@ -1,7 +1,14 @@
 import { eq } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
 import { isBlocklisted } from './blocklist.js';
-import { getAccountUsage, isDraftKind, loadQuotaLimits, mapDraftKindToQuotaKind } from './quota.js';
+import {
+  checkQuota,
+  getAccountUsage,
+  isDraftKind,
+  loadQuotaLimits,
+  mapDraftKindToQuotaKind,
+  type QuotaKind,
+} from './quota.js';
 
 export type DraftLike = {
   platformId: number;
@@ -17,6 +24,13 @@ export type SendEvaluation =
   | { kind: 'drafting' }
   | { kind: 'blocked'; reason: string | null }
   | { kind: 'scheduled'; sendAfter: Date }
+  | {
+      kind: 'quota_exceeded';
+      window: 'day' | 'week';
+      quotaKind: QuotaKind;
+      limit: number;
+      used: number;
+    }
   | { kind: 'ok'; quotaEventDetails: Record<string, unknown> | null };
 
 /**
@@ -30,6 +44,15 @@ export type SendEvaluation =
  * send pushes the account over the cap we add 1. We use strict `>` so that
  * exactly-at-limit counts (e.g. day=10, perDay=10 after +1=11) correctly
  * trigger an over-quota event.
+ *
+ * NOTE on enforcement: the binding limit per window is `min(platform default,
+ * per-account override)` via `checkQuota`. Breaching the platform-wide
+ * default alone stays a soft, log-only signal (`kind: 'ok'` with
+ * `quotaEventDetails` set) to preserve today's dashboard behavior. But once an
+ * explicit per-account override (`accounts.daily_limit` / `weekly_limit`) is
+ * the tighter, binding limit, breaching it actually blocks the send
+ * (`kind: 'quota_exceeded'`) - that override is a deliberate cap the operator
+ * set, not a shared default.
  */
 export async function evaluateDraftSend(
   db: Db,
@@ -64,6 +87,10 @@ export async function evaluateDraftSend(
     .select({ slug: schema.platforms.slug })
     .from(schema.platforms)
     .where(eq(schema.platforms.id, draft.platformId));
+  const [account] = await db
+    .select({ dailyLimit: schema.accounts.dailyLimit, weeklyLimit: schema.accounts.weeklyLimit })
+    .from(schema.accounts)
+    .where(eq(schema.accounts.id, draft.accountId));
   const usage = await getAccountUsage(db, draft.accountId, now);
   const limits = await loadQuotaLimits(db, platform?.slug ?? 'reddit');
 
@@ -73,12 +100,47 @@ export async function evaluateDraftSend(
   }
   const qk = mapDraftKindToQuotaKind(draft.kind);
 
+  // Bind each window on the minimum of the platform default and the
+  // account's optional override.
+  const dayQuota = checkQuota({
+    platformLimit: limits[qk].perDay,
+    accountLimit: account?.dailyLimit,
+    used: usage[qk].day,
+  });
+  const weekQuota = checkQuota({
+    platformLimit: limits[qk].perWeek,
+    accountLimit: account?.weeklyLimit,
+    used: usage[qk].week,
+  });
+
   // Use `>` (strict) because `getAccountUsage` is computed BEFORE the new
   // `sent_at` row exists; the post-flip count would be `usage[qk].day + 1`.
   // We want to log "over quota" only when the just-completed send pushed the
   // total *past* the limit.
-  const overDay = usage[qk].day + 1 > limits[qk].perDay;
-  const overWeek = usage[qk].week + 1 > limits[qk].perWeek;
+  const overDay = usage[qk].day + 1 > dayQuota.limit;
+  const overWeek = usage[qk].week + 1 > weekQuota.limit;
+
+  // A breach that is only over the platform-wide default (not the tighter
+  // per-account override) stays a soft, log-only signal - see the function
+  // docstring. A breach of the binding per-account override blocks the send.
+  if (overDay && dayQuota.kind === 'account') {
+    return {
+      kind: 'quota_exceeded',
+      window: 'day',
+      quotaKind: qk,
+      limit: dayQuota.limit,
+      used: usage[qk].day + 1,
+    };
+  }
+  if (overWeek && weekQuota.kind === 'account') {
+    return {
+      kind: 'quota_exceeded',
+      window: 'week',
+      quotaKind: qk,
+      limit: weekQuota.limit,
+      used: usage[qk].week + 1,
+    };
+  }
 
   const quotaEventDetails =
     overDay || overWeek
