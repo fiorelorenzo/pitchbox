@@ -17,9 +17,14 @@ function mockFetch(impl: (url: string) => Response | Promise<Response>): FetchIm
 
 async function enqueue(url: string, opts: { attempts?: number; maxAttempts?: number } = {}) {
   const db = getDb();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(eq(schema.organizations.slug, 'default'));
   const [row] = await db
     .insert(schema.webhookDeliveries)
     .values({
+      organizationId: org.id,
       webhookId: 'test-hook',
       eventType: 'notification.test',
       payload: { url, body: { hello: 'world' } },

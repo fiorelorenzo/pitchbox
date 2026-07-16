@@ -545,6 +545,9 @@ export const webhookDeliveries = pgTable(
   'webhook_deliveries',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
     webhookId: text('webhook_id').notNull(),
     eventType: text('event_type').notNull(),
     payload: jsonb('payload').notNull().default({}),
@@ -559,6 +562,7 @@ export const webhookDeliveries = pgTable(
   (t) => ({
     dueIdx: index('webhook_deliveries_due_idx').on(t.status, t.nextAttemptAt),
     recentIdx: index('webhook_deliveries_recent_idx').on(t.createdAt),
+    byOrg: index('webhook_deliveries_org_idx').on(t.organizationId, t.createdAt.desc()),
   }),
 );
 

@@ -1,4 +1,4 @@
-import { desc } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireOrgId } from '$lib/server/auth.js';
@@ -13,6 +13,7 @@ export async function load(event: RequestEvent) {
     db
       .select()
       .from(schema.webhookDeliveries)
+      .where(eq(schema.webhookDeliveries.organizationId, orgId))
       .orderBy(desc(schema.webhookDeliveries.createdAt))
       .limit(50),
   ]);

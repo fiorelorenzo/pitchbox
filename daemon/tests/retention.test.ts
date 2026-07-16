@@ -232,9 +232,15 @@ describe('retention worker', () => {
     const ancient = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days
     const fresh = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000); // 1 day
 
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+
     const [oldDelivered] = await db
       .insert(schema.webhookDeliveries)
       .values({
+        organizationId: org.id,
         webhookId: 'wh-1',
         eventType: 'notification.test',
         payload: {},
@@ -245,6 +251,7 @@ describe('retention worker', () => {
     const [oldDead] = await db
       .insert(schema.webhookDeliveries)
       .values({
+        organizationId: org.id,
         webhookId: 'wh-1',
         eventType: 'notification.test',
         payload: {},
@@ -256,6 +263,7 @@ describe('retention worker', () => {
     const [oldPending] = await db
       .insert(schema.webhookDeliveries)
       .values({
+        organizationId: org.id,
         webhookId: 'wh-1',
         eventType: 'notification.test',
         payload: {},
@@ -267,6 +275,7 @@ describe('retention worker', () => {
     const [freshDelivered] = await db
       .insert(schema.webhookDeliveries)
       .values({
+        organizationId: org.id,
         webhookId: 'wh-1',
         eventType: 'notification.test',
         payload: {},

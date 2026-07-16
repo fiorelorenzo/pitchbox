@@ -22,6 +22,13 @@
       "when": 1784236210106,
       "tag": "0002_blue_karnak",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784238960494,
+      "tag": "0003_curious_scarecrow",
+      "breakpoints": true
     }
   ]
 }

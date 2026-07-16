@@ -69,6 +69,7 @@ export async function notify(
     // Enqueue for the daemon's webhook-sender worker. We never POST inline:
     // the worker handles retries, backoff, and the dead-letter queue.
     await db.insert(webhookDeliveries).values({
+      organizationId: orgId,
       webhookId: webhookIdForUrl(cfg.url),
       eventType: `notification.${row.kind}`,
       payload: {
