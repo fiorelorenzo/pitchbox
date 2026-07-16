@@ -144,6 +144,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       sentContent: schema.drafts.sentContent,
       platformCommentId: schema.drafts.platformCommentId,
       dedupWarning: schema.drafts.dedupWarning,
+      scheduledSendAfter: schema.drafts.scheduledSendAfter,
       qualityScore: schema.drafts.qualityScore,
       qualityReason: schema.drafts.qualityReason,
       variantGroupId: schema.drafts.variantGroupId,

@@ -20,6 +20,7 @@
 		qualityScore?: number | null;
 		variantGroupId?: string | null;
 		variantLabel?: string | null;
+		scheduledSendAfter?: string | Date | null;
 	};
 
 	let {
@@ -38,6 +39,13 @@
 
 	const presenter = $derived(getPresenter(draft.platformSlug));
 	const band = $derived(scoreBand(draft.qualityScore, rubric));
+	// Mirrors DraftDetail's scheduledUntil: only a future scheduled_send_after
+	// is worth flagging - a past one no longer blocks the send.
+	const scheduledUntil = $derived.by(() => {
+		if (!draft.scheduledSendAfter) return null;
+		const when = new Date(draft.scheduledSendAfter);
+		return when.getTime() > Date.now() ? when : null;
+	});
 </script>
 
 <button
@@ -79,6 +87,14 @@
 					title={draft.dedupWarning}
 				>
 					dedup
+				</span>
+			{/if}
+			{#if scheduledUntil}
+				<span
+					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+					title="Scheduled until {scheduledUntil.toLocaleString()}"
+				>
+					scheduled
 				</span>
 			{/if}
 		</span>

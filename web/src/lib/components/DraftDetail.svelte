@@ -15,6 +15,7 @@
 	import { getPresenter } from '$lib/platforms/presenter';
 	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
+	import { parseDraftPatchError } from '$lib/utils/draft-patch-error';
 
 	type DraftEvent = {
 		id: number;
@@ -43,6 +44,7 @@
 		regenerationCount?: number;
 		draftingRunId?: number | null;
 		draftingRunStatus?: string | null;
+		scheduledSendAfter?: string | Date | null;
 	};
 
 	let {
@@ -120,7 +122,7 @@
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify(body),
 		});
-		if (!res.ok) throw new Error(await res.text());
+		if (!res.ok) throw new Error(parseDraftPatchError(await res.text()));
 		await invalidateAll();
 	}
 
@@ -216,6 +218,14 @@
 			draft.draftingRunStatus != null &&
 			draft.draftingRunStatus !== 'running',
 	);
+	// A draft with a future scheduled_send_after is held back from "ready to
+	// send" server-side (see evaluateDraftSend) - surface that here so the
+	// reviewer isn't surprised by a 409 on send.
+	const scheduledUntil = $derived.by(() => {
+		if (!draft?.scheduledSendAfter) return null;
+		const when = new Date(draft.scheduledSendAfter);
+		return when.getTime() > Date.now() ? when : null;
+	});
 
 	async function retryReplyDraft() {
 		if (!draft) return;
@@ -371,6 +381,16 @@
 						<span>sent {relativeTime(draft.sentAt)}</span>
 					{/if}
 				</div>
+				{#if scheduledUntil}
+					<div class="text-xs">
+						<span
+							class="inline-flex items-center gap-1 rounded-sm bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 px-1.5 py-0.5 text-[10px] font-medium"
+							title="This draft will not be sendable until {scheduledUntil.toLocaleString()}"
+						>
+							Scheduled until {scheduledUntil.toLocaleString()}
+						</span>
+					</div>
+				{/if}
 				{#if quotaKind && usage && limits}
 					{@const u = usage[quotaKind]}
 					{@const l = limits[quotaKind]}
