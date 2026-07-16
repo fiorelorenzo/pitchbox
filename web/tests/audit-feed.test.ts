@@ -4,20 +4,27 @@ import { getDb, schema } from '@pitchbox/shared/db';
 import { loadAuditFeed } from '../src/lib/server/audit-feed.js';
 
 async function reset() {
+  // Non-default orgs first, so their cascade wipes the rows a plain TRUNCATE
+  // of the shared tables below would otherwise leave behind.
+  await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
   await getDb().execute(
     sql`TRUNCATE drafts, runs, campaigns, accounts, projects, blocklist, contact_history, draft_events, run_events RESTART IDENTITY CASCADE`,
   );
 }
 
-async function seedFixture() {
-  const db = getDb();
-  const [org] = await db
+async function getDefaultOrgId(): Promise<number> {
+  const [org] = await getDb()
     .select({ id: schema.organizations.id })
     .from(schema.organizations)
     .where(sql`slug = 'default'`);
+  return org.id;
+}
+
+async function seedFixture(orgId: number, slugPrefix = 'audit-test') {
+  const db = getDb();
   const [proj] = await db
     .insert(schema.projects)
-    .values({ organizationId: org.id, slug: 'audit-test', name: 'audit-test' })
+    .values({ organizationId: orgId, slug: slugPrefix, name: slugPrefix })
     .returning();
   const [platform] = await db
     .select()
@@ -25,7 +32,7 @@ async function seedFixture() {
     .where(eq(schema.platforms.slug, 'reddit'));
   const [account] = await db
     .insert(schema.accounts)
-    .values({ projectId: proj.id, platformId: platform.id, handle: 'tester' })
+    .values({ projectId: proj.id, platformId: platform.id, handle: `tester-${slugPrefix}` })
     .returning();
   const [campaign] = await db
     .insert(schema.campaigns)
@@ -64,15 +71,16 @@ async function seedFixture() {
     { runId: run.id, seq: 2, kind: 'finished', payload: {}, raw: '{}', createdAt: t3 },
   ]);
 
-  return { draft, run };
+  return { proj, draft, run };
 }
 
 describe('audit feed', () => {
   beforeEach(reset);
 
   it('returns rows from both draft_events and run_events in reverse chronological order', async () => {
-    await seedFixture();
-    const rows = await loadAuditFeed();
+    const orgId = await getDefaultOrgId();
+    await seedFixture(orgId);
+    const rows = await loadAuditFeed(orgId);
     expect(rows).toHaveLength(4);
     // newest first: finished (run, t3), approved (draft, t2), started (run, t1), created (draft, t0)
     expect(rows.map((r) => r.event)).toEqual(['finished', 'approved', 'started', 'created']);
@@ -88,22 +96,49 @@ describe('audit feed', () => {
   });
 
   it('filters by event name across both legs', async () => {
-    await seedFixture();
-    const onlyApproved = await loadAuditFeed({ event: 'approved' });
+    const orgId = await getDefaultOrgId();
+    await seedFixture(orgId);
+    const onlyApproved = await loadAuditFeed(orgId, { event: 'approved' });
     expect(onlyApproved).toHaveLength(1);
     expect(onlyApproved[0].kind).toBe('draft');
     expect(onlyApproved[0].event).toBe('approved');
 
-    const onlyStarted = await loadAuditFeed({ event: 'started' });
+    const onlyStarted = await loadAuditFeed(orgId, { event: 'started' });
     expect(onlyStarted).toHaveLength(1);
     expect(onlyStarted[0].kind).toBe('run');
     expect(onlyStarted[0].event).toBe('started');
   });
 
   it('filters by draft_id to the draft leg only', async () => {
-    const { draft } = await seedFixture();
-    const rows = await loadAuditFeed({ draftId: draft.id });
+    const orgId = await getDefaultOrgId();
+    const { draft } = await seedFixture(orgId);
+    const rows = await loadAuditFeed(orgId, { draftId: draft.id });
     expect(rows.every((r) => r.kind === 'draft')).toBe(true);
     expect(rows).toHaveLength(2);
+  });
+
+  it("excludes another organization's draft_events and run_events from the feed", async () => {
+    const defaultOrgId = await getDefaultOrgId();
+    const [otherOrg] = await getDb()
+      .insert(schema.organizations)
+      .values({ slug: 'other-org', name: 'Other Org' })
+      .returning();
+
+    const { draft: defaultDraft, run: defaultRun } = await seedFixture(defaultOrgId, 'org-a');
+    const { draft: otherDraft, run: otherRun } = await seedFixture(otherOrg.id, 'org-b');
+
+    const orgARows = await loadAuditFeed(defaultOrgId);
+    expect(orgARows).toHaveLength(4);
+    expect(orgARows.every((r) => r.draftId !== otherDraft.id)).toBe(true);
+    expect(orgARows.every((r) => r.runId !== otherRun.id)).toBe(true);
+    expect(orgARows.some((r) => r.draftId === defaultDraft.id)).toBe(true);
+    expect(orgARows.some((r) => r.runId === defaultRun.id)).toBe(true);
+
+    const orgBRows = await loadAuditFeed(otherOrg.id);
+    expect(orgBRows).toHaveLength(4);
+    expect(orgBRows.every((r) => r.draftId !== defaultDraft.id)).toBe(true);
+    expect(orgBRows.every((r) => r.runId !== defaultRun.id)).toBe(true);
+    expect(orgBRows.some((r) => r.draftId === otherDraft.id)).toBe(true);
+    expect(orgBRows.some((r) => r.runId === otherRun.id)).toBe(true);
   });
 });

@@ -1,4 +1,6 @@
 import { loadAuditFeed, loadAuditEventTypes, type AuditFilters } from '$lib/server/audit-feed.js';
+import { requireOrgId } from '$lib/server/auth.js';
+import type { PageServerLoad } from './$types';
 
 function parseIntParam(value: string | null): number | undefined {
   if (!value) return undefined;
@@ -12,7 +14,9 @@ function parseDateParam(value: string | null): Date | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
-export async function load({ url }: { url: URL }) {
+export const load: PageServerLoad = async (event) => {
+  const { url } = event;
+  const orgId = await requireOrgId(event);
   const filters: AuditFilters = {
     actor: url.searchParams.get('actor') ?? undefined,
     event: url.searchParams.get('event') ?? undefined,
@@ -32,7 +36,10 @@ export async function load({ url }: { url: URL }) {
     }
   }
 
-  const [rows, eventTypes] = await Promise.all([loadAuditFeed(filters), loadAuditEventTypes()]);
+  const [rows, eventTypes] = await Promise.all([
+    loadAuditFeed(orgId, filters),
+    loadAuditEventTypes(),
+  ]);
 
   const nextCursor =
     rows.length === filters.limit
@@ -52,4 +59,4 @@ export async function load({ url }: { url: URL }) {
     },
     nextCursor,
   };
-}
+};
