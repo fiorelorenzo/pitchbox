@@ -127,3 +127,29 @@ describe('PATCH /inbox/[id] 409 error codes', () => {
     });
   });
 });
+
+describe('PATCH /inbox/[id] optimistic locking (GRD-3)', () => {
+  beforeEach(reset);
+
+  it('returns 409 version_conflict when a second PATCH reuses the version the first one already consumed', async () => {
+    const { draft } = await seed();
+
+    const first = await PATCH(patchEvent(draft.id, { state: 'approved', version: draft.version }));
+    expect(first.status).toBe(200);
+
+    // Second dashboard tab, unaware the first tab already moved the row on,
+    // races with the same stale version it originally observed.
+    const second = await PATCH(patchEvent(draft.id, { state: 'rejected', version: draft.version }));
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as { error: string; current_version: number };
+    expect(body.error).toBe('version_conflict');
+    expect(body.current_version).toBe(draft.version + 1);
+
+    // The first write (approved) must be the one that stuck.
+    const [fresh] = await getDb()
+      .select()
+      .from(schema.drafts)
+      .where(eq(schema.drafts.id, draft.id));
+    expect(fresh.state).toBe('approved');
+  });
+});

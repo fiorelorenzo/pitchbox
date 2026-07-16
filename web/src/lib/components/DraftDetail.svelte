@@ -15,7 +15,7 @@
 	import { getPresenter } from '$lib/platforms/presenter';
 	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
-	import { parseDraftPatchError } from '$lib/utils/draft-patch-error';
+	import { interpretDraftPatchResponse, DraftVersionConflictError } from '$lib/utils/draft-patch-response';
 
 	type DraftEvent = {
 		id: number;
@@ -45,6 +45,7 @@
 		draftingRunId?: number | null;
 		draftingRunStatus?: string | null;
 		scheduledSendAfter?: string | Date | null;
+		version: number;
 	};
 
 	let {
@@ -117,12 +118,21 @@
 	});
 
 	async function patch(body: Record<string, unknown>) {
+		// Send back the version last observed for this draft (issue #106/GRD-3)
+		// so the server's optimistic-locking check fires when another tab (or
+		// the extension) moved the row on in the meantime.
 		const res = await fetch(`/inbox/${draft!.id}`, {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(body),
+			body: JSON.stringify({ ...body, version: draft!.version }),
 		});
-		if (!res.ok) throw new Error(parseDraftPatchError(await res.text()));
+		const outcome = await interpretDraftPatchResponse(res);
+		if (outcome.kind === 'version_conflict') {
+			await invalidateAll();
+			toast.info('This draft changed elsewhere, reloaded.');
+			throw new DraftVersionConflictError();
+		}
+		if (outcome.kind === 'error') throw new Error(outcome.message);
 		await invalidateAll();
 	}
 
@@ -132,6 +142,7 @@
 			await patch({ state: 'approved' });
 			toast.success('Approved', { description: 'Open compose to send it.' });
 		} catch (e) {
+			if (e instanceof DraftVersionConflictError) return;
 			toast.error('Action failed', { description: (e as Error).message });
 		} finally {
 			approving = false;
@@ -144,6 +155,7 @@
 			await patch({ state: 'rejected' });
 			toast.success('Rejected');
 		} catch (e) {
+			if (e instanceof DraftVersionConflictError) return;
 			toast.error('Action failed', { description: (e as Error).message });
 		} finally {
 			rejecting = false;
@@ -288,6 +300,7 @@
 			toast.success('Marked as sent');
 			sendDialogOpen = false;
 		} catch (e) {
+			if (e instanceof DraftVersionConflictError) return;
 			toast.error('Action failed', { description: (e as Error).message });
 		} finally {
 			sendingNow = false;

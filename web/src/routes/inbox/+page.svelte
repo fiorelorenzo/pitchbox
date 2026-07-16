@@ -21,6 +21,7 @@
 	import ChatSyncStalledBanner from '$lib/components/ChatSyncStalledBanner.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import { SelectField } from '$lib/components/ui/select-field';
+	import { interpretDraftPatchResponse, DraftVersionConflictError } from '$lib/utils/draft-patch-response';
 
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 	import type { QualityRubric } from '@pitchbox/shared/quality-judge';
@@ -47,6 +48,7 @@
 				createdAt: string | Date | null;
 				sentAt: string | Date | null;
 				sentContent: string | null;
+				version: number;
 				project: { id: number; slug: string; name: string };
 			}>;
 			state: string;
@@ -151,29 +153,22 @@
 	}
 
 	async function patchDraft(id: number, body: Record<string, unknown>) {
+		// Send back the version last observed for this draft (issue #106/GRD-3)
+		// so the server's optimistic-locking check fires when another tab (or
+		// the extension) moved the row on in the meantime.
+		const version = data.drafts.find((d) => d.id === id)?.version;
 		const res = await fetch(`/inbox/${id}`, {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(body),
+			body: JSON.stringify(version != null ? { ...body, version } : body),
 		});
-		// TODO(#39): the dashboard currently does not surface the row's
-		// `version` in PATCH bodies, so the server falls back to the latest
-		// version and the optimistic-locking check only fires when two callers
-		// supply explicit versions (e.g. extension vs dashboard). Plumbing the
-		// version through the inbox state and reloading on 409 is left as a
-		// follow-up; for now we surface the server's error message via toast.
-		if (res.status === 409) {
-			let msg = 'Draft changed in another tab - reload and try again.';
-			try {
-				const j = (await res.json()) as { error?: string };
-				if (j.error && j.error !== 'version_conflict') msg = j.error;
-			} catch {
-				// ignore JSON parse errors and use the default message
-			}
+		const outcome = await interpretDraftPatchResponse(res);
+		if (outcome.kind === 'version_conflict') {
 			await invalidateAll();
-			throw new Error(msg);
+			toast.info('This draft changed elsewhere, reloaded.');
+			throw new DraftVersionConflictError();
 		}
-		if (!res.ok) throw new Error(await res.text());
+		if (outcome.kind === 'error') throw new Error(outcome.message);
 	}
 
 	async function approveSingle(id: number) {
@@ -182,6 +177,7 @@
 			toast.success('Approved', { description: 'Open compose to send it.' });
 			await invalidateAll();
 		} catch (e) {
+			if (e instanceof DraftVersionConflictError) return;
 			toast.error('Action failed', { description: (e as Error).message });
 		}
 	}
@@ -192,6 +188,7 @@
 			toast.success('Rejected');
 			await invalidateAll();
 		} catch (e) {
+			if (e instanceof DraftVersionConflictError) return;
 			toast.error('Action failed', { description: (e as Error).message });
 		}
 	}

@@ -35,10 +35,11 @@ export async function PATCH(event: RequestEvent) {
     throw error(409, 'draft is still being drafted');
   }
 
-  // Optimistic-locking: callers MAY pass the version they observed. When the
-  // client omits it we fall back to the row's current version so the dashboard
-  // (which doesn't surface the field yet) keeps working - but cross-tab races
-  // between two explicit versions still detect the conflict on the loser.
+  // Optimistic-locking: callers pass the version they last observed (the
+  // dashboard and the extension both do this - see GRD-3/issue #106). When a
+  // caller omits it we fall back to the row's current version so older
+  // clients keep working, but that means only explicit versions actually
+  // detect a conflict.
   const expectedVersion = typeof body.version === 'number' ? body.version : draft.version;
 
   const now = new Date();

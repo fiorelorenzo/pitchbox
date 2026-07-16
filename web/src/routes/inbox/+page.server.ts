@@ -153,6 +153,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       regeneratingRunId: schema.drafts.regeneratingRunId,
       draftingRunId: schema.drafts.draftingRunId,
       draftingRunStatus: schema.runs.status,
+      version: schema.drafts.version,
       projectSlug: schema.projects.slug,
       projectName: schema.projects.name,
       platformSlug: schema.platforms.slug,
