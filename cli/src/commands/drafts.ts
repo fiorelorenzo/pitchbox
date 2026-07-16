@@ -14,6 +14,7 @@ import {
   DEFAULT_DEDUP_POLICY,
 } from '@pitchbox/shared/contact-dedup';
 import { notify } from '@pitchbox/shared/notifications';
+import { getProjectOrgId } from '@pitchbox/shared/orgs';
 import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
 import { ok, fail } from '../lib/output.js';
 
@@ -227,13 +228,20 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
         details: {},
       })),
     );
-    await notify(db, {
-      kind: 'drafts.created',
-      title: `${inserted.length} draft${inserted.length === 1 ? '' : 's'} ready for review`,
-      body: `Run #${runId} produced ${inserted.length} draft${inserted.length === 1 ? '' : 's'}.`,
-      payload: { runId, count: inserted.length, campaignId: campaign.id },
-      severity: 'info',
-    });
+    const orgId = await getProjectOrgId(db, campaign.projectId);
+    if (orgId != null) {
+      await notify(
+        db,
+        {
+          kind: 'drafts.created',
+          title: `${inserted.length} draft${inserted.length === 1 ? '' : 's'} ready for review`,
+          body: `Run #${runId} produced ${inserted.length} draft${inserted.length === 1 ? '' : 's'}.`,
+          payload: { runId, count: inserted.length, campaignId: campaign.id },
+          severity: 'info',
+        },
+        orgId,
+      );
+    }
   }
 
   return { runId, inserted: inserted.length, skipped, dedupSkipped };

@@ -337,13 +337,19 @@ async function dispatchRun(
         orgId,
       );
       if (emitsDrafts && res.exitCode === 0) emit('drafts:changed', {}, orgId);
-      await notify(db, {
-        kind: `run.${finalStatus}`,
-        title: `Run #${run.id} ${finalStatus}`,
-        body: isCampaignRun ? `Campaign ${run.campaignId} run finished.` : undefined,
-        payload: { runId: run.id, campaignId: run.campaignId, projectId: run.projectId },
-        severity: finalStatus === 'success' ? 'success' : 'error',
-      });
+      if (orgId != null) {
+        await notify(
+          db,
+          {
+            kind: `run.${finalStatus}`,
+            title: `Run #${run.id} ${finalStatus}`,
+            body: isCampaignRun ? `Campaign ${run.campaignId} run finished.` : undefined,
+            payload: { runId: run.id, campaignId: run.campaignId, projectId: run.projectId },
+            severity: finalStatus === 'success' ? 'success' : 'error',
+          },
+          orgId,
+        );
+      }
     })
     .catch(async (err) => {
       await flushPendingResult();
@@ -385,13 +391,19 @@ async function dispatchRun(
         },
         orgId,
       );
-      await notify(db, {
-        kind: 'run.failed',
-        title: `Run #${run.id} failed`,
-        body: String(err),
-        payload: { runId: run.id, campaignId: run.campaignId, projectId: run.projectId },
-        severity: 'error',
-      });
+      if (orgId != null) {
+        await notify(
+          db,
+          {
+            kind: 'run.failed',
+            title: `Run #${run.id} failed`,
+            body: String(err),
+            payload: { runId: run.id, campaignId: run.campaignId, projectId: run.projectId },
+            severity: 'error',
+          },
+          orgId,
+        );
+      }
     })
     .finally(async () => {
       runCancels.delete(run.id);

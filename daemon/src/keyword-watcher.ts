@@ -2,6 +2,7 @@ import { getDb, schema } from '@pitchbox/shared/db';
 import { and, eq } from 'drizzle-orm';
 import { computeBackoff } from '@pitchbox/shared/scheduler/backoff';
 import { notify } from '@pitchbox/shared/notifications';
+import { getProjectOrgId } from '@pitchbox/shared/orgs';
 import { config } from './config.js';
 import { logger } from './logger.js';
 
@@ -163,18 +164,27 @@ export async function tick(
         log.warn(
           `backing off watch #${w.id} (r/${w.subreddit}) after ${decision.consecutiveFailures} consecutive fetch failures`,
         );
-        await notify(db, {
-          kind: 'keyword_watch.failing',
-          title: `Keyword watch on r/${w.subreddit} is failing`,
-          body: `Pitchbox failed to fetch r/${w.subreddit}/new.json ${decision.consecutiveFailures} times in a row. Last error: ${String(err)}`,
-          payload: {
-            watchId: w.id,
-            campaignId: w.campaignId,
-            subreddit: w.subreddit,
-            consecutiveFailures: decision.consecutiveFailures,
-          },
-          severity: 'warning',
-        });
+        const orgId = await getProjectOrgId(db, w.projectId);
+        if (orgId != null) {
+          await notify(
+            db,
+            {
+              kind: 'keyword_watch.failing',
+              title: `Keyword watch on r/${w.subreddit} is failing`,
+              body: `Pitchbox failed to fetch r/${w.subreddit}/new.json ${decision.consecutiveFailures} times in a row. Last error: ${String(err)}`,
+              payload: {
+                watchId: w.id,
+                campaignId: w.campaignId,
+                subreddit: w.subreddit,
+                consecutiveFailures: decision.consecutiveFailures,
+              },
+              severity: 'warning',
+            },
+            orgId,
+          );
+        } else {
+          log.warn(`skipping notify for watch #${w.id}: could not resolve owning org`);
+        }
       }
       continue;
     }

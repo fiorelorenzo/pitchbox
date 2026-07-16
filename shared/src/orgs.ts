@@ -115,6 +115,20 @@ export async function getDraftOrgId(db: Db, draftId: number): Promise<number | n
   return row?.orgId ?? null;
 }
 
+/**
+ * Resolves a project's org id directly, or null if the project does not
+ * exist. Used by daemon loops (keyword watcher, scheduler) that hold a
+ * project id but have no run/draft context to resolve the org through.
+ */
+export async function getProjectOrgId(db: Db, projectId: number): Promise<number | null> {
+  const [row] = await db
+    .select({ orgId: projects.organizationId })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  return row?.orgId ?? null;
+}
+
 export async function listOrgMembers(db: Db, orgId: number) {
   return db
     .select({

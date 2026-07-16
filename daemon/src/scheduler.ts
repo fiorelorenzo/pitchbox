@@ -3,6 +3,7 @@ import { and, eq, isNotNull, isNull, lte, or } from 'drizzle-orm';
 import { CronExpressionParser } from 'cron-parser';
 import { computeBackoff, FAILURE_PAUSE_THRESHOLD } from '@pitchbox/shared/scheduler/backoff';
 import { notify } from '@pitchbox/shared/notifications';
+import { getProjectOrgId } from '@pitchbox/shared/orgs';
 import { config } from './config.js';
 import { logger } from './logger.js';
 
@@ -154,13 +155,22 @@ export async function tick(): Promise<void> {
         log.warn(
           `paused campaign #${c.id} after ${newAttempts} consecutive failures: ${res.error}`,
         );
-        await notify(db, {
-          kind: 'campaign.paused',
-          title: `Campaign #${c.id} paused`,
-          body: `Pitchbox stopped dispatching after ${newAttempts} consecutive failures. Last error: ${res.error}`,
-          payload: { campaignId: c.id, attempts: newAttempts, lastError: res.error },
-          severity: 'error',
-        });
+        const orgId = await getProjectOrgId(db, c.projectId);
+        if (orgId != null) {
+          await notify(
+            db,
+            {
+              kind: 'campaign.paused',
+              title: `Campaign #${c.id} paused`,
+              body: `Pitchbox stopped dispatching after ${newAttempts} consecutive failures. Last error: ${res.error}`,
+              payload: { campaignId: c.id, attempts: newAttempts, lastError: res.error },
+              severity: 'error',
+            },
+            orgId,
+          );
+        } else {
+          log.warn(`skipping notify for campaign #${c.id}: could not resolve owning org`);
+        }
       } else {
         log.warn(
           `failed to trigger campaign #${c.id}: ${res.error}. retry at ${nextAttempt.toISOString()} (attempt ${newAttempts})`,

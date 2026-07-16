@@ -291,15 +291,21 @@ export async function POST({ request }: { request: Request }) {
       set: { value: nowIso },
     });
 
+  // Tally replies per org as we go (a single sync batch could in principle
+  // touch drafts across orgs) so the summary notification below never gets
+  // written with a null/unscoped org.
+  const orgReplyCounts = new Map<number, number>();
   for (const u of updates) {
     if (u.draftId != null) {
       const orgId = await getDraftOrgId(db, u.draftId);
       emit('drafts:changed', { id: u.draftId, state: 'replied' }, orgId);
+      if (orgId != null) orgReplyCounts.set(orgId, (orgReplyCounts.get(orgId) ?? 0) + 1);
     }
   }
   for (const ev of commentMatch.draftRepliedEvents) {
     const orgId = await getDraftOrgId(db, ev.draftId);
     emit('drafts:changed', { id: ev.draftId, state: 'replied' }, orgId);
+    if (orgId != null) orgReplyCounts.set(orgId, (orgReplyCounts.get(orgId) ?? 0) + 1);
   }
 
   // Reply drafting (issue #49). For each draft we just flipped to `replied`,
@@ -378,16 +384,18 @@ export async function POST({ request }: { request: Request }) {
     }
   }
 
-  const repliedCount =
-    updates.filter((u) => u.draftId != null).length + commentMatch.draftRepliedEvents.length;
-  if (repliedCount > 0) {
-    await notify(db, {
-      kind: 'reply.received',
-      title: `${repliedCount} repl${repliedCount === 1 ? 'y' : 'ies'} received`,
-      body: 'New incoming replies have been attached to their drafts.',
-      payload: { count: repliedCount },
-      severity: 'success',
-    });
+  for (const [orgId, count] of orgReplyCounts) {
+    await notify(
+      db,
+      {
+        kind: 'reply.received',
+        title: `${count} repl${count === 1 ? 'y' : 'ies'} received`,
+        body: 'New incoming replies have been attached to their drafts.',
+        payload: { count },
+        severity: 'success',
+      },
+      orgId,
+    );
   }
 
   return json({

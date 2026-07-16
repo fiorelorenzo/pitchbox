@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
-import { desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { notifications, appConfig, webhookDeliveries } from './db/schema.js';
 
 /**
@@ -50,10 +50,12 @@ export async function notify(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: PgDatabase<any, any, any>,
   input: NotificationInput,
+  orgId: number,
 ): Promise<void> {
   const [row] = await db
     .insert(notifications)
     .values({
+      organizationId: orgId,
       kind: input.kind,
       title: input.title,
       body: input.body ?? null,
@@ -91,25 +93,36 @@ export { loadWebhooks };
 export async function listRecent(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: PgDatabase<any, any, any>,
+  orgId: number,
   limit = 50,
 ): Promise<(typeof notifications.$inferSelect)[]> {
-  return db.select().from(notifications).orderBy(desc(notifications.createdAt)).limit(limit);
+  return db
+    .select()
+    .from(notifications)
+    .where(eq(notifications.organizationId, orgId))
+    .orderBy(desc(notifications.createdAt))
+    .limit(limit);
 }
 
 export async function countUnread(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: PgDatabase<any, any, any>,
+  orgId: number,
 ): Promise<number> {
   const [r] = await db
     .select({ n: sql<number>`cast(count(*) as int)` })
     .from(notifications)
-    .where(isNull(notifications.readAt));
+    .where(and(eq(notifications.organizationId, orgId), isNull(notifications.readAt)));
   return r?.n ?? 0;
 }
 
 export async function markAllRead(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: PgDatabase<any, any, any>,
+  orgId: number,
 ): Promise<void> {
-  await db.update(notifications).set({ readAt: new Date() }).where(isNull(notifications.readAt));
+  await db
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(and(eq(notifications.organizationId, orgId), isNull(notifications.readAt)));
 }

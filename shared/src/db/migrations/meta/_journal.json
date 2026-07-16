@@ -15,6 +15,13 @@
       "when": 1784232610417,
       "tag": "0001_glorious_lizard",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784236210106,
+      "tag": "0002_blue_karnak",
+      "breakpoints": true
     }
   ]
 }

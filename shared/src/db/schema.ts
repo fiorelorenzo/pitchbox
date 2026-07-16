@@ -452,6 +452,9 @@ export const notifications = pgTable(
   'notifications',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
     kind: text('kind').notNull(),
     title: text('title').notNull(),
     body: text('body'),
@@ -462,6 +465,7 @@ export const notifications = pgTable(
   },
   (t) => ({
     byUnread: index('notifications_unread_idx').on(t.readAt, t.createdAt.desc()),
+    byOrg: index('notifications_org_idx').on(t.organizationId, t.createdAt.desc()),
   }),
 );
 
