@@ -14,7 +14,9 @@ When on, `hooks.server.ts` checks the `pitchbox_session` cookie on every non-exe
 
 ## First-run bootstrap
 
-If no user exists in the `users` table, the first POST to `/api/auth/login` creates that user with the credentials you submit. Subsequent logins verify credentials with scrypt against the `password_hash`.
+On a brand-new install the `users` table is empty and the initial owner account is created the first time credentials are submitted to `POST /api/auth/login`; every later login then verifies with scrypt against the stored `password_hash`.
+
+For any internet-facing deployment, claim the owner account (or seed it from deploy credentials) before the URL is reachable, so the initial account is never left unclaimed by an operator.
 
 ## Sessions
 
