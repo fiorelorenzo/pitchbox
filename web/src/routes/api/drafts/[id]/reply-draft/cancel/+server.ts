@@ -31,7 +31,7 @@ export async function POST(event: RequestEvent) {
       .update(schema.runs)
       .set({ status: 'cancelled', finishedAt: new Date(), error: 'cancelled by user' })
       .where(eq(schema.runs.id, draft.draftingRunId));
-    emit('drafts:changed', { id });
+    emit('drafts:changed', { id }, orgId);
   }
   return json({ ok: true });
 }

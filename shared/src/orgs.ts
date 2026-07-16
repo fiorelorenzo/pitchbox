@@ -81,6 +81,40 @@ export async function runBelongsToOrg(db: Db, runId: number, orgId: number): Pro
   return !!row;
 }
 
+/**
+ * Resolves a run's org id, or null if the run (or its project) does not
+ * exist. Mirrors `runBelongsToOrg`'s join: a run carries its project either
+ * directly (`runs.projectId`) or transitively via its campaign
+ * (`runs.campaignId` -> campaigns.projectId). Used to tag realtime events
+ * emitted from the runner with the owning org so they never cross tenants.
+ */
+export async function getRunOrgId(db: Db, runId: number): Promise<number | null> {
+  const [row] = await db
+    .select({ orgId: projects.organizationId })
+    .from(runs)
+    .leftJoin(campaigns, eq(campaigns.id, runs.campaignId))
+    .innerJoin(projects, or(eq(projects.id, runs.projectId), eq(projects.id, campaigns.projectId)))
+    .where(eq(runs.id, runId))
+    .limit(1);
+  return row?.orgId ?? null;
+}
+
+/**
+ * Resolves a draft's org id (via drafts.projectId -> projects.organizationId),
+ * or null if the draft does not exist. Used to tag realtime events emitted
+ * from extension-authenticated routes (which have no `requireOrgId` context)
+ * with the owning org.
+ */
+export async function getDraftOrgId(db: Db, draftId: number): Promise<number | null> {
+  const [row] = await db
+    .select({ orgId: projects.organizationId })
+    .from(drafts)
+    .innerJoin(projects, eq(projects.id, drafts.projectId))
+    .where(eq(drafts.id, draftId))
+    .limit(1);
+  return row?.orgId ?? null;
+}
+
 export async function listOrgMembers(db: Db, orgId: number) {
   return db
     .select({

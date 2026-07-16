@@ -5,6 +5,7 @@ import { requireExtensionAuth } from '$lib/server/extension-auth.js';
 import { emit } from '$lib/server/events.js';
 import { evaluateDraftSend } from '@pitchbox/shared/draft-send';
 import { updateDraftWithVersion } from '$lib/server/draft-state.js';
+import { getDraftOrgId } from '@pitchbox/shared/orgs';
 
 type SentBody = {
   sentContent?: string;
@@ -122,6 +123,7 @@ export async function POST({ params, request }: { params: { id: string }; reques
     }
   }
 
-  emit('drafts:changed', { id, state: 'sent' });
+  const orgId = await getDraftOrgId(db, id);
+  emit('drafts:changed', { id, state: 'sent' }, orgId);
   return json({ ok: true });
 }

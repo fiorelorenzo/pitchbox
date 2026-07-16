@@ -57,6 +57,6 @@ export async function PATCH(event: RequestEvent) {
     details: { priorBody },
   });
 
-  emit('drafts:changed', { id, state: draft.state });
+  emit('drafts:changed', { id, state: draft.state }, orgId);
   return json({ ok: true, version: res.newVersion });
 }

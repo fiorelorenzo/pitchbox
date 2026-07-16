@@ -27,7 +27,7 @@ export async function POST(event: RequestEvent) {
         { status: 409 },
       );
     }
-    emit('drafts:changed', { id });
+    emit('drafts:changed', { id }, orgId);
     return json({ ok: true, draftId: res.draftId, version: res.version });
   } catch (e) {
     throw error(400, String((e as Error).message));

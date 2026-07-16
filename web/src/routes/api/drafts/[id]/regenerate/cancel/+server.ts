@@ -29,7 +29,7 @@ export async function POST(event: RequestEvent) {
     // the DB flag is still set. Clear it directly so the UI does not stay stuck
     // showing the spinner forever.
     await clearDraftRegeneration(db, id);
-    emit('drafts:changed', { id });
+    emit('drafts:changed', { id }, orgId);
     return json({ ok: true, staleCleared: true });
   }
   return json({ ok: true });

@@ -127,6 +127,6 @@ export async function PATCH(event: RequestEvent) {
     await cascadeRejectSiblings(db, draft.variantGroupId, id, 'user');
   }
 
-  emit('drafts:changed', { id, state: newState });
+  emit('drafts:changed', { id, state: newState }, orgId);
   return json({ ok: true });
 }

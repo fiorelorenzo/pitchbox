@@ -10,6 +10,7 @@ import {
   clearDraftRegenerationIfOwned,
 } from '@pitchbox/shared/draft-regenerate';
 import { startReplyDrafting } from '@pitchbox/shared/reply-drafter';
+import { getRunOrgId } from '@pitchbox/shared/orgs';
 import { getDb, schema } from './db.js';
 import { and, desc, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
@@ -83,20 +84,21 @@ async function classifyFailedRun(
 async function clearRegenFlag(
   db: ReturnType<typeof getDb>,
   run: typeof schema.runs.$inferSelect,
+  orgId: number | null,
 ): Promise<void> {
   if (run.kind !== 'draft_regeneration') return;
   const draftId = (run.params as { draftId?: number } | null)?.draftId;
   if (!draftId) return;
   const cleared = await clearDraftRegenerationIfOwned(db, draftId, run.id);
-  if (cleared) emit('drafts:changed', {});
+  if (cleared) emit('drafts:changed', {}, orgId);
 }
 
 // Reply drafting keeps drafting_run_id set on failure (so the placeholder stays
 // non-approvable); this refreshes the inbox to the run's current status on every
 // terminal outcome (success, failure, or an early runner-creation failure), so
 // the UI flips from the spinner to the drafted body or the Retry state.
-function refreshReplyDraft(run: typeof schema.runs.$inferSelect): void {
-  if (run.kind === 'reply_drafting') emit('drafts:changed', {});
+function refreshReplyDraft(run: typeof schema.runs.$inferSelect, orgId: number | null): void {
+  if (run.kind === 'reply_drafting') emit('drafts:changed', {}, orgId);
 }
 
 /**
@@ -117,6 +119,10 @@ async function dispatchRun(
   },
 ): Promise<void> {
   const db = getDb();
+  // Resolve once and reuse for every emit() in this run's lifecycle - the
+  // run's org never changes mid-flight, so a single lookup avoids repeating
+  // the join on every event.
+  const orgId = await getRunOrgId(db, run.id);
 
   let runner: ReturnType<typeof createAgentRunner>;
   try {
@@ -130,15 +136,19 @@ async function dispatchRun(
       .set({ status: 'failed', finishedAt: new Date(), error: errMsg, failureReason })
       .where(eq(schema.runs.id, run.id));
     opts.onFinish?.('failed');
-    emit('run:finished', {
-      runId: run.id,
-      campaignId: run.campaignId,
-      projectId: run.projectId,
-      exitCode: 1,
-      error: errMsg,
-    });
-    await clearRegenFlag(db, run);
-    refreshReplyDraft(run);
+    emit(
+      'run:finished',
+      {
+        runId: run.id,
+        campaignId: run.campaignId,
+        projectId: run.projectId,
+        exitCode: 1,
+        error: errMsg,
+      },
+      orgId,
+    );
+    await clearRegenFlag(db, run, orgId);
+    refreshReplyDraft(run, orgId);
     return;
   }
 
@@ -176,17 +186,21 @@ async function dispatchRun(
         raw: pe.raw,
       })
       .returning();
-    emit('run:log', {
-      runId: run.id,
-      event: {
-        id: row.id,
-        seq: row.seq,
-        kind: row.kind,
-        payload: row.payload,
-        ts: row.createdAt,
-        raw: pe.raw,
+    emit(
+      'run:log',
+      {
+        runId: run.id,
+        event: {
+          id: row.id,
+          seq: row.seq,
+          kind: row.kind,
+          payload: row.payload,
+          ts: row.createdAt,
+          raw: pe.raw,
+        },
       },
-    });
+      orgId,
+    );
   };
 
   const handle = runner.run({
@@ -279,14 +293,18 @@ async function dispatchRun(
         }
         // Skip onFinish in the cancellation path - cancelRun handles its own emit.
         if (finalStatus !== 'cancelled') opts.onFinish?.(finalStatus);
-        emit('run:finished', {
-          runId: run.id,
-          campaignId: run.campaignId,
-          projectId: run.projectId,
-          exitCode: finalStatus === 'success' ? 0 : 1,
-          error: finalStatus === 'cancelled' ? 'cancelled by user' : undefined,
-        });
-        if (emitsDrafts && finalStatus === 'success') emit('drafts:changed', {});
+        emit(
+          'run:finished',
+          {
+            runId: run.id,
+            campaignId: run.campaignId,
+            projectId: run.projectId,
+            exitCode: finalStatus === 'success' ? 0 : 1,
+            error: finalStatus === 'cancelled' ? 'cancelled by user' : undefined,
+          },
+          orgId,
+        );
+        if (emitsDrafts && finalStatus === 'success') emit('drafts:changed', {}, orgId);
         return;
       }
       const finalStatus: 'success' | 'failed' = res.exitCode === 0 ? 'success' : 'failed';
@@ -308,13 +326,17 @@ async function dispatchRun(
         })
         .where(eq(schema.runs.id, run.id));
       opts.onFinish?.(finalStatus);
-      emit('run:finished', {
-        runId: run.id,
-        campaignId: run.campaignId,
-        projectId: run.projectId,
-        exitCode: res.exitCode,
-      });
-      if (emitsDrafts && res.exitCode === 0) emit('drafts:changed', {});
+      emit(
+        'run:finished',
+        {
+          runId: run.id,
+          campaignId: run.campaignId,
+          projectId: run.projectId,
+          exitCode: res.exitCode,
+        },
+        orgId,
+      );
+      if (emitsDrafts && res.exitCode === 0) emit('drafts:changed', {}, orgId);
       await notify(db, {
         kind: `run.${finalStatus}`,
         title: `Run #${run.id} ${finalStatus}`,
@@ -332,14 +354,18 @@ async function dispatchRun(
       if (current && TERMINAL_STATUSES.has(current.status)) {
         const finalStatus = current.status as 'success' | 'failed' | 'cancelled';
         if (finalStatus !== 'cancelled') opts.onFinish?.(finalStatus);
-        emit('run:finished', {
-          runId: run.id,
-          campaignId: run.campaignId,
-          projectId: run.projectId,
-          exitCode: finalStatus === 'success' ? 0 : 1,
-          error: finalStatus === 'cancelled' ? 'cancelled by user' : undefined,
-        });
-        if (emitsDrafts && finalStatus === 'success') emit('drafts:changed', {});
+        emit(
+          'run:finished',
+          {
+            runId: run.id,
+            campaignId: run.campaignId,
+            projectId: run.projectId,
+            exitCode: finalStatus === 'success' ? 0 : 1,
+            error: finalStatus === 'cancelled' ? 'cancelled by user' : undefined,
+          },
+          orgId,
+        );
+        if (emitsDrafts && finalStatus === 'success') emit('drafts:changed', {}, orgId);
         return;
       }
       const failureReason = await classifyFailedRun(run.id, 1, String(err));
@@ -348,13 +374,17 @@ async function dispatchRun(
         .set({ status: 'failed', finishedAt: new Date(), error: String(err), failureReason })
         .where(eq(schema.runs.id, run.id));
       opts.onFinish?.('failed');
-      emit('run:finished', {
-        runId: run.id,
-        campaignId: run.campaignId,
-        projectId: run.projectId,
-        exitCode: 1,
-        error: String(err),
-      });
+      emit(
+        'run:finished',
+        {
+          runId: run.id,
+          campaignId: run.campaignId,
+          projectId: run.projectId,
+          exitCode: 1,
+          error: String(err),
+        },
+        orgId,
+      );
       await notify(db, {
         kind: 'run.failed',
         title: `Run #${run.id} failed`,
@@ -384,8 +414,8 @@ async function dispatchRun(
         }
         // On success draft_regen_finish already cleared the flag; this covers
         // the failed/cancelled paths so the inbox stops showing "regenerating".
-        await clearRegenFlag(db, run);
-        refreshReplyDraft(run);
+        await clearRegenFlag(db, run, orgId);
+        refreshReplyDraft(run, orgId);
       } catch {
         // Never let cleanup throw out of finally.
       }
@@ -520,7 +550,8 @@ export async function runCampaign(
   }
   const run = locked.run;
 
-  emit('run:started', { runId: run.id, campaignId });
+  const orgId = await getRunOrgId(db, run.id);
+  emit('run:started', { runId: run.id, campaignId }, orgId);
 
   await dispatchRun(run, {
     playbookSlug: campaign.skillSlug,
@@ -572,13 +603,15 @@ export async function runProjectExtraction(
     })
     .returning();
 
-  emit('run:started', { runId: run.id, projectId });
+  const orgId = await getRunOrgId(db, run.id);
+  emit('run:started', { runId: run.id, projectId }, orgId);
 
   await dispatchRun(run, {
     playbookSlug: 'project-extractor',
     extraEnv: {},
     onFinish: (status) => {
-      if (status === 'success') emit('project:description:updated', { projectId, runId: run.id });
+      if (status === 'success')
+        emit('project:description:updated', { projectId, runId: run.id }, orgId);
     },
   });
 
@@ -631,13 +664,15 @@ export async function runProjectInsights(
     })
     .returning();
 
-  emit('run:started', { runId: run.id, projectId });
+  const orgId = await getRunOrgId(db, run.id);
+  emit('run:started', { runId: run.id, projectId }, orgId);
 
   await dispatchRun(run, {
     playbookSlug: 'project-insighter',
     extraEnv: { PITCHBOX_PROJECT_ID: String(projectId) },
     onFinish: (status) => {
-      if (status === 'success') emit('project:insights:updated', { projectId, runId: run.id });
+      if (status === 'success')
+        emit('project:insights:updated', { projectId, runId: run.id }, orgId);
     },
   });
 
@@ -652,8 +687,13 @@ export async function runDraftRegeneration(
   const { run, alreadyRunning } = await startDraftRegeneration(db, { draftId, hint });
   if (alreadyRunning) return { runId: run.id, alreadyRunning: true };
 
-  emit('drafts:changed', { id: draftId });
-  emit('run:started', { runId: run.id, campaignId: run.campaignId, projectId: run.projectId });
+  const orgId = await getRunOrgId(db, run.id);
+  emit('drafts:changed', { id: draftId }, orgId);
+  emit(
+    'run:started',
+    { runId: run.id, campaignId: run.campaignId, projectId: run.projectId },
+    orgId,
+  );
 
   await dispatchRun(run, {
     playbookSlug: 'draft-regenerator',
@@ -671,8 +711,13 @@ export async function runReplyDrafting(
   const { run, alreadyRunning } = await startReplyDrafting(db, { replyDraftId, parentMessageId });
   if (alreadyRunning) return { runId: run.id, alreadyRunning: true };
 
-  emit('drafts:changed', { id: replyDraftId });
-  emit('run:started', { runId: run.id, campaignId: run.campaignId, projectId: run.projectId });
+  const orgId = await getRunOrgId(db, run.id);
+  emit('drafts:changed', { id: replyDraftId }, orgId);
+  emit(
+    'run:started',
+    { runId: run.id, campaignId: run.campaignId, projectId: run.projectId },
+    orgId,
+  );
 
   await dispatchRun(run, {
     playbookSlug: 'reply-drafter',
@@ -721,7 +766,8 @@ export async function runCampaignSkillGeneration(
     })
     .returning();
 
-  emit('run:started', { runId: run.id, campaignId });
+  const orgId = await getRunOrgId(db, run.id);
+  emit('run:started', { runId: run.id, campaignId }, orgId);
 
   await dispatchRun(run, {
     playbookSlug: 'campaign-skill-generator',
@@ -755,13 +801,18 @@ export async function cancelRun(runId: number): Promise<boolean> {
     .from(schema.runs)
     .where(eq(schema.runs.id, runId));
 
-  emit('run:finished', {
-    runId,
-    campaignId: r?.campaignId ?? null,
-    projectId: r?.projectId ?? null,
-    exitCode: 1,
-    error: 'cancelled by user',
-  });
+  const orgId = await getRunOrgId(db, runId);
+  emit(
+    'run:finished',
+    {
+      runId,
+      campaignId: r?.campaignId ?? null,
+      projectId: r?.projectId ?? null,
+      exitCode: 1,
+      error: 'cancelled by user',
+    },
+    orgId,
+  );
 
   return true;
 }

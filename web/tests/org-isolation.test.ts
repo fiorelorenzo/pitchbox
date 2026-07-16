@@ -5,6 +5,8 @@ import {
   projectBelongsToOrg,
   campaignBelongsToOrg,
   draftBelongsToOrg,
+  getRunOrgId,
+  getDraftOrgId,
 } from '@pitchbox/shared/orgs';
 
 /**
@@ -84,7 +86,13 @@ async function seedOrgWithProject(slug: string) {
       body: 'hi',
     })
     .returning();
-  return { orgId: org.id, projectId: project.id, campaignId: campaign.id, draftId: draft.id };
+  return {
+    orgId: org.id,
+    projectId: project.id,
+    campaignId: campaign.id,
+    runId: run.id,
+    draftId: draft.id,
+  };
 }
 
 describe('cross-tenant isolation', () => {
@@ -112,5 +120,47 @@ describe('cross-tenant isolation', () => {
     const db = getDb();
     expect(await draftBelongsToOrg(db, a.draftId, a.orgId)).toBe(true);
     expect(await draftBelongsToOrg(db, a.draftId, b.orgId)).toBe(false);
+  });
+
+  it('getRunOrgId resolves a campaign-backed run to its org', async () => {
+    const a = await seedOrgWithProject('org-a');
+    const b = await seedOrgWithProject('org-b');
+    const db = getDb();
+    expect(await getRunOrgId(db, a.runId)).toBe(a.orgId);
+    expect(await getRunOrgId(db, a.runId)).not.toBe(b.orgId);
+  });
+
+  it('getRunOrgId resolves a project-direct run (no campaign) to its org', async () => {
+    const a = await seedOrgWithProject('org-a');
+    const db = getDb();
+    const [directRun] = await db
+      .insert(schema.runs)
+      .values({
+        kind: 'project_extraction',
+        projectId: a.projectId,
+        agentRunner: 'claude-code',
+        trigger: 'manual',
+        status: 'success',
+      })
+      .returning();
+    expect(await getRunOrgId(db, directRun.id)).toBe(a.orgId);
+  });
+
+  it('getRunOrgId returns null for a run that does not exist', async () => {
+    const db = getDb();
+    expect(await getRunOrgId(db, 999999)).toBeNull();
+  });
+
+  it('getDraftOrgId resolves a draft to its org', async () => {
+    const a = await seedOrgWithProject('org-a');
+    const b = await seedOrgWithProject('org-b');
+    const db = getDb();
+    expect(await getDraftOrgId(db, a.draftId)).toBe(a.orgId);
+    expect(await getDraftOrgId(db, a.draftId)).not.toBe(b.orgId);
+  });
+
+  it('getDraftOrgId returns null for a draft that does not exist', async () => {
+    const db = getDb();
+    expect(await getDraftOrgId(db, 999999)).toBeNull();
   });
 });

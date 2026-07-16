@@ -59,7 +59,7 @@ export async function POST(event: RequestEvent) {
       actor: 'user',
       details: { bulk: true },
     });
-    emit('drafts:changed', { id, state: 'approved' });
+    emit('drafts:changed', { id, state: 'approved' }, orgId);
     results.push({ id, status: 'ok' });
   }
 

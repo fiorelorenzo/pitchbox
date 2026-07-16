@@ -1,10 +1,16 @@
+import type { RequestEvent } from '@sveltejs/kit';
 import { subscribe } from '$lib/server/events.js';
+import { requireOrgId } from '$lib/server/auth.js';
 
 // 2 KiB padding forces browsers (Chrome especially) to start dispatching events
 // immediately instead of buffering until they have enough body.
 const PADDING = ': ' + ' '.repeat(2048) + '\n\n';
 
-export async function GET() {
+export async function GET(event: RequestEvent) {
+  // Resolve the connection's active org up front so every event delivered
+  // over this connection is scoped to it (see events.ts subscribe/emit).
+  const orgId = await requireOrgId(event);
+
   let closed = false;
   let unsub: (() => void) | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -37,7 +43,7 @@ export async function GET() {
       write(PADDING);
       send({ kind: 'hello', data: { at: new Date().toISOString() } });
 
-      unsub = subscribe(send);
+      unsub = subscribe(orgId, send);
       // Heartbeat every 15s (smaller than the usual 25s so intermediaries keep alive).
       timer = setInterval(() => write(': ping\n\n'), 15_000);
     },

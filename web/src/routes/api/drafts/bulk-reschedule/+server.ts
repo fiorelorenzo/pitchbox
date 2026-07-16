@@ -65,7 +65,7 @@ export async function POST(event: RequestEvent) {
       actor: 'user',
       details: { sendAfter: when.toISOString(), bulk: true },
     });
-    emit('drafts:changed', { id, state: draft.state });
+    emit('drafts:changed', { id, state: draft.state }, orgId);
     results.push({ id, status: 'ok' });
   }
 

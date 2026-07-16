@@ -6,6 +6,7 @@ import { emit } from '$lib/server/events.js';
 import { notify } from '@pitchbox/shared/notifications';
 import { enqueueReplyDraft } from '@pitchbox/shared/reply-drafter';
 import { runReplyDrafting } from '$lib/server/runner.js';
+import { getDraftOrgId } from '@pitchbox/shared/orgs';
 import { matchIncomingDms, type ContactRow, type IncomingDm } from '@pitchbox/shared/dm-sync';
 import {
   matchIncomingCommentReplies,
@@ -291,10 +292,14 @@ export async function POST({ request }: { request: Request }) {
     });
 
   for (const u of updates) {
-    if (u.draftId != null) emit('drafts:changed', { id: u.draftId, state: 'replied' });
+    if (u.draftId != null) {
+      const orgId = await getDraftOrgId(db, u.draftId);
+      emit('drafts:changed', { id: u.draftId, state: 'replied' }, orgId);
+    }
   }
   for (const ev of commentMatch.draftRepliedEvents) {
-    emit('drafts:changed', { id: ev.draftId, state: 'replied' });
+    const orgId = await getDraftOrgId(db, ev.draftId);
+    emit('drafts:changed', { id: ev.draftId, state: 'replied' }, orgId);
   }
 
   // Reply drafting (issue #49). For each draft we just flipped to `replied`,
