@@ -83,4 +83,14 @@ describe('shallowClone', () => {
     await expect(shallowClone('ftp://example.com/repo.git', '/tmp/x')).rejects.toThrow();
     expect(spawn).not.toHaveBeenCalled();
   });
+
+  it('rejects a dash-leading host smuggled into an scp-style URL (ssh option injection, CVE-2017-1000117)', async () => {
+    await expect(shallowClone('git@-oProxyCommand=x:y/z.git', '/tmp/x')).rejects.toThrow();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('rejects a dash-leading host in an ssh:// URL', async () => {
+    await expect(shallowClone('ssh://-oProxyCommand=x/y.git', '/tmp/x')).rejects.toThrow();
+    expect(spawn).not.toHaveBeenCalled();
+  });
 });
