@@ -6,6 +6,7 @@ import { POST as login } from '../src/routes/api/auth/login/+server.js';
 import { POST as logout } from '../src/routes/api/auth/logout/+server.js';
 import { POST as unlock } from '../src/routes/api/auth/unlock/+server.js';
 import { GET as listFailures } from '../src/routes/api/auth/failures/+server.js';
+import { type CookieJar, makeCookies, runThroughHandle } from './helpers/handle-harness.js';
 
 const USERNAME = 'alice';
 const PASSWORD = 'correct-horse-battery';
@@ -14,19 +15,6 @@ const WRONG = 'wrong-password-9999';
 // Captured at import time so afterAll can restore it and this file doesn't
 // leak PITCHBOX_AUTH into other test files sharing this worker.
 const originalAuth = process.env.PITCHBOX_AUTH;
-
-// hooks.server.ts reads PITCHBOX_AUTH into a module-level constant at import
-// time, so it must be `on` before the module is (dynamically) imported - a
-// static top-of-file import would evaluate before beforeEach sets it. Cached
-// after the first call since the module (and its captured env) is a singleton.
-let handlePromise: Promise<typeof import('../src/hooks.server.js').handle> | undefined;
-function getHandle() {
-  if (!handlePromise) {
-    process.env.PITCHBOX_AUTH = 'on';
-    handlePromise = import('../src/hooks.server.js').then((m) => m.handle);
-  }
-  return handlePromise;
-}
 
 async function reset() {
   await getDb().execute(sql`TRUNCATE auth_failures RESTART IDENTITY CASCADE`);
@@ -80,24 +68,6 @@ async function seedUserWithRole(username: string, role: 'member' | 'admin'): Pro
   return row.id;
 }
 
-type CookieJar = {
-  store: Map<string, { value: string; expires?: Date }>;
-};
-
-function makeCookies(jar: CookieJar) {
-  return {
-    get: (name: string) => jar.store.get(name)?.value,
-    set: (name: string, value: string, opts?: { expires?: Date }) => {
-      jar.store.set(name, { value, expires: opts?.expires });
-    },
-    delete: (name: string) => {
-      jar.store.delete(name);
-    },
-    getAll: () => Array.from(jar.store.entries()).map(([name, v]) => ({ name, value: v.value })),
-    serialize: () => '',
-  };
-}
-
 function makeEvent(body: unknown, jar: CookieJar, ip = '10.0.0.1') {
   const request = new Request('http://localhost/api/auth/login', {
     method: 'POST',
@@ -114,30 +84,6 @@ function makeEvent(body: unknown, jar: CookieJar, ip = '10.0.0.1') {
 
 async function callLogin(body: unknown, jar: CookieJar, ip = '10.0.0.1'): Promise<Response> {
   return await login(makeEvent(body, jar, ip));
-}
-
-// Drives a request through the real `handle()` hook (the actual auth +
-// org-resolution code path), then hands off to the real route handler with
-// whatever `event.locals` the hook populated - no hand-fabricated
-// `locals.org`, which is what let the role-gate bug hide before.
-async function runThroughHandle(
-  request: Request,
-  jar: CookieJar,
-  routeHandler: (event: unknown) => Promise<Response>,
-  ip = '10.0.0.2',
-): Promise<Response> {
-  const event = {
-    request,
-    url: new URL(request.url),
-    cookies: makeCookies(jar) as any,
-    locals: {} as any,
-    getClientAddress: () => ip,
-  };
-  const handle = await getHandle();
-  return await handle({
-    event: event as any,
-    resolve: async (ev: typeof event) => routeHandler(ev),
-  } as any);
 }
 
 describe('auth hardening', () => {
