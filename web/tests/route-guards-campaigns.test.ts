@@ -60,12 +60,13 @@ function patchEvent(
 function runEvent(
   campaignId: number,
   org?: { id: number; slug: string; role: string },
+  trigger?: string,
 ): RequestEvent {
   return {
     locals: org ? { org } : {},
     request: new Request('http://x/', {
       method: 'POST',
-      body: JSON.stringify({ campaignId }),
+      body: JSON.stringify(trigger ? { campaignId, trigger } : { campaignId }),
     }),
   } as unknown as RequestEvent;
 }
