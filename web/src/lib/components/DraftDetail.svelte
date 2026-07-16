@@ -52,10 +52,14 @@
 		draft,
 		usage,
 		limits,
+		editRequestId = $bindable(null),
 	}: {
 		draft: Draft | null;
 		usage?: UsageByKind;
 		limits?: QuotaLimits | null;
+		// Set by the parent (the inbox `e` shortcut) to the id of the draft that
+		// should open its inline editor. Consumed and reset to null below.
+		editRequestId?: number | null;
 	} = $props();
 
 	type LatestReply = {
@@ -172,6 +176,16 @@
 		editing = false;
 		editText = '';
 	}
+
+	// Consume an editRequestId from the parent (the inbox `e` shortcut): open
+	// the inline editor for the matching draft, then clear the request so it
+	// doesn't refire on the next unrelated update.
+	$effect(() => {
+		if (draft && editRequestId === draft.id && !editing) {
+			startEdit();
+			editRequestId = null;
+		}
+	});
 
 	async function saveEdit() {
 		if (!draft) return;

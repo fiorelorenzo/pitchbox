@@ -1,8 +1,8 @@
 <script lang="ts">
 	import DraftListItem from '$lib/components/DraftListItem.svelte';
 	import DraftDetail from '$lib/components/DraftDetail.svelte';
-	import { onMount } from 'svelte';
-	import { invalidateAll, goto } from '$app/navigation';
+	import { onMount, tick } from 'svelte';
+	import { invalidateAll, goto, replaceState } from '$app/navigation';
 	import { navigating, page } from '$app/stores';
 	import { ChevronDown, X, Inbox, Keyboard, ArrowLeft, SlidersHorizontal } from '@lucide/svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
@@ -69,15 +69,32 @@
 	} = $props();
 
 	let selectedId = $state<number | null>(null);
+	// Bindable "please open the inline editor" signal for the `e` shortcut - see
+	// the keyboard-shortcut handler below and DraftDetail's editRequestId prop.
+	let editRequestId = $state<number | null>(null);
+	// The `?draft=N` deep-link (from Contacts / Search / Audit) selects that draft
+	// once on load, scrolls it into view, then is stripped from the URL. Stripping
+	// matters: otherwise the effect below re-reads it every time `data.drafts`
+	// changes (invalidateAll, the org SSE stream) and snaps the selection back to
+	// the deep-linked draft for the rest of the session, overriding j/k/click.
+	let deepLinkApplied = false;
 	$effect(() => {
-		// `?focus=N` (e.g. coming from Conversations) wins over the default selection.
-		const focusParam = $page.url.searchParams.get('focus');
-		const focusId = focusParam ? Number(focusParam) : null;
-		if (focusId && data.drafts.find((d) => d.id === focusId)) {
-			selectedId = focusId;
-			return;
+		if (!deepLinkApplied) {
+			const draftParam = $page.url.searchParams.get('draft');
+			const draftId = draftParam ? Number(draftParam) : null;
+			if (draftId && data.drafts.find((d) => d.id === draftId)) {
+				selectedId = draftId;
+				deepLinkApplied = true;
+				void tick().then(() => {
+					document.getElementById(`draft-row-${draftId}`)?.scrollIntoView({ block: 'nearest' });
+					const url = new URL($page.url);
+					url.searchParams.delete('draft');
+					replaceState(`${url.pathname}${url.search}`, {});
+				});
+				return;
+			}
 		}
-		// When drafts list changes, select first if nothing selected
+		// Otherwise keep a valid selection, defaulting to the first draft.
 		if (data.drafts.length > 0 && (selectedId === null || !data.drafts.find((d) => d.id === selectedId))) {
 			selectedId = data.drafts[0].id;
 		} else if (data.drafts.length === 0) {
@@ -339,7 +356,9 @@
 					break;
 				}
 				case 'e': {
-					toast.info('Edit coming soon');
+					if (selected?.state === 'pending_review') {
+						editRequestId = selected.id;
+					}
 					break;
 				}
 				case 'o': {
@@ -594,6 +613,7 @@
 				{@const isSelected = draft.id === selectedId}
 				{@const isChecked = checkedIds.has(draft.id)}
 				<div
+					id="draft-row-{draft.id}"
 					class="flex items-stretch group relative transition-colors {isSelected
 						? 'bg-accent/60'
 						: 'hover:bg-accent/30'}"
@@ -658,6 +678,7 @@
 			draft={selected}
 			usage={selected != null ? data.usage[selected.accountId] : undefined}
 			limits={selected ? (data.quotaLimitsByPlatform[selected.platformId] ?? null) : null}
+			bind:editRequestId
 		/>
 	</section>
 </Card.Root>
@@ -748,7 +769,7 @@
 				['k / ↑', 'Previous draft'],
 				['a', 'Approve current draft'],
 				['r', 'Reject current draft (confirm)'],
-				['e', 'Edit draft (coming soon)'],
+				['e', 'Edit current draft'],
 				['o', 'Open compose URL'],
 				['?', 'Show this dialog'],
 			] as [key, desc] (key)}

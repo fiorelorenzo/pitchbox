@@ -9,7 +9,11 @@ import { hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
 
 export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const { url } = event;
-  const state = url.searchParams.get('state') ?? 'pending_review';
+  const draftParam = url.searchParams.get('draft');
+  // A `?draft=<id>` deep link (from Contacts, Search, Audit, …) must be able to
+  // find the draft regardless of its current state, so the default state
+  // filter widens to `all` unless the caller pins an explicit `state`.
+  const state = url.searchParams.get('state') ?? (draftParam ? 'all' : 'pending_review');
   const kind = url.searchParams.get('kind');
   const run = url.searchParams.get('run');
   const campaign = url.searchParams.get('campaign');

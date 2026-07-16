@@ -103,7 +103,7 @@ describe('search()', () => {
   beforeEach(reset);
 
   it('returns matching results across drafts, contacts, campaigns and projects', async () => {
-    const { project } = await seedOrg('default', 'Acme');
+    const { project, draft } = await seedOrg('default', 'Acme');
     const results = await search('acme', [project.id]);
     const kinds = new Set(results.map((r) => r.kind));
     expect(kinds.has('draft')).toBe(true);
@@ -115,6 +115,10 @@ describe('search()', () => {
       expect(typeof r.href).toBe('string');
       expect(r.href.length).toBeGreaterThan(0);
     }
+    // Draft results must use the `?draft=<id>` deep-link the inbox reads, the
+    // same one Contacts/Audit produce (see inbox-draft-deep-link.test.ts).
+    const draftResult = results.find((r) => r.kind === 'draft' && r.id === draft.id);
+    expect(draftResult?.href).toBe(`/inbox?draft=${draft.id}`);
   });
 
   it('returns no results for an empty query (no static actions on server)', async () => {

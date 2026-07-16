@@ -61,7 +61,9 @@
 	}
 
 	function urlForDraft(targetUser: string, draftId: number | null): string {
-		if (draftId != null) return `/inbox?state=all&run=${$page.url.searchParams.get('run') ?? ''}#${draftId}`;
+		// `?draft=<id>` is the deep-link the inbox reads to select + scroll a
+		// draft into view - same param Search and Audit produce.
+		if (draftId != null) return `/inbox?draft=${draftId}`;
 		return `/inbox?state=sent&q=${encodeURIComponent(targetUser)}`;
 	}
 </script>
@@ -174,7 +176,7 @@
 							<Table.Cell class="text-right">
 								{#if c.draftId != null}
 									<a
-										href="/inbox?state=all"
+										href={urlForDraft(c.targetUser, c.draftId)}
 										onclick={(e) => {
 											e.preventDefault();
 											goto(urlForDraft(c.targetUser, c.draftId));
