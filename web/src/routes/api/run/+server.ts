@@ -4,15 +4,7 @@ import { runCampaign } from '$lib/server/runner.js';
 import { getCampaignReadiness } from '$lib/server/campaign-readiness.js';
 import { getDb } from '$lib/server/db.js';
 import { campaignBelongsToOrg } from '@pitchbox/shared/orgs';
-
-const ALLOWED_TRIGGERS = new Set(['manual', 'scheduled', 'api', 'keyword']);
-
-// Normalize an inbound trigger to a known value, defaulting unknown/missing to
-// 'manual'. Exported so it can be unit-tested without the full dispatch path
-// (which requires an installed agent CLI and is not portable to CI).
-export function normalizeTrigger(raw: string | undefined): string {
-  return raw && ALLOWED_TRIGGERS.has(raw) ? raw : 'manual';
-}
+import { normalizeTrigger } from '$lib/utils/run-trigger.js';
 
 export async function POST(event: RequestEvent) {
   const { request } = event;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeTrigger } from '../src/routes/api/run/+server.js';
+import { normalizeTrigger } from '../src/lib/utils/run-trigger.js';
 
 // The daemon keyword-watcher dispatches with trigger:'keyword'; before the fix
 // the route's allow-list omitted it and silently downgraded such runs to
