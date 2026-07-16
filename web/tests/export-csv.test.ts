@@ -410,6 +410,7 @@ describe('streamCsv', () => {
     await db.insert(schema.messages).values([
       {
         contactId: contact.id,
+        draftId: draft.id,
         platformId: platform.id,
         author: 'me',
         isFromUs: true,
@@ -420,6 +421,7 @@ describe('streamCsv', () => {
       },
       {
         contactId: contact.id,
+        draftId: draft.id,
         platformId: platform.id,
         author: 'alice',
         isFromUs: false,
@@ -430,7 +432,9 @@ describe('streamCsv', () => {
       },
     ]);
 
-    const rows = parseCsv(await bodyOf(streamCsv('conversations', new URLSearchParams(), [])));
+    const rows = parseCsv(
+      await bodyOf(streamCsv('conversations', new URLSearchParams(), [project.id])),
+    );
     expect(rows[0]).toEqual([...CONVERSATIONS_COLUMNS]);
     expect(rows.length).toBe(2);
     const row = rows[1];
@@ -440,6 +444,103 @@ describe('streamCsv', () => {
     expect(row[3]).toBe('dm');
     expect(row[4]).toBe('2026-05-02T10:00:00.000Z');
     expect(row[5]).toBe('2');
+  });
+
+  it('conversations: excludes another org draft kind and messages from the export', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [otherOrg] = await db
+      .insert(schema.organizations)
+      .values({ slug: `export-conv-org-${Date.now()}`, name: 'other org' })
+      .returning();
+
+    async function seedOrgThread(organizationId: number, tag: string) {
+      const [project] = await db
+        .insert(schema.projects)
+        .values({ organizationId, slug: `p-${tag}-${Date.now()}`, name: tag })
+        .returning();
+      const [account] = await db
+        .insert(schema.accounts)
+        .values({ projectId: project.id, platformId: platform.id, handle: tag, role: 'personal' })
+        .returning();
+      const [campaign] = await db
+        .insert(schema.campaigns)
+        .values({
+          projectId: project.id,
+          platformId: platform.id,
+          name: `C-${tag}`,
+          skillSlug: 'reddit-scout',
+        })
+        .returning();
+      const [run] = await db
+        .insert(schema.runs)
+        .values({
+          campaignId: campaign.id,
+          projectId: project.id,
+          agentRunner: 'claude-code',
+          trigger: 'manual',
+        })
+        .returning();
+      const [draft] = await db
+        .insert(schema.drafts)
+        .values({
+          runId: run.id,
+          projectId: project.id,
+          platformId: platform.id,
+          accountId: account.id,
+          kind: 'dm',
+          state: 'sent',
+          body: `${tag}-secret`,
+        })
+        .returning();
+      const [contact] = await db
+        .insert(schema.contactHistory)
+        .values({
+          platformId: platform.id,
+          accountHandle: tag,
+          targetUser: `${tag}-target`,
+          draftId: draft.id,
+          lastContactedAt: new Date('2026-05-01T10:00:00Z'),
+          repliedAt: new Date('2026-05-02T10:00:00Z'),
+        })
+        .returning();
+      await db.insert(schema.messages).values({
+        contactId: contact.id,
+        draftId: draft.id,
+        platformId: platform.id,
+        author: tag,
+        isFromUs: true,
+        body: `${tag}-secret-message`,
+        platformMessageId: `${tag}-m1`,
+        createdAtPlatform: new Date('2026-05-01T10:00:00Z'),
+        source: 'test',
+      });
+      return { project, contact };
+    }
+
+    const mine = await seedOrgThread(org.id, 'mine');
+    await seedOrgThread(otherOrg.id, 'other');
+
+    const rows = parseCsv(
+      await bodyOf(streamCsv('conversations', new URLSearchParams(), [mine.project.id])),
+    );
+
+    const bodies = rows.map((r) => r.join(','));
+    expect(bodies.some((b) => b.includes('mine'))).toBe(true);
+    // The other org's contact row survives (contact_history is a global
+    // accepted residual), but its draft kind and message count must not leak.
+    const otherRow = rows.find((r) => r[2] === `other-target`);
+    expect(otherRow).toBeTruthy();
+    expect(otherRow?.[3]).toBe('');
+    expect(otherRow?.[5]).toBe('0');
+    expect(bodies.some((b) => b.includes('other-secret-message'))).toBe(false);
   });
 
   it('conversations: filter=replied excludes awaiting rows', async () => {

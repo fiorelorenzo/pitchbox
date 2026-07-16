@@ -260,8 +260,19 @@ async function* contactRows(
 
 async function* conversationRows(
   filters: ConversationFilters,
+  projectIds: number[],
 ): AsyncGenerator<readonly unknown[], void, unknown> {
   const db = getDb();
+  const hasProjects = projectIds.length > 0;
+
+  // contact_history is a global accepted residual (see "Residual risks" in
+  // docs/organization-isolation-design.md), so every contact row stays in the
+  // export. The attached draft is not: scope the join to the active org's
+  // projects so a cross-org draft's kind never leaks into the export.
+  const draftJoinCond = and(
+    eq(schema.contactHistory.draftId, schema.drafts.id),
+    hasProjects ? inArray(schema.drafts.projectId, projectIds) : sql`false`,
+  );
 
   // Per-contact message aggregate joined onto contact_history.
   // thread_id := chat_room_id when present, otherwise `contact:<id>`.
@@ -276,12 +287,15 @@ async function* conversationRows(
       draftKind: schema.drafts.kind,
     })
     .from(schema.contactHistory)
-    .leftJoin(schema.drafts, eq(schema.contactHistory.draftId, schema.drafts.id))
+    .leftJoin(schema.drafts, draftJoinCond)
     .orderBy(schema.contactHistory.id);
 
   const contactIds = rows.map((r) => r.contactId);
   const counts = new Map<number, { count: number; last: Date | null }>();
-  if (contactIds.length > 0) {
+  // Messages are attributed to an org through the draft they were matched to
+  // (drafts.projectId); a message with no draftId cannot be attributed to any
+  // org, so it is excluded here rather than risk counting it across tenants.
+  if (contactIds.length > 0 && hasProjects) {
     const aggs = await db
       .select({
         contactId: schema.messages.contactId,
@@ -289,7 +303,13 @@ async function* conversationRows(
         last: sql<Date>`max(${schema.messages.createdAtPlatform})`,
       })
       .from(schema.messages)
-      .where(inArray(schema.messages.contactId, contactIds))
+      .innerJoin(schema.drafts, eq(schema.messages.draftId, schema.drafts.id))
+      .where(
+        and(
+          inArray(schema.messages.contactId, contactIds),
+          inArray(schema.drafts.projectId, projectIds),
+        ),
+      )
       .groupBy(schema.messages.contactId);
     for (const a of aggs) {
       // `max()` returns a raw timestamp string from pg - coerce to Date.
@@ -318,11 +338,14 @@ async function* conversationRows(
 }
 
 /**
- * `projectIds` scopes the export to the active organization's projects. Only
- * `drafts` carries a `project_id` column directly, so it is the only resource
- * filtered here; `contacts`/`conversations` are backed by `contact_history` /
- * `messages`, which have no project column and stay global by design (see
- * "Residual risks" in `docs/organization-isolation-design.md`).
+ * `projectIds` scopes the export to the active organization's projects.
+ * `drafts` carries a `project_id` column directly and is filtered on it
+ * directly; `conversations` has no project column on `contact_history` itself
+ * but reaches the org through the attached draft (`drafts.projectId`), so its
+ * message aggregate and draft fields are scoped the same way. `contacts` is
+ * backed only by `contact_history`, which has no project column at all and
+ * stays global by design (see "Residual risks" in
+ * `docs/organization-isolation-design.md`).
  */
 export function streamCsv(
   resource: ResourceName,
@@ -342,7 +365,7 @@ export function streamCsv(
       break;
     case 'conversations':
       header = CONVERSATIONS_COLUMNS;
-      gen = conversationRows(parseConversationFilters(params));
+      gen = conversationRows(parseConversationFilters(params), projectIds);
       break;
   }
 

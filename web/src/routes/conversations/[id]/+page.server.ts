@@ -1,18 +1,26 @@
 import { error } from '@sveltejs/kit';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { decodeThreadId } from './thread-id.js';
 import { loadPendingReplyDraft } from '@pitchbox/shared/reply-drafter';
+import { listProjects } from '@pitchbox/shared/projects';
+import { draftBelongsToOrg } from '@pitchbox/shared/orgs';
+import { resolveOrgId } from '$lib/server/auth.js';
 
-export async function load({ params }: { params: { id: string } }) {
+export async function load(event: import('@sveltejs/kit').RequestEvent) {
+  const { params } = event;
   let key;
   try {
-    key = decodeThreadId(params.id);
+    key = decodeThreadId(params.id as string);
   } catch {
     throw error(400, 'invalid thread id');
   }
 
   const db = getDb();
+  const orgId = await resolveOrgId(event);
+  const projects = await listProjects(db, { organizationId: orgId });
+  const projectIds = projects.map((p) => p.id);
+  const hasProjects = projectIds.length > 0;
 
   const [platform] = await db
     .select()
@@ -43,59 +51,62 @@ export async function load({ params }: { params: { id: string } }) {
 
   // Parent draft for the thread = the draft attached to the most recent
   // contact_history row (that's the one the agent last produced for the pair).
+  // contact_history is a global accepted residual (see the
+  // organization-isolation design doc), so a thread id reached by an org-B
+  // user can point at an org-A contact whose draft belongs to org A - never
+  // return that draft to a caller outside its org.
   let parentDraft: typeof schema.drafts.$inferSelect | null = null;
-  if (latest.draftId != null) {
+  if (
+    latest.draftId != null &&
+    orgId != null &&
+    (await draftBelongsToOrg(db, latest.draftId, orgId))
+  ) {
     const [d] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, latest.draftId));
     parentDraft = d ?? null;
   }
 
   // Load every message attached to any contact_history row in this thread,
-  // chronologically ascending.
-  const rows = await db
-    .select({
-      id: schema.messages.id,
-      contactId: schema.messages.contactId,
-      author: schema.messages.author,
-      isFromUs: schema.messages.isFromUs,
-      body: schema.messages.body,
-      createdAt: schema.messages.createdAtPlatform,
-      source: schema.messages.source,
-      draftId: schema.messages.draftId,
-      draftKind: schema.drafts.kind,
-    })
-    .from(schema.messages)
-    .leftJoin(schema.drafts, eq(schema.messages.draftId, schema.drafts.id))
-    .where(
-      contactIds.length === 1
-        ? eq(schema.messages.contactId, contactIds[0])
-        : // drizzle has no `inArray` import here; rebuild with OR if needed -
-          // contactIds is small (one tuple, usually 1 row), so keep it simple.
-          eq(schema.messages.contactId, contactIds[0]),
-    )
-    .orderBy(asc(schema.messages.createdAtPlatform));
+  // chronologically ascending. Messages are attributed to an org through the
+  // draft they were matched to (drafts.projectId); a message with no draftId
+  // cannot be attributed to any org, so it is excluded here rather than risk
+  // showing it across tenants.
+  const messageColumns = {
+    id: schema.messages.id,
+    contactId: schema.messages.contactId,
+    author: schema.messages.author,
+    isFromUs: schema.messages.isFromUs,
+    body: schema.messages.body,
+    createdAt: schema.messages.createdAtPlatform,
+    source: schema.messages.source,
+    draftId: schema.messages.draftId,
+    draftKind: schema.drafts.kind,
+  };
+  let rows: Array<{
+    id: number;
+    contactId: number;
+    author: string;
+    isFromUs: boolean;
+    body: string;
+    createdAt: Date;
+    source: string;
+    draftId: number | null;
+    draftKind: string | null;
+  }> = [];
 
-  // When more than one contact_history row exists for the pair, fetch the rest
-  // and merge. This stays out of the hot path (typically only 1 row).
-  if (contactIds.length > 1) {
-    for (let i = 1; i < contactIds.length; i++) {
-      const more = await db
-        .select({
-          id: schema.messages.id,
-          contactId: schema.messages.contactId,
-          author: schema.messages.author,
-          isFromUs: schema.messages.isFromUs,
-          body: schema.messages.body,
-          createdAt: schema.messages.createdAtPlatform,
-          source: schema.messages.source,
-          draftId: schema.messages.draftId,
-          draftKind: schema.drafts.kind,
-        })
-        .from(schema.messages)
-        .leftJoin(schema.drafts, eq(schema.messages.draftId, schema.drafts.id))
-        .where(eq(schema.messages.contactId, contactIds[i]));
-      rows.push(...more);
-    }
-    rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  if (hasProjects) {
+    rows = await db
+      .select(messageColumns)
+      .from(schema.messages)
+      .innerJoin(schema.drafts, eq(schema.messages.draftId, schema.drafts.id))
+      .where(
+        and(
+          contactIds.length === 1
+            ? eq(schema.messages.contactId, contactIds[0])
+            : inArray(schema.messages.contactId, contactIds),
+          inArray(schema.drafts.projectId, projectIds),
+        ),
+      )
+      .orderBy(asc(schema.messages.createdAtPlatform));
   }
 
   // Reply drafting (issue #49): show the pending auto-drafted reply (if any)
