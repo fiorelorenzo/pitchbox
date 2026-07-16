@@ -81,7 +81,13 @@ function isExemptPath(pathname: string): boolean {
   return (
     pathname.startsWith('/api/extension/') ||
     pathname.startsWith('/login') ||
-    pathname.startsWith('/api/auth/') ||
+    // Only login/logout are exempt - a signed-in-or-not caller has to be
+    // able to reach them. `/api/auth/unlock` and `/api/auth/failures` are
+    // admin-only management endpoints and must go through the same
+    // session + org/role resolution as every other /api/* route below, or
+    // `requireRole` in those handlers has nothing to gate on (#132).
+    pathname.startsWith('/api/auth/login') ||
+    pathname.startsWith('/api/auth/logout') ||
     pathname.startsWith('/_app/') ||
     pathname.startsWith('/favicon')
   );

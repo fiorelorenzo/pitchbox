@@ -6,6 +6,10 @@ import { requireRole } from '../../../../lib/server/auth.js';
 
 const COOKIE = 'pitchbox_session';
 
+// hooks.server.ts already enforces a valid session (and resolves
+// `event.locals.org` for `requireRole` below) for this route - only
+// `/api/auth/login` and `/api/auth/logout` are exempt from that check (#132).
+// This is a cheap defense-in-depth re-check, not the primary guard.
 async function requireSession(event: RequestEvent): Promise<void> {
   if (process.env.PITCHBOX_AUTH !== 'on') return;
   const token = event.cookies.get(COOKIE);
