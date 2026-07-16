@@ -20,6 +20,46 @@ let context: BrowserContext | null = null;
 let warmupPromise: Promise<void> | null = null;
 let lastRequestAt = 0;
 
+// The client-side MCP/runner process can multiplex multiple concurrent runs
+// (the cloud runner relays several sessions through one long-lived process).
+// All runs share the browser/context singletons above, so a finishing run
+// must not tear them down while a sibling run is still scraping. Callers
+// bracket their work with acquireBrowser()/closeBrowser() - a run counter
+// - so the browser is only actually closed once every active run has
+// released it. teardownInFlight guards against overlapping teardown calls
+// racing each other down to zero.
+let activeRuns = 0;
+let teardownInFlight: Promise<void> | null = null;
+
+/**
+ * Marks the start of a run that will use the shared browser/context. Must be
+ * paired with a matching closeBrowser() call (typically in a try/finally)
+ * so the browser is only torn down once every active run has released it.
+ */
+export function acquireBrowser(): void {
+  activeRuns++;
+}
+
+async function teardownBrowser(): Promise<void> {
+  if (teardownInFlight) return teardownInFlight;
+  teardownInFlight = (async () => {
+    if (context) {
+      await context.close();
+      context = null;
+    }
+    if (browser) {
+      await browser.close();
+      browser = null;
+    }
+    warmupPromise = null;
+  })();
+  try {
+    await teardownInFlight;
+  } finally {
+    teardownInFlight = null;
+  }
+}
+
 async function ensureContext(env: RedditEnv): Promise<BrowserContext> {
   if (context) return context;
   browser = await chromium.launch({
@@ -589,14 +629,15 @@ export async function browserGetUserPosts(
   return out;
 }
 
+/**
+ * Releases this run's claim on the shared browser/context (see
+ * acquireBrowser()). Only actually closes the browser once every active run
+ * has released it, so a finishing run never tears it down out from under a
+ * sibling run that is still scraping. An unpaired call (activeRuns already
+ * at 0) closes immediately, matching the previous unconditional behavior.
+ */
 export async function closeBrowser(): Promise<void> {
-  if (context) {
-    await context.close();
-    context = null;
-  }
-  if (browser) {
-    await browser.close();
-    browser = null;
-  }
-  warmupPromise = null;
+  activeRuns = Math.max(0, activeRuns - 1);
+  if (activeRuns > 0) return;
+  await teardownBrowser();
 }

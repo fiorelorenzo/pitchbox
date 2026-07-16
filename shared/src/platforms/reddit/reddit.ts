@@ -1,4 +1,5 @@
 import {
+  acquireBrowser,
   browserBrowseSubreddit,
   browserGetPostAndComments,
   browserGetPostComments,
@@ -124,4 +125,4 @@ export function profileUrl(username: string): string {
   return `${BASE}/user/${encodeURIComponent(username)}`;
 }
 
-export { closeBrowser };
+export { acquireBrowser, closeBrowser };

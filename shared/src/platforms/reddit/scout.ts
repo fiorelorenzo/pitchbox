@@ -1,4 +1,11 @@
-import { browseSubreddit, closeBrowser, getUserAbout, searchPosts, profileUrl } from './reddit.js';
+import {
+  acquireBrowser,
+  browseSubreddit,
+  closeBrowser,
+  getUserAbout,
+  searchPosts,
+  profileUrl,
+} from './reddit.js';
 import { loadEnv } from './env.js';
 import { filterCandidates } from './filter.js';
 import type { ScoutCandidate, ScoutProfile } from './types.js';
@@ -12,6 +19,12 @@ export interface RunScoutOptions {
 
 export async function runScout(opts: RunScoutOptions): Promise<ScoutCandidate[]> {
   const env = loadEnv();
+  // Claim the shared browser/context before scraping and release it in the
+  // finally below. The client process can multiplex concurrent runs (e.g.
+  // the cloud runner relaying several sessions), so closeBrowser() only
+  // actually tears the browser down once every claim has been released -
+  // this run's cleanup must not close a browser a sibling run still needs.
+  acquireBrowser();
   try {
     const raw: ScoutCandidate[] = [];
     const seen = new Set<string>();
