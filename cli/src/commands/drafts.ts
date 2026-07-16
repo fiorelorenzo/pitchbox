@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { z } from 'zod';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { isBlocklisted } from '@pitchbox/shared/blocklist';
 import { groupVariants } from '@pitchbox/shared/draft-variants';
 import {
@@ -55,6 +55,27 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
     .select()
     .from(schema.campaigns)
     .where(eq(schema.campaigns.id, run.campaignId));
+
+  // Validate that every referenced accountId actually belongs to the
+  // campaign's project. The accounts FK only requires the account to exist,
+  // not that it lives in the same project, so without this check a valid
+  // account from another project (or org) would be silently accepted and
+  // misattribute the draft's platform identity.
+  const accountIds = [...new Set(draftsInput.map((d) => d.accountId))];
+  const accountRows = await db
+    .select({ id: schema.accounts.id, projectId: schema.accounts.projectId })
+    .from(schema.accounts)
+    .where(inArray(schema.accounts.id, accountIds));
+  const accountsById = new Map(accountRows.map((a) => [a.id, a]));
+  for (const accountId of accountIds) {
+    const account = accountsById.get(accountId);
+    if (!account) throw new Error(`account ${accountId} not found`);
+    if (account.projectId !== campaign.projectId) {
+      throw new Error(
+        `account ${accountId} belongs to project ${account.projectId}, not campaign's project ${campaign.projectId}`,
+      );
+    }
+  }
 
   // Load dedup policy from app_config.dedup_policy. Defaults to a 90-day
   // warn-only window when unset.

@@ -228,6 +228,114 @@ describe('pitchbox drafts:create', () => {
     expect(events).toHaveLength(1);
     expect(events[0].draftId).toBe(drafts[0].id);
   });
+
+  it('rejects a draft whose accountId belongs to a different project (issue #107)', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+
+    // Project A owns the campaign/run.
+    const [projectA] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'proj-a', name: 'Project A' })
+      .returning();
+    const [accountA] = await db
+      .insert(schema.accounts)
+      .values({
+        projectId: projectA.id,
+        platformId: platform.id,
+        handle: 'a-owner',
+        role: 'personal',
+      })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: projectA.id,
+        platformId: platform.id,
+        name: 'ca',
+        skillSlug: 'reddit-scout',
+        config: {},
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    // Project B owns a foreign account that should never be attributable to
+    // project A's drafts.
+    const [projectB] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'proj-b', name: 'Project B' })
+      .returning();
+    const [accountB] = await db
+      .insert(schema.accounts)
+      .values({
+        projectId: projectB.id,
+        platformId: platform.id,
+        handle: 'b-owner',
+        role: 'personal',
+      })
+      .returning();
+
+    // Foreign accountId is rejected: the whole batch fails with a clear error
+    // and nothing is persisted.
+    const foreignPayload = JSON.stringify([
+      {
+        accountId: accountB.id,
+        kind: 'dm',
+        targetUser: 'eve',
+        body: 'hey eve, ...',
+        sourceRef: {},
+        metadata: {},
+      },
+    ]);
+
+    let threw = false;
+    try {
+      cli(`drafts:create --run=${run.id}`, foreignPayload);
+    } catch (err) {
+      threw = true;
+      const stderr = String((err as { stderr?: unknown }).stderr ?? '');
+      const res = JSON.parse(stderr.trim().split('\n').at(-1)!);
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/account/i);
+      expect(res.error).toMatch(new RegExp(String(accountB.id)));
+    }
+    expect(threw).toBe(true);
+
+    const draftsAfterForeign = await db.select().from(schema.drafts);
+    expect(draftsAfterForeign).toHaveLength(0);
+
+    // Same-project accountId succeeds as before.
+    const samePayload = JSON.stringify([
+      {
+        accountId: accountA.id,
+        kind: 'dm',
+        targetUser: 'frank',
+        body: 'hey frank, ...',
+        sourceRef: {},
+        metadata: {},
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, samePayload);
+    const lines = out.trim().split('\n');
+    const res = JSON.parse(lines[lines.length - 1]);
+    expect(res.ok).toBe(true);
+    expect(res.data.inserted).toBe(1);
+
+    const draftsAfterSame = await db.select().from(schema.drafts);
+    expect(draftsAfterSame).toHaveLength(1);
+    expect(draftsAfterSame[0].accountId).toBe(accountA.id);
+  });
 });
 
 afterAll(async () => {
