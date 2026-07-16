@@ -19,12 +19,14 @@ function makeFakeChild(): {
   stdin: PassThrough;
   stdout: PassThrough;
   emitExit: (code: number) => void;
+  killCalls: Array<{ signal: unknown; at: number }>;
 } {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
   const stderr = new PassThrough();
   const emitter = new EventEmitter();
   let exited = false;
+  const killCalls: Array<{ signal: unknown; at: number }> = [];
   const emitExit = (code: number) => {
     if (exited) return;
     exited = true;
@@ -34,19 +36,20 @@ function makeFakeChild(): {
     stdin,
     stdout,
     stderr,
-    kill: () => {
+    kill: (signal?: unknown) => {
+      killCalls.push({ signal, at: Date.now() });
       emitExit(0);
       return true;
     },
   }) as unknown as ChildProcessWithoutNullStreams;
-  return { child, stdin, stdout, emitExit };
+  return { child, stdin, stdout, emitExit, killCalls };
 }
 
 function makeRunner(
   handlers: MockHandlers = {},
   config?: { model?: string; maxTurns?: number; extraArgs?: string[] },
 ) {
-  const { child, stdin, stdout, emitExit } = makeFakeChild();
+  const { child, stdin, stdout, emitExit, killCalls } = makeFakeChild();
   // From the runner's POV: it writes to child.stdin and reads from child.stdout.
   // The mock server's POV is the opposite: it reads from child.stdin (what the
   // runner produced) and writes to child.stdout (what the runner will read).
@@ -63,7 +66,7 @@ function makeRunner(
     logDir: mkdtempSync(join(tmpdir(), 'acp-test-log-')),
     config,
   });
-  return { runner, server, emitExit };
+  return { runner, server, emitExit, killCalls };
 }
 
 function tmpPlaybook(): string {
@@ -336,5 +339,31 @@ describe('AcpRunner integration', () => {
       timeoutMs: 60_000,
     });
     await expect(handle.result).rejects.toThrow(/initialize/i);
+  });
+
+  it('kills the spawned child on initialize timeout, well before opts.timeoutMs', async () => {
+    // initializeTimeoutMs is 1000 (see makeRunner); opts.timeoutMs below is far
+    // larger, so a passing test proves the child is killed by the init timeout
+    // path, not by the much longer run-level timer.
+    const { runner, killCalls } = makeRunner({
+      onInitialize: () =>
+        new Promise(() => {
+          /* simulate a hang, e.g. npx failing to fetch the ACP backend */
+        }),
+    });
+    const started = Date.now();
+    const handle = runner.run({
+      playbookPath,
+      slug: 'x',
+      env: {},
+      cwd: process.cwd(),
+      timeoutMs: 60_000,
+    });
+    await expect(handle.result).rejects.toThrow(/initialize/i);
+    expect(killCalls.length).toBeGreaterThan(0);
+    // initializeTimeoutMs is 1000; give generous slack for CI jitter, but this
+    // must be far short of opts.timeoutMs (60_000) to prove the kill came from
+    // the init timeout path, not the run-level timer.
+    expect(killCalls[0]!.at - started).toBeLessThan(5_000);
   });
 });

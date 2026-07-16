@@ -116,15 +116,12 @@ export class AcpRunner implements AgentRunner {
         });
       };
 
-      cancelFn = () => {
-        cancelRequested = true;
-        if (sessionId) {
-          try {
-            sendNotification('session/cancel', { sessionId });
-          } catch {
-            // ignore; SIGTERM follows
-          }
-        }
+      // Escalate SIGTERM -> SIGKILL against the spawned child (and its process
+      // tree). Shared by cancelFn (user/run-timeout cancel) and the pre-session
+      // failure path below (init timeout or init/session error), so neither
+      // leaves an orphaned child running until the much longer run-level timer
+      // fires.
+      const killChild = () => {
         try {
           child.kill('SIGTERM');
         } catch {
@@ -138,6 +135,18 @@ export class AcpRunner implements AgentRunner {
           }
         }, 5000);
         child.once('exit', () => clearTimeout(t));
+      };
+
+      cancelFn = () => {
+        cancelRequested = true;
+        if (sessionId) {
+          try {
+            sendNotification('session/cancel', { sessionId });
+          } catch {
+            // ignore; SIGTERM follows
+          }
+        }
+        killChild();
       };
 
       // Buffers for streamed assistant/thinking text chunks. ACP emits one
@@ -297,29 +306,40 @@ export class AcpRunner implements AgentRunner {
       });
 
       // 1. initialize
-      const initPromise = sendRequest<{ protocolVersion?: number }>('initialize', {
-        protocolVersion: 1,
-        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
-      });
-      const initTimeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('ACP initialize timed out')), this.initializeTimeoutMs),
-      );
-      await Promise.race([initPromise, initTimeoutPromise]);
+      let sessionResult: { sessionId: string };
+      let promptResult: { stopReason?: string; usage?: AcpUsage };
+      try {
+        const initPromise = sendRequest<{ protocolVersion?: number }>('initialize', {
+          protocolVersion: 1,
+          clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
+        });
+        const initTimeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('ACP initialize timed out')), this.initializeTimeoutMs),
+        );
+        await Promise.race([initPromise, initTimeoutPromise]);
 
-      // 2. session/new. For the claude-code backend, forward the per-runner model
-      // / maxTurns through `_meta.claudeCode.options` (the ACP adapter spreads it
-      // into the Agent SDK query). Other backends keep their own defaults today.
-      const sessionParams: Record<string, unknown> = {
-        cwd: opts.cwd,
-        mcpServers: [buildPitchboxMcpServer(opts)],
-      };
-      const claudeMeta = buildClaudeCodeMeta(this.slug, this.config);
-      if (claudeMeta) sessionParams._meta = claudeMeta;
-      const sessionResult = await sendRequest<{ sessionId: string }>('session/new', sessionParams);
+        // 2. session/new. For the claude-code backend, forward the per-runner model
+        // / maxTurns through `_meta.claudeCode.options` (the ACP adapter spreads it
+        // into the Agent SDK query). Other backends keep their own defaults today.
+        const sessionParams: Record<string, unknown> = {
+          cwd: opts.cwd,
+          mcpServers: [buildPitchboxMcpServer(opts)],
+        };
+        const claudeMeta = buildClaudeCodeMeta(this.slug, this.config);
+        if (claudeMeta) sessionParams._meta = claudeMeta;
+        sessionResult = await sendRequest<{ sessionId: string }>('session/new', sessionParams);
+      } catch (err) {
+        // Pre-session failure (init timeout or init/session error): the run-level
+        // timer (opts.timeoutMs) is much longer than initializeTimeoutMs and would
+        // otherwise leave the spawned child (and its process tree) running until
+        // it fires. Tear it down immediately, mirroring cancelFn.
+        clearTimeout(runTimer);
+        killChild();
+        throw err;
+      }
       sessionId = sessionResult.sessionId;
 
       // 3. session/prompt
-      let promptResult: { stopReason?: string; usage?: AcpUsage };
       try {
         promptResult = await sendRequest<{ stopReason?: string; usage?: AcpUsage }>(
           'session/prompt',
