@@ -7,7 +7,14 @@ import { execSync } from 'node:child_process';
  * The `env` set in vitest.config.ts is already in process.env here, so child
  * processes we spawn inherit DATABASE_URL=.../pitchbox_test automatically.
  */
-const TEST_DATABASE_URL = 'postgres://pitchbox:pitchbox@127.0.0.1:5434/pitchbox_test';
+// Mirror vitest.config.ts: honor a per-run override only for an isolated
+// pitchbox_test[_suffix] database (parallel worktree agents), else the default.
+const TEST_DATABASE_URL = (() => {
+  const url = process.env.DATABASE_URL;
+  return url && /\/pitchbox_test(_[a-z0-9-]+)?$/.test(url)
+    ? url
+    : 'postgres://pitchbox:pitchbox@127.0.0.1:5434/pitchbox_test';
+})();
 
 export async function setup() {
   const env = { ...process.env, DATABASE_URL: TEST_DATABASE_URL };

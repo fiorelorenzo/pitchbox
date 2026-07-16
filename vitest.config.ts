@@ -1,5 +1,15 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+
+// Point tests at the dedicated test DB. Allow a per-run override ONLY when it names
+// an isolated `pitchbox_test[_suffix]` database (used by parallel worktree agents so
+// concurrent runs don't share one DB); never honor an override to the real dev DB.
+function testDatabaseUrl() {
+  const def = 'postgres://pitchbox:pitchbox@127.0.0.1:5434/pitchbox_test';
+  const url = process.env.DATABASE_URL;
+  return url && /\/pitchbox_test(_[a-z0-9-]+)?$/.test(url) ? url : def;
+}
+
 export default defineConfig({
   // SvelteKit's `$lib` alias so tests can import server route handlers
   // (`web/src/routes/**/+server.ts`) that resolve `$lib/server/...` at module load.
@@ -21,7 +31,7 @@ export default defineConfig({
     // Point all tests at a dedicated test database so they never truncate the
     // user's real data.
     env: {
-      DATABASE_URL: 'postgres://pitchbox:pitchbox@127.0.0.1:5434/pitchbox_test',
+      DATABASE_URL: testDatabaseUrl(),
       PITCHBOX_TEST_MODE: '1',
     },
   },
