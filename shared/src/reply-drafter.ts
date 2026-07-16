@@ -101,6 +101,9 @@ export interface PendingReplyDraft {
   parentMessageId: number | null;
   draftingRunId: number | null;
   draftingRunStatus: string | null;
+  // Optimistic-locking version (see GRD-3/issue #106) so callers can send it
+  // back on `PATCH /inbox/[id]` and let the server detect a stale write.
+  version: number;
 }
 
 export async function loadPendingReplyDraft(
@@ -146,6 +149,7 @@ export async function loadPendingReplyDraft(
         parentMessageId: row.parentMessageId,
         draftingRunId: row.draftingRunId,
         draftingRunStatus,
+        version: row.version,
       };
     }
   }

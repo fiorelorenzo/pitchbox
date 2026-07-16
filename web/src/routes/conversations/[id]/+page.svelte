@@ -8,6 +8,11 @@
   import { getPresenter } from '$lib/platforms/presenter';
   import { relativeTime } from '$lib/utils/time';
   import { cn } from '$lib/utils';
+  import { toast } from 'svelte-sonner';
+  import {
+    interpretDraftPatchResponse,
+    DraftVersionConflictError,
+  } from '$lib/utils/draft-patch-response';
 
   type Message = {
     id: number;
@@ -50,6 +55,7 @@
       parentMessageId: number | null;
       draftingRunId: number | null;
       draftingRunStatus: string | null;
+      version: number;
     } | null;
   };
 
@@ -70,6 +76,45 @@
     if (!data.replyDraft) return;
     await fetch(`/api/drafts/${data.replyDraft.id}/reply-draft/retry`, { method: 'POST' });
     location.reload();
+  }
+
+  async function patchReplyDraft(body: Record<string, unknown>) {
+    // Send back the version last observed for this draft (issue #106/GRD-3)
+    // so the server's optimistic-locking check fires when another tab (or
+    // the extension) moved the row on in the meantime.
+    const res = await fetch(`/inbox/${data.replyDraft!.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...body, version: data.replyDraft!.version }),
+    });
+    const outcome = await interpretDraftPatchResponse(res);
+    if (outcome.kind === 'version_conflict') {
+      toast.info('This draft changed elsewhere, reloaded.');
+      location.reload();
+      throw new DraftVersionConflictError();
+    }
+    if (outcome.kind === 'error') throw new Error(outcome.message);
+    location.reload();
+  }
+
+  async function rejectReplyDraft() {
+    if (!data.replyDraft) return;
+    try {
+      await patchReplyDraft({ state: 'rejected' });
+    } catch (e) {
+      if (e instanceof DraftVersionConflictError) return;
+      toast.error('Action failed', { description: (e as Error).message });
+    }
+  }
+
+  async function approveReplyDraft() {
+    if (!data.replyDraft) return;
+    try {
+      await patchReplyDraft({ state: 'approved' });
+    } catch (e) {
+      if (e instanceof DraftVersionConflictError) return;
+      toast.error('Action failed', { description: (e as Error).message });
+    }
   }
 </script>
 
@@ -178,12 +223,7 @@
             variant="outline"
             onclick={async (e: MouseEvent) => {
               e.preventDefault();
-              await fetch(`/inbox/${data.replyDraft!.id}`, {
-                method: 'PATCH',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ state: 'rejected' }),
-              });
-              location.reload();
+              await rejectReplyDraft();
             }}>Reject</Button
           >
         </form>
@@ -195,14 +235,7 @@
         {:else}
           <Button
             size="sm"
-            onclick={async () => {
-              await fetch(`/inbox/${data.replyDraft!.id}`, {
-                method: 'PATCH',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ state: 'approved' }),
-              });
-              location.reload();
-            }}>Approve</Button
+            onclick={approveReplyDraft}>Approve</Button
           >
         {/if}
       </div>
