@@ -272,7 +272,7 @@ async function dispatchRun(
           patch.outputTokens = res.usage.outputTokens;
           patch.cacheReadTokens = res.usage.cacheReadTokens;
           patch.cacheCreationTokens = res.usage.cacheCreationTokens;
-          patch.costUsd = res.usage.costUsd.toFixed(4);
+          if (res.usage.costUsd != null) patch.costUsd = res.usage.costUsd.toFixed(4);
         }
         if (Object.keys(patch).length > 0) {
           await db.update(schema.runs).set(patch).where(eq(schema.runs.id, run.id));
@@ -303,7 +303,7 @@ async function dispatchRun(
           outputTokens: res.usage?.outputTokens ?? null,
           cacheReadTokens: res.usage?.cacheReadTokens ?? null,
           cacheCreationTokens: res.usage?.cacheCreationTokens ?? null,
-          costUsd: res.usage ? res.usage.costUsd.toFixed(4) : null,
+          costUsd: res.usage?.costUsd != null ? res.usage.costUsd.toFixed(4) : null,
           failureReason,
         })
         .where(eq(schema.runs.id, run.id));

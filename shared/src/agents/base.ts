@@ -22,7 +22,8 @@ export interface AgentRunResult {
     outputTokens: number;
     cacheReadTokens: number;
     cacheCreationTokens: number;
-    costUsd: number;
+    /** Null when not self-reported and pricing for the run's model/backend is unknown. */
+    costUsd: number | null;
     costReported: boolean;
   };
 }

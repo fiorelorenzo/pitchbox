@@ -2,23 +2,29 @@ import { describe, it, expect } from 'vitest';
 import {
   computeCostUsd,
   extractRunUsage,
+  resolvePricingForRunner,
   CLAUDE_SONNET_46_PRICING,
+  CLAUDE_OPUS_47_PRICING,
+  CLAUDE_HAIKU_45_PRICING,
 } from '../../src/runlog/usage.js';
 import type { ParsedEvent } from '../../src/runlog/types.js';
 
 describe('computeCostUsd', () => {
   it('computes 0 with no tokens', () => {
-    expect(computeCostUsd({})).toBe(0);
+    expect(computeCostUsd({}, CLAUDE_SONNET_46_PRICING)).toBe(0);
   });
 
   it('computes cost using Sonnet 4.6 pricing', () => {
     // 1M input -> $3, 1M output -> $15, 1M cache-read -> $0.30, 1M cache-create -> $3.75
-    const cost = computeCostUsd({
-      inputTokens: 1_000_000,
-      outputTokens: 1_000_000,
-      cacheReadTokens: 1_000_000,
-      cacheCreationTokens: 1_000_000,
-    });
+    const cost = computeCostUsd(
+      {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        cacheReadTokens: 1_000_000,
+        cacheCreationTokens: 1_000_000,
+      },
+      CLAUDE_SONNET_46_PRICING,
+    );
     expect(cost).toBeCloseTo(3 + 15 + 0.3 + 3.75, 4);
   });
 
@@ -28,6 +34,37 @@ describe('computeCostUsd', () => {
       { ...CLAUDE_SONNET_46_PRICING, inputPerM: 10 },
     );
     expect(cost).toBeCloseTo(10, 4);
+  });
+
+  it('returns null when pricing is unknown, instead of silently defaulting to Sonnet', () => {
+    const cost = computeCostUsd({ inputTokens: 1_000_000 }, undefined);
+    expect(cost).toBeNull();
+  });
+});
+
+describe('resolvePricingForRunner', () => {
+  it('defaults claude-code with no configured model to Sonnet 4.6 (the CLI default)', () => {
+    expect(resolvePricingForRunner('claude-code', undefined)).toEqual(CLAUDE_SONNET_46_PRICING);
+  });
+
+  it('resolves a non-default known claude-code model to its own pricing, distinct from Sonnet', () => {
+    const opus = resolvePricingForRunner('claude-code', 'claude-opus-4-7');
+    expect(opus).toEqual(CLAUDE_OPUS_47_PRICING);
+    expect(opus).not.toEqual(CLAUDE_SONNET_46_PRICING);
+
+    const haiku = resolvePricingForRunner('claude-code', 'claude-haiku-4-5');
+    expect(haiku).toEqual(CLAUDE_HAIKU_45_PRICING);
+    expect(haiku).not.toEqual(CLAUDE_SONNET_46_PRICING);
+  });
+
+  it('leaves pricing unknown for an unrecognized claude-code model string', () => {
+    expect(resolvePricingForRunner('claude-code', 'claude-nonexistent-9-9')).toBeUndefined();
+  });
+
+  it('leaves pricing unknown for non-claude backends, even with a model configured', () => {
+    expect(resolvePricingForRunner('codex', 'gpt-5-codex')).toBeUndefined();
+    expect(resolvePricingForRunner('gemini', 'gemini-2.5-pro')).toBeUndefined();
+    expect(resolvePricingForRunner('qwen-code', undefined)).toBeUndefined();
   });
 });
 

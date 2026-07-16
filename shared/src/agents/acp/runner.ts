@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import type { AgentRunHandle, AgentRunOptions, AgentRunResult, AgentRunner } from '../base.js';
 import type { RunnerConfig } from '../config.js';
 import type { ParsedEvent } from '../../runlog/types.js';
-import { computeCostUsd } from '../../runlog/usage.js';
+import { computeCostUsd, resolvePricingForRunner, type RunnerPricing } from '../../runlog/usage.js';
 import { ACP_BACKENDS, type AcpBackendSlug, type BackendSpec } from './backends.js';
 import {
   normalizeAcpUpdate,
@@ -355,7 +355,10 @@ export class AcpRunner implements AgentRunner {
       }
       const exitCode = await exitCodePromise;
 
-      const usage = buildUsage(stopUsage);
+      // Resolve pricing from THIS run's actual backend + configured model,
+      // not a hardcoded default - see usage.ts for why.
+      const pricing = resolvePricingForRunner(this.slug, this.config.model);
+      const usage = buildUsage(stopUsage, pricing);
       const tokensUsed = usage ? usage.inputTokens + usage.outputTokens : undefined;
 
       return { exitCode, logPath, tokensUsed, usage };
@@ -424,7 +427,7 @@ function buildClaudeCodeMeta(
   return Object.keys(options).length > 0 ? { claudeCode: { options } } : undefined;
 }
 
-function buildUsage(u: AcpUsage | undefined) {
+function buildUsage(u: AcpUsage | undefined, pricing: RunnerPricing | undefined) {
   if (!u) return undefined;
   const inputTokens = u.inputTokens ?? 0;
   const outputTokens = u.outputTokens ?? 0;
@@ -438,7 +441,10 @@ function buildUsage(u: AcpUsage | undefined) {
     cacheCreationTokens,
     costUsd: reported
       ? Number((u.totalCostUsd as number).toFixed(4))
-      : computeCostUsd({ inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens }),
+      : computeCostUsd(
+          { inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens },
+          pricing,
+        ),
     costReported: reported,
   };
 }

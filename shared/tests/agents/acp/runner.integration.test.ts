@@ -213,6 +213,66 @@ describe('AcpRunner integration', () => {
     expect(captured[0]?._meta).toBeUndefined();
   });
 
+  it("computes cost from the run's configured model, not the Sonnet default", async () => {
+    // Same token counts, no self-reported totalCostUsd, but a non-default
+    // configured model (opus) - the computed cost must differ from what
+    // Sonnet pricing would have produced for the same tokens.
+    const { runner: sonnetRunner } = makeRunner({
+      onSessionPrompt: () => ({
+        stopReason: 'end_turn',
+        usage: { inputTokens: 1_000_000, outputTokens: 0 },
+      }),
+    });
+    const sonnetRes = await sonnetRunner.run({
+      playbookPath,
+      slug: 'reddit-scout',
+      env: {},
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+    }).result;
+
+    const { runner: opusRunner } = makeRunner(
+      {
+        onSessionPrompt: () => ({
+          stopReason: 'end_turn',
+          usage: { inputTokens: 1_000_000, outputTokens: 0 },
+        }),
+      },
+      { model: 'claude-opus-4-7' },
+    );
+    const opusRes = await opusRunner.run({
+      playbookPath,
+      slug: 'reddit-scout',
+      env: {},
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+    }).result;
+
+    expect(sonnetRes.usage?.costUsd).toBeCloseTo(3, 4);
+    expect(opusRes.usage?.costUsd).not.toBeCloseTo(sonnetRes.usage?.costUsd ?? 0, 4);
+  });
+
+  it('leaves cost null for an unrecognized configured model instead of defaulting to Sonnet', async () => {
+    const { runner } = makeRunner(
+      {
+        onSessionPrompt: () => ({
+          stopReason: 'end_turn',
+          usage: { inputTokens: 1_000_000, outputTokens: 0 },
+        }),
+      },
+      { model: 'claude-nonexistent-9-9' },
+    );
+    const res = await runner.run({
+      playbookPath,
+      slug: 'reddit-scout',
+      env: {},
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+    }).result;
+    expect(res.usage?.costUsd).toBeNull();
+    expect(res.usage?.costReported).toBe(false);
+  });
+
   it('treats stop_reason: error as success=false', async () => {
     const events: ParsedEvent[] = [];
     const { runner } = makeRunner({
