@@ -30,7 +30,13 @@ export const actions: Actions = {
     const drafts_days = parseDays(form, 'drafts_days');
     const run_events_days = parseDays(form, 'run_events_days');
     const draft_events_days = parseDays(form, 'draft_events_days');
-    if (drafts_days === null || run_events_days === null || draft_events_days === null) {
+    const webhook_deliveries_days = parseDays(form, 'webhook_deliveries_days');
+    if (
+      drafts_days === null ||
+      run_events_days === null ||
+      draft_events_days === null ||
+      webhook_deliveries_days === null
+    ) {
       return fail(400, { error: 'Invalid number' });
     }
     // saveRetention enforces the floor server-side.
@@ -38,6 +44,7 @@ export const actions: Actions = {
       drafts_days,
       run_events_days,
       draft_events_days,
+      webhook_deliveries_days,
     });
     return { saved };
   },

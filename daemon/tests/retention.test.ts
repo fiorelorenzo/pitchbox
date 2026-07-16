@@ -70,6 +70,31 @@ describe('retention worker', () => {
     expect(loaded).toEqual(saved);
   });
 
+  it('preserves webhook_deliveries_days when saving a partial policy that omits it', async () => {
+    const db = getDb();
+
+    // Configure a non-default webhook_deliveries_days first.
+    await saveRetention(db, {
+      drafts_days: 45,
+      run_events_days: 45,
+      draft_events_days: 45,
+      webhook_deliveries_days: 14,
+    });
+
+    // The retention Settings page only submits the 3 pre-existing fields -
+    // saving that partial input must merge over the stored policy, not
+    // reset the omitted key back to its default.
+    const saved = await saveRetention(db, {
+      drafts_days: 60,
+      run_events_days: 60,
+      draft_events_days: 60,
+    });
+
+    expect(saved.webhook_deliveries_days).toBe(14);
+    const loaded = await loadRetention(db);
+    expect(loaded.webhook_deliveries_days).toBe(14);
+  });
+
   it('deletes old run_events / draft_events / terminal drafts and preserves contact_history', async () => {
     const { proj, platform, account, run } = await setupFixtures();
     const db = getDb();

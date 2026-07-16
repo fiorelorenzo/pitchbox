@@ -8,7 +8,12 @@
 	import { enhance } from '$app/forms';
 	import { untrack } from 'svelte';
 
-	type Policy = { drafts_days: number; run_events_days: number; draft_events_days: number };
+	type Policy = {
+		drafts_days: number;
+		run_events_days: number;
+		draft_events_days: number;
+		webhook_deliveries_days: number;
+	};
 	type PageData = { policy: Policy; floor: number; isAdmin?: boolean };
 
 	let { data, form }: { data: PageData; form: { saved?: Policy; error?: string } | null } = $props();
@@ -17,6 +22,7 @@
 	let drafts_days = $state(untrack(() => data.policy.drafts_days));
 	let run_events_days = $state(untrack(() => data.policy.run_events_days));
 	let draft_events_days = $state(untrack(() => data.policy.draft_events_days));
+	let webhook_deliveries_days = $state(untrack(() => data.policy.webhook_deliveries_days));
 	let busy = $state(false);
 
 	$effect(() => {
@@ -25,6 +31,7 @@
 			drafts_days = form.saved.drafts_days;
 			run_events_days = form.saved.run_events_days;
 			draft_events_days = form.saved.draft_events_days;
+			webhook_deliveries_days = form.saved.webhook_deliveries_days;
 		} else if (form?.error) {
 			toast.error(form.error);
 		}
@@ -69,6 +76,10 @@
 				<div class="grid gap-1.5">
 					<label class="text-sm font-medium" for="draft_events_days">Draft events</label>
 					<Input id="draft_events_days" name="draft_events_days" type="number" min={data.floor} bind:value={draft_events_days} disabled={!isAdmin} />
+				</div>
+				<div class="grid gap-1.5">
+					<label class="text-sm font-medium" for="webhook_deliveries_days">Webhook deliveries</label>
+					<Input id="webhook_deliveries_days" name="webhook_deliveries_days" type="number" min={data.floor} bind:value={webhook_deliveries_days} disabled={!isAdmin} />
 				</div>
 				{#if isAdmin}
 					<div>

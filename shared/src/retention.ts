@@ -35,19 +35,23 @@ function clampDays(n: unknown, fallback: number): number {
   return Math.max(RETENTION_FLOOR_DAYS, v);
 }
 
-/** Normalise an arbitrary record into a valid RetentionPolicy with floor enforced. */
+/**
+ * Normalise an arbitrary record into a valid RetentionPolicy with floor
+ * enforced. Any key missing (or invalid) in `raw` falls back to the
+ * corresponding value in `base` (defaulting to RETENTION_DEFAULTS), so a
+ * partial input merges over an existing policy instead of resetting the
+ * fields it doesn't mention.
+ */
 export function normaliseRetention(
   raw: Partial<Record<keyof RetentionPolicy, unknown>> | null | undefined,
+  base: RetentionPolicy = RETENTION_DEFAULTS,
 ): RetentionPolicy {
   const r = raw ?? {};
   return {
-    drafts_days: clampDays(r.drafts_days, RETENTION_DEFAULTS.drafts_days),
-    run_events_days: clampDays(r.run_events_days, RETENTION_DEFAULTS.run_events_days),
-    draft_events_days: clampDays(r.draft_events_days, RETENTION_DEFAULTS.draft_events_days),
-    webhook_deliveries_days: clampDays(
-      r.webhook_deliveries_days,
-      RETENTION_DEFAULTS.webhook_deliveries_days,
-    ),
+    drafts_days: clampDays(r.drafts_days, base.drafts_days),
+    run_events_days: clampDays(r.run_events_days, base.run_events_days),
+    draft_events_days: clampDays(r.draft_events_days, base.draft_events_days),
+    webhook_deliveries_days: clampDays(r.webhook_deliveries_days, base.webhook_deliveries_days),
   };
 }
 
@@ -64,7 +68,11 @@ export async function saveRetention(
   db: Db,
   input: Partial<RetentionPolicy>,
 ): Promise<RetentionPolicy> {
-  const next = normaliseRetention(input);
+  // Merge over the currently stored policy so a caller that only submits a
+  // subset of fields (e.g. the Settings form) doesn't clobber the rest back
+  // to RETENTION_DEFAULTS.
+  const current = await loadRetention(db);
+  const next = normaliseRetention(input, current);
   await db
     .insert(schema.appConfig)
     .values({ key: APP_CONFIG_KEY, value: next })

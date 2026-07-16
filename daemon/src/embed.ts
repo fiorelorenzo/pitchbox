@@ -94,9 +94,15 @@ export function startEmbeddedDaemon(opts: StartOptions = {}): EmbeddedDaemon {
       intervalMs: config.retentionIntervalMs,
       run: async () => {
         const res = await retentionTick();
-        if (res.runEventsDeleted + res.draftEventsDeleted + res.draftsDeleted > 0) {
+        if (
+          res.runEventsDeleted +
+            res.draftEventsDeleted +
+            res.draftsDeleted +
+            res.webhookDeliveriesDeleted >
+          0
+        ) {
           logger('retention').info(
-            `pruned run_events=${res.runEventsDeleted} draft_events=${res.draftEventsDeleted} drafts=${res.draftsDeleted}`,
+            `pruned run_events=${res.runEventsDeleted} draft_events=${res.draftEventsDeleted} drafts=${res.draftsDeleted} webhook_deliveries=${res.webhookDeliveriesDeleted}`,
           );
         }
       },
