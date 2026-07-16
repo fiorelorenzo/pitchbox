@@ -95,18 +95,23 @@ export async function clearDraftRegenerationIfOwned(
   return false;
 }
 
-export interface UndoDraftRegenerationResult {
-  draftId: number;
-  version: number;
-}
+export type UndoDraftRegenerationResult =
+  { kind: 'ok'; draftId: number; version: number } | { kind: 'conflict'; currentVersion: number };
 
 /**
  * Restore the single previous body captured by the last `regenerated` event.
  * Only valid while the draft is still pending_review and not mid-regeneration.
+ *
+ * `expectedVersion` guards the update with an optimistic-lock check (mirrors
+ * `updateDraftWithVersion` in web/src/lib/server/draft-state.ts): if the draft
+ * was mutated (edited, approved, sent, ...) between the caller's read and this
+ * call, the version predicate matches zero rows and a `conflict` result is
+ * returned instead of silently clobbering the concurrent write.
  */
 export async function undoDraftRegeneration(
   db: Db,
   draftId: number,
+  expectedVersion: number,
   opts: { actor?: string } = {},
 ): Promise<UndoDraftRegenerationResult> {
   const [draft] = await db.select().from(drafts).where(eq(drafts.id, draftId));
@@ -141,7 +146,7 @@ export async function undoDraftRegeneration(
   if (latestUndone && latestUndone.id > latestRegen.id)
     throw new Error(`draft ${draftId} regeneration already undone`);
 
-  const version = await db.transaction(async (tx) => {
+  return await db.transaction(async (tx) => {
     const [updated] = await tx
       .update(drafts)
       .set({
@@ -149,8 +154,16 @@ export async function undoDraftRegeneration(
         title: details.previousTitle ?? draft.title,
         version: sql`${drafts.version} + 1`,
       })
-      .where(eq(drafts.id, draftId))
+      .where(and(eq(drafts.id, draftId), eq(drafts.version, expectedVersion)))
       .returning({ version: drafts.version });
+
+    if (!updated) {
+      const [fresh] = await tx
+        .select({ version: drafts.version })
+        .from(drafts)
+        .where(eq(drafts.id, draftId));
+      return { kind: 'conflict', currentVersion: fresh?.version ?? expectedVersion };
+    }
 
     await tx.insert(draftEvents).values({
       draftId,
@@ -159,8 +172,6 @@ export async function undoDraftRegeneration(
       details: { restoredFromEventId: latestRegen.id },
     });
 
-    return updated.version;
+    return { kind: 'ok', draftId, version: updated.version };
   });
-
-  return { draftId, version };
 }

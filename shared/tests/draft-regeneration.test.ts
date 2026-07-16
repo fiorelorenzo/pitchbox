@@ -183,7 +183,9 @@ describe('undoDraftRegeneration', () => {
       .set({ body: 'rewritten', version: 1, regenerationCount: 1 })
       .where(eq(schema.drafts.id, draft.id));
 
-    const res = await undoDraftRegeneration(db, draft.id, { actor: 'user' });
+    const res = await undoDraftRegeneration(db, draft.id, 1, { actor: 'user' });
+    expect(res.kind).toBe('ok');
+    if (res.kind !== 'ok') throw new Error('expected ok');
     expect(res.version).toBe(2);
     const [fresh] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draft.id));
     expect(fresh.body).toBe('first take');
@@ -198,7 +200,7 @@ describe('undoDraftRegeneration', () => {
   it('throws when there is nothing to undo', async () => {
     const db = getDb();
     const { draft } = await seedDraft();
-    await expect(undoDraftRegeneration(db, draft.id)).rejects.toThrow();
+    await expect(undoDraftRegeneration(db, draft.id, draft.version)).rejects.toThrow();
   });
 
   it('rejects a second undo attempt on the same draft', async () => {
@@ -215,8 +217,8 @@ describe('undoDraftRegeneration', () => {
       .set({ body: 'rewritten', version: 1, regenerationCount: 1 })
       .where(eq(schema.drafts.id, draft.id));
 
-    await undoDraftRegeneration(db, draft.id, { actor: 'user' });
-    await expect(undoDraftRegeneration(db, draft.id, { actor: 'user' })).rejects.toThrow();
+    await undoDraftRegeneration(db, draft.id, 1, { actor: 'user' });
+    await expect(undoDraftRegeneration(db, draft.id, 2, { actor: 'user' })).rejects.toThrow();
   });
 
   it('rejects a second undo when a manual edit happened in between, and leaves the edit untouched', async () => {
@@ -234,7 +236,7 @@ describe('undoDraftRegeneration', () => {
       .where(eq(schema.drafts.id, draft.id));
 
     // First undo restores the pre-regeneration body.
-    await undoDraftRegeneration(db, draft.id, { actor: 'user' });
+    await undoDraftRegeneration(db, draft.id, 1, { actor: 'user' });
 
     // The reviewer manually edits the restored body; this is unrelated to regeneration
     // and must not reset the undo guard.
@@ -249,10 +251,45 @@ describe('undoDraftRegeneration', () => {
       .set({ body: 'manually edited body' })
       .where(eq(schema.drafts.id, draft.id));
 
-    await expect(undoDraftRegeneration(db, draft.id, { actor: 'user' })).rejects.toThrow();
+    await expect(undoDraftRegeneration(db, draft.id, 2, { actor: 'user' })).rejects.toThrow();
 
     const [fresh] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draft.id));
     expect(fresh.body).toBe('manually edited body');
+  });
+
+  it('reports a conflict instead of clobbering a concurrent write', async () => {
+    const db = getDb();
+    const { draft } = await seedDraft();
+    await db.insert(schema.draftEvents).values({
+      draftId: draft.id,
+      event: 'regenerated',
+      actor: 'agent',
+      details: { previousBody: 'first take', previousTitle: null, regenerationCount: 1 },
+    });
+    // Simulate the completed regeneration (version 1) followed by a concurrent
+    // approval/edit that bumps the version again (version 2) before the undo lands.
+    await db
+      .update(schema.drafts)
+      .set({ body: 'rewritten', version: 2, regenerationCount: 1 })
+      .where(eq(schema.drafts.id, draft.id));
+
+    // Caller read the draft when it was still at version 1 and undoes against that
+    // stale expectation.
+    const res = await undoDraftRegeneration(db, draft.id, 1, { actor: 'user' });
+    expect(res.kind).toBe('conflict');
+    if (res.kind !== 'conflict') throw new Error('expected conflict');
+    expect(res.currentVersion).toBe(2);
+
+    // The concurrent write must survive untouched: body, version, and no undo event.
+    const [fresh] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draft.id));
+    expect(fresh.body).toBe('rewritten');
+    expect(fresh.version).toBe(2);
+
+    const evts = await db
+      .select()
+      .from(schema.draftEvents)
+      .where(eq(schema.draftEvents.draftId, draft.id));
+    expect(evts.some((e) => e.event === 'regeneration_undone')).toBe(false);
   });
 });
 
