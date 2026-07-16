@@ -8,6 +8,13 @@
       "when": 1783935315448,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784232610417,
+      "tag": "0001_glorious_lizard",
+      "breakpoints": true
     }
   ]
 }

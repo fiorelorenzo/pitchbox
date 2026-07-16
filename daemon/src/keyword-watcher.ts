@@ -1,9 +1,54 @@
 import { getDb, schema } from '@pitchbox/shared/db';
 import { and, eq } from 'drizzle-orm';
+import { computeBackoff } from '@pitchbox/shared/scheduler/backoff';
+import { notify } from '@pitchbox/shared/notifications';
 import { config } from './config.js';
 import { logger } from './logger.js';
 
 const log = logger('keyword-watcher');
+
+/**
+ * Consecutive fetch-failure count at which a watch backs off and raises a
+ * `keyword_watch.failing` notification. Lower than the campaign circuit
+ * breaker's `FAILURE_PAUSE_THRESHOLD` (10): fetches happen far more often
+ * (every ~5 min per active watch, against a rate-limit-prone unauthenticated
+ * Reddit endpoint), so we want backoff to kick in sooner.
+ */
+export const WATCH_FAILURE_THRESHOLD = 3;
+
+export interface WatchFailureDecision {
+  consecutiveFailures: number;
+  nextAttemptAfter: Date | null;
+  shouldNotify: boolean;
+}
+
+/**
+ * Pure decision for one failed fetch: bump the consecutive-failure counter
+ * and, once it reaches `WATCH_FAILURE_THRESHOLD`, space out further attempts
+ * with the same exponential backoff the scheduler uses for campaigns.
+ * `shouldNotify` is true only on the tick that crosses the threshold, so a
+ * watch that stays broken doesn't spam a notification on every subsequent
+ * failed attempt.
+ */
+export function evaluateWatchFailure(
+  previousFailures: number,
+  now: Date,
+  opts: { threshold?: number } = {},
+): WatchFailureDecision {
+  const threshold = opts.threshold ?? WATCH_FAILURE_THRESHOLD;
+  const safePrevious =
+    Number.isFinite(previousFailures) && previousFailures > 0 ? previousFailures : 0;
+  const consecutiveFailures = safePrevious + 1;
+  const backedOff = consecutiveFailures >= threshold;
+  const nextAttemptAfter = backedOff
+    ? new Date(now.getTime() + computeBackoff(consecutiveFailures - threshold + 1))
+    : null;
+  return {
+    consecutiveFailures,
+    nextAttemptAfter,
+    shouldNotify: consecutiveFailures === threshold,
+  };
+}
 
 type RedditPostChild = {
   data: {
@@ -98,12 +143,48 @@ export async function tick(
       if (elapsedMs < w.cooldownMinutes * 60_000) continue;
     }
 
+    // Backoff gate: skip while still spaced out after consecutive fetch failures.
+    if (w.nextAttemptAfter && now < w.nextAttemptAfter) continue;
+
     let children: RedditPostChild[];
     try {
       children = await fetchListingImpl(w.subreddit);
     } catch (err) {
       log.warn(`fetch failed for r/${w.subreddit}: ${String(err)}`);
+      const decision = evaluateWatchFailure(w.consecutiveFailures, now);
+      await db
+        .update(schema.keywordWatches)
+        .set({
+          consecutiveFailures: decision.consecutiveFailures,
+          nextAttemptAfter: decision.nextAttemptAfter,
+        })
+        .where(eq(schema.keywordWatches.id, w.id));
+      if (decision.shouldNotify) {
+        log.warn(
+          `backing off watch #${w.id} (r/${w.subreddit}) after ${decision.consecutiveFailures} consecutive fetch failures`,
+        );
+        await notify(db, {
+          kind: 'keyword_watch.failing',
+          title: `Keyword watch on r/${w.subreddit} is failing`,
+          body: `Pitchbox failed to fetch r/${w.subreddit}/new.json ${decision.consecutiveFailures} times in a row. Last error: ${String(err)}`,
+          payload: {
+            watchId: w.id,
+            campaignId: w.campaignId,
+            subreddit: w.subreddit,
+            consecutiveFailures: decision.consecutiveFailures,
+          },
+          severity: 'warning',
+        });
+      }
       continue;
+    }
+
+    if (w.consecutiveFailures > 0 || w.nextAttemptAfter) {
+      // Fetch recovered - clear the failure/backoff state.
+      await db
+        .update(schema.keywordWatches)
+        .set({ consecutiveFailures: 0, nextAttemptAfter: null })
+        .where(eq(schema.keywordWatches.id, w.id));
     }
 
     const test = compilePattern(w.pattern);

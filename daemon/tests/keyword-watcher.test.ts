@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { compilePattern, tick } from '../src/keyword-watcher.js';
+import {
+  compilePattern,
+  evaluateWatchFailure,
+  tick,
+  WATCH_FAILURE_THRESHOLD,
+} from '../src/keyword-watcher.js';
 
 async function reset() {
   await getDb().execute(
@@ -15,6 +20,8 @@ async function seedWatch(opts: {
   matchField?: 'title' | 'selftext' | 'comment';
   cooldownMinutes?: number;
   lastSeenAt?: Date | null;
+  consecutiveFailures?: number;
+  nextAttemptAfter?: Date | null;
 }) {
   const db = getDb();
   const [org] = await db
@@ -48,6 +55,8 @@ async function seedWatch(opts: {
       matchField: opts.matchField ?? 'title',
       cooldownMinutes: opts.cooldownMinutes ?? 30,
       lastSeenAt: opts.lastSeenAt ?? null,
+      consecutiveFailures: opts.consecutiveFailures ?? 0,
+      nextAttemptAfter: opts.nextAttemptAfter ?? null,
     })
     .returning();
   return { proj, campaign, watch };
@@ -137,6 +146,129 @@ describe('keyword-watcher', () => {
 
       expect(res.dispatched).toBe(0);
       expect(triggerRun).not.toHaveBeenCalled();
+    });
+
+    it('backs off and notifies once a watch reaches the failure threshold', async () => {
+      const { watch } = await seedWatch({
+        pattern: 'pitchbox',
+        consecutiveFailures: WATCH_FAILURE_THRESHOLD - 1,
+      });
+      const fetchListing = vi.fn().mockRejectedValue(new Error('reddit 429'));
+      const triggerRun = vi.fn();
+
+      await tick(fetchListing, triggerRun);
+
+      const [row] = await getDb()
+        .select()
+        .from(schema.keywordWatches)
+        .where(eq(schema.keywordWatches.id, watch.id));
+      expect(row.consecutiveFailures).toBe(WATCH_FAILURE_THRESHOLD);
+      expect(row.nextAttemptAfter).not.toBeNull();
+      expect(row.nextAttemptAfter!.getTime()).toBeGreaterThan(Date.now());
+
+      const [notif] = await getDb()
+        .select()
+        .from(schema.notifications)
+        .where(eq(schema.notifications.kind, 'keyword_watch.failing'));
+      expect(notif).toBeTruthy();
+      expect((notif.payload as { watchId: number }).watchId).toBe(watch.id);
+      expect(notif.severity).toBe('warning');
+    });
+
+    it('does not notify before the failure threshold is reached', async () => {
+      await seedWatch({ pattern: 'pitchbox', consecutiveFailures: 0 });
+      const fetchListing = vi.fn().mockRejectedValue(new Error('reddit 429'));
+      const triggerRun = vi.fn();
+
+      await tick(fetchListing, triggerRun);
+
+      const [notif] = await getDb()
+        .select()
+        .from(schema.notifications)
+        .where(eq(schema.notifications.kind, 'keyword_watch.failing'));
+      expect(notif).toBeUndefined();
+    });
+
+    it('skips fetching a watch that is still backed off', async () => {
+      const future = new Date(Date.now() + 60_000);
+      await seedWatch({
+        pattern: 'pitchbox',
+        consecutiveFailures: WATCH_FAILURE_THRESHOLD,
+        nextAttemptAfter: future,
+      });
+      const fetchListing = vi.fn();
+      const triggerRun = vi.fn();
+
+      const res = await tick(fetchListing, triggerRun);
+
+      expect(fetchListing).not.toHaveBeenCalled();
+      expect(res.dispatched).toBe(0);
+    });
+
+    it('resets the failure state on a successful fetch', async () => {
+      const past = new Date(Date.now() - 60_000);
+      const { watch } = await seedWatch({
+        pattern: 'pitchbox',
+        consecutiveFailures: WATCH_FAILURE_THRESHOLD,
+        nextAttemptAfter: past,
+      });
+      const fetchListing = vi
+        .fn()
+        .mockResolvedValue(makeChildren([{ id: 'x', title: 'nothing relevant' }]));
+      const triggerRun = vi.fn();
+
+      await tick(fetchListing, triggerRun);
+
+      const [row] = await getDb()
+        .select()
+        .from(schema.keywordWatches)
+        .where(eq(schema.keywordWatches.id, watch.id));
+      expect(row.consecutiveFailures).toBe(0);
+      expect(row.nextAttemptAfter).toBeNull();
+    });
+  });
+
+  describe('evaluateWatchFailure', () => {
+    it('increments failures and backs off once the threshold is reached', () => {
+      const now = new Date();
+      const decision = evaluateWatchFailure(WATCH_FAILURE_THRESHOLD - 1, now);
+
+      expect(decision.consecutiveFailures).toBe(WATCH_FAILURE_THRESHOLD);
+      expect(decision.shouldNotify).toBe(true);
+      expect(decision.nextAttemptAfter).not.toBeNull();
+      expect(decision.nextAttemptAfter!.getTime()).toBeGreaterThan(now.getTime());
+    });
+
+    it('does not back off or notify below the threshold', () => {
+      const now = new Date();
+      const decision = evaluateWatchFailure(0, now);
+
+      expect(decision.consecutiveFailures).toBe(1);
+      expect(decision.shouldNotify).toBe(false);
+      expect(decision.nextAttemptAfter).toBeNull();
+    });
+
+    it('only notifies on the tick that crosses the threshold, not every one after', () => {
+      const now = new Date();
+      const decision = evaluateWatchFailure(WATCH_FAILURE_THRESHOLD, now);
+
+      expect(decision.consecutiveFailures).toBe(WATCH_FAILURE_THRESHOLD + 1);
+      expect(decision.shouldNotify).toBe(false);
+      expect(decision.nextAttemptAfter).not.toBeNull();
+    });
+
+    it('grows the backoff delay with further consecutive failures past the threshold', () => {
+      const now = new Date();
+      const first = evaluateWatchFailure(WATCH_FAILURE_THRESHOLD, now);
+      const second = evaluateWatchFailure(WATCH_FAILURE_THRESHOLD + 1, now);
+
+      expect(second.nextAttemptAfter!.getTime()).toBeGreaterThan(first.nextAttemptAfter!.getTime());
+    });
+
+    it('treats negative previous-failure counts as zero', () => {
+      const now = new Date();
+      const decision = evaluateWatchFailure(-5, now);
+      expect(decision.consecutiveFailures).toBe(1);
     });
   });
 });

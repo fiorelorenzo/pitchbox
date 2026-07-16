@@ -600,6 +600,14 @@ export const keywordWatches = pgTable(
     isActive: boolean('is_active').notNull().default(true),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     cooldownMinutes: integer('cooldown_minutes').notNull().default(30),
+    // Failure-backoff state (mirrors the campaign circuit breaker in
+    // `campaigns.failureAttempts`/`nextAttemptAfter`). `consecutiveFailures`
+    // counts consecutive fetch failures for r/{subreddit}/new.json, reset to 0
+    // on a successful fetch. Once it reaches the backoff threshold,
+    // `nextAttemptAfter` spaces out further attempts exponentially and a
+    // `keyword_watch.failing` notification is raised.
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    nextAttemptAfter: timestamp('next_attempt_after', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
