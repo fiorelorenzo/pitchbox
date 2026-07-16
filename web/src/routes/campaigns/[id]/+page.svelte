@@ -322,10 +322,13 @@
 				<Card.Content class="space-y-3">
 					{#if data.campaign.cronExpression}
 						<div>
-							<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Cron</p>
+							<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Cron (UTC)</p>
 							<code class="font-mono text-xs bg-muted px-2 py-1 rounded"
 								>{data.campaign.cronExpression}</code
 							>
+							<p class="text-xs text-muted-foreground mt-1">
+								Schedule times are in UTC, not your local timezone.
+							</p>
 						</div>
 					{/if}
 					{#if hasRateLimit}

@@ -203,8 +203,11 @@
 		/>
 	</label>
 	<label class="flex flex-col gap-1 text-xs">
-		Cron (optional)
+		Cron (optional, UTC)
 		<Input bind:value={cron} placeholder="0 9 * * *" />
+		<span class="text-xs text-muted-foreground">
+			The schedule is interpreted in UTC, not your local timezone.
+		</span>
 	</label>
 	<div class="flex gap-2">
 		<Button type="submit" loading={saving}>Create</Button>
