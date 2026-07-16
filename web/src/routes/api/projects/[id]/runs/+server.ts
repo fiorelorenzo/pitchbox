@@ -6,6 +6,7 @@ import { getDb, schema } from '$lib/server/db.js';
 import { runProjectExtraction } from '$lib/server/runner.js';
 import { requireOrgId } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
+import { assertSafeGitCloneUrl } from '@pitchbox/shared/project-extraction';
 
 const SourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('folder'), value: z.string().min(1) }),
@@ -29,6 +30,16 @@ export async function POST(event: RequestEvent) {
   const parsed = PostBody.safeParse(raw);
   if (!parsed.success) {
     return json({ error: 'invalid_body', issues: parsed.error.issues }, { status: 400 });
+  }
+  if (parsed.data.source.kind === 'git') {
+    try {
+      assertSafeGitCloneUrl(parsed.data.source.value);
+    } catch (e) {
+      return json(
+        { error: 'invalid_git_url', message: String((e as Error).message) },
+        { status: 400 },
+      );
+    }
   }
   try {
     const out = await runProjectExtraction(id, parsed.data.source);

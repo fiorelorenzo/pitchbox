@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
+import { assertSafeGitCloneUrl } from '@pitchbox/shared/project-extraction';
 
 export async function shallowClone(url: string, dest: string, timeoutMs = 60_000): Promise<void> {
   if (!url || !url.trim()) throw new Error('git URL is empty');
+  assertSafeGitCloneUrl(url);
   await new Promise<void>((resolve, reject) => {
     const child = spawn('git', ['clone', '--depth=1', url, dest], { stdio: 'pipe' });
     let stderr = '';
