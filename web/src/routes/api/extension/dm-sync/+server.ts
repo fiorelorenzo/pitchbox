@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireExtensionAuth } from '$lib/server/extension-auth.js';
 import { emit } from '$lib/server/events.js';
@@ -309,7 +309,16 @@ export async function POST({ request }: { request: Request }) {
     ...inserts.map((i) => `${i.platformId}:${i.platformMessageId}`),
     ...commentMatch.messageInserts.map((m) => `${m.platformId}:${m.platformMessageId}`),
   ]);
-  if (insertedKeys.size > 0) {
+  // Only the drafts touched by this sync call can end up as the "newest
+  // message" pick below, so bound the lookup to their ids instead of
+  // scanning the whole platform's message history on every sync tick.
+  const updatedDraftIds = Array.from(
+    new Set<number>([
+      ...updates.flatMap((u) => (u.draftId != null ? [u.draftId] : [])),
+      ...commentMatch.draftRepliedEvents.map((ev) => ev.draftId),
+    ]),
+  );
+  if (insertedKeys.size > 0 && updatedDraftIds.length > 0) {
     const newlyInsertedRows = await db
       .select({
         id: schema.messages.id,
@@ -319,7 +328,12 @@ export async function POST({ request }: { request: Request }) {
         isFromUs: schema.messages.isFromUs,
       })
       .from(schema.messages)
-      .where(eq(schema.messages.platformId, platform.id));
+      .where(
+        and(
+          eq(schema.messages.platformId, platform.id),
+          inArray(schema.messages.draftId, updatedDraftIds),
+        ),
+      );
     for (const u of updates) {
       if (u.draftId == null) continue;
       const newest = newlyInsertedRows
