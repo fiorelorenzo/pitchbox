@@ -3,6 +3,8 @@ import { getDb, schema } from '@pitchbox/shared/db';
 import {
   runScout,
   loadEnv,
+  acquireBrowser,
+  closeBrowser,
   browserBrowseSubreddit,
   browserGetSubredditAbout,
   browserGetSubredditRules,
@@ -59,30 +61,41 @@ export async function scoutRun(
 // Snapshot a subreddit for the poster playbook: recent top posts of the week
 // plus about + rules. Extracted so the CLI and the MCP server share it. Hits
 // the public Reddit API (browser); returns data or throws.
+//
+// This tool runs on the same long-lived local MCP process as reddit:scout
+// (runScout), which shares the process-wide browser/context singletons in
+// shared/src/platforms/reddit/client.ts. Bracket the browser use with
+// acquireBrowser()/closeBrowser() - mirroring runScout - so a concurrent
+// scout_run and subreddit_snapshot don't race each other's teardown.
 export async function snapshotSubreddit(subreddit: string) {
   if (!subreddit || !subreddit.trim()) throw new Error('subreddit is required');
   const env = loadEnv();
-  const [posts, about, rules] = await Promise.all([
-    browserBrowseSubreddit(env, { subreddit, sort: 'top', timeframe: 'week', limit: 25 }),
-    browserGetSubredditAbout(env, subreddit).catch(() => null),
-    browserGetSubredditRules(env, subreddit).catch(
-      () => [] as Awaited<ReturnType<typeof browserGetSubredditRules>>,
-    ),
-  ]);
-  return {
-    subreddit,
-    about,
-    rules,
-    posts: posts.map((p) => ({
-      title: p.title,
-      selftext: (p.selftext ?? '').slice(0, 500),
-      permalink: p.permalink,
-      score: p.score,
-      numComments: p.numComments,
-      author: p.author,
-      createdUtc: p.createdUtc,
-    })),
-  };
+  acquireBrowser();
+  try {
+    const [posts, about, rules] = await Promise.all([
+      browserBrowseSubreddit(env, { subreddit, sort: 'top', timeframe: 'week', limit: 25 }),
+      browserGetSubredditAbout(env, subreddit).catch(() => null),
+      browserGetSubredditRules(env, subreddit).catch(
+        () => [] as Awaited<ReturnType<typeof browserGetSubredditRules>>,
+      ),
+    ]);
+    return {
+      subreddit,
+      about,
+      rules,
+      posts: posts.map((p) => ({
+        title: p.title,
+        selftext: (p.selftext ?? '').slice(0, 500),
+        permalink: p.permalink,
+        score: p.score,
+        numComments: p.numComments,
+        author: p.author,
+        createdUtc: p.createdUtc,
+      })),
+    };
+  } finally {
+    await closeBrowser();
+  }
 }
 
 export function registerRedditCommands(program: Command) {
