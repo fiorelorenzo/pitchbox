@@ -1,8 +1,9 @@
-// Retention policy for drafts, run_events, and draft_events.
+// Retention policy for drafts, run_events, draft_events, and webhook_deliveries.
 //
 // Configuration lives in the existing `app_config` jsonb table under the
 // `retention` key, with shape:
-//   { drafts_days: 90, run_events_days: 30, draft_events_days: 90 }
+//   { drafts_days: 90, run_events_days: 30, draft_events_days: 90,
+//     webhook_deliveries_days: 30 }
 //
 // A floor of 7 days is enforced server-side so an accidental low value can't
 // nuke recent data. Contact history is never touched by this policy - it is
@@ -17,12 +18,14 @@ export const RETENTION_DEFAULTS = {
   drafts_days: 90,
   run_events_days: 30,
   draft_events_days: 90,
+  webhook_deliveries_days: 30,
 } as const;
 
 export type RetentionPolicy = {
   drafts_days: number;
   run_events_days: number;
   draft_events_days: number;
+  webhook_deliveries_days: number;
 };
 
 const APP_CONFIG_KEY = 'retention';
@@ -41,6 +44,10 @@ export function normaliseRetention(
     drafts_days: clampDays(r.drafts_days, RETENTION_DEFAULTS.drafts_days),
     run_events_days: clampDays(r.run_events_days, RETENTION_DEFAULTS.run_events_days),
     draft_events_days: clampDays(r.draft_events_days, RETENTION_DEFAULTS.draft_events_days),
+    webhook_deliveries_days: clampDays(
+      r.webhook_deliveries_days,
+      RETENTION_DEFAULTS.webhook_deliveries_days,
+    ),
   };
 }
 

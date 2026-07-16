@@ -1,7 +1,8 @@
 // Retention worker - runs once an hour and prunes ageing run_events,
-// draft_events, and terminal drafts according to the policy stored in
-// `app_config.retention`. Contact history is intentionally preserved so the
-// blocklist / quota signals survive draft cleanup.
+// draft_events, terminal drafts, and delivered/dead webhook_deliveries
+// according to the policy stored in `app_config.retention`. Contact history
+// is intentionally preserved so the blocklist / quota signals survive draft
+// cleanup.
 //
 // Each delete is capped to a batch (10k rows) and loops until either it can't
 // fill a batch or it hits a per-tick safety ceiling, keeping a single tick
@@ -19,12 +20,14 @@ export const RETENTION_BATCH_SIZE = 10_000;
 const MAX_BATCHES_PER_TABLE = 50;
 
 const TERMINAL_DRAFT_STATES = ['sent', 'rejected', 'replied'] as const;
+const TERMINAL_WEBHOOK_DELIVERY_STATES = ['delivered', 'dead'] as const;
 
 export interface RetentionTickResult {
   policy: RetentionPolicy;
   runEventsDeleted: number;
   draftEventsDeleted: number;
   draftsDeleted: number;
+  webhookDeliveriesDeleted: number;
 }
 
 async function deleteRunEventsBatch(cutoffIso: string): Promise<number> {
@@ -75,6 +78,25 @@ async function deleteTerminalDraftsBatch(cutoffIso: string): Promise<number> {
   return res.rowCount ?? 0;
 }
 
+async function deleteWebhookDeliveriesBatch(cutoffIso: string): Promise<number> {
+  // Only delivered/dead rows age out - pending rows are still awaiting the
+  // webhook-sender worker and must never be pruned regardless of age.
+  // `created_at` is used as the age proxy, matching the other tables (and
+  // the existing `webhook_deliveries_recent_idx` index).
+  const states = TERMINAL_WEBHOOK_DELIVERY_STATES.map((s) => `'${s}'`).join(', ');
+  const res = await getDb().execute(sql`
+    DELETE FROM webhook_deliveries
+    WHERE id IN (
+      SELECT id FROM webhook_deliveries
+      WHERE status IN (${sql.raw(states)})
+        AND created_at < ${cutoffIso}
+      ORDER BY id
+      LIMIT ${RETENTION_BATCH_SIZE}
+    )
+  `);
+  return res.rowCount ?? 0;
+}
+
 async function drainTable(
   label: string,
   cutoffIso: string,
@@ -113,6 +135,17 @@ export async function tick(): Promise<RetentionTickResult> {
     cutoffIsoFromDays(policy.drafts_days),
     deleteTerminalDraftsBatch,
   );
+  const webhookDeliveriesDeleted = await drainTable(
+    'webhook_deliveries',
+    cutoffIsoFromDays(policy.webhook_deliveries_days),
+    deleteWebhookDeliveriesBatch,
+  );
 
-  return { policy, runEventsDeleted, draftEventsDeleted, draftsDeleted };
+  return {
+    policy,
+    runEventsDeleted,
+    draftEventsDeleted,
+    draftsDeleted,
+    webhookDeliveriesDeleted,
+  };
 }

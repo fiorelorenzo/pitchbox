@@ -6,7 +6,7 @@ import { tick as retentionTick } from '../src/retention.js';
 
 async function reset() {
   await getDb().execute(
-    sql`TRUNCATE drafts, runs, campaigns, accounts, projects, run_events, draft_events, contact_history, notifications, app_config RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE drafts, runs, campaigns, accounts, projects, run_events, draft_events, contact_history, notifications, app_config, webhook_deliveries RESTART IDENTITY CASCADE`,
   );
 }
 
@@ -60,10 +60,12 @@ describe('retention worker', () => {
       drafts_days: 1,
       run_events_days: 0,
       draft_events_days: -50,
+      webhook_deliveries_days: -1,
     });
     expect(saved.drafts_days).toBe(RETENTION_FLOOR_DAYS);
     expect(saved.run_events_days).toBe(RETENTION_FLOOR_DAYS);
     expect(saved.draft_events_days).toBe(RETENTION_FLOOR_DAYS);
+    expect(saved.webhook_deliveries_days).toBe(RETENTION_FLOOR_DAYS);
     const loaded = await loadRetention(getDb());
     expect(loaded).toEqual(saved);
   });
@@ -188,5 +190,76 @@ describe('retention worker', () => {
 
     const draftEv = await db.select().from(schema.draftEvents);
     expect(draftEv).toHaveLength(1);
+  });
+
+  it('prunes old delivered/dead webhook_deliveries and preserves pending + fresh rows', async () => {
+    const db = getDb();
+
+    // Tight policy so we don't have to fabricate years-old timestamps.
+    await saveRetention(db, {
+      drafts_days: 7,
+      run_events_days: 7,
+      draft_events_days: 7,
+      webhook_deliveries_days: 7,
+    });
+
+    const now = new Date();
+    const ancient = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days
+    const fresh = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000); // 1 day
+
+    const [oldDelivered] = await db
+      .insert(schema.webhookDeliveries)
+      .values({
+        webhookId: 'wh-1',
+        eventType: 'notification.test',
+        payload: {},
+        status: 'delivered',
+        createdAt: ancient,
+      })
+      .returning();
+    const [oldDead] = await db
+      .insert(schema.webhookDeliveries)
+      .values({
+        webhookId: 'wh-1',
+        eventType: 'notification.test',
+        payload: {},
+        status: 'dead',
+        createdAt: ancient,
+      })
+      .returning();
+    // Old but still pending - must survive, it is awaiting delivery, not terminal.
+    const [oldPending] = await db
+      .insert(schema.webhookDeliveries)
+      .values({
+        webhookId: 'wh-1',
+        eventType: 'notification.test',
+        payload: {},
+        status: 'pending',
+        createdAt: ancient,
+      })
+      .returning();
+    // Fresh delivered - must survive, it is not old enough yet.
+    const [freshDelivered] = await db
+      .insert(schema.webhookDeliveries)
+      .values({
+        webhookId: 'wh-1',
+        eventType: 'notification.test',
+        payload: {},
+        status: 'delivered',
+        createdAt: fresh,
+      })
+      .returning();
+
+    const result = await retentionTick();
+
+    expect(result.webhookDeliveriesDeleted).toBe(2);
+
+    const remainingIds = (
+      await db.select({ id: schema.webhookDeliveries.id }).from(schema.webhookDeliveries)
+    ).map((r) => r.id);
+    expect(remainingIds).not.toContain(oldDelivered.id);
+    expect(remainingIds).not.toContain(oldDead.id);
+    expect(remainingIds).toContain(oldPending.id);
+    expect(remainingIds).toContain(freshDelivered.id);
   });
 });
