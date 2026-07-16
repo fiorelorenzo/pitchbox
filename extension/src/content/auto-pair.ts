@@ -1,3 +1,4 @@
+import { getSettings, type Pairing } from '../lib/storage.js';
 import { logFromContent } from '../lib/log-from-content.js';
 
 /**
@@ -10,20 +11,29 @@ import { logFromContent } from '../lib/log-from-content.js';
  * cookie because we run inside the page origin, so the server can mint a
  * device token tied to the right org without any user input.
  *
- * Idempotent: if the extension already has a token for this origin we skip.
- * The popup's "Pair with this tab" flow injects this same script on demand,
- * so the auto and manual paths converge here.
+ * Idempotent: if the extension already has a pairing for this backend we
+ * skip. The popup's "Pair with this tab" flow injects this same script on
+ * demand, so the auto and manual paths converge here.
  */
-(async () => {
+
+/** True when `pairings` already has an entry for `backendUrl`. */
+export function isAlreadyPaired(pairings: Pairing[], backendUrl: string): boolean {
+  return pairings.some((p) => p.backendUrl === backendUrl);
+}
+
+export async function runAutoPair(): Promise<void> {
   const beacon = document.querySelector('meta[name="pitchbox-pair"]');
   if (!beacon) return;
 
   const backendUrl = `${location.protocol}//${location.host}`;
 
   // Skip when already paired with the current backend, to avoid burning a new
-  // device token on every page load.
-  const existing = await chrome.storage.local.get(['backendUrl', 'token']);
-  if (existing.token && existing.backendUrl === backendUrl) return;
+  // device token on every page load. Reads the live `pairings` array via
+  // getSettings() rather than the legacy single-backend keys - storage.ts
+  // migrates and deletes those on first read, so checking them directly
+  // would only work once and then re-pair on every subsequent load.
+  const { pairings } = await getSettings();
+  if (isAlreadyPaired(pairings, backendUrl)) return;
 
   let res: Response;
   try {
@@ -68,4 +78,6 @@ import { logFromContent } from '../lib/log-from-content.js';
       } else console.warn('[pitchbox] auto-pair save failed', ack);
     },
   );
-})();
+}
+
+void runAutoPair();
