@@ -18,6 +18,11 @@ services:
       RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN in .env}
       RUNNER_JWT_PUBLIC_KEY: ${RUNNER_JWT_PUBLIC_KEY:-}
       RUNNER_MODEL: ${RUNNER_MODEL:-}
+      # CLD-P4 drain on cutover (docs/cloud-runner.md "Drain on cutover"): how
+      # long (ms) SIGTERM/SIGINT waits for in-flight sessions to finish before
+      # force-closing them. Empty = 900000 (15 min). stop_grace_period below
+      # must exceed this or Docker SIGKILLs the container mid-drain.
+      RUNNER_DRAIN_TIMEOUT_MS: ${RUNNER_DRAIN_TIMEOUT_MS:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       AGENT_CWD: /tmp/agent
@@ -31,6 +36,16 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
     mem_limit: ${RUNNER_MEM_LIMIT:-1g}
+    # CLD-P4 drain on cutover: this runner is internal to the compose network
+    # (the web dials ws://runner:8787 - not Caddy-fronted), so the drain
+    # mechanism is SIGTERM + this grace period, not proxy connection draining.
+    # `docker compose stop`/`up --force-recreate runner` sends SIGTERM and
+    # waits up to this long before SIGKILLing; the runner itself drains for up
+    # to RUNNER_DRAIN_TIMEOUT_MS (default 900s / 15 min - see docs/cloud-runner.md
+    # "Drain on cutover") before exiting on its own, so this must comfortably
+    # exceed that default or a SIGKILL cuts the drain short. Raise this if you
+    # also raise RUNNER_DRAIN_TIMEOUT_MS.
+    stop_grace_period: 16m
     healthcheck:
       test:
         [

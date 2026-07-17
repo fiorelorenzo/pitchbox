@@ -228,6 +228,20 @@ prune_backups
 # 11. cut over daemon (singleton) to the new color; recreate runner
 log "cutting over daemon + runner..."
 ACTIVE_WEB="web-$idle" "${COMPOSE[@]}" up -d --no-deps --no-build --force-recreate daemon
+# No --force-recreate/kill/-t0 here on purpose: `up` only recreates the runner
+# if compose detects its config (e.g. image ID) actually changed, and when it
+# does, it goes through the standard graceful path - SIGTERM, wait up to
+# stop_grace_period, SIGKILL only if it didn't exit - which is what lets the
+# runner's own CLD-P4 drain (see docs/cloud-runner.md "Drain on cutover")
+# finish in-flight sessions instead of being killed mid-run. This step is a
+# no-op unless the runner image was rebuilt (this script never builds it -
+# `docker compose build runner` first if you're shipping a runner code
+# change). Known gap: unlike web's blue/green colors, there is only ONE
+# runner service, so this is a sequential stop-then-start, not a hot swap -
+# new session.start calls fail during the (bounded) window between the old
+# container stopping and the new one coming up, not just during the old one's
+# drain. Documented as a deliberate divergence from Caddy-style connection
+# draining in docs/cloud-runner.md.
 "${COMPOSE[@]}" up -d --no-deps --no-build runner
 
 # 12. retire the old color

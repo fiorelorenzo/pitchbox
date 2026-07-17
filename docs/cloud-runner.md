@@ -127,11 +127,11 @@ What is proven vs. what remains:
   the `cloud/adapter`), both importing the OSS protocol contract; the runner runs
   the agent with its own LLM credentials and picks the model via `RUNNER_MODEL`;
   and usage + cost metering lands on `session.done`.
-- **Still open (productionisation)**: drain on cutover (P4, see
-  `docs/cloud-runner-productionization-design.md`). The per-org WS auth
-  handshake (section 1, CLD-P1), resumable sessions (section 3, CLD-P3), and
-  per-org quota enforcement (section 5, CLD-P5) are now implemented - see
-  "Auth, billing, LLM credentials" below.
+- **Productionisation (`docs/cloud-runner-productionization-design.md`) is
+  fully shipped**: the per-org WS auth handshake (section 1, CLD-P1),
+  resumable sessions (section 3, CLD-P3), per-org quota enforcement (section
+  5, CLD-P5) - see "Auth, billing, LLM credentials" below - and drain on
+  cutover (section 4, CLD-P4) - see "Drain on cutover" below.
 
 ## Architecture
 
@@ -293,6 +293,77 @@ concurrencyCap }` snapshot rides in the JWT's `quota` claim
   the design doc: a multi-instance deployment would need the concurrency cap
   enforced at the control plane at mint time instead, or a shared counter -
   out of scope today.
+
+## Drain on cutover
+
+**[IMPLEMENTED, CLD-P4]** Graceful runner redeploy, so a code cutover does not
+kill an in-flight session mid-run. Design record:
+`docs/cloud-runner-productionization-design.md` section 4.
+
+- **Runner state machine (`cloud/runner/src/server.ts` + `src/index.ts`).** On
+  `SIGTERM`/`SIGINT` the runner enters a draining state: every new
+  `session.start` is rejected outright with a `session.error` (`draining`-
+  reason message), before a `RunnerSession` is ever constructed. A
+  `session.resume` for a sessionId the runner doesn't already hold is rejected
+  the same way; a resume for a session that WAS already live when draining
+  began is let through unconditionally - reconnecting to already-admitted work
+  is not new work, so it is unaffected by draining. Sessions live when
+  draining begins are never touched at the start of drain - they keep running,
+  and streaming/replay/cancel all keep working normally. The runner exits
+  (closes the WS + HTTP servers, `process.exit(0)`) once its session registry
+  drains to empty, or once `RUNNER_DRAIN_TIMEOUT_MS` elapses (default 900000,
+  15 min - matches the per-session runner-enforced timeout), whichever comes
+  first; on the deadline path it force-cancels whatever sessions are still
+  live first (logging a warning) rather than leaving them to the container's
+  own SIGKILL.
+- **`GET /health`** now reports `{ status, draining, activeSessions }` -
+  `status` is `"draining"` (HTTP 200 still - a Docker/LB healthcheck keyed off
+  a 2xx response must not flag a gracefully-draining container unhealthy) once
+  draining has begun, and `activeSessions` is the live session-registry size.
+  This is what a deploy/orchestrator polls to learn when a container has
+  actually finished draining.
+- **Reality check vs. the design doc - runner is internal, not Caddy-fronted.**
+  The design's first draft proposed "Caddy connection draining" as the second
+  half of the mechanism (host Caddy pinning existing WebSocket connections to
+  the old container while routing new ones to the new one, mirroring what it
+  already does for the web tier's blue/green cutover). That does not apply
+  here: on the actual deploy topology (see `docker-compose.app.runner.yml`),
+  the runner is reached only over the internal compose network at
+  `ws://runner:8787` - the web dials it directly, and Caddy never sees runner
+  traffic at all (only the web app is Caddy-fronted). So for the runner, drain
+  is **SIGTERM + a compose `stop_grace_period` that exceeds
+  `RUNNER_DRAIN_TIMEOUT_MS`** (set on the `runner` service in
+  `docker-compose.app.runner.yml` and in `cloud/runner/docker-compose.prod.yml`
+  for a standalone runner deploy), not a proxy-layer draining feature. `docker
+compose stop` / `up --force-recreate runner` already sends SIGTERM and waits
+  up to `stop_grace_period` before SIGKILLing, so no reverse-proxy config is
+  involved on this path.
+- **Single-runner-instance caveat (carries over from the design doc's
+  load-bearing constraint).** Unlike the web tier, there is only ONE `runner`
+  service - no blue/green colors. `scripts/deploy.sh`'s runner cutover step
+  (`docker compose up -d --no-deps --no-build runner`, run only after the web
+  cutover has already smoke-checked healthy) is therefore a sequential
+  stop-then-start when the runner's image actually changed, not a hot swap:
+  between the old container fully stopping and the new one becoming healthy,
+  there is a bounded window where the client has no runner to dispatch a NEW
+  `session.start` to at all (distinct from, and in addition to, the draining
+  window itself, during which new starts are explicitly rejected rather than
+  simply unreachable). A real blue/green runner (two co-located runner
+  services with an internal indirection layer) would close this gap but is
+  out of scope for this ticket; today's guarantee is bounded blast radius for
+  in-flight sessions (they finish instead of being killed), not zero
+  new-session unavailability during a runner deploy.
+- **Same-instance-resume implication.** Because resume is strictly
+  same-instance (a live session is an in-memory agent process + MCP relay
+  bound to one runner instance - see the productionization doc's "load-bearing
+  constraint"), a client whose runner is draining simply finishes its run on
+  the old container over its existing (or resumed, via reconnect) connection;
+  it never tries to resume onto the new instance. If the client reconnects
+  after the old container has already exited, the new instance has no record
+  of that sessionId, so the resume is rejected (`no resumable session found`)
+  exactly like any other unknown-session resume - the client's normal
+  fallback is to start a brand new session on the new instance, not to
+  continue the old run.
 
 ## Edition and repo strategy
 
