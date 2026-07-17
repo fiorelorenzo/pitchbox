@@ -26,6 +26,8 @@ x-web-common: &web-common
     PITCHBOX_RUNNER_TOKEN: ${PITCHBOX_RUNNER_TOKEN:-}
     ORIGIN: ${PUBLIC_WEB_ORIGIN:-https://pitchbox.app}
     PITCHBOX_AUTH: ${PITCHBOX_AUTH:-off}
+    PITCHBOX_OWNER_USERNAME: ${PITCHBOX_OWNER_USERNAME:-}
+    PITCHBOX_OWNER_PASSWORD: ${PITCHBOX_OWNER_PASSWORD:-}
   healthcheck:
     test:
       [

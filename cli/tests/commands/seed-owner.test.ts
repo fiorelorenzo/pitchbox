@@ -87,6 +87,38 @@ describe('pitchbox seed:owner', () => {
     const db = getDb();
     expect(await db.select().from(schema.users)).toHaveLength(0);
   });
+
+  it('is a no-op and reports the reason when the owner password fails login validation (too short)', async () => {
+    const out = cli('seed:owner', {
+      PITCHBOX_OWNER_USERNAME: 'admin',
+      PITCHBOX_OWNER_PASSWORD: 'short1',
+    });
+    const res = lastJson(out);
+    expect(res.ok).toBe(true);
+    expect(res.data.created).toBe(false);
+    expect(res.data.reason).toBe('invalid_password');
+    expect(typeof res.data.message).toBe('string');
+    expect(res.data.message.length).toBeGreaterThan(0);
+
+    const db = getDb();
+    expect(await db.select().from(schema.users)).toHaveLength(0);
+  });
+
+  it('is a no-op and reports the reason when the owner username fails login validation (bad characters)', async () => {
+    const out = cli('seed:owner', {
+      PITCHBOX_OWNER_USERNAME: 'not a valid username!',
+      PITCHBOX_OWNER_PASSWORD: 'a-very-long-password',
+    });
+    const res = lastJson(out);
+    expect(res.ok).toBe(true);
+    expect(res.data.created).toBe(false);
+    expect(res.data.reason).toBe('invalid_username');
+    expect(typeof res.data.message).toBe('string');
+    expect(res.data.message.length).toBeGreaterThan(0);
+
+    const db = getDb();
+    expect(await db.select().from(schema.users)).toHaveLength(0);
+  });
 });
 
 afterAll(async () => {

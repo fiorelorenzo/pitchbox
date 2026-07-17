@@ -57,6 +57,7 @@ done
 log "migrating..."
 "${COMPOSE[@]}" exec -T "web-$idle" pnpm -F @pitchbox/shared migrate
 "${COMPOSE[@]}" exec -T "web-$idle" pnpm -F @pitchbox/shared seed:core
+"${COMPOSE[@]}" exec -T "web-$idle" bin/pitchbox seed:owner
 
 # 5. health-check the idle color (now that the DB is migrated)
 ok=0
