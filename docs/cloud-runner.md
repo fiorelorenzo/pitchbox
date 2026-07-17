@@ -130,8 +130,9 @@ What is proven vs. what remains:
 - **Productionisation (`docs/cloud-runner-productionization-design.md`) is
   fully shipped**: the per-org WS auth handshake (section 1, CLD-P1),
   resumable sessions (section 3, CLD-P3), per-org quota enforcement (section
-  5, CLD-P5) - see "Auth, billing, LLM credentials" below - and drain on
-  cutover (section 4, CLD-P4) - see "Drain on cutover" below.
+  5, CLD-P5) - see "Auth, billing, LLM credentials" below - drain on cutover
+  (section 4, CLD-P4) - see "Drain on cutover" below - and observability
+  (section 6, CLD-P6) - see "Observability" below.
 
 ## Architecture
 
@@ -364,6 +365,108 @@ compose stop` / `up --force-recreate runner` already sends SIGTERM and waits
   exactly like any other unknown-session resume - the client's normal
   fallback is to start a brand new session on the new instance, not to
   continue the old run.
+
+## Observability
+
+**[IMPLEMENTED, CLD-P6]** So drain (CLD-P4) and quota (CLD-P5) are watchable in
+production. Design record: `docs/cloud-runner-productionization-design.md`
+section 6. Two pieces, both in-memory only (the runner is stateless, so both
+reset on restart - fine for a scrape/log-collector target):
+
+- **Structured logs** (`cloud/runner/src/log.ts`): every operational event is
+  one JSON object per line, on stdout (`info`) or stderr (`warn`/`error`), of
+  the shape `{ event, ts, ...fields }`. `ts` is an ISO 8601 timestamp.
+
+- **`GET /metrics`** (`cloud/runner/src/metrics.ts`, wired into
+  `cloud/runner/src/server.ts` alongside `GET /health`): a hand-formatted
+  Prometheus text exposition response (no new dependency). Prometheus was
+  chosen over extending `/health` because scraping is the standard shape
+  ops tooling (Prometheus/Grafana, or any OpenMetrics-compatible collector)
+  already expects, and the format is small enough (four metric families) that
+  hand-formatting it is cheaper than adding a client library for one
+  process's worth of counters.
+
+### No user data, ever
+
+**Hard guarantee**: neither the structured logs nor `/metrics` ever carry
+frame contents, playbook text, draft/agent output, or credentials/tokens -
+only operational metadata (ids, counts, outcomes, durations, costs). Every log
+call site in the runner is limited by construction to a small, reviewed set of
+metadata fields (session/org ids, a playbook `slug`, counts, an `outcome`
+enum, a duration in ms, a USD amount) - never a field that could carry
+arbitrary user-supplied or agent-generated text. `cloud/runner/tests/observability.test.ts`
+asserts this with a real negative check: it drives a full session (including
+an abnormal agent exit whose stderr contains a distinguishing marker) through
+the real server with `console.log`/`warn`/`error` captured, and asserts the
+marker never appears in any captured line - while separately confirming the
+same marker DOES legitimately reach the client over the WebSocket (the
+existing #117 behavior for the session's own client, a different, already-
+scoped audience).
+
+**The one deliberate exception, and what changed for it**: on an abnormal
+agent exit, `cloud/runner/src/agent.ts` (#117) already captures a bounded
+(8KB) tail of the agent's stderr and includes it verbatim in the JSON-RPC
+error message delivered to the session's own client (as a `session.error`
+frame) - that is unchanged, since it goes to the org that owns the session,
+not to a shared log stream. The NEW CLD-P6 `agent.abnormal_exit` structured
+log event is deliberately narrower: it carries only `stderrTailChars` (the
+tail's length), `code`, and `signal` - never the tail's content. This was a
+judgment call (the alternative was capping the log's copy to a shorter
+excerpt); length-only was chosen because even a capped excerpt of raw process
+stderr could echo back something a caller passed in (an argument, a path, or
+a fragment of prompt content surfaced in a framework stack trace), and a
+length plus the exit code/signal is already enough to alert on and correlate
+with the client-facing error for the same session.
+
+While implementing this, `AcpAgent.cancel()` (called at the end of every
+session, success or not, as routine teardown) turned out to SIGTERM even a
+perfectly healthy agent - and for a backend with no SIGTERM handler of its
+own, Node reports that as `signal: 'SIGTERM'` on exit, which is
+indistinguishable, at the OS level, from a real crash-by-signal. `AcpAgent`
+now tracks a `cancelRequested` flag (set by `cancel()`) so `onAbnormalExit`
+only fires for an exit the runner did NOT itself request - a routine teardown
+kill is not "abnormal" for observability purposes, even though it exits via a
+signal. This did not change the existing client-facing error message path
+(`tests/agent.test.ts` covers both).
+
+### Log event catalog
+
+| Event                    | Level                              | Fields (beyond `event`/`ts`)                                                                                                   | Fires when                                                                                                                                                                                                                                                            |
+| ------------------------ | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session.admitted`       | info                               | `sessionId`, `orgId`, `slug`, `activeSessions`, `orgActiveSessions`                                                            | A `session.start` passes every admission check (protocol version, duplicate-id, CLD-P4 drain, CLD-P5 quota) and a `RunnerSession` is constructed. Counts are post-admission.                                                                                          |
+| `session.terminated`     | info                               | `sessionId`, `orgId`, `outcome` (`done`\|`error`\|`cancelled`\|`timeout`), `durationMs`, `activeSessions`, `orgActiveSessions` | A session becomes permanently unresumable (the same `onTerminal` callback CLD-P3's registry and CLD-P5's concurrency counter use - see "Wiring" below). Counts are post-removal.                                                                                      |
+| `quota.rejected`         | info                               | `sessionId`, `orgId`, `kind` (`budget`\|`concurrency`)                                                                         | CLD-P5 admission refuses a `session.start`: `budget` when `quota.remainingUsd <= 0`, `concurrency` when the org is already at `quota.concurrencyCap`.                                                                                                                 |
+| `draining.rejected`      | info                               | `sessionId`, `orgId`, `frame` (`session.start`\|`session.resume`)                                                              | CLD-P4 refuses a new `session.start`, or a `session.resume` for a sessionId the runner doesn't hold, while draining.                                                                                                                                                  |
+| `drain.start`            | info                               | `activeSessions`, `drainTimeoutMs`                                                                                             | The first call to `drain()` (SIGTERM/SIGINT) - not re-logged on a redundant second signal, since `drain()` is idempotent.                                                                                                                                             |
+| `drain.complete`         | info (or **warn** when `timedOut`) | `timedOut`, `activeSessions` (remaining, pre-force-cancel count)                                                               | The drain promise settles - either the registry emptied out on its own (`timedOut: false`), or the drain deadline elapsed and force-cancelled whatever was left (`timedOut: true`, logged at `warn`; this is the "logged warning" the drain-deadline path performs).  |
+| `agent.abnormal_exit`    | warn                               | `sessionId`, `orgId`, `code`, `signal`, `stderrTailChars`                                                                      | The spawned agent process exits abnormally (nonzero code or a signal) for a reason the runner did NOT itself request via `cancel()` - see "No user data, ever" above for why content is excluded.                                                                     |
+| `runner.usage`           | info                               | `sessionId`, `orgId`, `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, `totalCostUsd`                  | A session reaches `session.done` with usage - the existing usage-metering log line, now routed through the structured logger (previously an ad-hoc `console.log(JSON.stringify(...))`) and, in the production wiring, also fed into `pitchbox_runner_cost_usd_total`. |
+| `runner.signal_received` | info                               | `signal` (`SIGINT`\|`SIGTERM`)                                                                                                 | Every SIGINT/SIGTERM the process receives (`cloud/runner/src/index.ts`), including a redundant second signal - distinct from `drain.start`, which only fires once.                                                                                                    |
+
+### Metrics (`GET /metrics`)
+
+| Metric                                      | Type    | Labels                                                    | Description                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------- | ------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pitchbox_runner_active_sessions`           | gauge   | none (total), `org` (per-org)                             | Live sessions right now. Read directly from the same in-memory session registry and per-org concurrency map CLD-P3/CLD-P5 already maintain (see "Wiring" below) - not a separate counter, so it cannot drift from what `/health`'s `activeSessions` reports. A session inside its CLD-P3 resume grace window (disconnected but not yet permanently terminated) still counts. |
+| `pitchbox_runner_sessions_terminated_total` | counter | `outcome` (`done`\|`error`\|`cancelled`\|`timeout`)       | Sessions that have reached a terminal outcome, since this runner instance started.                                                                                                                                                                                                                                                                                           |
+| `pitchbox_runner_cost_usd_total`            | counter | `org` (`"none"` for the legacy no-auth/static-token path) | Cumulative metered LLM cost in USD, since this runner instance started - fed from the same `session.done` usage the runner already meters for billing.                                                                                                                                                                                                                       |
+| `pitchbox_runner_draining`                  | gauge   | none                                                      | `1` once CLD-P4 draining has begun, `0` otherwise - the same `draining` flag `/health`'s `status`/`draining` fields report.                                                                                                                                                                                                                                                  |
+
+### Wiring (no duplicated lifecycle source of truth)
+
+`cloud/runner/src/metrics.ts`'s `RunnerMetrics` class deliberately does NOT
+track active-session counts or the draining flag itself - `/metrics` reads
+`server.ts`'s own `sessions` Map, `orgConcurrency` Map, and `draining` flag
+(the same CLD-P3/CLD-P4/CLD-P5 state `/health` already reports from) directly
+at scrape time. `RunnerMetrics` only owns the two counters that didn't exist
+anywhere else before this feature: terminal-outcome counts and cumulative
+per-org cost. Both are updated from the exact same callbacks CLD-P3/CLD-P5
+already rely on for the session registry and concurrency count - `recordOutcome`
+and the `session.terminated` log both fire from the session's `onTerminal`
+callback (server.ts), and `addCost` fires from the session's `meter` callback
+(server.ts, alongside the `runner.usage` log) - so admission, termination, and
+cost are each logged/metered from a single call site, not a second,
+independently-maintained lifecycle.
 
 ## Edition and repo strategy
 
