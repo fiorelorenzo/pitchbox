@@ -12,6 +12,7 @@
     "./db/schema": "./src/db/schema.ts",
     "./platforms/reddit": "./src/platforms/reddit/index.ts",
     "./platforms/hackernews": "./src/platforms/hackernews/index.ts",
+    "./platforms/mastodon": "./src/platforms/mastodon/index.ts",
     "./platforms/reply-reader": "./src/platforms/base-reply-reader.ts",
     "./quota": "./src/quota.ts",
     "./quota-types": "./src/quota-types.ts",
