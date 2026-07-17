@@ -44,6 +44,38 @@ describe('ConfigurablePermissionPolicy', () => {
     expect(policy.decide({ toolName: 'edit', args: {} })).toBe('allow');
   });
 
+  it('matches a literal space in the path pattern as itself, not as a `**` wildcard', () => {
+    const policy = new ConfigurablePermissionPolicy({
+      rules: [{ pathPattern: '/My Documents/**', decision: 'reject' }],
+    });
+    expect(policy.decide({ toolName: 'edit', args: { path: '/My Documents/notes.txt' } })).toBe(
+      'reject',
+    );
+    // The pattern's literal space must not act as the internal `**` placeholder
+    // and turn into a wildcard that matches unrelated paths.
+    expect(policy.decide({ toolName: 'edit', args: { path: '/MyXXXDocuments/notes.txt' } })).toBe(
+      'allow',
+    );
+  });
+
+  it('does not corrupt a pattern that contains the byte previously used as the internal placeholder', () => {
+    // globToRegExp used to swap `**` for a single-character sentinel (a NUL
+    // byte) and later rewrite every occurrence of that sentinel to `.*`. Any
+    // pattern that itself contained that exact byte would then have it
+    // silently turned into a wildcard too. The fix removes the sentinel
+    // entirely, so an embedded NUL byte must stay literal, not a wildcard.
+    const nulByte = String.fromCharCode(0);
+    const policy = new ConfigurablePermissionPolicy({
+      rules: [{ pathPattern: `/foo${nulByte}bar/**`, decision: 'reject' }],
+    });
+    expect(policy.decide({ toolName: 'edit', args: { path: `/foo${nulByte}bar/notes.txt` } })).toBe(
+      'reject',
+    );
+    expect(policy.decide({ toolName: 'edit', args: { path: '/fooXXXbar/notes.txt' } })).toBe(
+      'allow',
+    );
+  });
+
   it('requires both matchers on a combined rule to match', () => {
     const policy = new ConfigurablePermissionPolicy({
       rules: [{ toolKind: 'edit', pathPattern: '/etc/**', decision: 'reject' }],
