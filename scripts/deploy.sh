@@ -46,9 +46,9 @@ ENV_FILE="$DIR/.env"
 #     points PUBLIC_WEB_ORIGIN at in .env. Deploying a dashboard with no login
 #     onto the public internet is the unsafe default we must not silently
 #     allow, so fail closed unless PITCHBOX_AUTH=on (or explicitly overridden).
-public_origin="$(grep -E '^PUBLIC_WEB_ORIGIN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+public_origin="${PUBLIC_WEB_ORIGIN:-$(grep -E '^PUBLIC_WEB_ORIGIN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)}"
 public_origin="${public_origin:-https://$DOMAIN}"
-pitchbox_auth="$(grep -E '^PITCHBOX_AUTH=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+pitchbox_auth="${PITCHBOX_AUTH:-$(grep -E '^PITCHBOX_AUTH=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)}"
 is_public=1
 case "$public_origin" in
   *://localhost*|*://127.0.0.1*) is_public=0 ;;
@@ -167,7 +167,6 @@ else
   "${COMPOSE[@]}" stop "web-$idle" || true; exit 1
 fi
 log "restore point saved: $backup_dir"
-prune_backups
 
 # 6. migrate + seed BEFORE the health check: the healthcheck fetches / which queries
 #    the DB, so a fresh (unmigrated) DB would 500 and never go healthy. exec only
@@ -216,11 +215,15 @@ fi
 log "smoke ok"
 
 # 10. deploy confirmed good: move the env's moving alias (<env>-latest) onto this
-#     image and prune old immutable tags. Manual rollback later is just:
+#     image, then prune old immutable tags and old restore points. Both prunes
+#     wait until here (not right after the step-5 backup) so a deploy that
+#     fails partway through never loses older restore points - only a
+#     confirmed-good deploy trims them. Manual rollback later is just:
 #       APP_IMAGE=<repo>:<one of the tags kept below> scripts/deploy.sh <env> <ref> --rollback
 log "tagging ${IMAGE_REPO}:${ENV}-latest -> $APP_IMAGE"
 docker tag "$APP_IMAGE" "${IMAGE_REPO}:${ENV}-latest" || log "WARNING: failed to update the ${ENV}-latest alias"
 prune_images
+prune_backups
 
 # 11. cut over daemon (singleton) to the new color; recreate runner
 log "cutting over daemon + runner..."
