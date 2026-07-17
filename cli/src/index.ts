@@ -12,6 +12,7 @@ async function main() {
   const { registerDraftCommands } = await import('./commands/drafts.js');
   const { registerRedditCommands } = await import('./commands/reddit.js');
   const { registerHnCommands } = await import('./commands/hn.js');
+  const { registerMastodonCommands } = await import('./commands/mastodon.js');
   const { registerUtilityCommands } = await import('./commands/utility.js');
   const { registerProjectCommands } = await import('./commands/project.js');
   const { registerSkillCommands } = await import('./commands/skill.js');
@@ -20,6 +21,7 @@ async function main() {
   registerDraftCommands(program);
   registerRedditCommands(program);
   registerHnCommands(program);
+  registerMastodonCommands(program);
   registerUtilityCommands(program);
   registerProjectCommands(program);
   registerSkillCommands(program);

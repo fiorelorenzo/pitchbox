@@ -32,6 +32,23 @@ async function redditPlatformId(): Promise<number> {
   return p.id;
 }
 
+// Mastodon's platform-seed migration (MAS-1) has not landed yet, so ensure a
+// row exists on demand rather than relying on seed:core.
+async function mastodonPlatformId(): Promise<number> {
+  const db = getDb();
+  const [inserted] = await db
+    .insert(schema.platforms)
+    .values({ slug: 'mastodon' })
+    .onConflictDoNothing()
+    .returning();
+  if (inserted) return inserted.id;
+  const [existing] = await db
+    .select()
+    .from(schema.platforms)
+    .where(eq(schema.platforms.slug, 'mastodon'));
+  return existing.id;
+}
+
 async function connectClient(): Promise<Client> {
   const server = createPitchboxMcpServer();
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
@@ -319,6 +336,13 @@ describe('pitchbox MCP server (lifecycle + write tools)', () => {
   it('reddit_scout surfaces an unknown run as a tool error', async () => {
     const client = await connectClient();
     const res = await call(client, 'reddit_scout', { runId: 987654 });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? '').toContain('not found');
+  });
+
+  it('mastodon_scout surfaces an unknown run as a tool error', async () => {
+    const client = await connectClient();
+    const res = await call(client, 'mastodon_scout', { runId: 987654 });
     expect(res.isError).toBe(true);
     expect(res.content[0]?.text ?? '').toContain('not found');
   });
@@ -630,6 +654,50 @@ describe('pitchbox MCP server (org ownership enforcement, defense-in-depth)', ()
     // Session bound to org A's run; the agent tries to act on org B's run.
     const attacker = await connectClientWithCtx({ runId: runIdA });
     const res = await call(attacker, 'reddit_scout', { runId: runIdB });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? '').toContain("does not belong to this session's organization");
+  });
+
+  it('rejects a runId belonging to another organization (mastodon_scout)', async () => {
+    const platformId = await mastodonPlatformId();
+    const db = getDb();
+    const seedOrg = async (slug: string) => {
+      const [org] = await db.insert(schema.organizations).values({ slug, name: slug }).returning();
+      const [project] = await db
+        .insert(schema.projects)
+        .values({ organizationId: org.id, slug: `${slug}-proj`, name: `${slug} project` })
+        .returning();
+      const [campaign] = await db
+        .insert(schema.campaigns)
+        .values({
+          projectId: project.id,
+          platformId,
+          name: 'Mastodon Scout',
+          skillSlug: 'mastodon-scout',
+          config: { targetHashtags: ['outreach'] },
+        })
+        .returning();
+      return { orgId: org.id, projectId: project.id, campaignId: campaign.id };
+    };
+    const a = await seedOrg('mcp-own-mastodon-run-a');
+    const b = await seedOrg('mcp-own-mastodon-run-b');
+
+    const clientA = await connectClientWithCtx({ campaignId: a.campaignId });
+    const { runId: runIdA } = parse(
+      await call(clientA, 'run_start', { campaignId: a.campaignId }),
+    ) as {
+      runId: number;
+    };
+    const clientB = await connectClientWithCtx({ campaignId: b.campaignId });
+    const { runId: runIdB } = parse(
+      await call(clientB, 'run_start', { campaignId: b.campaignId }),
+    ) as {
+      runId: number;
+    };
+
+    // Session bound to org A's run; the agent tries to act on org B's run.
+    const attacker = await connectClientWithCtx({ runId: runIdA });
+    const res = await call(attacker, 'mastodon_scout', { runId: runIdB });
     expect(res.isError).toBe(true);
     expect(res.content[0]?.text ?? '').toContain("does not belong to this session's organization");
   });

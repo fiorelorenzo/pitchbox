@@ -26,6 +26,7 @@ import {
   replyDraftFinish,
 } from '../commands/drafts.js';
 import { scoutRun, snapshotSubreddit } from '../commands/reddit.js';
+import { scoutRun as mastodonScoutRun } from '../commands/mastodon.js';
 import { searchHn, HN_LISTINGS } from '../commands/hn.js';
 import type { HnListing } from '@pitchbox/shared/platforms/hackernews';
 import {
@@ -278,6 +279,34 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
         const ownershipErr = await checkOwnership('run', rid);
         if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await scoutRun(rid));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'mastodon_scout',
+    {
+      title: 'Fetch and stage Mastodon candidates',
+      description:
+        'Fetch Mastodon candidates for the run via hashtag-timeline discovery on the campaign profile, apply the #nobot hard rule plus blocklist + contact-history filters, and stage them. Returns { runId, candidatesFetched }.',
+      inputSchema: {
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ runId }) => {
+      const rid = runId ?? defaultRunId();
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
+        return jsonResult(await mastodonScoutRun(rid));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }
