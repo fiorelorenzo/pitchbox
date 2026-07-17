@@ -16,9 +16,11 @@ function lastJson(out: string) {
 }
 
 async function reset() {
-  await getDb().execute(
-    sql`TRUNCATE users, sessions, memberships, organizations RESTART IDENTITY CASCADE`,
-  );
+  // Do NOT truncate `organizations`: that would drop the seeded `default` org
+  // (which seed:owner joins) for every other test file sharing this DB. Clean
+  // users/sessions/memberships and any non-default org instead.
+  await getDb().execute(sql`TRUNCATE users, sessions, memberships RESTART IDENTITY CASCADE`);
+  await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
 }
 
 describe('pitchbox seed:owner', () => {
