@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { AutoAllowPolicy, selectPermissionOption } from '../../../src/agents/acp/permission.js';
+import {
+  AutoAllowPolicy,
+  ConfigurablePermissionPolicy,
+  selectPermissionOption,
+} from '../../../src/agents/acp/permission.js';
 
 describe('AutoAllowPolicy', () => {
   it('always returns allow', () => {
@@ -7,6 +11,71 @@ describe('AutoAllowPolicy', () => {
     expect(policy.decide({ toolName: 'bash', args: {} })).toBe('allow');
     expect(policy.decide({ toolName: 'write_file', args: { path: '/etc/passwd' } })).toBe('allow');
     expect(policy.decide({ toolName: 'unknown_tool', args: {} })).toBe('allow');
+  });
+});
+
+describe('ConfigurablePermissionPolicy', () => {
+  it('allows everything when there are no rules (defaults like AutoAllow)', () => {
+    const policy = new ConfigurablePermissionPolicy({ rules: [] });
+    expect(policy.decide({ toolName: 'bash', args: {} })).toBe('allow');
+  });
+
+  it('denies a matching tool-kind rule while allowing everything else', () => {
+    const policy = new ConfigurablePermissionPolicy({
+      rules: [{ toolKind: 'bash', decision: 'reject' }],
+    });
+    expect(policy.decide({ toolName: 'bash', args: { cmd: 'ls' } })).toBe('reject');
+    expect(policy.decide({ toolName: 'Bash', args: {} })).toBe('reject');
+    expect(policy.decide({ toolName: 'read', args: {} })).toBe('allow');
+  });
+
+  it('denies a matching path-pattern rule while allowing other paths', () => {
+    const policy = new ConfigurablePermissionPolicy({
+      rules: [{ pathPattern: '/etc/**', decision: 'reject' }],
+    });
+    expect(policy.decide({ toolName: 'edit', args: { path: '/etc/passwd' } })).toBe('reject');
+    expect(policy.decide({ toolName: 'edit', args: { path: '/etc/ssh/sshd_config' } })).toBe(
+      'reject',
+    );
+    expect(policy.decide({ toolName: 'edit', args: { path: '/home/user/notes.md' } })).toBe(
+      'allow',
+    );
+    // No path-like arg at all: the path rule cannot match, so falls through.
+    expect(policy.decide({ toolName: 'edit', args: {} })).toBe('allow');
+  });
+
+  it('requires both matchers on a combined rule to match', () => {
+    const policy = new ConfigurablePermissionPolicy({
+      rules: [{ toolKind: 'edit', pathPattern: '/etc/**', decision: 'reject' }],
+    });
+    // Right tool, wrong path: allowed.
+    expect(policy.decide({ toolName: 'edit', args: { path: '/home/user/notes.md' } })).toBe(
+      'allow',
+    );
+    // Right path, wrong tool: allowed.
+    expect(policy.decide({ toolName: 'read', args: { path: '/etc/passwd' } })).toBe('allow');
+    // Both match: denied.
+    expect(policy.decide({ toolName: 'edit', args: { path: '/etc/passwd' } })).toBe('reject');
+  });
+
+  it('evaluates rules in order, first match wins', () => {
+    const policy = new ConfigurablePermissionPolicy({
+      rules: [
+        { pathPattern: '/etc/allowed.conf', decision: 'allow' },
+        { pathPattern: '/etc/**', decision: 'reject' },
+      ],
+    });
+    expect(policy.decide({ toolName: 'edit', args: { path: '/etc/allowed.conf' } })).toBe('allow');
+    expect(policy.decide({ toolName: 'edit', args: { path: '/etc/other.conf' } })).toBe('reject');
+  });
+
+  it('falls back to a configured defaultDecision when no rule matches', () => {
+    const policy = new ConfigurablePermissionPolicy({
+      rules: [{ toolKind: 'read', decision: 'allow' }],
+      defaultDecision: 'reject',
+    });
+    expect(policy.decide({ toolName: 'read', args: {} })).toBe('allow');
+    expect(policy.decide({ toolName: 'bash', args: {} })).toBe('reject');
   });
 });
 

@@ -9,6 +9,7 @@ import type { ChildProcessWithoutNullStreams, spawn as nodeSpawn } from 'node:ch
 import { AcpRunner } from '../../../src/agents/acp/runner.js';
 import { MockAcpServer, type MockHandlers } from './mock-acp-server.js';
 import type { ParsedEvent } from '../../../src/runlog/types.js';
+import type { RunnerConfig } from '../../../src/agents/config.js';
 
 // Build a fake child process that behaves enough like ChildProcessWithoutNullStreams
 // for the runner to operate against. It owns two PassThrough streams (stdin = what
@@ -45,10 +46,7 @@ function makeFakeChild(): {
   return { child, stdin, stdout, emitExit, killCalls };
 }
 
-function makeRunner(
-  handlers: MockHandlers = {},
-  config?: { model?: string; maxTurns?: number; extraArgs?: string[] },
-) {
+function makeRunner(handlers: MockHandlers = {}, config?: RunnerConfig) {
   const { child, stdin, stdout, emitExit, killCalls } = makeFakeChild();
   // From the runner's POV: it writes to child.stdin and reads from child.stdout.
   // The mock server's POV is the opposite: it reads from child.stdin (what the
@@ -136,6 +134,62 @@ describe('AcpRunner integration', () => {
     });
     await handle.result;
     expect(ack).toMatchObject({ outcome: { outcome: 'selected', optionId: 'allow_always' } });
+  });
+
+  it('denies a matching request under a configured deny rule (by tool kind) while allowing others', async () => {
+    const acks: unknown[] = [];
+    const { runner, server } = makeRunner(
+      {
+        onSessionPrompt: async () => {
+          acks.push(await server.requestPermission('sess-mock-1', 'bash', { cmd: 'rm -rf /' }));
+          acks.push(await server.requestPermission('sess-mock-1', 'read', { path: '/tmp/x' }));
+          return { stopReason: 'end_turn' };
+        },
+      },
+      {
+        permissionPolicy: {
+          name: 'configurable',
+          rules: [{ toolKind: 'bash', decision: 'reject' }],
+        },
+      },
+    );
+    const handle = runner.run({
+      playbookPath,
+      slug: 'x',
+      env: {},
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+    });
+    await handle.result;
+    expect(acks[0]).toMatchObject({ outcome: { outcome: 'selected', optionId: 'reject' } });
+    expect(acks[1]).toMatchObject({ outcome: { outcome: 'selected', optionId: 'allow_always' } });
+  });
+
+  it('denies a matching request under a configured deny rule (by path pattern)', async () => {
+    let ack: unknown = null;
+    const { runner, server } = makeRunner(
+      {
+        onSessionPrompt: async () => {
+          ack = await server.requestPermission('sess-mock-1', 'edit', { path: '/etc/passwd' });
+          return { stopReason: 'end_turn' };
+        },
+      },
+      {
+        permissionPolicy: {
+          name: 'configurable',
+          rules: [{ pathPattern: '/etc/**', decision: 'reject' }],
+        },
+      },
+    );
+    const handle = runner.run({
+      playbookPath,
+      slug: 'x',
+      env: {},
+      cwd: process.cwd(),
+      timeoutMs: 5000,
+    });
+    await handle.result;
+    expect(ack).toMatchObject({ outcome: { outcome: 'selected', optionId: 'reject' } });
   });
 
   it('hands the agent the Pitchbox MCP server in session/new', async () => {

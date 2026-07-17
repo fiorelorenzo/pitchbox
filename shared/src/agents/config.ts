@@ -2,11 +2,26 @@ import { eq } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { appConfig } from '../db/schema.js';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from './meta.js';
+import type { PermissionDecision, PermissionRule } from './acp/permission.js';
+
+/**
+ * Selects and configures the `PermissionPolicy` an ACP runner uses to answer
+ * `session/request_permission`. `auto-allow` (the default when unset) preserves
+ * today's behavior of approving everything; `configurable` evaluates `rules` in
+ * order (first match wins) and falls back to `defaultDecision` (allow, unless
+ * set otherwise) when none match. See `acp/permission.ts` for rule matching.
+ */
+export type PermissionPolicyConfig = {
+  name: 'auto-allow' | 'configurable';
+  rules?: PermissionRule[];
+  defaultDecision?: PermissionDecision;
+};
 
 export type RunnerConfig = {
   model?: string;
   maxTurns?: number;
   extraArgs?: string[];
+  permissionPolicy?: PermissionPolicyConfig;
 };
 
 export type RunnerConfigsByRunner = Record<AgentRunnerSlug, RunnerConfig>;

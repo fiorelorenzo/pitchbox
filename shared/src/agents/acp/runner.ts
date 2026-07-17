@@ -16,6 +16,7 @@ import {
 } from './event-normalizer.js';
 import {
   AutoAllowPolicy,
+  ConfigurablePermissionPolicy,
   selectPermissionOption,
   type PermissionOption,
   type PermissionPolicy,
@@ -58,9 +59,12 @@ export class AcpRunner implements AgentRunner {
     if (!this.spec) throw new Error(`Unknown ACP backend slug: ${opts.slug}`);
     this.spawn = opts.spawn ?? nodeSpawn;
     this.logDir = opts.logDir ?? join(process.cwd(), 'daemon', 'logs');
-    this.policy = opts.policy ?? new AutoAllowPolicy();
-    this.initializeTimeoutMs = opts.initializeTimeoutMs ?? 10_000;
     this.config = opts.config ?? {};
+    // An explicit policy (tests, callers that build their own) wins; otherwise
+    // derive one from the runner config, defaulting to AutoAllow so unconfigured
+    // runners keep today's behavior.
+    this.policy = opts.policy ?? buildPolicyFromConfig(this.config);
+    this.initializeTimeoutMs = opts.initializeTimeoutMs ?? 10_000;
   }
 
   run(opts: AgentRunOptions): AgentRunHandle {
@@ -386,6 +390,22 @@ export class AcpRunner implements AgentRunner {
 
     return { result, cancel: () => cancelFn() };
   }
+}
+
+/**
+ * Build the `PermissionPolicy` a runner uses from its `RunnerConfig`. Defaults
+ * to `AutoAllowPolicy` (today's behavior) when no `permissionPolicy` is
+ * configured, or when it is explicitly set to `auto-allow`.
+ */
+function buildPolicyFromConfig(config: RunnerConfig): PermissionPolicy {
+  const pc = config.permissionPolicy;
+  if (pc?.name === 'configurable') {
+    return new ConfigurablePermissionPolicy({
+      rules: pc.rules ?? [],
+      defaultDecision: pc.defaultDecision,
+    });
+  }
+  return new AutoAllowPolicy();
 }
 
 function buildPrompt(opts: AgentRunOptions, playbook: string): string {
