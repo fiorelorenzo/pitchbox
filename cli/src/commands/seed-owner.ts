@@ -59,7 +59,12 @@ export async function seedOwner(): Promise<SeedOwnerResult> {
     return { created: false, reason: 'user_exists' };
   }
 
-  const userId = await createUser(db, username, password);
+  // The seeded owner is also the instance admin (#137): this command only
+  // ever runs pre-migrate on an empty users table, so it always creates the
+  // one bootstrap owner - not a self-created-org admin - and instance-wide
+  // config (default runner, quota defaults, webhook config) must be gated on
+  // that distinction.
+  const userId = await createUser(db, username, password, { isInstanceAdmin: true });
   return { created: true, userId, username };
 }
 

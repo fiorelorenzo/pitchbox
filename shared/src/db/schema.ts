@@ -31,6 +31,10 @@ export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  // Instance-wide admin, distinct from per-org 'admin' role. Gates global
+  // config that spans every tenant (default runner, quota defaults, webhook
+  // config) - a self-created org owner must NOT get this for free.
+  isInstanceAdmin: boolean('is_instance_admin').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

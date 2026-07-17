@@ -70,8 +70,12 @@ export async function POST(event: RequestEvent) {
   let userId: number;
   const total = await countUsers(db);
   if (total === 0) {
-    // First user becomes the admin on first login attempt.
-    userId = await createUser(db, parsed.data.username, parsed.data.password);
+    // First user becomes the owner - and the instance admin - on first login
+    // attempt (#137: instance-admin gates instance-wide config and must not
+    // be handed to every self-created-org owner, only this bootstrap one).
+    userId = await createUser(db, parsed.data.username, parsed.data.password, {
+      isInstanceAdmin: true,
+    });
   } else {
     const user = await findUserByUsername(db, parsed.data.username);
     if (!user) {

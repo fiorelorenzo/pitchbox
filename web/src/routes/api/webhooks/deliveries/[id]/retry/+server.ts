@@ -1,7 +1,7 @@
 import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import { requireOrgId, requireRole } from '$lib/server/auth.js';
+import { requireInstanceAdmin, requireOrgId } from '$lib/server/auth.js';
 
 /**
  * Manual retry for a dead-letter webhook delivery. Resets attempts/last_error
@@ -20,7 +20,7 @@ export async function POST(event: RequestEvent) {
     .from(schema.webhookDeliveries)
     .where(eq(schema.webhookDeliveries.id, id));
   if (!row || row.organizationId !== orgId) throw error(404, 'not_found');
-  requireRole(event, 'admin');
+  await requireInstanceAdmin(event);
   if (row.status === 'delivered') throw error(409, 'already_delivered');
 
   await db

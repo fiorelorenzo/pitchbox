@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterAll } from 'vitest';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDb, getPool } from '../src/db/client.js';
+import { users } from '../src/db/schema.js';
 import {
   hashPassword,
   verifyPassword,
@@ -44,6 +45,18 @@ describe('shared/auth', () => {
     expect(org?.role).toBe('owner');
 
     expect(await countUsers(getDb())).toBe(1);
+  });
+
+  it('createUser defaults isInstanceAdmin to false, and honours the opt-in (#137)', async () => {
+    const memberId = await createUser(getDb(), 'dave', 'a-very-long-password');
+    const [memberRow] = await getDb().select().from(users).where(eq(users.id, memberId));
+    expect(memberRow.isInstanceAdmin).toBe(false);
+
+    const ownerId = await createUser(getDb(), 'erin', 'a-very-long-password', {
+      isInstanceAdmin: true,
+    });
+    const [ownerRow] = await getDb().select().from(users).where(eq(users.id, ownerId));
+    expect(ownerRow.isInstanceAdmin).toBe(true);
   });
 
   it('findUserByUsername returns null when missing', async () => {

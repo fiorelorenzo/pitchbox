@@ -7,7 +7,7 @@ import {
 } from '@pitchbox/shared/agents/config';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { z } from 'zod';
-import { requireRole } from '$lib/server/auth.js';
+import { requireInstanceAdmin } from '$lib/server/auth.js';
 
 const ConfigSchema = z.object({
   model: z.string().min(1).optional(),
@@ -32,7 +32,7 @@ export async function GET() {
 
 export async function PUT(event: RequestEvent) {
   const { request } = event;
-  requireRole(event, 'admin');
+  await requireInstanceAdmin(event);
   const body = await request.json();
   const parsed = PutBody.safeParse(body);
   if (!parsed.success) throw error(400, 'invalid body');

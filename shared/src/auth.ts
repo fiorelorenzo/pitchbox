@@ -205,9 +205,13 @@ export async function createUser(
   db: PgDatabase<any, any, any>,
   username: string,
   password: string,
+  opts: { isInstanceAdmin?: boolean } = {},
 ): Promise<number> {
   const passwordHash = await hashPassword(password);
-  const [row] = await db.insert(users).values({ username, passwordHash }).returning();
+  const [row] = await db
+    .insert(users)
+    .values({ username, passwordHash, isInstanceAdmin: opts.isInstanceAdmin ?? false })
+    .returning();
   // First user implicitly joins the default org as owner. If the default org
   // doesn't exist yet (fresh install without seed:core), create it inline.
   let [org] = await db.select().from(organizations).where(eq(organizations.slug, 'default'));

@@ -259,6 +259,24 @@ describe('auth hardening', () => {
     expect(unlockRes.status).toBe(200);
   });
 
+  it('first-login bootstrap marks the created owner as instance-admin (#137)', async () => {
+    // beforeEach already seeded one user; clear it so this exercises the real
+    // countUsers===0 branch in the login route (the same createUser() path
+    // seed:owner uses), not a hand-fabricated "this user is instance-admin".
+    await getDb().execute(sql`DELETE FROM memberships`);
+    await getDb().execute(sql`DELETE FROM users`);
+
+    const jar: CookieJar = { store: new Map() };
+    const res = await callLogin({ username: 'brandnew', password: PASSWORD }, jar);
+    expect(res.status).toBe(200);
+
+    const [user] = await getDb()
+      .select()
+      .from(schema.users)
+      .where(sql`username = 'brandnew'`);
+    expect(user.isInstanceAdmin).toBe(true);
+  });
+
   it('logout deletes the session row', async () => {
     const jar: CookieJar = { store: new Map() };
     const res = await callLogin({ username: USERNAME, password: PASSWORD }, jar);

@@ -41,6 +41,10 @@ describe('pitchbox seed:owner', () => {
     const users = await db.select().from(schema.users);
     expect(users).toHaveLength(1);
     expect(users[0].username).toBe('admin');
+    // #137: the seeded owner is also the instance admin, since it's always
+    // the one bootstrap owner of a fresh install, never a self-created-org
+    // admin that later escalated.
+    expect(users[0].isInstanceAdmin).toBe(true);
 
     const org = await db
       .select({ role: schema.memberships.role, orgSlug: schema.organizations.slug })
