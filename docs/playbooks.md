@@ -20,7 +20,7 @@ The full tool surface (`cli/src/mcp/server.ts`), grouped by what calls it:
 
 - `run_start` / `run_finish` - open and close a run; `run_start` loads the campaign, project, accounts, blocklist, recently-contacted handles, and few-shot templates in one call.
 - `blocklist_check`, `contact_history_check` - dedup guards a playbook can call before drafting.
-- `reddit_scout`, `staging_candidates`, `subreddit_snapshot`, `hn_search` - platform research helpers used by the scout/commenter/poster playbooks.
+- `reddit_scout`, `staging_candidates`, `subreddit_snapshot`, `hn_search`, `mastodon_scout` - platform research helpers used by the scout/commenter/poster playbooks.
 - `drafts_create`, `drafts_get`, `drafts_update` - the draft CRUD surface every playbook writes through.
 - `draft_regen_start` / `draft_regen_finish` - the draft-regenerator playbook's contract.
 - `reply_draft_start` / `reply_draft_finish` - the reply-drafter playbook's contract.
@@ -29,6 +29,10 @@ The full tool surface (`cli/src/mcp/server.ts`), grouped by what calls it:
 - `skill_generate_start` / `skill_generate_finish` - the campaign-skill-generator playbook's contract.
 
 Each tool's Zod input schema and description live next to its implementation in `cli/src/mcp/server.ts`. The same command functions back both the MCP tools and the `pitchbox` CLI (see [`docs/cli.md`](cli.md)), so the CLI remains useful for driving or debugging this surface from a shell, but playbooks themselves only ever call the MCP tools.
+
+## Mastodon playbooks (mastodon-scout, mastodon-commenter, mastodon-poster)
+
+At scenario parity with Reddit (`scout` -> DM, `commenter`, `poster`), but deliberately conservative in tone: the fediverse is bot-averse, so all three playbooks prioritize genuine, contextual replies over volume, discourage cold DMs (drafting one only when the candidate has already engaged with the project or is explicitly asking for what it offers), and treat a run that produces zero drafts as a success. All three discover candidates via `mastodon_scout` (hashtag-timeline discovery, honoring the `#nobot` hard rule server-side) plus `staging_candidates`, and never call the send path themselves - a Mastodon `dm`/`post_comment`/`post` draft is sent later, on human approval, either manually or automatically via `mcp__pitchbox__mastodon_post` when the campaign's `autoPost` flag is on. See [`docs/mastodon-integration-design.md`](mastodon-integration-design.md) for the full platform design.
 
 ## Tuning a campaign (campaign-skill-generator)
 
