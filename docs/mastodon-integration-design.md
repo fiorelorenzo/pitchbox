@@ -25,11 +25,13 @@ Pitchbox stays human-in-the-loop: the agent researches and drafts, the human app
 ## Architecture
 
 ### Platform + accounts
+
 - Seed a `mastodon` row in `platforms` (seed:core).
 - Reuse the `accounts` table. Add an `instance_url` column; store the access token encrypted (reuse the existing encrypted-credential field or add one). `handle` is the fully qualified `@user@instance`. On connect, validate with `GET /api/v1/accounts/verify_credentials`.
 - Connection UI: a Settings/Accounts form to paste instance URL + token, with instructions to create an app in the instance's dev settings.
 
 ### Adapter (`shared/src/platforms/mastodon/`)
+
 - `types.ts`: Mastodon API shapes (Status, Account, Notification, Context).
 - `client.ts`: fetch-based REST client, bearer token, honors `X-RateLimit-*` headers with backoff. Methods: `verifyCredentials`, `hashtagTimeline(tag, sinceId)`, `getStatus(id)`, `postStatus({status, inReplyToId?, visibility})`, `notifications({sinceId, types:['mention']})`.
 - `scout.ts`: target discovery via hashtag timelines (Mastodon lacks reliable full-text search) plus keyword filtering, honoring the `#nobot` hard-rule (skip authors whose bio/fields contain `#nobot`/`nobot`), recency, and the blocklist.
@@ -37,27 +39,34 @@ Pitchbox stays human-in-the-loop: the agent researches and drafts, the human app
 - `index.ts`: exports + registration.
 
 ### MCP tool surface
+
 Mirror the Reddit/HN pattern: expose Mastodon actions as `mcp__pitchbox__mastodon_*` tools in `cli/src/mcp/server.ts` (backed by the adapter), so playbooks drive them. At minimum a scout/search tool and a post/reply tool; ids stay session-bound (never chosen by the agent), consistent with the existing surface.
 
 ### Send path (human-in-the-loop, two modes)
+
 - **Manual (default):** draft -> approve -> a "Open on Mastodon" action (copies the text and opens the account's instance) -> "Mark as sent". No extension needed.
 - **Auto-post (`autoPost` campaign flag):** on approve, Pitchbox calls `postStatus` (mapped visibility + `inReplyToId` for comments), stores the returned status id/URL, auto-marks the draft `sent`, and logs `contact_history`.
 - Both run through `evaluateDraftSend` (blocklist + quota) before anything is sent.
 
 ### Reply matching
+
 - On send, store the posted Mastodon status id on the draft (a new `platform_post_id` column, or reuse `platform_comment_id`). The reply-reader matches a mention whose `in_reply_to_id` equals our status id (or from the target user) -> draft `replied` + message recorded. Fully server-side in the daemon reply-poller (which becomes real for Mastodon).
 
 ### Quota + blocklist
+
 - Quota: add `mastodon` to `quota_defaults` with conservative per-day/per-week limits for dm/comment/post. Per-account limits already supported.
 - Blocklist: reuse kinds `user` (a `@handle`) and `keyword` (skip statuses containing it). `#nobot` is an implicit hard-rule in the scout, not a blocklist entry.
 
 ### Playbooks
+
 Three conservative markdown playbooks driving the MCP tools: `mastodon-scout`, `mastodon-commenter`, `mastodon-poster`. Tone baked in: genuine/contextual replies, cold DMs discouraged, honor `#nobot` and opt-outs, soft rates.
 
 ## What is NOT needed (vs Reddit)
+
 No Playwright/stealth, no anonymous-scrape env, no Chrome extension for Mastodon. Only authenticated REST.
 
 ## Testing
+
 Unit tests with mocked `fetch` (no live API calls): the client (incl. rate-limit backoff), scout filtering (`#nobot`, blocklist, recency, keyword), reply-reader mapping, scenario->API mapping, the auto-post path, and quota/blocklist gating on the send path.
 
 ## Implementation breakdown (issues)
@@ -75,4 +84,5 @@ Sequenced with dependencies; most are file-disjoint for parallel execution once 
 Wave 1: MAS-1, MAS-2. Wave 2: MAS-3, MAS-4, MAS-5. Wave 3: MAS-6, MAS-7.
 
 ## Out of scope (v1)
+
 OAuth flow (paste-token only), full-text search beyond hashtags, Mastodon-native polls/media, cross-instance account discovery beyond federation-visible timelines.

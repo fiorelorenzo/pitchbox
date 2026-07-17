@@ -16,6 +16,12 @@ export default [
       // and full of minified vendor bundles that eslint must not lint.
       'docs/.vitepress/cache/**',
       'docs/.vitepress/dist/**',
+      // The cloud/* submodules are separate repos with their own toolchains
+      // (their own typecheck + tests); the umbrella lint must not reach into
+      // their source. CI does not check them out, so this only affects a local
+      // `pnpm run lint` when the submodules are present.
+      'cloud/adapter/**',
+      'cloud/runner/**',
     ],
   },
   {
