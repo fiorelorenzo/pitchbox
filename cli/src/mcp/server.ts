@@ -1,5 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { getDb } from '@pitchbox/shared/db';
+import {
+  runBelongsToOrg,
+  campaignBelongsToOrg,
+  projectBelongsToOrg,
+  draftBelongsToOrg,
+  getRunOrgId,
+  getCampaignOrgId,
+  getProjectOrgId,
+  getRunProjectId,
+  getCampaignProjectId,
+} from '@pitchbox/shared/orgs';
 import { checkBlocklist, checkContactHistory, getStagingCandidates } from '../commands/utility.js';
 import { startRun, finishRun } from '../commands/run.js';
 import {
@@ -72,6 +84,80 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
   const defaultProjectId = () =>
     ctx.projectId ?? posInt(process.env.PITCHBOX_PROJECT_ID) ?? posInt(process.env.PROJECT_ID);
 
+  // The organization this MCP session is bound to, resolved once (memoized
+  // for the life of this server instance) from the session-bound run,
+  // campaign, or project id - never from a tool-call argument. Every tool
+  // below that accepts a run/campaign/project/draft id verifies the
+  // *effective* id (the session default, or an agent-supplied override)
+  // resolves to this same organization before touching the DB. This is
+  // defense-in-depth: the dispatch layer that injects the session's ids
+  // already validates ownership before the agent ever sees this server (see
+  // docs/organization-isolation-design.md, "MCP / agent boundary"), but the
+  // agent reads untrusted scraped text, so a tool-supplied id is never
+  // trusted on its own.
+  let sessionOrgIdPromise: Promise<number | null> | null = null;
+  const sessionOrgId = (): Promise<number | null> => {
+    if (!sessionOrgIdPromise) {
+      sessionOrgIdPromise = (async () => {
+        const db = getDb();
+        const rid = defaultRunId();
+        if (rid != null) return getRunOrgId(db, rid);
+        const cid = defaultCampaignId();
+        if (cid != null) return getCampaignOrgId(db, cid);
+        const pid = defaultProjectId();
+        if (pid != null) return getProjectOrgId(db, pid);
+        return null;
+      })();
+    }
+    return sessionOrgIdPromise;
+  };
+
+  // The project this MCP session is bound to, resolved the same way (used to
+  // scope `drafts_get`'s list mode instead of scanning every project's
+  // drafts).
+  let sessionProjectIdPromise: Promise<number | null> | null = null;
+  const sessionProjectId = (): Promise<number | null> => {
+    if (!sessionProjectIdPromise) {
+      sessionProjectIdPromise = (async () => {
+        const pid = defaultProjectId();
+        if (pid != null) return pid;
+        const db = getDb();
+        const rid = defaultRunId();
+        if (rid != null) return getRunProjectId(db, rid);
+        const cid = defaultCampaignId();
+        if (cid != null) return getCampaignProjectId(db, cid);
+        return null;
+      })();
+    }
+    return sessionProjectIdPromise;
+  };
+
+  /**
+   * Verifies that `id` (of the given kind) belongs to the session's bound
+   * organization. Returns an error message (to surface as a tool error) when
+   * it does not, or null when the check passes. When the session has no
+   * bound organization to check against (no run/campaign/project id at all
+   * is available - e.g. the server invoked with no session context), the
+   * check is skipped: there is nothing to enforce against, and the
+   * downstream command function still validates the id exists.
+   */
+  async function checkOwnership(
+    kind: 'run' | 'campaign' | 'project' | 'draft',
+    id: number,
+  ): Promise<string | null> {
+    const orgId = await sessionOrgId();
+    if (orgId == null) return null;
+    const db = getDb();
+    const belongs = await (kind === 'run'
+      ? runBelongsToOrg(db, id, orgId)
+      : kind === 'campaign'
+        ? campaignBelongsToOrg(db, id, orgId)
+        : kind === 'project'
+          ? projectBelongsToOrg(db, id, orgId)
+          : draftBelongsToOrg(db, id, orgId));
+    return belongs ? null : `${kind} ${id} does not belong to this session's organization`;
+  }
+
   server.registerTool(
     'blocklist_check',
     {
@@ -131,6 +217,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       },
     },
     async ({ run }) => {
+      const ownershipErr = await checkOwnership('run', run);
+      if (ownershipErr) return errorResult(ownershipErr);
       return jsonResult(await getStagingCandidates(run));
     },
   );
@@ -154,6 +242,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const cid = campaignId ?? defaultCampaignId();
       if (cid == null) return errorResult('campaignId required (or set PITCHBOX_CAMPAIGN_ID)');
       try {
+        const ownershipErr = await checkOwnership('campaign', cid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await startRun(cid, defaultRunId()));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -180,6 +270,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await scoutRun(rid));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -207,6 +299,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await createDrafts(rid, drafts));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -246,7 +340,21 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     },
     async ({ id, state }) => {
       try {
-        return jsonResult(id != null ? await getDraftById(id) : await listDrafts(state));
+        if (id != null) {
+          const ownershipErr = await checkOwnership('draft', id);
+          if (ownershipErr) return errorResult(ownershipErr);
+          return jsonResult(await getDraftById(id));
+        }
+        // List mode: always scope to the session's bound project rather than
+        // scanning every project's drafts (see checkOwnership's doc comment
+        // on the MCP boundary above).
+        const pid = await sessionProjectId();
+        if (pid == null) {
+          return errorResult(
+            'drafts_get list mode requires a session-bound run, campaign, or project',
+          );
+        }
+        return jsonResult(await listDrafts(state, pid));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }
@@ -265,6 +373,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     },
     async ({ id, body }) => {
       try {
+        const ownershipErr = await checkOwnership('draft', id);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await updateDraftBody(id, body));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -291,6 +401,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await draftRegenStart(rid));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -321,6 +433,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await draftRegenFinish(rid, body, title, qualityScore, qualityReason));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -347,6 +461,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await replyDraftStart(rid));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -376,6 +492,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await replyDraftFinish(rid, body, qualityScore, qualityReason));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -425,6 +543,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await finishRun(rid, status, { error, tokens }));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -451,6 +571,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await projectExtractStart(rid));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -482,6 +604,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await projectExtractFinish(rid, description, recommendations ?? []));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -508,6 +632,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const pid = projectId ?? defaultProjectId();
       if (pid == null) return errorResult('projectId required (or set PITCHBOX_PROJECT_ID)');
       try {
+        const ownershipErr = await checkOwnership('project', pid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await projectInsightsContext(pid));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -538,6 +664,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const pid = projectId ?? defaultProjectId();
       if (pid == null) return errorResult('projectId required (or set PITCHBOX_PROJECT_ID)');
       try {
+        const ownershipErr = await checkOwnership('project', pid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await projectInsights(pid, summaryMd, evidence));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -564,6 +692,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await skillGenerateStart(rid));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
@@ -593,6 +723,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await skillGenerateFinish(rid, profile));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));

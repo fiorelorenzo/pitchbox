@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { z } from 'zod';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   isBlocklisted,
   isSubredditBlocklisted,
@@ -260,10 +260,21 @@ export async function getDraftById(id: number) {
   return { draft, messages };
 }
 
-export async function listDrafts(state?: string) {
+// `projectId` scopes the query to a single project (used by the Pitchbox MCP
+// server, which must never hand an agent a bare scan of every project's
+// drafts - see cli/src/mcp/server.ts). Left undefined for the `pitchbox
+// drafts:get` CLI command, an operator tool with no per-session scoping.
+export async function listDrafts(state?: string, projectId?: number) {
   const db = getDb();
-  const rows = await db.select().from(schema.drafts);
-  return state ? rows.filter((r) => r.state === state) : rows;
+  const conditions = [
+    ...(projectId != null ? [eq(schema.drafts.projectId, projectId)] : []),
+    ...(state ? [eq(schema.drafts.state, state)] : []),
+  ];
+  const rows = await db
+    .select()
+    .from(schema.drafts)
+    .where(conditions.length > 0 ? and(...conditions) : undefined);
+  return rows;
 }
 
 export async function updateDraftBody(id: number, body: string) {

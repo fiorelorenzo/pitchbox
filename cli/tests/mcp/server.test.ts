@@ -20,6 +20,10 @@ async function reset() {
   await db.execute(
     sql`TRUNCATE drafts, runs, campaigns, accounts, projects, blocklist, contact_history, staging_scout_candidates RESTART IDENTITY CASCADE`,
   );
+  // Org-ownership tests create extra organizations to prove cross-tenant
+  // rejection; drop them between tests (the `default` org must survive - it
+  // is seeded once and every other fixture relies on it).
+  await db.execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
 }
 
 async function redditPlatformId(): Promise<number> {
@@ -534,6 +538,199 @@ describe('pitchbox MCP server (hn_search)', () => {
     expect(Array.isArray(data.items)).toBe(true);
     expect(data.items.length).toBeLessThanOrEqual(3);
     if (data.items[0]) expect(data.items[0]).toHaveProperty('title');
+  });
+});
+
+async function connectClientWithCtx(ctx: {
+  runId?: number;
+  campaignId?: number;
+  projectId?: number;
+}): Promise<Client> {
+  const server = createPitchboxMcpServer(ctx);
+  const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverT);
+  const client = new Client({ name: 'ctx-client', version: '0.0.0' });
+  await client.connect(clientT);
+  return client;
+}
+
+/** Seeds a whole new organization (project + account + scout campaign), so
+ * two calls with different slugs give two orgs whose ids never collide with
+ * the seeded `default` org. */
+async function seedOrgScoutCampaign(slug: string) {
+  const db = getDb();
+  const platformId = await redditPlatformId();
+  const [org] = await db.insert(schema.organizations).values({ slug, name: slug }).returning();
+  const [project] = await db
+    .insert(schema.projects)
+    .values({ organizationId: org.id, slug: `${slug}-proj`, name: `${slug} project` })
+    .returning();
+  const [account] = await db
+    .insert(schema.accounts)
+    .values({ projectId: project.id, platformId, handle: `${slug}-acc`, role: 'personal' })
+    .returning();
+  const [campaign] = await db
+    .insert(schema.campaigns)
+    .values({
+      projectId: project.id,
+      platformId,
+      name: 'Scout',
+      skillSlug: 'reddit-scout',
+      config: SCOUT_PROFILE,
+    })
+    .returning();
+  return {
+    orgId: org.id,
+    projectId: project.id,
+    accountId: account.id,
+    campaignId: campaign.id,
+    platformId,
+  };
+}
+
+describe('pitchbox MCP server (org ownership enforcement, defense-in-depth)', () => {
+  beforeEach(async () => {
+    await reset();
+  });
+
+  it('rejects a campaignId belonging to a different organization than the session', async () => {
+    const a = await seedOrgScoutCampaign('mcp-own-a');
+    const b = await seedOrgScoutCampaign('mcp-own-b');
+    // Session is bound to org A's campaign; the agent-supplied campaignId
+    // argument tries to override it with org B's.
+    const client = await connectClientWithCtx({ campaignId: a.campaignId });
+    const res = await call(client, 'run_start', { campaignId: b.campaignId });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? '').toContain("does not belong to this session's organization");
+  });
+
+  it('accepts a campaignId that matches the session organization', async () => {
+    const a = await seedOrgScoutCampaign('mcp-own-same');
+    const client = await connectClientWithCtx({ campaignId: a.campaignId });
+    const res = await call(client, 'run_start', { campaignId: a.campaignId });
+    expect(res.isError).toBeFalsy();
+  });
+
+  it('rejects a runId belonging to another organization (reddit_scout)', async () => {
+    const a = await seedOrgScoutCampaign('mcp-own-run-a');
+    const b = await seedOrgScoutCampaign('mcp-own-run-b');
+    const clientA = await connectClientWithCtx({ campaignId: a.campaignId });
+    const { runId: runIdA } = parse(
+      await call(clientA, 'run_start', { campaignId: a.campaignId }),
+    ) as {
+      runId: number;
+    };
+    const clientB = await connectClientWithCtx({ campaignId: b.campaignId });
+    const { runId: runIdB } = parse(
+      await call(clientB, 'run_start', { campaignId: b.campaignId }),
+    ) as {
+      runId: number;
+    };
+
+    // Session bound to org A's run; the agent tries to act on org B's run.
+    const attacker = await connectClientWithCtx({ runId: runIdA });
+    const res = await call(attacker, 'reddit_scout', { runId: runIdB });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? '').toContain("does not belong to this session's organization");
+  });
+
+  it('rejects a draft id belonging to another organization (drafts_get / drafts_update)', async () => {
+    const a = await seedOrgScoutCampaign('mcp-own-draft-a');
+    const b = await seedOrgScoutCampaign('mcp-own-draft-b');
+    const clientA = await connectClientWithCtx({ campaignId: a.campaignId });
+    const { runId: runIdA } = parse(
+      await call(clientA, 'run_start', { campaignId: a.campaignId }),
+    ) as {
+      runId: number;
+    };
+    await call(clientA, 'drafts_create', {
+      runId: runIdA,
+      drafts: [
+        { accountId: a.accountId, kind: 'dm', targetUser: 'a-target', body: 'a body', fitScore: 3 },
+      ],
+    });
+    const clientB = await connectClientWithCtx({ campaignId: b.campaignId });
+    const { runId: runIdB } = parse(
+      await call(clientB, 'run_start', { campaignId: b.campaignId }),
+    ) as {
+      runId: number;
+    };
+    await call(clientB, 'drafts_create', {
+      runId: runIdB,
+      drafts: [
+        { accountId: b.accountId, kind: 'dm', targetUser: 'b-target', body: 'b body', fitScore: 3 },
+      ],
+    });
+
+    const db = getDb();
+    const [draftA] = await db.select().from(schema.drafts).where(eq(schema.drafts.runId, runIdA));
+    const [draftB] = await db.select().from(schema.drafts).where(eq(schema.drafts.runId, runIdB));
+
+    // Attacker session bound to org A's run tries to read/update org B's draft.
+    const attacker = await connectClientWithCtx({ runId: runIdA });
+    const getRes = await call(attacker, 'drafts_get', { id: draftB!.id });
+    expect(getRes.isError).toBe(true);
+    expect(getRes.content[0]?.text ?? '').toContain(
+      "does not belong to this session's organization",
+    );
+
+    const updRes = await call(attacker, 'drafts_update', { id: draftB!.id, body: 'hijacked' });
+    expect(updRes.isError).toBe(true);
+    expect(updRes.content[0]?.text ?? '').toContain(
+      "does not belong to this session's organization",
+    );
+
+    // Same-org draft access still works.
+    const okRes = await call(attacker, 'drafts_get', { id: draftA!.id });
+    expect(okRes.isError).toBeFalsy();
+  });
+
+  it('drafts_get list mode is scoped to the session project, not a bare table scan', async () => {
+    const a = await seedOrgScoutCampaign('mcp-own-list-a');
+    const b = await seedOrgScoutCampaign('mcp-own-list-b');
+    const clientA = await connectClientWithCtx({ campaignId: a.campaignId });
+    const { runId: runIdA } = parse(
+      await call(clientA, 'run_start', { campaignId: a.campaignId }),
+    ) as {
+      runId: number;
+    };
+    await call(clientA, 'drafts_create', {
+      runId: runIdA,
+      drafts: [
+        { accountId: a.accountId, kind: 'dm', targetUser: 'a-target', body: 'a body', fitScore: 3 },
+      ],
+    });
+    const clientB = await connectClientWithCtx({ campaignId: b.campaignId });
+    const { runId: runIdB } = parse(
+      await call(clientB, 'run_start', { campaignId: b.campaignId }),
+    ) as {
+      runId: number;
+    };
+    await call(clientB, 'drafts_create', {
+      runId: runIdB,
+      drafts: [
+        { accountId: b.accountId, kind: 'dm', targetUser: 'b-target', body: 'b body', fitScore: 3 },
+      ],
+    });
+
+    const listerA = await connectClientWithCtx({ projectId: a.projectId });
+    const res = await call(listerA, 'drafts_get', {});
+    const rows = parse(res) as Array<{ projectId: number; targetUser: string }>;
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.targetUser).toBe('a-target');
+  });
+
+  it('drafts_get list mode errors when the session has no bound project to scope by', async () => {
+    const client = await connectClient();
+    const res = await call(client, 'drafts_get', {});
+    expect(res.isError).toBe(true);
+  });
+
+  it('single-tenant/self-host: default-org session and same-org id still succeed', async () => {
+    const { campaignId, projectId } = await seedScoutCampaign();
+    const client = await connectClientWithCtx({ projectId });
+    const res = await call(client, 'run_start', { campaignId });
+    expect(res.isError).toBeFalsy();
   });
 });
 

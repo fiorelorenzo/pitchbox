@@ -100,6 +100,55 @@ export async function getRunOrgId(db: Db, runId: number): Promise<number | null>
 }
 
 /**
+ * Resolves a campaign's org id, or null if the campaign (or its project) does
+ * not exist. Used by the MCP boundary (`cli/src/mcp/server.ts`) to resolve
+ * the session's bound organization when the session carries a campaign id
+ * but no run id yet (e.g. `run_start`, before the run row exists).
+ */
+export async function getCampaignOrgId(db: Db, campaignId: number): Promise<number | null> {
+  const [row] = await db
+    .select({ orgId: projects.organizationId })
+    .from(campaigns)
+    .innerJoin(projects, eq(projects.id, campaigns.projectId))
+    .where(eq(campaigns.id, campaignId))
+    .limit(1);
+  return row?.orgId ?? null;
+}
+
+/**
+ * Resolves a run's project id, or null if the run (or its project) does not
+ * exist. Mirrors `getRunOrgId`'s join: a run carries its project either
+ * directly (`runs.projectId`) or transitively via its campaign
+ * (`runs.campaignId` -> campaigns.projectId). Used by the MCP boundary to
+ * scope `drafts_get`'s list mode to the session's project instead of
+ * scanning the whole `drafts` table.
+ */
+export async function getRunProjectId(db: Db, runId: number): Promise<number | null> {
+  const [row] = await db
+    .select({ projectId: projects.id })
+    .from(runs)
+    .leftJoin(campaigns, eq(campaigns.id, runs.campaignId))
+    .innerJoin(projects, or(eq(projects.id, runs.projectId), eq(projects.id, campaigns.projectId)))
+    .where(eq(runs.id, runId))
+    .limit(1);
+  return row?.projectId ?? null;
+}
+
+/**
+ * Resolves a campaign's project id directly, or null if the campaign does
+ * not exist. Used alongside `getRunProjectId` to resolve the MCP session's
+ * bound project from whichever id (run or campaign) the session carries.
+ */
+export async function getCampaignProjectId(db: Db, campaignId: number): Promise<number | null> {
+  const [row] = await db
+    .select({ projectId: campaigns.projectId })
+    .from(campaigns)
+    .where(eq(campaigns.id, campaignId))
+    .limit(1);
+  return row?.projectId ?? null;
+}
+
+/**
  * Resolves a draft's org id (via drafts.projectId -> projects.organizationId),
  * or null if the draft does not exist. Used to tag realtime events emitted
  * from extension-authenticated routes (which have no `requireOrgId` context)
