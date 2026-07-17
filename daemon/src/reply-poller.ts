@@ -1,7 +1,7 @@
 import { getDb, schema } from '@pitchbox/shared/db';
-import { and, asc, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { logger } from './logger.js';
-import { getReplyReader } from './reply-readers.js';
+import { getActiveReplyReaderPlatforms, getReplyReader } from './reply-readers.js';
 
 const log = logger('reply-poller');
 
@@ -10,8 +10,8 @@ const LOOKBACK_DAYS = 14;
 /** Wait at least this long between re-checks of the same contact. */
 const RECHECK_SECONDS = 15 * 60;
 
-/** Oldest first, and only contacts needing a check. */
-async function pickContactsToCheck(limit: number) {
+/** Oldest first, and only contacts needing a check on a platform with a real reader. */
+async function pickContactsToCheck(limit: number, platformSlugs: string[]) {
   const db = getDb();
   const cutoff = new Date(Date.now() - RECHECK_SECONDS * 1000);
 
@@ -29,6 +29,7 @@ async function pickContactsToCheck(limit: number) {
     .innerJoin(schema.platforms, eq(schema.contactHistory.platformId, schema.platforms.id))
     .where(
       and(
+        inArray(schema.platforms.slug, platformSlugs),
         isNull(schema.contactHistory.repliedAt),
         sql`${schema.contactHistory.lastContactedAt} > now() - interval '${sql.raw(`${LOOKBACK_DAYS} days`)}'`,
         or(
@@ -67,13 +68,20 @@ async function recordReply(contactId: number, draftId: number | null, at: Date):
 
 /**
  * One poll tick:
- *  - pick a batch of unanswered contacts needing re-check
+ *  - skip entirely if no platform has a real (non-Null) reply reader registered
+ *  - pick a batch of unanswered contacts needing re-check on those platforms
  *  - group by (platform, account) and read the reply inbox once per group
  *  - for each matched reply, record it
  *  - for the rest, just bump reply_checked_at so we don't re-poll too soon
  */
 export async function tick(): Promise<{ checked: number; newReplies: number; skipped: number }> {
-  const contacts = await pickContactsToCheck(50);
+  const activePlatforms = getActiveReplyReaderPlatforms();
+  if (activePlatforms.length === 0) {
+    log.debug('no platform has a real reply reader registered - skipping poll cycle');
+    return { checked: 0, newReplies: 0, skipped: 0 };
+  }
+
+  const contacts = await pickContactsToCheck(50, activePlatforms);
   if (contacts.length === 0) return { checked: 0, newReplies: 0, skipped: 0 };
 
   type GroupKey = string;

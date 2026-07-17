@@ -1,8 +1,17 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
+import {
+  NullReplyReader,
+  type Reply,
+  type ReplyReader,
+} from '@pitchbox/shared/platforms/reply-reader';
 import { tick as replyPollerTick } from '../src/reply-poller.js';
-import { getReplyReader } from '../src/reply-readers.js';
+import {
+  getActiveReplyReaderPlatforms,
+  getReplyReader,
+  registerReplyReader,
+} from '../src/reply-readers.js';
 
 async function reset() {
   await getDb().execute(
@@ -15,6 +24,71 @@ async function platformId(slug: string) {
   return p!.id;
 }
 
+/** Insert a full chain (project/account/campaign/run/draft/contact) so a
+ * contact_history row has everything the poller joins against. */
+async function insertContact(platformSlug: string, targetUser: string) {
+  const db = getDb();
+  const pid = await platformId(platformSlug);
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
+  const [proj] = await db
+    .insert(schema.projects)
+    .values({
+      organizationId: org.id,
+      slug: `rp-test-${platformSlug}`,
+      name: `rp-test-${platformSlug}`,
+    })
+    .returning();
+  const [account] = await db
+    .insert(schema.accounts)
+    .values({ projectId: proj.id, platformId: pid, handle: 'me' })
+    .returning();
+  const [campaign] = await db
+    .insert(schema.campaigns)
+    .values({ projectId: proj.id, platformId: pid, name: 'c', skillSlug: 's' })
+    .returning();
+  const [run] = await db
+    .insert(schema.runs)
+    .values({ campaignId: campaign.id, trigger: 'manual', status: 'success' })
+    .returning();
+  const [draft] = await db
+    .insert(schema.drafts)
+    .values({
+      runId: run.id,
+      projectId: proj.id,
+      platformId: pid,
+      accountId: account.id,
+      kind: 'dm',
+      state: 'sent',
+      body: 'x',
+    })
+    .returning();
+  const recent = new Date(Date.now() - 60 * 60_000); // 1h ago
+  const [contact] = await db
+    .insert(schema.contactHistory)
+    .values({
+      platformId: pid,
+      accountHandle: 'me',
+      targetUser,
+      draftId: draft.id,
+      lastContactedAt: recent,
+      replyCheckedAt: null,
+      repliedAt: null,
+    })
+    .returning();
+  return contact;
+}
+
+async function contactRow(id: number) {
+  const [row] = await getDb()
+    .select()
+    .from(schema.contactHistory)
+    .where(eq(schema.contactHistory.id, id));
+  return row;
+}
+
 describe('reply-poller', () => {
   beforeEach(reset);
 
@@ -23,69 +97,48 @@ describe('reply-poller', () => {
     expect(res).toEqual({ checked: 0, newReplies: 0, skipped: 0 });
   });
 
-  it('null-reader path skips contacts and bumps reply_checked_at', async () => {
-    const db = getDb();
-    const pid = await platformId('reddit');
-    const [org] = await db
-      .select({ id: schema.organizations.id })
-      .from(schema.organizations)
-      .where(sql`slug = 'default'`);
-    const [proj] = await db
-      .insert(schema.projects)
-      .values({ organizationId: org.id, slug: 'rp-test', name: 'rp-test' })
-      .returning();
-    const [account] = await db
-      .insert(schema.accounts)
-      .values({ projectId: proj.id, platformId: pid, handle: 'me' })
-      .returning();
-    const [campaign] = await db
-      .insert(schema.campaigns)
-      .values({ projectId: proj.id, platformId: pid, name: 'c', skillSlug: 's' })
-      .returning();
-    const [run] = await db
-      .insert(schema.runs)
-      .values({ campaignId: campaign.id, trigger: 'manual', status: 'success' })
-      .returning();
-    const [draft] = await db
-      .insert(schema.drafts)
-      .values({
-        runId: run.id,
-        projectId: proj.id,
-        platformId: pid,
-        accountId: account.id,
-        kind: 'dm',
-        state: 'sent',
-        body: 'x',
-      })
-      .returning();
-    const recent = new Date(Date.now() - 60 * 60_000); // 1h ago
-    const [contact] = await db
-      .insert(schema.contactHistory)
-      .values({
-        platformId: pid,
-        accountHandle: 'me',
-        targetUser: 'someone',
-        draftId: draft.id,
-        lastContactedAt: recent,
-        replyCheckedAt: null,
-        repliedAt: null,
-      })
-      .returning();
+  it('skips the poll cycle entirely when only Null readers are registered', async () => {
+    const contact = await insertContact('reddit', 'someone');
 
-    // The null reader returns []; the poller should mark the contact as checked.
+    // Reddit's registered reader is a NullReplyReader - the poller should skip
+    // the platform up front (fast no-op) instead of querying and touching it.
+    // Reply detection for Reddit happens via the Chrome extension instead.
     const res = await replyPollerTick();
-    expect(res.checked).toBe(1);
-    expect(res.newReplies).toBe(0);
-    // The reddit reader is registered as a NullReplyReader, which returns [].
-    // It is NOT counted as "skipped" - that counter is for missing readers.
-    expect(res.skipped).toBe(0);
+    expect(res).toEqual({ checked: 0, newReplies: 0, skipped: 0 });
 
-    const [row] = await db
-      .select()
-      .from(schema.contactHistory)
-      .where(eq(schema.contactHistory.id, contact.id));
+    const row = await contactRow(contact.id);
     expect(row.repliedAt).toBeNull();
-    expect(row.replyCheckedAt).not.toBeNull();
+    expect(row.replyCheckedAt).toBeNull();
+  });
+
+  it('polls a platform with a real reader while skipping a Null-reader platform', async () => {
+    const fakeReader: ReplyReader = {
+      platform: 'hackernews',
+      async readReplies(): Promise<Reply[]> {
+        return [{ targetUser: 'replier', at: new Date() }];
+      },
+    };
+    registerReplyReader(fakeReader);
+
+    try {
+      const nullContact = await insertContact('reddit', 'someone');
+      const realContact = await insertContact('hackernews', 'replier');
+
+      const res = await replyPollerTick();
+      expect(res.checked).toBe(1);
+      expect(res.newReplies).toBe(1);
+      expect(res.skipped).toBe(0);
+
+      const nullRow = await contactRow(nullContact.id);
+      expect(nullRow.replyCheckedAt).toBeNull();
+
+      const realRow = await contactRow(realContact.id);
+      expect(realRow.repliedAt).not.toBeNull();
+      expect(realRow.replyCheckedAt).not.toBeNull();
+    } finally {
+      // Restore hackernews to a Null reader so later tests see the default state.
+      registerReplyReader(new NullReplyReader('hackernews'));
+    }
   });
 
   it('returns the registered reader for reddit and null for unknown platforms', () => {
@@ -101,5 +154,23 @@ describe('reply-poller', () => {
     const reader = getReplyReader('reddit')!;
     const replies = await reader.readReplies({ accountHandle: 'me', since: new Date(0) });
     expect(replies).toEqual([]);
+  });
+
+  describe('getActiveReplyReaderPlatforms', () => {
+    afterEach(() => {
+      registerReplyReader(new NullReplyReader('hackernews'));
+    });
+
+    it('excludes Null readers and includes real ones', () => {
+      expect(getActiveReplyReaderPlatforms()).toEqual([]);
+
+      registerReplyReader({
+        platform: 'hackernews',
+        async readReplies() {
+          return [];
+        },
+      });
+      expect(getActiveReplyReaderPlatforms()).toEqual(['hackernews']);
+    });
   });
 });

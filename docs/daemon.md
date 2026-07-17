@@ -15,7 +15,7 @@ The same loops (scheduler, reply-poller, heartbeat, retention, keyword-watcher, 
 ## Modules
 
 - `scheduler.ts` - parses `cron_expression` on active campaigns via `cron-parser`. Due campaigns are dispatched by POSTing to the web `/api/run` endpoint, so the daemon never touches agent runners directly.
-- `reply-poller.ts` - drives the `ReplyReader` interface (`shared/src/platforms/base-reply-reader.ts`). Today the null reader is wired (the Chrome extension covers ingestion in practice).
+- `reply-poller.ts` - drives the `ReplyReader` interface (`shared/src/platforms/base-reply-reader.ts`), but only for platforms with a real (non-Null) reader registered (`reply-readers.ts`). Reddit is only wired with a `NullReplyReader`, so the poller skips it as a fast no-op each tick instead of running a cycle for nothing; Reddit's reply detection instead goes through the Chrome extension's `inbox-sync`/`chat-sync` pollers, which POST to `/api/extension/dm-sync`.
 - `heartbeat.ts` - writes a tick per module to `daemon_heartbeats` every few seconds. Settings shows liveness based on the most recent tick.
 - `insights.ts` - regenerates project insights daily: it iterates projects with recent draft/message activity, skips those with an insight newer than 24h or fewer than 5 drafts, and POSTs a `project_insights` run per eligible project. Set `PITCHBOX_INSIGHTS_DISABLED=1` to turn it off.
 
