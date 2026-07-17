@@ -1,7 +1,7 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
 import { getDb } from '../../../lib/server/db.js';
-import { requireRole } from '../../../lib/server/auth.js';
+import { requireRole, requireInstanceAdmin } from '../../../lib/server/auth.js';
 import {
   loadRetention,
   saveRetention,
@@ -25,7 +25,12 @@ function parseDays(form: FormData, key: keyof RetentionPolicy): number | null {
 
 export const actions: Actions = {
   default: async (event) => {
-    requireRole(event, 'admin'); // editing retention is admin-only
+    // Retention is a single instance-wide app_config row (like default
+    // runner, quota defaults, and webhook config), not per-org data, so
+    // saving it needs requireInstanceAdmin, not just the per-org 'admin'
+    // role - a self-created-org admin must not be able to change retention
+    // for every tenant (#137).
+    await requireInstanceAdmin(event);
     const form = await event.request.formData();
     const drafts_days = parseDays(form, 'drafts_days');
     const run_events_days = parseDays(form, 'run_events_days');

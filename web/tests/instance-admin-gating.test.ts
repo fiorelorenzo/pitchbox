@@ -7,6 +7,7 @@ import { POST as quotaPost } from '../src/routes/api/settings/quota/+server.js';
 import { PUT as runnerConfigPut } from '../src/routes/api/settings/runner-config/+server.js';
 import { PUT as defaultRunnerPut } from '../src/routes/api/settings/default-runner/+server.js';
 import { POST as webhookRetryPost } from '../src/routes/api/webhooks/deliveries/[id]/retry/+server.js';
+import { PUT as webhooksPut } from '../src/routes/api/settings/webhooks/+server.js';
 import { type CookieJar, runThroughHandle } from './helpers/handle-harness.js';
 
 const PASSWORD = 'correct-horse-battery';
@@ -16,13 +17,13 @@ const PASSWORD = 'correct-horse-battery';
 // other test files sharing this worker.
 const originalAuth = process.env.PITCHBOX_AUTH;
 
-// These four routes gate instance-wide config (default runner, quota
-// defaults, runner config, webhook retry) that any self-created-org
-// owner/admin could otherwise reach via POST /api/orgs + the per-org 'admin'
-// role (#137). Driven through the REAL hooks.server `handle()` so the
-// session cookie -> locals.user -> requireInstanceAdmin's own DB lookup all
-// run for real, instead of hand-injecting `locals.user.isInstanceAdmin` to
-// bypass the exact check under test.
+// These five routes gate instance-wide config (default runner, quota
+// defaults, runner config, webhook retry, notification webhook config) that
+// any self-created-org owner/admin could otherwise reach via POST /api/orgs +
+// the per-org 'admin' role (#137). Driven through the REAL hooks.server
+// `handle()` so the session cookie -> locals.user -> requireInstanceAdmin's
+// own DB lookup all run for real, instead of hand-injecting
+// `locals.user.isInstanceAdmin` to bypass the exact check under test.
 async function sessionFor(
   username: string,
   role: 'member' | 'admin' | 'owner',
@@ -108,6 +109,31 @@ describe('instance-admin gating on global config routes', () => {
         body: JSON.stringify({ slug: 'claude-code', config: {} }),
       });
       const res = await runThroughHandle(req, jar, runnerConfigPut as any);
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('PUT /api/settings/webhooks (via real handle)', () => {
+    it('an org admin who is not instance-admin is forbidden (403)', async () => {
+      const jar = await sessionFor('iag-webhooks-admin', 'admin', false);
+      const req = new Request('http://localhost/api/settings/webhooks', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: 'https://example.test/hook' }),
+      });
+      await expect(runThroughHandle(req, jar, webhooksPut as any)).rejects.toMatchObject({
+        status: 403,
+      });
+    });
+
+    it('an instance-admin succeeds (200)', async () => {
+      const jar = await sessionFor('iag-webhooks-iadmin', 'admin', true);
+      const req = new Request('http://localhost/api/settings/webhooks', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: 'https://example.test/hook' }),
+      });
+      const res = await runThroughHandle(req, jar, webhooksPut as any);
       expect(res.status).toBe(200);
     });
   });

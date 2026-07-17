@@ -56,7 +56,7 @@ already limits them to the active org). Listed here for completeness.
 `projects/[id]/accounts` POST, `projects/[id]/accounts/[accountId]` PATCH + DELETE,
 `projects/[id]/recommendations/[recId]` DELETE,
 `projects/[id]/templates/[templateId]` DELETE, `blocklist/[id]` DELETE,
-`settings/webhooks` PUT, `settings/extension-devices/[id]` DELETE,
+`settings/extension-devices/[id]` DELETE,
 `settings/extension-pairing` POST, `runners` POST, `playbooks` POST,
 `playbooks/[id]` PATCH + DELETE,
 `orgs/[slug]/invites` POST, `orgs/[slug]/invites/[token]` DELETE,
@@ -69,18 +69,20 @@ already limits them to the active org). Listed here for completeness.
 
 Distinct from the per-org roles above: `users.is_instance_admin` gates
 instance-wide config shared by every tenant (default runner, quota defaults,
-runner config, dead-letter webhook retry). Any user can self-create an org via
-`POST /api/orgs` and become its owner/admin, so the per-org `admin`/`owner`
-roles must never grant access to this config - only `requireInstanceAdmin(event)`
-(`web/src/lib/server/auth.ts`) does, checking the signed-in user's
-`is_instance_admin` column. A no-op when auth is off (no `locals.user`), same
-convention as `requireRole`. The first user (first-login bootstrap or
-`seed:owner`) is always the instance admin; nobody else is, unless flipped
-directly in the database.
+runner config, notification webhook, dead-letter webhook retry). Any user can
+self-create an org via `POST /api/orgs` and become its owner/admin, so the
+per-org `admin`/`owner` roles must never grant access to this config - only
+`requireInstanceAdmin(event)` (`web/src/lib/server/auth.ts`) does, checking
+the signed-in user's `is_instance_admin` column. A no-op when auth is off (no
+`locals.user`), same convention as `requireRole`. The first user (first-login
+bootstrap or `seed:owner`) is always the instance admin; nobody else is,
+unless flipped directly in the database.
 
 `settings/default-runner` PUT, `settings/runner-config` PUT, `settings/quota`
-POST, `webhooks/deliveries/[id]/retry` POST (also tenant-guarded: the delivery
-must belong to the caller's org before the instance-admin gate runs).
+POST, `settings/webhooks` PUT, `webhooks/deliveries/[id]/retry` POST (also
+tenant-guarded: the delivery must belong to the caller's org before the
+instance-admin gate runs), `settings/retention` form action (saving only -
+viewing the page stays `requireRole(event, 'admin')`).
 
 **Exempt** (no org role): `auth/*`, `extension/*` (token-auth companion),
 `orgs` POST + `orgs/switch` POST (self-service), `orgs/[slug]/invites/[token]/accept`
