@@ -98,6 +98,10 @@ export async function resolveRunnerToken(orgId?: number): Promise<string | undef
     const { mintRunnerJwt } = await import('./cloud/jwt.js');
     const { getDb } = await import('../db/client.js');
     const { getOrgQuotaSnapshot } = await import('../org-quota.js');
+    // Intentionally uncaught: a quota-snapshot failure (e.g. a DB hiccup)
+    // propagates and fails the run rather than minting a token with no quota
+    // claim - fail-closed, so a DB error can never let an over-budget org
+    // slip through with an effectively unlimited token.
     const quota = await getOrgQuotaSnapshot(getDb(), orgId);
     return mintRunnerJwt({
       orgId,

@@ -4,7 +4,7 @@
 // `quota` claim (shared/src/agents/cloud/jwt.ts) at dispatch time. Mirrors the
 // per-account quota helper's style (shared/src/quota.ts) but is org-scoped and
 // budget/concurrency based rather than per-account daily/weekly counts.
-import { and, eq, gte, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
 import type { RunnerJwtQuota } from './agents/cloud/protocol.js';
 
@@ -17,11 +17,22 @@ export function startOfMonthUtc(now: Date): Date {
 
 /**
  * Sum of `runs.cost_usd` for every run belonging to `orgId`, started on or
- * after the first of the current calendar month (UTC). Mirrors the
- * project-or-campaign join `getRunOrgId`/`runBelongsToOrg` use
- * (shared/src/orgs.ts) since `runs` carries its project either directly or
- * transitively via `campaigns`. Runs with a null `cost_usd` (no usage
- * reported) contribute 0.
+ * after the first of the current calendar month (UTC). Runs with a null
+ * `cost_usd` (no usage reported) contribute 0.
+ *
+ * Resolves the org's project ids first, then matches runs against them
+ * directly (`runs.projectId`) or transitively via their campaign
+ * (`runs.campaignId` -> `campaigns.projectId`), mirroring the dashboard's
+ * spend widget (web/src/routes/+page.server.ts, the `runOrgMatch` /
+ * `spendRow` query). This deliberately never joins the `projects` table
+ * itself: an `innerJoin(projects, or(eq(projects.id, runs.projectId),
+ * eq(projects.id, campaigns.projectId)))` (as `getRunOrgId`/`runBelongsToOrg`
+ * in shared/src/orgs.ts use for single-row lookups) can match two distinct
+ * project rows for one run whenever `runs.projectId` and
+ * `campaigns.projectId` disagree, which would double-count that run's cost
+ * in this un-grouped SUM and could falsely trip `quota_exceeded`. Filtering
+ * by project id membership instead of joining the table keeps each run a
+ * single row regardless of how many of its project references resolve.
  */
 export async function getOrgMonthToDateCostUsd(
   db: Db,
@@ -29,18 +40,31 @@ export async function getOrgMonthToDateCostUsd(
   now: Date = new Date(),
 ): Promise<number> {
   const monthStart = startOfMonthUtc(now);
+
+  const orgProjects = await db
+    .select({ id: schema.projects.id })
+    .from(schema.projects)
+    .where(eq(schema.projects.organizationId, orgId));
+  const projectIds = orgProjects.map((p) => p.id);
+  // `inArray(x, [])` is a SQL error, and an org with no projects has no runs
+  // to sum anyway.
+  if (projectIds.length === 0) {
+    return 0;
+  }
+
   const [row] = await db
     .select({ total: sql<string>`coalesce(sum(${schema.runs.costUsd}), 0)` })
     .from(schema.runs)
     .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
-    .innerJoin(
-      schema.projects,
-      or(
-        eq(schema.projects.id, schema.runs.projectId),
-        eq(schema.projects.id, schema.campaigns.projectId),
+    .where(
+      and(
+        or(
+          inArray(schema.runs.projectId, projectIds),
+          inArray(schema.campaigns.projectId, projectIds),
+        ),
+        gte(schema.runs.startedAt, monthStart),
       ),
-    )
-    .where(and(eq(schema.projects.organizationId, orgId), gte(schema.runs.startedAt, monthStart)));
+    );
   return Number(row?.total ?? 0);
 }
 

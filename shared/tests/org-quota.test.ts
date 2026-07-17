@@ -66,6 +66,61 @@ async function makeRun(opts: { projectId: number; costUsd: string | null; starte
   });
 }
 
+/** A second project in the same org, so a campaign can be anchored to a
+ * DIFFERENT project than the one a run's own `projectId` points at - the
+ * scenario that exposes the double-count bug in the old
+ * `innerJoin(projects, or(...))` query shape. */
+async function setupOrgWithTwoProjects() {
+  const db = getDb();
+  const slug = `org-quota-test-${randomUUID()}`;
+  const [org] = await db.insert(schema.organizations).values({ slug, name: slug }).returning();
+  createdOrgIds.push(org.id);
+  const [projectA] = await db
+    .insert(schema.projects)
+    .values({ organizationId: org.id, slug: 'pa', name: 'pa' })
+    .returning();
+  const [projectB] = await db
+    .insert(schema.projects)
+    .values({ organizationId: org.id, slug: 'pb', name: 'pb' })
+    .returning();
+  return { orgId: org.id, projectAId: projectA.id, projectBId: projectB.id };
+}
+
+async function makeCampaign(projectId: number): Promise<number> {
+  const db = getDb();
+  const [platform] = await db
+    .select({ id: schema.platforms.id })
+    .from(schema.platforms)
+    .where(eq(schema.platforms.slug, 'reddit'));
+  const [campaign] = await db
+    .insert(schema.campaigns)
+    .values({ projectId, platformId: platform.id, name: 'c', skillSlug: 'reddit-scout' })
+    .returning();
+  return campaign.id;
+}
+
+/** A `kind: 'campaign'` run, anchored to a campaign rather than a bare
+ * project. `projectId` is optional - a campaign run's own `runs.projectId` is
+ * normally null (the campaign carries the project transitively), but can
+ * also be set (a "dual-key" row) to exercise the double-count scenario. */
+async function makeCampaignRun(opts: {
+  campaignId: number;
+  projectId?: number | null;
+  costUsd: string | null;
+  startedAt: Date;
+}) {
+  const db = getDb();
+  await db.insert(schema.runs).values({
+    kind: 'campaign',
+    campaignId: opts.campaignId,
+    projectId: opts.projectId ?? null,
+    trigger: 'manual',
+    status: 'success',
+    costUsd: opts.costUsd,
+    startedAt: opts.startedAt,
+  });
+}
+
 describe('startOfMonthUtc', () => {
   it('returns the first instant of the calendar month in UTC', () => {
     expect(startOfMonthUtc(new Date('2026-07-15T23:59:59Z')).toISOString()).toBe(
@@ -115,6 +170,62 @@ describe('getOrgMonthToDateCostUsd', () => {
     const now = new Date('2026-07-15T12:00:00Z');
     await makeRun({ projectId: orgA.projectId, costUsd: '10.0000', startedAt: now });
     await makeRun({ projectId: orgB.projectId, costUsd: '20.0000', startedAt: now });
+
+    expect(await getOrgMonthToDateCostUsd(getDb(), orgA.orgId, now)).toBeCloseTo(10, 4);
+    expect(await getOrgMonthToDateCostUsd(getDb(), orgB.orgId, now)).toBeCloseTo(20, 4);
+  });
+
+  // Regression coverage for the double-count bug the old
+  // `innerJoin(projects, or(eq(projects.id, runs.projectId), eq(projects.id,
+  // campaigns.projectId)))` shape had: that join can match TWO project rows
+  // for one run whenever runs.projectId and campaigns.projectId differ,
+  // doubling the run's cost in the un-grouped SUM.
+  it('counts a campaign-anchored run (runs.projectId null) exactly once', async () => {
+    const { orgId, projectId } = await setupOrg();
+    const campaignId = await makeCampaign(projectId);
+    const now = new Date('2026-07-15T12:00:00Z');
+    await makeCampaignRun({ campaignId, projectId: null, costUsd: '5.0000', startedAt: now });
+
+    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    expect(total).toBeCloseTo(5.0, 4);
+  });
+
+  it('counts a dual-key run (runs.projectId and campaigns.projectId set to DIFFERENT org projects) exactly once, not doubled', async () => {
+    const { orgId, projectAId, projectBId } = await setupOrgWithTwoProjects();
+    // The campaign is anchored to project B, but the run's own projectId
+    // points at project A - both belong to the same org, so the old
+    // OR-innerJoin against `projects` matched both rows for this one run.
+    const campaignId = await makeCampaign(projectBId);
+    const now = new Date('2026-07-15T12:00:00Z');
+    await makeCampaignRun({
+      campaignId,
+      projectId: projectAId,
+      costUsd: '7.0000',
+      startedAt: now,
+    });
+
+    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    expect(total).toBeCloseTo(7.0, 4);
+  });
+
+  it('keeps cross-org isolation with campaign-anchored runs', async () => {
+    const orgA = await setupOrg();
+    const orgB = await setupOrg();
+    const campaignA = await makeCampaign(orgA.projectId);
+    const campaignB = await makeCampaign(orgB.projectId);
+    const now = new Date('2026-07-15T12:00:00Z');
+    await makeCampaignRun({
+      campaignId: campaignA,
+      projectId: null,
+      costUsd: '10.0000',
+      startedAt: now,
+    });
+    await makeCampaignRun({
+      campaignId: campaignB,
+      projectId: null,
+      costUsd: '20.0000',
+      startedAt: now,
+    });
 
     expect(await getOrgMonthToDateCostUsd(getDb(), orgA.orgId, now)).toBeCloseTo(10, 4);
     expect(await getOrgMonthToDateCostUsd(getDb(), orgB.orgId, now)).toBeCloseTo(20, 4);

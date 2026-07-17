@@ -4,12 +4,21 @@
 // mintRunnerJwt (no mocking the signer), and asserts the static
 // PITCHBOX_RUNNER_TOKEN fallback is used exactly when a JWT can't be minted.
 import { randomUUID } from 'node:crypto';
-import { describe, expect, it, beforeAll, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeAll, afterEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { generateKeyPair, exportPKCS8, exportSPKI, importSPKI, jwtVerify } from 'jose';
 import { resolveRunnerToken } from '../../src/agents/cloud.js';
 import { RUNNER_JWT_ALG } from '../../src/agents/cloud/jwt.js';
 import { getDb, schema } from '../../src/db/client.js';
+import * as orgQuota from '../../src/org-quota.js';
+
+// Wraps the real getOrgQuotaSnapshot in a vi.fn so every other test in this
+// file still exercises the real implementation (real DB reads), while the
+// fail-closed test below can override it for a single call.
+vi.mock('../../src/org-quota.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/org-quota.js')>();
+  return { ...actual, getOrgQuotaSnapshot: vi.fn(actual.getOrgQuotaSnapshot) };
+});
 
 let privateKeyPem: string;
 let publicKeyPem: string;
@@ -129,5 +138,21 @@ describe('resolveRunnerToken: quota claim (CLD-P5)', () => {
 
     const token = await resolveRunnerToken(org.id);
     expect(await verifyQuota(token)).toEqual({ remainingUsd: null, concurrencyCap: null });
+  });
+});
+
+describe('resolveRunnerToken: fails closed on a quota-snapshot error (#156 review)', () => {
+  afterEach(() => {
+    vi.mocked(orgQuota.getOrgQuotaSnapshot).mockClear();
+  });
+
+  it('propagates a getOrgQuotaSnapshot failure instead of minting a token with no quota claim', async () => {
+    process.env.RUNNER_JWT_PRIVATE_KEY = privateKeyPem;
+    vi.mocked(orgQuota.getOrgQuotaSnapshot).mockRejectedValueOnce(new Error('db unavailable'));
+
+    // Fail-closed: a quota-snapshot error must fail the mint, not fall
+    // through to a token with no quota claim (which the runner would treat
+    // as unenforced, letting an over-budget org run unmetered).
+    await expect(resolveRunnerToken(42)).rejects.toThrow('db unavailable');
   });
 });
