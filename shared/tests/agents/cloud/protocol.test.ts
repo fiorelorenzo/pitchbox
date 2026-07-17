@@ -36,18 +36,27 @@ const validClientMcp: ClientToRunner = {
 
 const validSessionCancel: ClientToRunner = { t: 'session.cancel', sessionId: 'sess-1' };
 
-const validSessionReady: RunnerToClient = { t: 'session.ready', sessionId: 'sess-1' };
+const validSessionResume: ClientToRunner = {
+  t: 'session.resume',
+  sessionId: 'sess-1',
+  lastSeq: 4,
+  version: CLOUD_PROTOCOL_VERSION,
+};
+
+const validSessionReady: RunnerToClient = { t: 'session.ready', sessionId: 'sess-1', seq: 0 };
 
 const validSessionEvent: RunnerToClient = {
   t: 'session.event',
   sessionId: 'sess-1',
   update: { kind: 'agent_thought_chunk', text: 'thinking...' },
+  seq: 1,
 };
 
 const validRunnerMcp: RunnerToClient = {
   t: 'mcp',
   sessionId: 'sess-1',
   frame: { jsonrpc: '2.0', id: 1, result: {} },
+  seq: 2,
 };
 
 const validSessionDone: RunnerToClient = {
@@ -61,21 +70,28 @@ const validSessionDone: RunnerToClient = {
     cacheCreationTokens: 0,
     totalCostUsd: 0.01,
   },
+  seq: 3,
 };
 
 const validSessionDoneNoUsage: RunnerToClient = {
   t: 'session.done',
   sessionId: 'sess-1',
   stopReason: 'end_turn',
+  seq: 3,
 };
 
 const validSessionError: RunnerToClient = {
   t: 'session.error',
   sessionId: 'sess-1',
   message: 'agent crashed',
+  seq: 3,
 };
 
 describe('CLOUD_PROTOCOL_VERSION / isSupportedProtocolVersion', () => {
+  it('is version 2 (bumped for resumable sessions - seq + session.resume)', () => {
+    expect(CLOUD_PROTOCOL_VERSION).toBe(2);
+  });
+
   it('accepts the current protocol version', () => {
     expect(isSupportedProtocolVersion(CLOUD_PROTOCOL_VERSION)).toBe(true);
   });
@@ -270,6 +286,55 @@ describe('validateClientToRunner: session.cancel', () => {
   });
 });
 
+describe('validateClientToRunner: session.resume', () => {
+  it('accepts a valid frame', () => {
+    expect(validateClientToRunner(validSessionResume)).toEqual({
+      valid: true,
+      value: validSessionResume,
+    });
+  });
+
+  it.each([
+    [
+      'missing sessionId',
+      { ...validSessionResume, sessionId: undefined },
+      'session.resume: missing sessionId',
+    ],
+    [
+      'wrong-type sessionId',
+      { ...validSessionResume, sessionId: 42 },
+      'session.resume: missing sessionId',
+    ],
+    [
+      'missing lastSeq',
+      { ...validSessionResume, lastSeq: undefined },
+      'session.resume: invalid lastSeq',
+    ],
+    [
+      'wrong-type lastSeq',
+      { ...validSessionResume, lastSeq: '4' },
+      'session.resume: invalid lastSeq',
+    ],
+    [
+      'non-finite lastSeq',
+      { ...validSessionResume, lastSeq: Number.POSITIVE_INFINITY },
+      'session.resume: invalid lastSeq',
+    ],
+    [
+      'missing version',
+      { ...validSessionResume, version: undefined },
+      'session.resume: invalid version',
+    ],
+    [
+      'wrong-type version',
+      { ...validSessionResume, version: '2' },
+      'session.resume: invalid version',
+    ],
+  ] as const)('rejects %s', (_label, frame, expectedReason) => {
+    expect(validateClientToRunner(frame)).toEqual({ valid: false, reason: expectedReason });
+  });
+});
+
 describe('validateRunnerToClient: malformed envelopes', () => {
   it('rejects a non-object payload', () => {
     expect(validateRunnerToClient('nope')).toEqual({
@@ -314,6 +379,20 @@ describe('validateRunnerToClient: session.ready', () => {
       reason: 'session.ready: missing sessionId',
     });
   });
+
+  it('rejects a missing seq', () => {
+    expect(validateRunnerToClient(omit(validSessionReady, 'seq'))).toEqual({
+      valid: false,
+      reason: 'session.ready: invalid seq',
+    });
+  });
+
+  it('rejects a wrong-type seq', () => {
+    expect(validateRunnerToClient({ ...validSessionReady, seq: '0' })).toEqual({
+      valid: false,
+      reason: 'session.ready: invalid seq',
+    });
+  });
 });
 
 describe('validateRunnerToClient: session.event', () => {
@@ -326,7 +405,8 @@ describe('validateRunnerToClient: session.event', () => {
 
   it('accepts an update payload that is present but falsy', () => {
     expect(
-      validateRunnerToClient({ t: 'session.event', sessionId: 'sess-1', update: null }).valid,
+      validateRunnerToClient({ t: 'session.event', sessionId: 'sess-1', update: null, seq: 0 })
+        .valid,
     ).toBe(true);
   });
 
@@ -341,6 +421,13 @@ describe('validateRunnerToClient: session.event', () => {
     expect(validateRunnerToClient(omit(validSessionEvent, 'update'))).toEqual({
       valid: false,
       reason: 'session.event: missing update',
+    });
+  });
+
+  it('rejects a missing seq', () => {
+    expect(validateRunnerToClient(omit(validSessionEvent, 'seq'))).toEqual({
+      valid: false,
+      reason: 'session.event: invalid seq',
     });
   });
 });
@@ -364,6 +451,13 @@ describe('validateRunnerToClient: mcp', () => {
     expect(validateRunnerToClient(omit(validRunnerMcp, 'frame'))).toEqual({
       valid: false,
       reason: 'mcp: missing frame',
+    });
+  });
+
+  it('rejects a missing seq', () => {
+    expect(validateRunnerToClient(omit(validRunnerMcp, 'seq'))).toEqual({
+      valid: false,
+      reason: 'mcp: invalid seq',
     });
   });
 });
@@ -406,6 +500,13 @@ describe('validateRunnerToClient: session.done', () => {
       reason: 'session.done: invalid usage',
     });
   });
+
+  it('rejects a missing seq', () => {
+    expect(validateRunnerToClient(omit(validSessionDoneNoUsage, 'seq'))).toEqual({
+      valid: false,
+      reason: 'session.done: invalid seq',
+    });
+  });
 });
 
 describe('validateRunnerToClient: session.error', () => {
@@ -429,6 +530,13 @@ describe('validateRunnerToClient: session.error', () => {
       reason: 'session.error: missing message',
     });
   });
+
+  it('rejects a missing seq', () => {
+    expect(validateRunnerToClient(omit(validSessionError, 'seq'))).toEqual({
+      valid: false,
+      reason: 'session.error: invalid seq',
+    });
+  });
 });
 
 describe('isClientToRunner / isRunnerToClient agree with the validators', () => {
@@ -438,6 +546,9 @@ describe('isClientToRunner / isRunnerToClient agree with the validators', () => 
     ['valid mcp', validClientMcp],
     ['mcp missing sessionId', omit(validClientMcp, 'sessionId')],
     ['valid session.cancel', validSessionCancel],
+    ['valid session.resume', validSessionResume],
+    ['session.resume missing lastSeq', omit(validSessionResume, 'lastSeq')],
+    ['session.resume missing version', omit(validSessionResume, 'version')],
     ['unknown t', { t: 'session.explode' }],
     ['non-object', 'nope'],
     [
@@ -456,12 +567,17 @@ describe('isClientToRunner / isRunnerToClient agree with the validators', () => 
   const runnerToClientFixtures: Array<[string, unknown]> = [
     ['valid session.ready', validSessionReady],
     ['session.ready missing sessionId', { t: 'session.ready' }],
+    ['session.ready missing seq', omit(validSessionReady, 'seq')],
     ['valid session.event', validSessionEvent],
+    ['session.event missing seq', omit(validSessionEvent, 'seq')],
     ['valid mcp', validRunnerMcp],
+    ['mcp missing seq', omit(validRunnerMcp, 'seq')],
     ['valid session.done with usage', validSessionDone],
     ['valid session.done without usage', validSessionDoneNoUsage],
     ['session.done with invalid usage', { ...validSessionDoneNoUsage, usage: 'nope' }],
+    ['session.done missing seq', omit(validSessionDoneNoUsage, 'seq')],
     ['valid session.error', validSessionError],
+    ['session.error missing seq', omit(validSessionError, 'seq')],
     ['unknown t', { t: 'session.explode' }],
     ['non-object', 42],
   ];

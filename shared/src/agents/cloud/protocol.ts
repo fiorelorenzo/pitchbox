@@ -4,7 +4,7 @@
 //
 // The CLIENT initiates the WebSocket (outbound), so a self-hosted box needs no
 // inbound port. One connection carries three concerns, multiplexed:
-//   1. session control (start / cancel / done),
+//   1. session control (start / cancel / done / resume),
 //   2. agent events flowing DOWN (the agent's `session/update`; the client
 //      normalizes them with the existing event-normalizer and persists them),
 //   3. a transparent MCP tunnel: the agent (in the runner) talks to an HTTP MCP
@@ -14,6 +14,17 @@
 //
 // Connection auth is handled at the WebSocket handshake (a per-org bearer token
 // in the `Authorization` header), out of band of these message types.
+//
+// Resumable sessions (v2, see docs/cloud-runner-productionization-design.md
+// section 3): every RunnerToClient frame carries a per-session monotonic `seq`
+// the runner assigns. On an unexpected disconnect, the runner holds the session
+// open for a grace window instead of tearing it down immediately, buffering
+// frames it sends in the meantime. A client that reconnects within that window
+// sends `session.resume { sessionId, lastSeq, version }` instead of
+// `session.start`; the runner replays any buffered frames with `seq > lastSeq`
+// and resumes live forwarding. Resume is strictly same-instance - a runner that
+// has no matching live session (unknown id, already terminal, or grace expired)
+// rejects it with `session.error`.
 //
 // This contract lives in the OSS repo because it is a contract, not a secret:
 // the private runner service and the private cloud adapter both import it so the
@@ -25,7 +36,7 @@
 // only, no zod/ajv/etc - adding an external dep here would force the vendored
 // copy to install it too.
 
-export const CLOUD_PROTOCOL_VERSION = 1;
+export const CLOUD_PROTOCOL_VERSION = 2;
 
 /** What the client binds the run to; mirrors the env the local MCP server reads. */
 export interface CloudSessionContext {
@@ -61,17 +72,28 @@ export type ClientToRunner =
     }
   /** An MCP frame from the client's local MCP server, going up to the agent. */
   | { t: 'mcp'; sessionId: string; frame: McpFrame }
-  | { t: 'session.cancel'; sessionId: string };
+  | { t: 'session.cancel'; sessionId: string }
+  /**
+   * Reconnect to a still-live session on the same runner instance instead of
+   * starting a new one. `lastSeq` is the highest `seq` the client has durably
+   * processed; the runner replays buffered frames with `seq > lastSeq`. Like
+   * `session.start`, `version` is checked at the handshake and a mismatch is
+   * rejected. A runner with no matching live session (unknown id, already
+   * terminal, or its grace window expired) replies with `session.error`.
+   */
+  | { t: 'session.resume'; sessionId: string; lastSeq: number; version: number };
 
-/** Messages the runner sends down to the client. */
+/** Messages the runner sends down to the client. Every variant carries a
+ * per-session monotonic `seq` the runner assigns, so the client can dedup
+ * replayed frames on reconnect (see `session.resume` above). */
 export type RunnerToClient =
-  | { t: 'session.ready'; sessionId: string }
+  | { t: 'session.ready'; sessionId: string; seq: number }
   /** An agent `session/update`; the client normalizes + persists it. */
-  | { t: 'session.event'; sessionId: string; update: unknown }
+  | { t: 'session.event'; sessionId: string; update: unknown; seq: number }
   /** An MCP frame from the agent, going down to the client's local MCP server. */
-  | { t: 'mcp'; sessionId: string; frame: McpFrame }
-  | { t: 'session.done'; sessionId: string; stopReason: string; usage?: CloudUsage }
-  | { t: 'session.error'; sessionId: string; message: string };
+  | { t: 'mcp'; sessionId: string; frame: McpFrame; seq: number }
+  | { t: 'session.done'; sessionId: string; stopReason: string; usage?: CloudUsage; seq: number }
+  | { t: 'session.error'; sessionId: string; message: string; seq: number };
 
 /** Token/cost usage the runner meters and reports back on `session.done`. */
 export interface CloudUsage {
@@ -198,6 +220,14 @@ export function validateClientToRunner(m: unknown): FrameValidation<ClientToRunn
       if (!isString(m.sessionId))
         return { valid: false, reason: 'session.cancel: missing sessionId' };
       return { valid: true, value: m as ClientToRunner };
+    case 'session.resume':
+      if (!isString(m.sessionId))
+        return { valid: false, reason: 'session.resume: missing sessionId' };
+      if (!isFiniteNumber(m.lastSeq))
+        return { valid: false, reason: 'session.resume: invalid lastSeq' };
+      if (!isFiniteNumber(m.version))
+        return { valid: false, reason: 'session.resume: invalid version' };
+      return { valid: true, value: m as ClientToRunner };
     default:
       return { valid: false, reason: `unknown message type "${m.t}"` };
   }
@@ -215,15 +245,18 @@ export function validateRunnerToClient(m: unknown): FrameValidation<RunnerToClie
     case 'session.ready':
       if (!isString(m.sessionId))
         return { valid: false, reason: 'session.ready: missing sessionId' };
+      if (!isFiniteNumber(m.seq)) return { valid: false, reason: 'session.ready: invalid seq' };
       return { valid: true, value: m as RunnerToClient };
     case 'session.event':
       if (!isString(m.sessionId))
         return { valid: false, reason: 'session.event: missing sessionId' };
       if (!('update' in m)) return { valid: false, reason: 'session.event: missing update' };
+      if (!isFiniteNumber(m.seq)) return { valid: false, reason: 'session.event: invalid seq' };
       return { valid: true, value: m as RunnerToClient };
     case 'mcp':
       if (!isString(m.sessionId)) return { valid: false, reason: 'mcp: missing sessionId' };
       if (!('frame' in m)) return { valid: false, reason: 'mcp: missing frame' };
+      if (!isFiniteNumber(m.seq)) return { valid: false, reason: 'mcp: invalid seq' };
       return { valid: true, value: m as RunnerToClient };
     case 'session.done':
       if (!isString(m.sessionId))
@@ -232,11 +265,13 @@ export function validateRunnerToClient(m: unknown): FrameValidation<RunnerToClie
         return { valid: false, reason: 'session.done: missing stopReason' };
       if (!isOptional(m.usage, isCloudUsage))
         return { valid: false, reason: 'session.done: invalid usage' };
+      if (!isFiniteNumber(m.seq)) return { valid: false, reason: 'session.done: invalid seq' };
       return { valid: true, value: m as RunnerToClient };
     case 'session.error':
       if (!isString(m.sessionId))
         return { valid: false, reason: 'session.error: missing sessionId' };
       if (!isString(m.message)) return { valid: false, reason: 'session.error: missing message' };
+      if (!isFiniteNumber(m.seq)) return { valid: false, reason: 'session.error: invalid seq' };
       return { valid: true, value: m as RunnerToClient };
     default:
       return { valid: false, reason: `unknown message type "${m.t}"` };
