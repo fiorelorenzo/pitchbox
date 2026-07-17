@@ -73,6 +73,7 @@ services:
     environment:
       NODE_ENV: development
       RUNNER_TOKEN: ${RUNNER_TOKEN:-devtoken}
+      RUNNER_JWT_PUBLIC_KEY: ${RUNNER_JWT_PUBLIC_KEY:-}
       RUNNER_MODEL: ${RUNNER_MODEL:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
