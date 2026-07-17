@@ -53,11 +53,12 @@ their own branching.
 
 ### Nested private repos (cloud/)
 
-`cloud/` and `private/` hold separate, gitignored git repos - the cloud runner
-service is at `cloud/runner/` (`@pitchbox/runner-service`) and the client-side
-cloud adapter at `cloud/adapter/` (`@pitchbox/cloud-adapter`), each its own
-pnpm-standalone repo. When working there it is its own repo: its own `git`, its own
-`main`/`development`, its own `pnpm`. Commit and push in the right repo; never `git add` it from the public
-repo. Always launch Claude from this `pitchbox` directory - chat history is keyed
+`cloud/runner` (`@pitchbox/runner-service`) and `cloud/adapter`
+(`@pitchbox/cloud-adapter`) are **git submodules** of this umbrella (`.gitmodules`
+points at their private remotes); any other `cloud/*` path and `private/` stay
+gitignored. Each submodule is its own repo: its own `git`, its own
+`main`/`development`, its own `pnpm`. Commit and push in the submodule, then bump
+the umbrella pointer here with `git add cloud/<x>`; never `git add` submodule
+content from the umbrella. Always launch Claude from this `pitchbox` directory - chat history is keyed
 by the launch path (Claude Code + Emdash), so do not relocate the launch dir to a
 parent umbrella. See AGENTS.md "Cloud runner & repo layout".
