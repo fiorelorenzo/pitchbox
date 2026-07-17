@@ -13,7 +13,8 @@
 	import CampaignRunsTab from '$lib/components/campaigns/CampaignRunsTab.svelte';
 	import CampaignTuningTab from '$lib/components/campaigns/CampaignTuningTab.svelte';
 	import RegenerateProfileDialog from '$lib/components/campaigns/RegenerateProfileDialog.svelte';
-	import type { ScenarioSlug } from '@pitchbox/shared/campaigns';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { platformSupportsAutoPost, type ScenarioSlug } from '@pitchbox/shared/campaigns';
 
 	type SkillRun = { id: number; status: string; params: { objective?: string } | null };
 
@@ -46,6 +47,7 @@
 				config: Record<string, unknown> | null;
 				cronExpression: string | null;
 				rateLimit: unknown;
+				autoPost: boolean;
 			};
 			project: { id: number; slug: string; name: string } | null;
 			platform: { id: number; slug: string } | null;
@@ -82,6 +84,7 @@
 	let isStarting = $state(false);
 	let tab = $state<'overview' | 'profile' | 'tuning' | 'runs'>('overview');
 	let regenOpen = $state(false);
+	let autoPostSaving = $state(false);
 
 	// Live-refresh readiness + run lists when a profile-gen or campaign run
 	// starts or finishes (this tab, another tab, or the daemon). Without this,
@@ -118,7 +121,31 @@
 	const hasRateLimit = $derived(
 		!!data.campaign.rateLimit && JSON.stringify(data.campaign.rateLimit) !== '{}',
 	);
-	const hasConfigCard = $derived(!!data.campaign.cronExpression || hasRateLimit);
+	const autoPostSupported = $derived(platformSupportsAutoPost(data.platform?.slug ?? ''));
+	const hasConfigCard = $derived(
+		!!data.campaign.cronExpression || hasRateLimit || autoPostSupported,
+	);
+
+	async function toggleAutoPost(value: boolean) {
+		if (autoPostSaving) return;
+		autoPostSaving = true;
+		try {
+			const res = await fetch(`/api/campaigns/${data.campaign.id}`, {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ autoPost: value }),
+			});
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				toast.error(body.error ?? 'Failed to update auto-post');
+				return;
+			}
+			toast.success(value ? 'Auto-post enabled' : 'Auto-post disabled');
+			await invalidateAll();
+		} finally {
+			autoPostSaving = false;
+		}
+	}
 
 	// Summary stats from last 30 runs
 	let stats = $derived.by(() => {
@@ -339,6 +366,23 @@
 									null,
 									2
 								)}</pre>
+						</div>
+					{/if}
+					{#if autoPostSupported}
+						<div>
+							<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Auto-post</p>
+							<label class="flex items-center gap-2 text-sm">
+								<Checkbox
+									checked={data.campaign.autoPost}
+									onCheckedChange={toggleAutoPost}
+									disabled={autoPostSaving}
+								/>
+								Send approved drafts automatically
+							</label>
+							<p class="text-xs text-muted-foreground mt-1">
+								When enabled, an approved draft is posted immediately via the platform's API
+								instead of waiting for a manual send. Off by default.
+							</p>
 						</div>
 					{/if}
 				</Card.Content>

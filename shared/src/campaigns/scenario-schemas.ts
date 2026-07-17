@@ -115,8 +115,20 @@ export const SCENARIO_SCHEMAS = {
   'hn-poster': HnPosterSchema,
 } as const;
 
-export type CampaignProfile<S extends ScenarioSlug> = z.infer<(typeof SCENARIO_SCHEMAS)[S]>;
+export type CampaignProfile<S extends keyof typeof SCENARIO_SCHEMAS> = z.infer<
+  (typeof SCENARIO_SCHEMAS)[S]
+>;
 
-export function getSchema(slug: ScenarioSlug) {
-  return SCENARIO_SCHEMAS[slug];
+// Not every scenario has a registered structured schema yet (e.g. the
+// mastodon-* scenarios, whose profile shape isn't defined here) - a call with
+// a literal key of SCENARIO_SCHEMAS is guaranteed a schema back, but a call
+// with the wider ScenarioSlug type may return undefined and callers must
+// handle that (treat it as "no strict validation for this scenario" rather
+// than throwing, matching getCampaignReadiness's "accepted as-is" behaviour).
+// A single generic + conditional return type (rather than overload
+// signatures) gets the same narrowing without redeclaring the function.
+export function getSchema<S extends ScenarioSlug>(
+  slug: S,
+): S extends keyof typeof SCENARIO_SCHEMAS ? (typeof SCENARIO_SCHEMAS)[S] : undefined {
+  return (SCENARIO_SCHEMAS as Record<string, unknown>)[slug] as never;
 }

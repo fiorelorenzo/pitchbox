@@ -33,9 +33,6 @@ export async function skillGenerateStart(runId: number) {
   if (!params || !params.scenario || !params.objective)
     throw new Error('run params must include scenario and objective');
 
-  // Sanity: schema must exist for this scenario
-  void getSchema(params.scenario);
-
   return {
     runId,
     campaignId: campaign.id,
@@ -72,14 +69,21 @@ export async function skillGenerateFinish(runId: number, payload: unknown) {
   if (!scenario) throw new Error('run.params.scenario missing');
 
   const schema0 = getSchema(scenario);
-  const result = schema0.safeParse(payload);
-  if (!result.success) {
-    const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
-    await db
-      .update(schema.runs)
-      .set({ status: 'failed', finishedAt: new Date(), error: `validation: ${issues}` })
-      .where(eq(schema.runs.id, runId));
-    throw new Error(`profile failed validation: ${issues}`);
+  // Scenarios without a registered structured schema (e.g. mastodon-*) accept
+  // the generated payload as-is - same "accepted as-is" stance as
+  // getCampaignReadiness, since there's nothing to validate it against yet.
+  let generatedProfile: unknown = payload;
+  if (schema0) {
+    const result = schema0.safeParse(payload);
+    if (!result.success) {
+      const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+      await db
+        .update(schema.runs)
+        .set({ status: 'failed', finishedAt: new Date(), error: `validation: ${issues}` })
+        .where(eq(schema.runs.id, runId));
+      throw new Error(`profile failed validation: ${issues}`);
+    }
+    generatedProfile = result.data;
   }
 
   // Preview mode: stash the generated profile + previous config on the run
@@ -92,7 +96,7 @@ export async function skillGenerateFinish(runId: number, payload: unknown) {
     if (mode === 'preview') {
       const nextParams = {
         ...(run.params as Record<string, unknown> | null),
-        generatedConfig: result.data,
+        generatedConfig: generatedProfile,
         previousConfig: campaign.config ?? null,
       };
       await tx
@@ -103,11 +107,11 @@ export async function skillGenerateFinish(runId: number, payload: unknown) {
       const nextStatus = campaign.status === 'draft' ? 'active' : campaign.status;
       await tx
         .update(schema.campaigns)
-        .set({ config: result.data, status: nextStatus })
+        .set({ config: generatedProfile, status: nextStatus })
         .where(eq(schema.campaigns.id, run.campaignId!));
       const nextParams = {
         ...(run.params as Record<string, unknown> | null),
-        generatedConfig: result.data,
+        generatedConfig: generatedProfile,
         previousConfig: campaign.config ?? null,
         adopted: true,
       };

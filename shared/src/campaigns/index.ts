@@ -1,6 +1,9 @@
 export {
   SCENARIO_META,
+  SCENARIO_SLUGS,
+  AUTO_POST_PLATFORMS,
   getScenarioMeta,
+  platformSupportsAutoPost,
   type ScenarioSlug,
   type ScenarioMeta,
   type ScenarioPlatformSlug,

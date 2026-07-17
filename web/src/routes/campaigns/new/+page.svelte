@@ -5,8 +5,13 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { SelectField } from '$lib/components/ui/select-field';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { toast } from 'svelte-sonner';
-	import { SCENARIO_META, type ScenarioSlug } from '@pitchbox/shared/campaigns';
+	import {
+		SCENARIO_META,
+		platformSupportsAutoPost,
+		type ScenarioSlug,
+	} from '@pitchbox/shared/campaigns';
 	import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 	import CampaignRecommendationsList, {
 		type Recommendation,
@@ -47,6 +52,7 @@
 	);
 	let objective = $state(untrack(() => data.preselected?.objective ?? ''));
 	let cron = $state('');
+	let autoPost = $state(false);
 	let saving = $state(false);
 	let preselectedRecId = $state<number | null>(untrack(() => data.preselected?.id ?? null));
 	let recommendations = $state<Recommendation[]>(untrack(() => data.recommendations));
@@ -80,6 +86,15 @@
 	const selectedScenarioDescription = $derived(
 		SCENARIO_META.find((s) => s.slug === scenarioSlug)?.description ?? '',
 	);
+	const autoPostSupported = $derived(platformSupportsAutoPost(platformSlug));
+
+	// The platform can change independently of the toggle (picker, a
+	// recommendation preset). Force it back off whenever the selected platform
+	// doesn't support auto-post so a stale `true` can't sneak into the request
+	// after the field is hidden.
+	$effect(() => {
+		if (!autoPostSupported) autoPost = false;
+	});
 
 	async function submit() {
 		if (saving) return;
@@ -100,6 +115,7 @@
 					agentRunner: runner,
 					objective,
 					cronExpression: cron.trim() || undefined,
+					autoPost: autoPostSupported ? autoPost : false,
 				}),
 			});
 			const body = await res.json().catch(() => ({}));
@@ -209,6 +225,16 @@
 			The schedule is interpreted in UTC, not your local timezone.
 		</span>
 	</label>
+	{#if autoPostSupported}
+		<label class="flex items-center gap-2 text-xs">
+			<Checkbox checked={autoPost} onCheckedChange={(v) => (autoPost = v)} />
+			Auto-post approved drafts
+		</label>
+		<p class="text-xs text-muted-foreground -mt-4">
+			When enabled, an approved draft is sent immediately via the platform's API instead of
+			waiting for a manual send. Off by default.
+		</p>
+	{/if}
 	<div class="flex gap-2">
 		<Button type="submit" loading={saving}>Create</Button>
 		<Button type="button" variant="ghost" onclick={() => goto('/campaigns')}>Cancel</Button>

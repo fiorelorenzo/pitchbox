@@ -3,7 +3,7 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import { getSchema } from '@pitchbox/shared/campaigns';
+import { getSchema, type ScenarioSlug } from '@pitchbox/shared/campaigns';
 import { requireOrgId } from '$lib/server/auth.js';
 import { campaignBelongsToOrg } from '@pitchbox/shared/orgs';
 
@@ -12,6 +12,8 @@ const Patch = z.object({
   status: z.enum(['active', 'paused']).optional(),
   cronExpression: z.string().nullable().optional(),
   agentRunner: z.string().min(1).optional(),
+  // Opt-in per-campaign auto-post (MAS-5) - see the campaigns.auto_post column.
+  autoPost: z.boolean().optional(),
   config: z.unknown().optional(),
 });
 
@@ -42,14 +44,22 @@ export async function PATCH(event: RequestEvent) {
   if (parsed.data.status !== undefined) patch.status = parsed.data.status;
   if (parsed.data.cronExpression !== undefined) patch.cronExpression = parsed.data.cronExpression;
   if (parsed.data.agentRunner !== undefined) patch.agentRunner = parsed.data.agentRunner;
+  if (parsed.data.autoPost !== undefined) patch.autoPost = parsed.data.autoPost;
 
   if (parsed.data.config !== undefined) {
-    const scenarioSchema = getSchema(campaign.skillSlug as 'reddit-scout' | 'reddit-commenter');
-    const result = scenarioSchema.safeParse(parsed.data.config);
-    if (!result.success) {
-      return json({ error: 'invalid_config', issues: result.error.issues }, { status: 400 });
+    // Scenarios without a registered structured schema (e.g. mastodon-*)
+    // accept the config as-is instead of crashing on a missing schema - same
+    // "accepted as-is" stance as getCampaignReadiness.
+    const scenarioSchema = getSchema(campaign.skillSlug as ScenarioSlug);
+    if (scenarioSchema) {
+      const result = scenarioSchema.safeParse(parsed.data.config);
+      if (!result.success) {
+        return json({ error: 'invalid_config', issues: result.error.issues }, { status: 400 });
+      }
+      patch.config = result.data;
+    } else {
+      patch.config = parsed.data.config;
     }
-    patch.config = result.data;
   }
 
   if (parsed.data.status === 'active') {

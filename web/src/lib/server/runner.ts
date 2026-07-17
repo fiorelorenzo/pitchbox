@@ -11,6 +11,7 @@ import {
 } from '@pitchbox/shared/draft-regenerate';
 import { startReplyDrafting } from '@pitchbox/shared/reply-drafter';
 import { getRunOrgId } from '@pitchbox/shared/orgs';
+import type { ScenarioSlug } from '@pitchbox/shared/campaigns';
 import { getDb, schema } from './db.js';
 import { and, desc, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
@@ -741,7 +742,7 @@ export async function runReplyDrafting(
 
 export async function runCampaignSkillGeneration(
   campaignId: number,
-  scenario: 'reddit-scout' | 'reddit-commenter',
+  scenario: ScenarioSlug,
   objective: string,
   trigger: string = 'manual',
   mode: 'apply' | 'preview' = 'apply',

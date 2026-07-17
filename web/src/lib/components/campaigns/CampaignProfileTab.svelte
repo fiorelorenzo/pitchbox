@@ -44,15 +44,23 @@
     if (saving) return;
     saving = true;
     try {
-      const validated = getSchema(scenarioSlug).safeParse(config);
-      if (!validated.success) {
-        toast.error('Profile is invalid - fix the highlighted fields');
-        return;
+      // Scenarios without a registered structured schema (e.g. mastodon-*)
+      // don't have a form here yet, so save the config as-is instead of
+      // crashing on a missing schema.
+      const scenarioSchema = getSchema(scenarioSlug);
+      let configToSave: Record<string, unknown> = config;
+      if (scenarioSchema) {
+        const validated = scenarioSchema.safeParse(config);
+        if (!validated.success) {
+          toast.error('Profile is invalid - fix the highlighted fields');
+          return;
+        }
+        configToSave = validated.data;
       }
       const res = await fetch(`/api/campaigns/${campaignId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ config: validated.data }),
+        body: JSON.stringify({ config: configToSave }),
       });
       const body = await res.json();
       if (!res.ok) {

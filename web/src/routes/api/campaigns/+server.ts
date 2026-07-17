@@ -6,15 +6,19 @@ import { getDb, schema } from '$lib/server/db.js';
 import { runCampaignSkillGeneration } from '$lib/server/runner.js';
 import { requireOrgId } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
+import { SCENARIO_SLUGS } from '@pitchbox/shared/campaigns';
 
 const Body = z.object({
   projectId: z.number().int().positive(),
   platformSlug: z.string().min(1),
-  scenarioSlug: z.enum(['reddit-scout', 'reddit-commenter']),
+  scenarioSlug: z.enum(SCENARIO_SLUGS),
   name: z.string().min(1).max(120),
   agentRunner: z.string().min(1).default('claude-code'),
   objective: z.string().min(1).max(2000),
   cronExpression: z.string().min(1).optional(),
+  // Opt-in per-campaign auto-post (MAS-5): off by default, keeping the
+  // human-in-the-loop send as the default for every platform.
+  autoPost: z.boolean().optional().default(false),
 });
 
 export async function POST(event: RequestEvent) {
@@ -53,6 +57,7 @@ export async function POST(event: RequestEvent) {
       cronExpression: body.cronExpression ?? null,
       status: 'draft',
       config: {},
+      autoPost: body.autoPost,
     })
     .returning();
 

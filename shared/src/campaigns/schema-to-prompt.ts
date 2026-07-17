@@ -40,10 +40,16 @@ function describeType(z0: z.ZodType, path: string, lines: string[]): void {
 }
 
 export function describeScenarioSchema(slug: ScenarioSlug): string {
-  const schema = SCENARIO_SCHEMAS[slug];
+  const schema = (SCENARIO_SCHEMAS as Record<string, z.ZodType | undefined>)[slug];
+  if (!schema) {
+    // No structured schema registered for this scenario yet (e.g. mastodon-*) -
+    // fall back to a freeform instruction instead of crashing on an undefined
+    // schema (see getSchema's doc comment for the same "accepted as-is" stance).
+    return 'No structured profile schema is registered for this scenario yet. Produce a single flat JSON object capturing the fields implied by the objective (voice, targeting, offer, etc).';
+  }
   const lines: string[] = [];
   lines.push('## Profile fields (must be filled exactly with this structure)');
   lines.push('');
-  describeType(schema as unknown as z.ZodType, '', lines);
+  describeType(schema, '', lines);
   return lines.join('\n');
 }

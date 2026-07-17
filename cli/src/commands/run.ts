@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { getSchema, SCENARIO_META } from '@pitchbox/shared/campaigns';
+import { getSchema, SCENARIO_META, type ScenarioSlug } from '@pitchbox/shared/campaigns';
 import { loadActiveTemplates, type TemplateKind } from '@pitchbox/shared/templates';
 import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
 import { eq } from 'drizzle-orm';
@@ -24,13 +24,16 @@ export async function startRun(campaignId: number, runId?: number | null) {
 
   const scenarioMeta = SCENARIO_META.find((s) => s.slug === campaign.skillSlug);
   if (scenarioMeta) {
-    const validation = getSchema(
-      campaign.skillSlug as 'reddit-scout' | 'reddit-commenter',
-    ).safeParse(campaign.config);
-    if (!validation.success) {
-      throw new Error(
-        'campaign profile is not in the structured format - regenerate it from the dashboard',
-      );
+    // Scenarios without a registered structured schema (e.g. mastodon-*) skip
+    // strict validation - same "accepted as-is" stance as getCampaignReadiness.
+    const scenarioSchema = getSchema(campaign.skillSlug as ScenarioSlug);
+    if (scenarioSchema) {
+      const validation = scenarioSchema.safeParse(campaign.config);
+      if (!validation.success) {
+        throw new Error(
+          'campaign profile is not in the structured format - regenerate it from the dashboard',
+        );
+      }
     }
   }
 
