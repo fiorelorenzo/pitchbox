@@ -1,7 +1,11 @@
 import { Command } from 'commander';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { runScout, MastodonClient } from '@pitchbox/shared/platforms/mastodon';
-import { eq } from 'drizzle-orm';
+import {
+  runScout,
+  clientFromMastodonAccount,
+  type MastodonClient,
+} from '@pitchbox/shared/platforms/mastodon';
+import { and, desc, eq } from 'drizzle-orm';
 import { ok, fail } from '../lib/output.js';
 
 // Shape of a Mastodon scout campaign's `config`, mirroring reddit.ts's
@@ -16,20 +20,34 @@ export interface MastodonScoutProfile {
 }
 
 /**
- * Build a MastodonClient from the environment. This is a stopgap until the
- * account model lands (instanceUrl + encrypted access token per account,
- * MAS-1): once it does, scoutRun should read credentials from the campaign's
- * account row instead of the process environment.
+ * Resolve the MastodonClient to use for a campaign: the campaign's project's
+ * active Mastodon account (default-first, mirroring how run:start ranks
+ * accounts for the agent). Replaces the MASTODON_INSTANCE_URL /
+ * MASTODON_ACCESS_TOKEN env-var stopgap now that accounts carry their own
+ * instanceUrl + encrypted access token (MAS-1).
  */
-function clientFromEnv(): MastodonClient {
-  const instanceUrl = process.env.MASTODON_INSTANCE_URL;
-  const accessToken = process.env.MASTODON_ACCESS_TOKEN;
-  if (!instanceUrl || !accessToken) {
-    throw new Error(
-      'MASTODON_INSTANCE_URL and MASTODON_ACCESS_TOKEN must be set (per-account Mastodon credentials are not wired yet)',
-    );
+async function resolveCampaignMastodonClient(
+  db: ReturnType<typeof getDb>,
+  projectId: number,
+  platformId: number,
+): Promise<MastodonClient> {
+  const [account] = await db
+    .select()
+    .from(schema.accounts)
+    .where(
+      and(
+        eq(schema.accounts.projectId, projectId),
+        eq(schema.accounts.platformId, platformId),
+        eq(schema.accounts.active, true),
+      ),
+    )
+    .orderBy(desc(schema.accounts.isDefault));
+  if (!account) {
+    throw new Error('no active Mastodon account connected for this project');
   }
-  return new MastodonClient({ instanceUrl, accessToken });
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  if (!encryptionKey) throw new Error('ENCRYPTION_KEY must be set');
+  return clientFromMastodonAccount(account, encryptionKey);
 }
 
 // Fetch Mastodon candidates for a run and stage them. Extracted from the
@@ -70,7 +88,7 @@ export async function scoutRun(
     );
   }
 
-  const client = clientFromEnv();
+  const client = await resolveCampaignMastodonClient(db, campaign.projectId, campaign.platformId);
   const candidates = await runScout({
     client,
     hashtags: profile.targetHashtags,

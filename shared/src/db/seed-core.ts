@@ -66,6 +66,10 @@ export async function seedCore() {
     .values({ slug: 'hackernews', enabled: true })
     .onConflictDoNothing();
   await db
+    .insert(schema.platforms)
+    .values({ slug: 'mastodon', enabled: true })
+    .onConflictDoNothing();
+  await db
     .insert(schema.organizations)
     // Placeholder name; the first user that signs up renames it after themselves
     // (see createUser). The slug 'default' is load-bearing (auth-off fallback).

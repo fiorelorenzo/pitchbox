@@ -1,17 +1,32 @@
+import { and, eq } from 'drizzle-orm';
+import { getDb, schema } from '@pitchbox/shared/db';
 import { NullReplyReader, type ReplyReader } from '@pitchbox/shared/platforms/reply-reader';
-import { MastodonReplyReader, type MastodonClient } from '@pitchbox/shared/platforms/mastodon';
+import {
+  MastodonReplyReader,
+  clientFromMastodonAccount,
+  type MastodonClient,
+} from '@pitchbox/shared/platforms/mastodon';
 
 /**
- * Resolves the Mastodon client for an account handle. Per-account credential
- * storage (instance URL + encrypted access token) is not wired up yet, so
- * this throws for now - the reply-poller catches and logs it per group,
- * which is harmless while no Mastodon account exists. Replace this with a
- * real resolver once account credentials land.
+ * Resolves the Mastodon client for an account handle: looks up the
+ * `accounts` row (platform 'mastodon', matching `handle`) and builds a
+ * client from its stored instanceUrl + encrypted access token
+ * (`clientFromMastodonAccount`, MAS-1). Replaces the earlier stopgap that
+ * always threw because per-account credential storage did not exist yet.
  */
-function unconfiguredMastodonClient(accountHandle: string): MastodonClient {
-  throw new Error(
-    `no Mastodon client configured for account "${accountHandle}" - account credentials are not wired up yet`,
-  );
+export async function resolveMastodonClient(accountHandle: string): Promise<MastodonClient> {
+  const db = getDb();
+  const [account] = await db
+    .select()
+    .from(schema.accounts)
+    .innerJoin(schema.platforms, eq(schema.accounts.platformId, schema.platforms.id))
+    .where(and(eq(schema.platforms.slug, 'mastodon'), eq(schema.accounts.handle, accountHandle)));
+  if (!account) {
+    throw new Error(`no Mastodon account found for handle "${accountHandle}"`);
+  }
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  if (!encryptionKey) throw new Error('ENCRYPTION_KEY must be set');
+  return clientFromMastodonAccount(account.accounts, encryptionKey);
 }
 
 /**
@@ -21,7 +36,7 @@ function unconfiguredMastodonClient(accountHandle: string): MastodonClient {
  */
 const readers = new Map<string, ReplyReader>([
   ['reddit', new NullReplyReader('reddit')],
-  ['mastodon', new MastodonReplyReader(unconfiguredMastodonClient)],
+  ['mastodon', new MastodonReplyReader(resolveMastodonClient)],
 ]);
 
 export function getReplyReader(platformSlug: string): ReplyReader | null {

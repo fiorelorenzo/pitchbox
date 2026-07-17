@@ -1,30 +1,44 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { encrypt } from '@pitchbox/shared/crypto';
 import { eq, sql } from 'drizzle-orm';
 
 // scoutRun (the mastodon_scout MCP tool) mirrors reddit.ts's scoutRun: it
 // loads the run/campaign, resolves the blocklist + contact history into
-// plain sets, builds a MastodonClient, delegates the actual hashtag-timeline
-// discovery + filtering to the shared runScout, and stages the results.
-// The shared platform module is mocked so this test never touches the
-// network; runScout's own filtering behavior is covered directly in
-// shared/tests/platforms/mastodon/scout.test.ts.
+// plain sets, resolves a MastodonClient from the project's connected Mastodon
+// account (instanceUrl + encrypted access token, MAS-1 - replacing the old
+// MASTODON_INSTANCE_URL / MASTODON_ACCESS_TOKEN env-var stopgap), delegates
+// the actual hashtag-timeline discovery + filtering to the shared runScout,
+// and stages the results. The shared platform module is mocked so this test
+// never touches the network; runScout's own filtering behavior is covered
+// directly in shared/tests/platforms/mastodon/scout.test.ts, and the
+// decrypt-and-build behavior of clientFromMastodonAccount is covered in
+// shared/tests/platforms/mastodon/account-client.test.ts.
 
+const ENCRYPTION_KEY = 'd'.repeat(64);
 const runScout = vi.fn();
-const MastodonClient = vi.fn().mockImplementation(function (this: unknown, opts: unknown) {
-  Object.assign(this as object, { opts });
+
+// Only `runScout` is mocked (this file never touches the network): `scoutRun`
+// resolves its Mastodon client via the real `clientFromMastodonAccount` ->
+// `MastodonClient`, so the resolver's account lookup + decrypt path is
+// exercised for real. `MastodonClient` construction/auth behavior itself is
+// covered directly in shared/tests/platforms/mastodon/{client,account-client}.test.ts.
+vi.mock('@pitchbox/shared/platforms/mastodon', async () => {
+  const actual = await vi.importActual<typeof import('@pitchbox/shared/platforms/mastodon')>(
+    '@pitchbox/shared/platforms/mastodon',
+  );
+  return { ...actual, runScout };
 });
 
-vi.mock('@pitchbox/shared/platforms/mastodon', () => ({
-  runScout,
-  MastodonClient,
-}));
+const { MastodonClient } = await vi.importActual<
+  typeof import('@pitchbox/shared/platforms/mastodon')
+>('@pitchbox/shared/platforms/mastodon');
 
 async function reset() {
   const db = getDb();
   // Deliberately does not truncate `platforms`: tests share one Postgres
   // across files run sequentially, and other suites rely on the
-  // core-seeded reddit/hackernews rows surviving between files.
+  // core-seeded reddit/hackernews/mastodon rows surviving between files.
   await db.execute(
     sql`TRUNCATE runs, campaigns, accounts, projects, blocklist, contact_history, staging_scout_candidates RESTART IDENTITY CASCADE`,
   );
@@ -46,7 +60,10 @@ async function mastodonPlatformId(): Promise<number> {
   return existing.id;
 }
 
-async function seedRun(config: Record<string, unknown>) {
+async function seedRun(
+  config: Record<string, unknown>,
+  opts: { withAccount?: boolean } = { withAccount: true },
+) {
   const db = getDb();
   const platformId = await mastodonPlatformId();
   const [org] = await db
@@ -57,6 +74,17 @@ async function seedRun(config: Record<string, unknown>) {
     .insert(schema.projects)
     .values({ organizationId: org.id, slug: 'mastodon-test', name: 'Mastodon Test' })
     .returning();
+  if (opts.withAccount !== false) {
+    await db.insert(schema.accounts).values({
+      projectId: project.id,
+      platformId,
+      handle: '@bot@mastodon.example',
+      role: 'brand',
+      instanceUrl: 'https://mastodon.example',
+      accessTokenEncrypted: encrypt('test-token', ENCRYPTION_KEY),
+      isDefault: true,
+    });
+  }
   const [campaign] = await db
     .insert(schema.campaigns)
     .values({
@@ -77,9 +105,7 @@ async function seedRun(config: Record<string, unknown>) {
 beforeEach(async () => {
   await reset();
   runScout.mockReset();
-  MastodonClient.mockClear();
-  process.env.MASTODON_INSTANCE_URL = 'https://mastodon.example';
-  process.env.MASTODON_ACCESS_TOKEN = 'test-token';
+  process.env.ENCRYPTION_KEY = ENCRYPTION_KEY;
 });
 
 describe('mastodon scoutRun', () => {
@@ -118,12 +144,11 @@ describe('mastodon scoutRun', () => {
     const result = await scoutRun(runId);
 
     expect(result).toEqual({ runId, candidatesFetched: 1 });
-    expect(MastodonClient).toHaveBeenCalledWith({
-      instanceUrl: 'https://mastodon.example',
-      accessToken: 'test-token',
-    });
     expect(runScout).toHaveBeenCalledTimes(1);
     const call = runScout.mock.calls[0][0];
+    // Resolved a real MastodonClient built from the project's connected
+    // account (decrypted token + instance URL), not the old env-var stopgap.
+    expect(call.client).toBeInstanceOf(MastodonClient);
     expect(call.hashtags).toEqual(['outreach']);
     expect(call.keywords).toEqual(['crm']);
     expect([...call.blockedHandles]).toEqual(['spammer']);
@@ -138,12 +163,18 @@ describe('mastodon scoutRun', () => {
     expect(staged[0]?.raw).toMatchObject({ author: { acct: 'alice' } });
   });
 
-  it('throws a clear error when Mastodon credentials are not configured', async () => {
-    delete process.env.MASTODON_INSTANCE_URL;
-    delete process.env.MASTODON_ACCESS_TOKEN;
+  it('throws a clear error when the project has no Mastodon account connected', async () => {
+    const { runId } = await seedRun({ targetHashtags: ['outreach'] }, { withAccount: false });
+
+    const { scoutRun } = await import('../../src/commands/mastodon.js');
+    await expect(scoutRun(runId)).rejects.toThrow('no active Mastodon account connected');
+  });
+
+  it('throws a clear error when ENCRYPTION_KEY is not set', async () => {
+    delete process.env.ENCRYPTION_KEY;
     const { runId } = await seedRun({ targetHashtags: ['outreach'] });
 
     const { scoutRun } = await import('../../src/commands/mastodon.js');
-    await expect(scoutRun(runId)).rejects.toThrow('MASTODON_INSTANCE_URL');
+    await expect(scoutRun(runId)).rejects.toThrow('ENCRYPTION_KEY');
   });
 });

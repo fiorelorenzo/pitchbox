@@ -4,11 +4,14 @@ import type { MastodonClient } from './client.js';
 /**
  * Resolves the `MastodonClient` to use for a given account handle. Kept as
  * an injectable factory (rather than a single client) so this reader stays
- * decoupled from how/where account credentials are stored - the daemon can
- * swap in a real per-account resolver once account credentials land, and
- * tests can inject a mock client directly.
+ * decoupled from how/where account credentials are stored. May return a
+ * `MastodonClient` synchronously (tests inject a mock client directly) or a
+ * `Promise<MastodonClient>` (the daemon's real per-account resolver, which
+ * looks up the account row and decrypts its token).
  */
-export type MastodonClientResolver = (accountHandle: string) => MastodonClient;
+export type MastodonClientResolver = (
+  accountHandle: string,
+) => MastodonClient | Promise<MastodonClient>;
 
 /**
  * Server-side reply reader for Mastodon. Unlike Reddit (extension-dependent
@@ -29,7 +32,7 @@ export class MastodonReplyReader implements ReplyReader {
   }
 
   async readReplies({ accountHandle, since }: ReplyReaderQuery): Promise<Reply[]> {
-    const client = this.getClient(accountHandle);
+    const client = await this.getClient(accountHandle);
     const sinceId = this.sinceIdByAccount.get(accountHandle);
     const notifications = await client.notifications({ sinceId, types: ['mention'] });
 

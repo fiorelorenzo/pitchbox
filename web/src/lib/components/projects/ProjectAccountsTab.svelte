@@ -30,7 +30,11 @@
   let newRole = $state<'personal' | 'brand'>('personal');
   // svelte-ignore state_referenced_locally
   let newPlatform = $state(platforms[0]?.slug ?? 'reddit');
+  let newInstanceUrl = $state('');
+  let newAccessToken = $state('');
   let busy = $state(false);
+
+  let isMastodon = $derived(newPlatform === 'mastodon');
 
   function platformSlug(id: number) {
     return platforms.find((p) => p.id === id)?.slug ?? `#${id}`;
@@ -39,16 +43,35 @@
   async function add() {
     busy = true;
     try {
-      const res = await fetch(`/api/projects/${projectId}/accounts`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ handle: newHandle, role: newRole, platformSlug: newPlatform }),
-      });
+      const res = isMastodon
+        ? await fetch(`/api/projects/${projectId}/accounts/mastodon`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              instanceUrl: newInstanceUrl,
+              accessToken: newAccessToken,
+              role: newRole,
+            }),
+          })
+        : await fetch(`/api/projects/${projectId}/accounts`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ handle: newHandle, role: newRole, platformSlug: newPlatform }),
+          });
       if (!res.ok) {
-        toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to add account');
+        if (res.status === 403) {
+          toast.error('You need admin access for that');
+        } else if (isMastodon && res.status === 400) {
+          const body = await res.json().catch(() => null);
+          toast.error(body?.message ?? 'Could not verify that token against the instance');
+        } else {
+          toast.error('Failed to add account');
+        }
         return;
       }
       newHandle = '';
+      newInstanceUrl = '';
+      newAccessToken = '';
       addOpen = false;
       await invalidateAll();
     } finally {
@@ -118,7 +141,30 @@
   {#if isAdmin}
     {#if addOpen}
       <div class="border border-border rounded-md p-3 space-y-2">
-        <label class="flex flex-col gap-1 text-xs">Handle<Input bind:value={newHandle} /></label>
+        <label class="flex flex-col gap-1 text-xs">
+          Platform
+          <SelectField
+            bind:value={newPlatform}
+            options={platforms.map((p) => ({ value: p.slug, label: p.slug }))}
+            fullWidth
+          />
+        </label>
+        {#if isMastodon}
+          <label class="flex flex-col gap-1 text-xs">
+            Instance URL
+            <Input bind:value={newInstanceUrl} placeholder="https://mastodon.social" />
+          </label>
+          <label class="flex flex-col gap-1 text-xs">
+            Access token
+            <Input bind:value={newAccessToken} type="password" />
+          </label>
+          <p class="text-xs text-muted-foreground">
+            Create a token in that instance's Preferences &gt; Development &gt; New application
+            (scopes: read + write). Pitchbox verifies it before saving.
+          </p>
+        {:else}
+          <label class="flex flex-col gap-1 text-xs">Handle<Input bind:value={newHandle} /></label>
+        {/if}
         <label class="flex flex-col gap-1 text-xs">
           Role
           <SelectField
@@ -131,16 +177,17 @@
             fullWidth
           />
         </label>
-        <label class="flex flex-col gap-1 text-xs">
-          Platform
-          <SelectField
-            bind:value={newPlatform}
-            options={platforms.map((p) => ({ value: p.slug, label: p.slug }))}
-            fullWidth
-          />
-        </label>
         <div class="flex gap-2">
-          <Button size="sm" onclick={add} disabled={busy || !newHandle.trim()}>Add</Button>
+          <Button
+            size="sm"
+            onclick={add}
+            disabled={busy ||
+              (isMastodon
+                ? !newInstanceUrl.trim() || !newAccessToken.trim()
+                : !newHandle.trim())}
+          >
+            Add
+          </Button>
           <Button size="sm" variant="ghost" onclick={() => (addOpen = false)}>Cancel</Button>
         </div>
       </div>

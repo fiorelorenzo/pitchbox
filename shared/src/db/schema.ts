@@ -165,6 +165,13 @@ export const accounts = pgTable('accounts', {
   active: boolean('active').notNull().default(true),
   isDefault: boolean('is_default').notNull().default(false),
   cookieSession: bytea('cookie_session'),
+  // Mastodon-specific credentials (nullable - only populated once a Mastodon
+  // account is connected). instanceUrl is the plain instance base URL (e.g.
+  // "https://mastodon.social"); accessTokenEncrypted stores the developer
+  // access token encrypted with ENCRYPTION_KEY via shared/src/crypto.ts, same
+  // packed "iv:tag:ciphertext" format used everywhere else in the codebase.
+  instanceUrl: text('instance_url'),
+  accessTokenEncrypted: text('access_token_encrypted'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   // Optional per-account overrides for outreach volume. When set, they apply
   // in addition to (and never exceed) the platform-wide quota_defaults.
