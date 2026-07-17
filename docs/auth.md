@@ -16,7 +16,7 @@ When on, `hooks.server.ts` checks the `pitchbox_session` cookie on every non-exe
 
 On a brand-new install the `users` table is empty and the initial owner account is created the first time credentials are submitted to `POST /api/auth/login`; every later login then verifies with scrypt against the stored `password_hash`.
 
-For any internet-facing deployment, claim the owner account (or seed it from deploy credentials) before the URL is reachable, so the initial account is never left unclaimed by an operator.
+For any internet-facing deployment, claim the owner account (or seed it from deploy credentials) before the URL is reachable, so the initial account is never left unclaimed by an operator. Run `pitchbox seed:owner` right after migrations in the deploy pipeline: it reads `PITCHBOX_OWNER_USERNAME` and `PITCHBOX_OWNER_PASSWORD` from the environment and creates the owner (plus its default-org owner membership) through the same `createUser()` path the login bootstrap uses. It is a no-op (logs and exits 0) if a user already exists or either env var is unset, so it's safe to run on every deploy.
 
 ## Sessions
 

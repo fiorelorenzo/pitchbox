@@ -15,6 +15,7 @@ async function main() {
   const { registerUtilityCommands } = await import('./commands/utility.js');
   const { registerProjectCommands } = await import('./commands/project.js');
   const { registerSkillCommands } = await import('./commands/skill.js');
+  const { registerSeedCommands } = await import('./commands/seed-owner.js');
   registerRunCommands(program);
   registerDraftCommands(program);
   registerRedditCommands(program);
@@ -22,6 +23,7 @@ async function main() {
   registerUtilityCommands(program);
   registerProjectCommands(program);
   registerSkillCommands(program);
+  registerSeedCommands(program);
   await program.parseAsync(process.argv);
 }
 
