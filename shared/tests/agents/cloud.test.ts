@@ -3,10 +3,13 @@
 // docs/cloud-runner-productionization-design.md section 1). Mints via the real
 // mintRunnerJwt (no mocking the signer), and asserts the static
 // PITCHBOX_RUNNER_TOKEN fallback is used exactly when a JWT can't be minted.
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it, beforeAll, afterEach } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { generateKeyPair, exportPKCS8, exportSPKI, importSPKI, jwtVerify } from 'jose';
 import { resolveRunnerToken } from '../../src/agents/cloud.js';
 import { RUNNER_JWT_ALG } from '../../src/agents/cloud/jwt.js';
+import { getDb, schema } from '../../src/db/client.js';
 
 let privateKeyPem: string;
 let publicKeyPem: string;
@@ -51,5 +54,80 @@ describe('resolveRunnerToken', () => {
 
   it('returns undefined when neither a private key nor a static token is configured', async () => {
     await expect(resolveRunnerToken(42)).resolves.toBeUndefined();
+  });
+});
+
+describe('resolveRunnerToken: quota claim (CLD-P5)', () => {
+  const createdOrgIds: number[] = [];
+
+  afterEach(async () => {
+    const db = getDb();
+    while (createdOrgIds.length > 0) {
+      const id = createdOrgIds.pop()!;
+      // Cascades to projects/runs (schema.ts: organizations -> projects -> runs
+      // are all onDelete: 'cascade').
+      await db.delete(schema.organizations).where(eq(schema.organizations.id, id));
+    }
+  });
+
+  async function verifyQuota(token: string | undefined) {
+    const key = await importSPKI(publicKeyPem, RUNNER_JWT_ALG);
+    const { payload } = await jwtVerify(token as string, key, { algorithms: [RUNNER_JWT_ALG] });
+    return payload.quota;
+  }
+
+  it('mints a quota claim reflecting the org monthly budget and concurrency cap', async () => {
+    process.env.RUNNER_JWT_PRIVATE_KEY = privateKeyPem;
+    const db = getDb();
+    const slug = `cloud-quota-test-${randomUUID()}`;
+    const [org] = await db
+      .insert(schema.organizations)
+      .values({ slug, name: slug, monthlyRunBudgetUsd: '50.00', maxConcurrentRuns: 2 })
+      .returning();
+    createdOrgIds.push(org.id);
+
+    const token = await resolveRunnerToken(org.id);
+    expect(await verifyQuota(token)).toEqual({ remainingUsd: 50, concurrencyCap: 2 });
+  });
+
+  it('subtracts month-to-date run cost from the org budget', async () => {
+    process.env.RUNNER_JWT_PRIVATE_KEY = privateKeyPem;
+    const db = getDb();
+    const slug = `cloud-quota-test-${randomUUID()}`;
+    const [org] = await db
+      .insert(schema.organizations)
+      .values({ slug, name: slug, monthlyRunBudgetUsd: '50.00' })
+      .returning();
+    createdOrgIds.push(org.id);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'p', name: 'p' })
+      .returning();
+    await db.insert(schema.runs).values({
+      kind: 'project_extraction',
+      projectId: project.id,
+      trigger: 'manual',
+      status: 'success',
+      costUsd: '12.5000',
+    });
+
+    const token = await resolveRunnerToken(org.id);
+    const quota = (await verifyQuota(token)) as {
+      remainingUsd: number;
+      concurrencyCap: number | null;
+    };
+    expect(quota.remainingUsd).toBeCloseTo(37.5, 4);
+    expect(quota.concurrencyCap).toBeNull();
+  });
+
+  it('mints an explicit unlimited quota claim for an org with no budget/cap configured', async () => {
+    process.env.RUNNER_JWT_PRIVATE_KEY = privateKeyPem;
+    const db = getDb();
+    const slug = `cloud-quota-test-${randomUUID()}`;
+    const [org] = await db.insert(schema.organizations).values({ slug, name: slug }).returning();
+    createdOrgIds.push(org.id);
+
+    const token = await resolveRunnerToken(org.id);
+    expect(await verifyQuota(token)).toEqual({ remainingUsd: null, concurrencyCap: null });
   });
 });

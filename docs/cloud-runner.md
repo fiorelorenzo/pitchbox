@@ -127,9 +127,10 @@ What is proven vs. what remains:
   the `cloud/adapter`), both importing the OSS protocol contract; the runner runs
   the agent with its own LLM credentials and picks the model via `RUNNER_MODEL`;
   and usage + cost metering lands on `session.done`.
-- **Still open (productionisation)**: reconnect/resume and per-org quota
-  enforcement (see `docs/cloud-runner-productionization-design.md`). The
-  per-org WS auth handshake (section 1, CLD-P1) is now implemented - see
+- **Still open (productionisation)**: drain on cutover (P4, see
+  `docs/cloud-runner-productionization-design.md`). The per-org WS auth
+  handshake (section 1, CLD-P1), resumable sessions (section 3, CLD-P3), and
+  per-org quota enforcement (section 5, CLD-P5) are now implemented - see
   "Auth, billing, LLM credentials" below.
 
 ## Architecture
@@ -257,12 +258,41 @@ the ACP `stop_reason` block flows back through the normalizer into the existing
 - **LLM credentials**: the runner owns the Anthropic key/subscription - that is
   the value prop (no local agent CLI or API key needed). The agent in the cloud
   uses the runner's credentials.
-- **Billing/quota [PROPOSED]**: metered per org on the runner from the ACP
-  usage block (tagged with the JWT's `org_id` since CLD-P1); admission-time
-  enforcement is still deferred (CLD-P5, see the productionization design doc
-  section 5 and the "per-org runner-quota layer" noted in `docs/auth.md`). The
-  claim shape reserves a `quota` field for that snapshot so it doesn't require
-  a claim-shape change later.
+- **Billing/quota [IMPLEMENTED, CLD-P5]**: usage is still metered per org on
+  the runner from the ACP usage block (tagged with the JWT's `org_id`), and is
+  now also enforced at admission. `organizations` carries two nullable
+  columns: `monthly_run_budget_usd` (numeric, null = unlimited) and
+  `max_concurrent_runs` (integer, null = unlimited). At mint time
+  (`shared/src/agents/cloud.ts` -> `resolveRunnerToken`), the client/control
+  plane computes a snapshot via `shared/src/org-quota.ts`
+  (`getOrgQuotaSnapshot`): `remainingUsd` is the org's monthly budget minus its
+  month-to-date run cost (summed from `runs.cost_usd` for runs started since
+  the first of the current UTC calendar month, joined to the org through
+  `runs.project_id` or `runs.campaign_id` -> `campaigns.project_id`), or
+  `null` if the org has no budget configured; `concurrencyCap` is
+  `max_concurrent_runs` verbatim, or `null`. This `{ remainingUsd,
+concurrencyCap }` snapshot rides in the JWT's `quota` claim
+  (`RunnerJwtQuota` in `shared/src/agents/cloud/protocol.ts`). The runner
+  (`cloud/runner/src/server.ts`) enforces it purely from the signed claim at
+  `session.start` admission, before constructing a session - no DB lookup, so
+  the runner stays stateless: it rejects with a `session.error` whose message
+  contains `quota_exceeded` when `remainingUsd` is not null and `<= 0`
+  (over budget), and separately when `concurrencyCap` is not null and the
+  org's current in-memory live-session count is already at the cap. The
+  concurrency count is tracked in a `Map<orgId, number>` incremented only on
+  an admitted `session.start` and decremented via the same `onTerminal`
+  callback that removes a session from the CLD-P3 session registry - so a
+  session sitting in its resume grace window (disconnected but not yet
+  permanently terminated) still holds its slot, and a rejected admission never
+  increments the counter in the first place. Because the JWT is short-lived,
+  the snapshot is at most one TTL stale; the next mint reflects any run cost
+  recorded in between (no separate ledger table - `runs.cost_usd`, already
+  written by the existing dispatch pipeline, is the source of truth). The
+  static-token fallback path carries no `quota` claim and stays unenforced,
+  same as before this feature. Single-runner-instance caveat carries over from
+  the design doc: a multi-instance deployment would need the concurrency cap
+  enforced at the control plane at mint time instead, or a shared counter -
+  out of scope today.
 
 ## Edition and repo strategy
 

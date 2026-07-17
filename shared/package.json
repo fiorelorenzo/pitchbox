@@ -16,6 +16,7 @@
     "./platforms/reply-reader": "./src/platforms/base-reply-reader.ts",
     "./quota": "./src/quota.ts",
     "./quota-types": "./src/quota-types.ts",
+    "./org-quota": "./src/org-quota.ts",
     "./agents": "./src/agents/base.ts",
     "./agents/registry": "./src/agents/registry.ts",
     "./agents/meta": "./src/agents/meta.ts",

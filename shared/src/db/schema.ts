@@ -43,6 +43,14 @@ export const organizations = pgTable('organizations', {
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // Per-org cloud-runner quota (CLD-P5, docs/cloud-runner-productionization-design.md
+  // section 5). Both nullable with no backfill: null means unlimited on that axis.
+  // monthlyRunBudgetUsd caps calendar-month run cost (shared/src/org-quota.ts sums
+  // runs.cost_usd for the org); maxConcurrentRuns caps sessions the cloud runner
+  // holds open for the org at once, enforced in-memory on the runner from the
+  // signed JWT quota claim.
+  monthlyRunBudgetUsd: numeric('monthly_run_budget_usd', { precision: 10, scale: 2 }),
+  maxConcurrentRuns: integer('max_concurrent_runs'),
 });
 
 export const memberships = pgTable(

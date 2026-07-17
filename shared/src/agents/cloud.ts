@@ -84,20 +84,26 @@ async function loadCloudAdapter(orgId?: number): Promise<AgentRunner> {
 /**
  * Resolve the bearer credential attached to the WS handshake. Prefers a
  * short-lived, per-org JWT (minted with `RUNNER_JWT_PRIVATE_KEY`, carrying the
- * dispatching run's `org_id`) when a private key is configured and the org is
- * known; falls back to the static `PITCHBOX_RUNNER_TOKEN` bearer (the
- * single-tenant self-host path, unchanged) otherwise - including the edge
- * case of a private key configured but no org resolved for this run. See
- * docs/cloud-runner.md "Auth".
+ * dispatching run's `org_id` and its CLD-P5 quota snapshot) when a private key
+ * is configured and the org is known; falls back to the static
+ * `PITCHBOX_RUNNER_TOKEN` bearer (the single-tenant self-host path, unchanged)
+ * otherwise - including the edge case of a private key configured but no org
+ * resolved for this run. The static-token fallback carries no quota claim, so
+ * it stays unenforced exactly as before this feature. See docs/cloud-runner.md
+ * "Auth".
  */
 export async function resolveRunnerToken(orgId?: number): Promise<string | undefined> {
   const privateKeyPem = process.env.RUNNER_JWT_PRIVATE_KEY;
   if (privateKeyPem && orgId != null) {
     const { mintRunnerJwt } = await import('./cloud/jwt.js');
+    const { getDb } = await import('../db/client.js');
+    const { getOrgQuotaSnapshot } = await import('../org-quota.js');
+    const quota = await getOrgQuotaSnapshot(getDb(), orgId);
     return mintRunnerJwt({
       orgId,
       privateKeyPem,
       ttlSeconds: posIntEnv(process.env.RUNNER_JWT_TTL_SECONDS),
+      quota,
     });
   }
   return process.env.PITCHBOX_RUNNER_TOKEN;

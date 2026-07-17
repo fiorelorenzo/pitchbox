@@ -130,12 +130,33 @@ export interface RunnerJwtClaims {
   /** Token scope. Always `RUNNER_JWT_SCOPE` today. */
   scope: string;
   /**
-   * Reserved for CLD-P5 (per-org quota enforcement): a snapshot of the org's
-   * remaining budget/concurrency at mint time. Not read or enforced by the
-   * runner yet - documented here so the claim shape doesn't need to change
-   * when quota enforcement lands.
+   * CLD-P5 (per-org quota enforcement, see
+   * docs/cloud-runner-productionization-design.md section 5): a snapshot of
+   * the org's remaining monthly USD budget and concurrency cap, taken at mint
+   * time by the client/control plane (`shared/src/org-quota.ts`). The runner
+   * enforces both at `session.start` admission (`cloud/runner/src/server.ts`)
+   * purely from this signed claim - it never queries a DB. Because tokens are
+   * short-lived, the snapshot is at most one TTL stale. Omitted (undefined)
+   * only on the legacy static-token fallback path, which carries no org
+   * identity and so is never quota-enforced.
    */
-  quota?: unknown;
+  quota?: RunnerJwtQuota;
+}
+
+/**
+ * The quota snapshot carried by `RunnerJwtClaims.quota`. Both fields are
+ * independently nullable: `null` means unlimited on that axis (no budget cap
+ * / no concurrency cap), distinct from `undefined` (no claim at all, the
+ * static-token fallback path).
+ */
+export interface RunnerJwtQuota {
+  /** Org's remaining monthly USD run budget at mint time, or null if the org
+   * has no configured budget (unlimited). A value <= 0 means the org is over
+   * budget - the runner rejects `session.start` with a `quota_exceeded` reason. */
+  remainingUsd: number | null;
+  /** Max concurrent sessions the runner allows for this org, or null if
+   * unlimited. Enforced by the runner's in-memory per-org session count. */
+  concurrencyCap: number | null;
 }
 
 /** The only scope a runner-auth JWT carries today. */
@@ -167,6 +188,21 @@ function isStringRecord(v: unknown): v is Record<string, string> {
 }
 function isOptional<T>(v: unknown, check: (v: unknown) => v is T): v is T | undefined {
   return v === undefined || check(v);
+}
+function isNullable<T>(v: unknown, check: (v: unknown) => v is T): v is T | null {
+  return v === null || check(v);
+}
+
+/**
+ * Validates the `quota` claim shape carried by `RunnerJwtClaims`. The runner's
+ * JWT verification (`cloud/runner/src/auth.ts`) calls this to reject a
+ * malformed claim before it is trusted for an admission decision - a claim is
+ * only ever a signed artifact from the control plane, but shape validation
+ * here is cheap insurance against a stale/mismatched mint.
+ */
+export function isRunnerJwtQuota(v: unknown): v is RunnerJwtQuota {
+  if (!isRecord(v)) return false;
+  return isNullable(v.remainingUsd, isFiniteNumber) && isNullable(v.concurrencyCap, isFiniteNumber);
 }
 
 function isCloudSessionContext(v: unknown): v is CloudSessionContext {

@@ -76,4 +76,32 @@ describe('mintRunnerJwt', () => {
     const token = await mintRunnerJwt({ orgId: 1, privateKeyPem });
     await expect(verify(token, otherPublicPem)).rejects.toThrow();
   });
+
+  describe('quota claim (CLD-P5)', () => {
+    it('embeds the given quota snapshot verbatim', async () => {
+      const token = await mintRunnerJwt({
+        orgId: 7,
+        privateKeyPem,
+        quota: { remainingUsd: 12.5, concurrencyCap: 3 },
+      });
+      const { payload } = await verify(token);
+      expect(payload.quota).toEqual({ remainingUsd: 12.5, concurrencyCap: 3 });
+    });
+
+    it('carries explicit nulls for an unlimited budget/concurrency snapshot', async () => {
+      const token = await mintRunnerJwt({
+        orgId: 7,
+        privateKeyPem,
+        quota: { remainingUsd: null, concurrencyCap: null },
+      });
+      const { payload } = await verify(token);
+      expect(payload.quota).toEqual({ remainingUsd: null, concurrencyCap: null });
+    });
+
+    it('omits the quota claim entirely when the caller passes none', async () => {
+      const token = await mintRunnerJwt({ orgId: 7, privateKeyPem });
+      const { payload } = await verify(token);
+      expect(payload.quota).toBeUndefined();
+    });
+  });
 });
