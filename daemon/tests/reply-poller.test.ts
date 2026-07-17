@@ -162,7 +162,8 @@ describe('reply-poller', () => {
     });
 
     it('excludes Null readers and includes real ones', () => {
-      expect(getActiveReplyReaderPlatforms()).toEqual([]);
+      // Mastodon is registered as a real reader by default (see reply-readers.ts).
+      expect(getActiveReplyReaderPlatforms()).toEqual(['mastodon']);
 
       registerReplyReader({
         platform: 'hackernews',
@@ -170,7 +171,14 @@ describe('reply-poller', () => {
           return [];
         },
       });
-      expect(getActiveReplyReaderPlatforms()).toEqual(['hackernews']);
+      expect(getActiveReplyReaderPlatforms()).toEqual(['mastodon', 'hackernews']);
     });
+  });
+
+  it('registers a real (non-Null) reply reader for mastodon', () => {
+    const mastodon = getReplyReader('mastodon');
+    expect(mastodon).not.toBeNull();
+    expect(mastodon?.platform).toBe('mastodon');
+    expect(getActiveReplyReaderPlatforms()).toContain('mastodon');
   });
 });
