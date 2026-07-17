@@ -6,6 +6,12 @@ export interface AgentRunOptions {
   env: Record<string, string>;
   cwd: string;
   timeoutMs: number;
+  /**
+   * The dispatching run's organization, when resolved. Only the `cloud` runner
+   * consumes this today (to mint a per-org runner-auth JWT at dispatch time);
+   * other runners ignore it.
+   */
+  orgId?: number;
   /** Called with the raw original line for each stdout/stderr chunk - optional, for forensic logging. */
   onRawLine?: (line: string) => void;
   /** Called with one or more normalized ParsedEvents extracted from that line. */

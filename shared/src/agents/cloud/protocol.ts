@@ -82,6 +82,46 @@ export interface CloudUsage {
   totalCostUsd?: number;
 }
 
+/**
+ * Claims carried by the short-lived, per-org runner-auth JWT that replaces the
+ * static `RUNNER_TOKEN` bearer for multi-tenant deployments (see
+ * docs/cloud-runner-productionization-design.md section 1). The client/control
+ * plane signs a token with these claims (`RUNNER_JWT_PRIVATE_KEY`) and the
+ * runner verifies it (`RUNNER_JWT_PUBLIC_KEY`) at the WS handshake, extracting
+ * `org_id` to scope usage metering. Kept here - not next to the `jose`-based
+ * signer/verifier - so the shape stays dependency-free and vendors cleanly into
+ * the runner via `pnpm sync:protocol`; each side owns its own signing/verifying
+ * code and only agrees on this shape.
+ */
+export interface RunnerJwtClaims {
+  /** The organization this token authorizes; the runner tags metered usage with it. */
+  org_id: number;
+  /** Standard JWT "issued at" claim, Unix seconds. */
+  iat: number;
+  /** Standard JWT "expires at" claim, Unix seconds. Intentionally short (see
+   * `RUNNER_JWT_DEFAULT_TTL_SECONDS`) since revocation beyond expiry is
+   * TTL-only for now (no deny-list). */
+  exp: number;
+  /** Standard JWT token id. Not checked against a deny-list today; reserved
+   * for one if a "revoke now" requirement appears. */
+  jti: string;
+  /** Token scope. Always `RUNNER_JWT_SCOPE` today. */
+  scope: string;
+  /**
+   * Reserved for CLD-P5 (per-org quota enforcement): a snapshot of the org's
+   * remaining budget/concurrency at mint time. Not read or enforced by the
+   * runner yet - documented here so the claim shape doesn't need to change
+   * when quota enforcement lands.
+   */
+  quota?: unknown;
+}
+
+/** The only scope a runner-auth JWT carries today. */
+export const RUNNER_JWT_SCOPE = 'runner:dispatch';
+
+/** Default TTL for a minted runner-auth JWT, in seconds (short-lived by design). */
+export const RUNNER_JWT_DEFAULT_TTL_SECONDS = 15 * 60;
+
 /** True if `v` is the protocol version this build of the contract speaks. */
 export function isSupportedProtocolVersion(v: unknown): v is number {
   return v === CLOUD_PROTOCOL_VERSION;

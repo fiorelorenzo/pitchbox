@@ -20,7 +20,7 @@ export class CloudRunner implements AgentRunner {
   run(opts: AgentRunOptions): AgentRunHandle {
     let cancelFn: () => void = () => {};
     const result: Promise<AgentRunResult> = (async () => {
-      const adapter = await loadCloudAdapter();
+      const adapter = await loadCloudAdapter(opts.orgId);
       const handle = adapter.run(opts);
       cancelFn = handle.cancel;
       return handle.result;
@@ -57,7 +57,7 @@ async function importCloudAdapter(): Promise<CloudAdapterModule> {
   }
 }
 
-async function loadCloudAdapter(): Promise<AgentRunner> {
+async function loadCloudAdapter(orgId?: number): Promise<AgentRunner> {
   if (process.env.PITCHBOX_EDITION !== 'cloud') {
     throw new Error('Cloud runner requires PITCHBOX_EDITION=cloud.');
   }
@@ -76,7 +76,35 @@ async function loadCloudAdapter(): Promise<AgentRunner> {
   }
   return new mod.CloudAgentRunner({
     url,
-    token: process.env.PITCHBOX_RUNNER_TOKEN,
+    token: await resolveRunnerToken(orgId),
     backend: process.env.PITCHBOX_RUNNER_BACKEND,
   });
+}
+
+/**
+ * Resolve the bearer credential attached to the WS handshake. Prefers a
+ * short-lived, per-org JWT (minted with `RUNNER_JWT_PRIVATE_KEY`, carrying the
+ * dispatching run's `org_id`) when a private key is configured and the org is
+ * known; falls back to the static `PITCHBOX_RUNNER_TOKEN` bearer (the
+ * single-tenant self-host path, unchanged) otherwise - including the edge
+ * case of a private key configured but no org resolved for this run. See
+ * docs/cloud-runner.md "Auth".
+ */
+export async function resolveRunnerToken(orgId?: number): Promise<string | undefined> {
+  const privateKeyPem = process.env.RUNNER_JWT_PRIVATE_KEY;
+  if (privateKeyPem && orgId != null) {
+    const { mintRunnerJwt } = await import('./cloud/jwt.js');
+    return mintRunnerJwt({
+      orgId,
+      privateKeyPem,
+      ttlSeconds: posIntEnv(process.env.RUNNER_JWT_TTL_SECONDS),
+    });
+  }
+  return process.env.PITCHBOX_RUNNER_TOKEN;
+}
+
+function posIntEnv(v: string | undefined): number | undefined {
+  if (!v) return undefined;
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
 }

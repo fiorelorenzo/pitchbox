@@ -215,6 +215,9 @@ async function dispatchRun(
     },
     cwd: PITCHBOX_ROOT,
     timeoutMs: 15 * 60 * 1000,
+    // Only the cloud runner consumes this (to mint a per-org runner-auth JWT
+    // at dispatch time); already resolved above for the emit() calls.
+    orgId: orgId ?? undefined,
 
     onRawLine: () => {
       // Raw lines are already persisted to the runner's log file; no-op here.

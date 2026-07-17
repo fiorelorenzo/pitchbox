@@ -127,8 +127,10 @@ What is proven vs. what remains:
   the `cloud/adapter`), both importing the OSS protocol contract; the runner runs
   the agent with its own LLM credentials and picks the model via `RUNNER_MODEL`;
   and usage + cost metering lands on `session.done`.
-- **Still open (productionisation)**: the per-org WS auth handshake (a static
-  bearer token is wired today) and reconnect/resume.
+- **Still open (productionisation)**: reconnect/resume and per-org quota
+  enforcement (see `docs/cloud-runner-productionization-design.md`). The
+  per-org WS auth handshake (section 1, CLD-P1) is now implemented - see
+  "Auth, billing, LLM credentials" below.
 
 ## Architecture
 
@@ -233,17 +235,34 @@ WS control message -> runner `session/cancel` + agent teardown. Cost/usage from
 the ACP `stop_reason` block flows back through the normalizer into the existing
 `runs` cost columns.
 
-## Auth, billing, LLM credentials [PROPOSED]
+## Auth, billing, LLM credentials
 
-- **Auth**: per-org token (same spirit as the extension token in
-  `app_config.extension_api_token`), minted by the cloud control plane. Self-hosters
-  using the cloud runner get a token from their Pitchbox Cloud account.
+- **Auth [IMPLEMENTED, CLD-P1]**: a short-lived, per-org JWT (EdDSA/Ed25519),
+  minted client/control-plane side at dispatch time and carrying the
+  dispatching run's `org_id`. The web signs it with `RUNNER_JWT_PRIVATE_KEY`;
+  the runner verifies it with the matching `RUNNER_JWT_PUBLIC_KEY` at the WS
+  handshake (signature, expiry, and an algorithm allow-list that rejects
+  `alg:none` and symmetric algorithms) and rejects the upgrade on any failure.
+  The verified `org_id` tags the usage metered on `session.done`. Revocation is
+  TTL-only today (default 15 min, `RUNNER_JWT_TTL_SECONDS` to override) - no
+  deny-list yet (see `docs/cloud-runner-productionization-design.md` section
+  1). When no `RUNNER_JWT_PRIVATE_KEY`/`RUNNER_JWT_PUBLIC_KEY` pair is
+  configured, both sides fall back to the legacy static `PITCHBOX_RUNNER_TOKEN`
+  / `RUNNER_TOKEN` bearer unchanged - the single-tenant self-host path, kept
+  for one release. The claim shape (`RunnerJwtClaims`) lives in the OSS
+  protocol contract (`shared/src/agents/cloud/protocol.ts`); the signing
+  (`shared/src/agents/cloud/jwt.ts`) and verifying (`cloud/runner/src/auth.ts`)
+  code each import `jose` independently - the protocol contract itself stays
+  dependency-free so it vendors cleanly into the runner.
 - **LLM credentials**: the runner owns the Anthropic key/subscription - that is
   the value prop (no local agent CLI or API key needed). The agent in the cloud
   uses the runner's credentials.
-- **Billing/quota**: metered per org on the runner from the ACP usage block;
-  enforced before/while dispatching. Ties into the deferred "per-org runner-quota
-  layer" already noted in `docs/auth.md`.
+- **Billing/quota [PROPOSED]**: metered per org on the runner from the ACP
+  usage block (tagged with the JWT's `org_id` since CLD-P1); admission-time
+  enforcement is still deferred (CLD-P5, see the productionization design doc
+  section 5 and the "per-org runner-quota layer" noted in `docs/auth.md`). The
+  claim shape reserves a `quota` field for that snapshot so it doesn't require
+  a claim-shape change later.
 
 ## Edition and repo strategy
 
