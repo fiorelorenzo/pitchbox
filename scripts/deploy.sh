@@ -73,7 +73,7 @@ if [ "$ROLLBACK" = 1 ]; then
   IMAGE_REPO="${APP_IMAGE%%:*}"
   log "ROLLBACK MODE: reusing existing image $APP_IMAGE (no build)"
 else
-  base_image="${APP_IMAGE:-$(grep -E '^APP_IMAGE=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)}"
+  base_image="${APP_IMAGE:-$(grep -E '^APP_IMAGE=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)}"
   base_image="${base_image:-pitchbox-app:latest}"
   IMAGE_REPO="${base_image%%:*}"
   safe_ref="$(printf '%s' "$REF" | tr -c 'A-Za-z0-9._-' '-')"
