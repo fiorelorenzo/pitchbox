@@ -1,0 +1,1 @@
+ALTER TABLE "campaigns" ADD COLUMN "auto_post" boolean DEFAULT false NOT NULL;

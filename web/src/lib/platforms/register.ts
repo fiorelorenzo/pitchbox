@@ -3,3 +3,4 @@
 // before any component calls getPresenter().
 import './reddit/presenter';
 import './hackernews/presenter';
+import './mastodon/presenter';

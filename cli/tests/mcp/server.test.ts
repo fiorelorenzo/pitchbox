@@ -1,8 +1,9 @@
-import { describe, expect, it, beforeEach, afterAll } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
+import { encrypt } from '@pitchbox/shared/crypto';
 import { eq, sql } from 'drizzle-orm';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -345,6 +346,171 @@ describe('pitchbox MCP server (lifecycle + write tools)', () => {
     const res = await call(client, 'mastodon_scout', { runId: 987654 });
     expect(res.isError).toBe(true);
     expect(res.content[0]?.text ?? '').toContain('not found');
+  });
+});
+
+const MASTODON_ENCRYPTION_KEY = 'a'.repeat(64);
+
+async function seedMastodonAutoPostCampaign(autoPost: boolean) {
+  const db = getDb();
+  const platformId = await mastodonPlatformId();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
+  const [project] = await db
+    .insert(schema.projects)
+    .values({ organizationId: org.id, slug: 'mcp-mastodon-post-test', name: 'MCP Mastodon Post' })
+    .returning();
+  const [account] = await db
+    .insert(schema.accounts)
+    .values({
+      projectId: project.id,
+      platformId,
+      handle: '@bot@mastodon.example',
+      role: 'brand',
+      instanceUrl: 'https://mastodon.example',
+      accessTokenEncrypted: encrypt('test-token', MASTODON_ENCRYPTION_KEY),
+      isDefault: true,
+    })
+    .returning();
+  const [campaign] = await db
+    .insert(schema.campaigns)
+    .values({
+      projectId: project.id,
+      platformId,
+      name: 'Mastodon Poster',
+      skillSlug: 'mastodon-poster',
+      autoPost,
+    })
+    .returning();
+  return { projectId: project.id, accountId: account.id, campaignId: campaign.id, platformId };
+}
+
+describe('pitchbox MCP server (mastodon_post)', () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.ENCRYPTION_KEY;
+
+  beforeEach(async () => {
+    await reset();
+    process.env.ENCRYPTION_KEY = MASTODON_ENCRYPTION_KEY;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    process.env.ENCRYPTION_KEY = originalKey;
+  });
+
+  it('mastodon_post surfaces an unknown run as a tool error', async () => {
+    const client = await connectClient();
+    const res = await call(client, 'mastodon_post', { runId: 987654, kind: 'post', status: 'x' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? '').toContain('not found');
+  });
+
+  it('mastodon_post refuses to post on a campaign without auto_post enabled', async () => {
+    const { campaignId } = await seedMastodonAutoPostCampaign(false);
+    const client = await connectClient();
+    const { runId } = parse(await call(client, 'run_start', { campaignId })) as { runId: number };
+    const res = await call(client, 'mastodon_post', { runId, kind: 'post', status: 'hello' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? '').toContain('auto_post');
+  });
+
+  it('mastodon_post posts a status via the API and returns the persisted draft when auto_post is enabled', async () => {
+    const { campaignId, accountId } = await seedMastodonAutoPostCampaign(true);
+    const db = getDb();
+    const client = await connectClient();
+    const { runId } = parse(await call(client, 'run_start', { campaignId })) as { runId: number };
+
+    globalThis.fetch = (async (
+      url: string | URL,
+      init?: { method?: string; headers?: Record<string, string>; body?: string },
+    ) => {
+      expect(String(url)).toBe('https://mastodon.example/api/v1/statuses');
+      const body = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          id: '777',
+          uri: 'x',
+          url: 'https://mastodon.example/@bot/777',
+          created_at: new Date().toISOString(),
+          in_reply_to_id: null,
+          in_reply_to_account_id: null,
+          content: body.status,
+          visibility: body.visibility,
+          sensitive: false,
+          spoiler_text: '',
+          account: {},
+          mentions: [],
+          tags: [],
+          replies_count: 0,
+          reblogs_count: 0,
+          favourites_count: 0,
+          reblog: null,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as unknown as typeof fetch;
+
+    const res = await call(client, 'mastodon_post', {
+      runId,
+      kind: 'post',
+      status: 'Launching a self-hosted outreach agent.',
+    });
+    const data = parse(res) as { runId: number; draftId: number; platformPostId: string };
+    expect(data.platformPostId).toBe('777');
+
+    const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, data.draftId));
+    expect(draft.state).toBe('sent');
+    expect(draft.accountId).toBe(accountId);
+    expect(draft.platformPostId).toBe('777');
+  });
+
+  it('rejects a runId belonging to another organization (mastodon_post)', async () => {
+    const platformId = await mastodonPlatformId();
+    const db = getDb();
+
+    async function seedOrg(slug: string) {
+      const [org] = await db.insert(schema.organizations).values({ slug, name: slug }).returning();
+      const [project] = await db
+        .insert(schema.projects)
+        .values({ organizationId: org.id, slug: `${slug}-proj`, name: `${slug} project` })
+        .returning();
+      const [campaign] = await db
+        .insert(schema.campaigns)
+        .values({
+          projectId: project.id,
+          platformId,
+          name: 'Poster',
+          skillSlug: 'mastodon-poster',
+          autoPost: true,
+        })
+        .returning();
+      return { orgId: org.id, campaignId: campaign.id };
+    }
+
+    const a = await seedOrg('mcp-own-mastodon-post-a');
+    const b = await seedOrg('mcp-own-mastodon-post-b');
+
+    const clientA = await connectClientWithCtx({ campaignId: a.campaignId });
+    const { runId: runIdA } = parse(
+      await call(clientA, 'run_start', { campaignId: a.campaignId }),
+    ) as {
+      runId: number;
+    };
+    const clientB = await connectClientWithCtx({ campaignId: b.campaignId });
+    const { runId: runIdB } = parse(
+      await call(clientB, 'run_start', { campaignId: b.campaignId }),
+    ) as {
+      runId: number;
+    };
+
+    // Session bound to org A's run; the agent tries to act on org B's run.
+    const attacker = await connectClientWithCtx({ runId: runIdA });
+    const res = await call(attacker, 'mastodon_post', { runId: runIdB, kind: 'post', status: 'x' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text ?? '').toContain("does not belong to this session's organization");
   });
 });
 

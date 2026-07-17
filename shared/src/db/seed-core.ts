@@ -11,6 +11,14 @@ export const QUOTA_DEFAULTS = {
     comment: { perDay: 50, perWeek: 200 },
     post: { perDay: 5, perWeek: 20 },
   },
+  // Mastodon (MAS-7): conservative on purpose - the fediverse is hostile to
+  // cold marketing/DMs (see docs/mastodon-integration-design.md "Guardrails
+  // / tone"), so every cap sits well below the Reddit defaults.
+  mastodon: {
+    dm: { perDay: 5, perWeek: 20 },
+    comment: { perDay: 20, perWeek: 80 },
+    post: { perDay: 3, perWeek: 10 },
+  },
 } as const;
 
 const BUILTIN_PLAYBOOKS = [
@@ -38,6 +46,22 @@ const BUILTIN_PLAYBOOKS = [
     slug: 'hn-poster',
     name: 'Hacker News poster',
     description: 'Draft proactive Show HN / Ask HN / text submissions (title + body).',
+  },
+  {
+    slug: 'mastodon-scout',
+    name: 'Mastodon scout',
+    description:
+      'Watch target hashtags and draft genuine, contextual DMs to good-fit posters, honoring #nobot.',
+  },
+  {
+    slug: 'mastodon-commenter',
+    name: 'Mastodon commenter',
+    description: 'Draft helpful public replies to statuses that match the project.',
+  },
+  {
+    slug: 'mastodon-poster',
+    name: 'Mastodon poster',
+    description: 'Draft proactive top-level statuses (toots) for the project.',
   },
 ];
 

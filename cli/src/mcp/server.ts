@@ -26,7 +26,11 @@ import {
   replyDraftFinish,
 } from '../commands/drafts.js';
 import { scoutRun, snapshotSubreddit } from '../commands/reddit.js';
-import { scoutRun as mastodonScoutRun } from '../commands/mastodon.js';
+import {
+  scoutRun as mastodonScoutRun,
+  postRun as mastodonPostRun,
+  type MastodonPostKind,
+} from '../commands/mastodon.js';
 import { searchHn, HN_LISTINGS } from '../commands/hn.js';
 import type { HnListing } from '@pitchbox/shared/platforms/hackernews';
 import {
@@ -307,6 +311,51 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
         const ownershipErr = await checkOwnership('run', rid);
         if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await mastodonScoutRun(rid));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'mastodon_post',
+    {
+      title: 'Post a Mastodon status',
+      description:
+        'Post a status directly via the Mastodon API and record it as an already-sent draft. Only usable when the session-bound campaign has auto_post enabled - other campaigns must use drafts_create for manual review instead. Runs the same blocklist + quota guardrails as the manual send path (evaluateDraftSend); nothing is posted when it fails. kind "dm" -> a direct-visibility status mentioning targetHandle; "comment" -> a public reply using inReplyToId; "post" -> a public top-level status. Returns { runId, draftId, platformPostId, url }.',
+      inputSchema: {
+        kind: z.enum(['dm', 'comment', 'post']),
+        status: z.string().min(1).describe('the status text to post'),
+        targetHandle: z
+          .string()
+          .optional()
+          .describe('target handle to mention - required for kind "dm"'),
+        inReplyToId: z
+          .string()
+          .optional()
+          .describe('status id being replied to - required for kind "comment"'),
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ kind, status, targetHandle, inReplyToId, runId }) => {
+      const rid = runId ?? defaultRunId();
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
+        return jsonResult(
+          await mastodonPostRun(rid, {
+            kind: kind as MastodonPostKind,
+            status,
+            targetHandle,
+            inReplyToId,
+          }),
+        );
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }

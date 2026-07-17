@@ -9,6 +9,7 @@ import {
   mapDraftKindToQuotaKind,
   type QuotaKind,
 } from './quota.js';
+import type { MastodonVisibility, PostStatusParams } from './platforms/mastodon/types.js';
 
 export type DraftLike = {
   platformId: number;
@@ -187,4 +188,51 @@ export async function evaluateDraftSend(
       : null;
 
   return { kind: 'ok', quotaEventDetails };
+}
+
+/** The subset of a draft row the Mastodon send mapping needs. */
+export type MastodonSendDraft = {
+  kind: string;
+  body: string;
+  targetUser: string | null;
+  platformCommentId: string | null;
+};
+
+/**
+ * Maps a Mastodon draft to `MastodonClient.postStatus` params, keyed off
+ * `draft.kind` (MAS-5): `dm` -> a `direct`-visibility status that mentions
+ * the target handle (skipped when the body already mentions it); `post_comment`
+ * / `comment_reply` -> a public reply, `in_reply_to_id` taken from
+ * `platformCommentId` (the status being replied to); `post` (and any other
+ * kind) -> a plain public status. Pure mapping - callers own the actual API
+ * call and any DB writes.
+ */
+export function mapMastodonSendParams(draft: MastodonSendDraft): PostStatusParams {
+  if (draft.kind === 'dm') {
+    const handle = draft.targetUser?.replace(/^@/, '').trim() || null;
+    const mention = handle ? `@${handle}` : null;
+    const status =
+      mention && !draft.body.includes(mention) ? `${mention} ${draft.body}` : draft.body;
+    return { status, visibility: 'direct' as MastodonVisibility };
+  }
+  if (draft.kind === 'post_comment' || draft.kind === 'comment_reply') {
+    const params: PostStatusParams = { status: draft.body, visibility: 'public' };
+    if (draft.platformCommentId) params.inReplyToId = draft.platformCommentId;
+    return params;
+  }
+  return { status: draft.body, visibility: 'public' as MastodonVisibility };
+}
+
+/** Renders a non-`ok` `SendEvaluation` as the same error text the inbox PATCH route surfaces. */
+export function describeBlockedSend(evald: Exclude<SendEvaluation, { kind: 'ok' }>): string {
+  switch (evald.kind) {
+    case 'blocked':
+      return `blocklisted: ${evald.reason ?? 'no reason'}`;
+    case 'scheduled':
+      return `scheduled_send_after:${evald.sendAfter.toISOString()}`;
+    case 'drafting':
+      return 'draft is still being drafted';
+    case 'quota_exceeded':
+      return `quota_exceeded: ${evald.quotaKind} ${evald.window} limit ${evald.limit} (would be ${evald.used})`;
+  }
 }

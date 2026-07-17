@@ -205,6 +205,11 @@ export const campaigns = pgTable('campaigns', {
   failureAttempts: integer('failure_attempts').notNull().default(0),
   nextAttemptAfter: timestamp('next_attempt_after', { withTimezone: true }),
   pausedDueToFailures: boolean('paused_due_to_failures').notNull().default(false),
+  // Opt-in per-campaign auto-post (MAS-5, Mastodon only today): when true, an
+  // approved draft is sent via the platform's API immediately instead of
+  // waiting for the human to send it manually. Defaults to false - manual
+  // send stays the default for every platform.
+  autoPost: boolean('auto_post').notNull().default(false),
 });
 
 export const campaignRecommendations = pgTable(
