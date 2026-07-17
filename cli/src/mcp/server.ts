@@ -179,7 +179,12 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     },
     async ({ platform, user, projectId }) => {
       try {
-        return jsonResult(await checkBlocklist(platform, user, projectId ?? defaultProjectId()));
+        const pid = projectId ?? defaultProjectId();
+        if (pid != null) {
+          const ownershipErr = await checkOwnership('project', pid);
+          if (ownershipErr) return errorResult(ownershipErr);
+        }
+        return jsonResult(await checkBlocklist(platform, user, pid));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }

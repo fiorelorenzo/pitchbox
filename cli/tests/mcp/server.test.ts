@@ -732,6 +732,33 @@ describe('pitchbox MCP server (org ownership enforcement, defense-in-depth)', ()
     const res = await call(client, 'run_start', { campaignId });
     expect(res.isError).toBeFalsy();
   });
+
+  it('rejects a projectId belonging to another organization (blocklist_check)', async () => {
+    const a = await seedOrgScoutCampaign('mcp-own-blk-a');
+    const b = await seedOrgScoutCampaign('mcp-own-blk-b');
+
+    // Session bound to org A's project; the agent-supplied projectId argument
+    // tries to probe org B's blocklist.
+    const attacker = await connectClientWithCtx({ projectId: a.projectId });
+    const crossOrg = await call(attacker, 'blocklist_check', {
+      platform: 'reddit',
+      user: 'someone',
+      projectId: b.projectId,
+    });
+    expect(crossOrg.isError).toBe(true);
+    expect(crossOrg.content[0]?.text ?? '').toContain(
+      "does not belong to this session's organization",
+    );
+
+    // Same-org projectId still works.
+    const sameOrg = await call(attacker, 'blocklist_check', {
+      platform: 'reddit',
+      user: 'someone',
+      projectId: a.projectId,
+    });
+    expect(sameOrg.isError).toBeFalsy();
+    expect(parse(sameOrg)).toEqual({ blocked: false, reason: null });
+  });
 });
 
 afterAll(async () => {

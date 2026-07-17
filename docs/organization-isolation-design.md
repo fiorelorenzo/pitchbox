@@ -122,12 +122,17 @@ Edit `shared/src/db/schema.ts`, then `pnpm run migrate:generate` and
 
 ### 4. MCP / agent boundary
 
-Left trust-based, as scoped. It is covered transitively: the dispatch path now
-validates that the active org owns the campaign before injecting
-`PITCHBOX_PROJECT_ID` / `PITCHBOX_CAMPAIGN_ID` / `PITCHBOX_RUN_ID`
-(`shared/src/agents/acp/runner.ts`), so an agent can never be handed an id from
-another org. No `organizationId` is added to the MCP context
-(`cli/src/mcp/server.ts:61-73`).
+Enforced at both layers. The dispatch path validates that the active org owns
+the campaign before injecting `PITCHBOX_PROJECT_ID` / `PITCHBOX_CAMPAIGN_ID` /
+`PITCHBOX_RUN_ID` (`shared/src/agents/acp/runner.ts`), so an agent is never
+handed a session id from another org. On top of that, the MCP server itself
+(`cli/src/mcp/server.ts`) resolves the session's org once from its bound
+run/campaign/project id and checks every run/campaign/project/draft id a tool
+touches, whether it is the session default or an agent-supplied argument,
+against that org before hitting the DB, rejecting a mismatch with a
+structured tool error. This is defense-in-depth: the agent reads untrusted
+scraped text, so a tool-supplied id is never trusted on its own even though
+the dispatch layer already validated it once.
 
 ### 5. Slug lookups become org-scoped
 
@@ -176,9 +181,11 @@ tests before the implementation.
 - **`contact_history` stays global.** Contact dedup is shared across orgs: one org
   can indirectly observe that another org has contacted a given user. Accepted for
   now; scoping it is future work.
-- **MCP layer trusts injected ids.** Safe as long as dispatch keeps validating org
-  ownership before injecting ids. If a new dispatch path is added, it must perform
-  the same check.
+- **MCP layer enforces ownership too, but only for ids it can trace to an org.**
+  Every run/campaign/project/draft id a tool touches is checked against the
+  session's org (`cli/src/mcp/server.ts`). A new dispatch path still must inject
+  ids validated against the active org: the MCP-side check is a second layer,
+  not a substitute for that first one.
 
 ## Rollout / compatibility
 
