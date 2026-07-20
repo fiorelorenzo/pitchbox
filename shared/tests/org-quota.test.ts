@@ -12,7 +12,9 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '../src/db/client.js';
 import {
   getOrgMonthToDateCostUsd,
+  getOrgQuotaFields,
   getOrgQuotaSnapshot,
+  setOrgQuota,
   startOfMonthUtc,
 } from '../src/org-quota.js';
 
@@ -270,5 +272,76 @@ describe('getOrgQuotaSnapshot', () => {
   it('returns fully unlimited for an org id that does not exist', async () => {
     const snapshot = await getOrgQuotaSnapshot(getDb(), -1);
     expect(snapshot).toEqual({ remainingUsd: null, concurrencyCap: null });
+  });
+});
+
+// getOrgQuotaFields / setOrgQuota back the org-quota settings UI (#161): an
+// operator sets `organizations.monthly_run_budget_usd` and
+// `max_concurrent_runs` from the dashboard instead of raw SQL. These are
+// plain read/write helpers over the two columns - the numeric column comes
+// back from Postgres as a string, so getOrgQuotaFields normalizes it to a
+// number (or null) the same way getOrgQuotaSnapshot already does.
+describe('getOrgQuotaFields', () => {
+  it('returns the current budget + cap for an org', async () => {
+    const { orgId } = await setupOrg({ monthlyRunBudgetUsd: '25.50', maxConcurrentRuns: 4 });
+    expect(await getOrgQuotaFields(getDb(), orgId)).toEqual({
+      monthlyRunBudgetUsd: 25.5,
+      maxConcurrentRuns: 4,
+    });
+  });
+
+  it('returns both fields null (unlimited) when unset', async () => {
+    const { orgId } = await setupOrg();
+    expect(await getOrgQuotaFields(getDb(), orgId)).toEqual({
+      monthlyRunBudgetUsd: null,
+      maxConcurrentRuns: null,
+    });
+  });
+
+  it('returns null for an org id that does not exist', async () => {
+    expect(await getOrgQuotaFields(getDb(), -1)).toBeNull();
+  });
+});
+
+describe('setOrgQuota', () => {
+  it('persists a budget + cap, round-tripping through getOrgQuotaFields', async () => {
+    const { orgId } = await setupOrg();
+    const ok = await setOrgQuota(getDb(), orgId, {
+      monthlyRunBudgetUsd: 42.5,
+      maxConcurrentRuns: 5,
+    });
+    expect(ok).toBe(true);
+    expect(await getOrgQuotaFields(getDb(), orgId)).toEqual({
+      monthlyRunBudgetUsd: 42.5,
+      maxConcurrentRuns: 5,
+    });
+  });
+
+  it('clears both fields back to unlimited (null)', async () => {
+    const { orgId } = await setupOrg({ monthlyRunBudgetUsd: '10.00', maxConcurrentRuns: 2 });
+    const ok = await setOrgQuota(getDb(), orgId, {
+      monthlyRunBudgetUsd: null,
+      maxConcurrentRuns: null,
+    });
+    expect(ok).toBe(true);
+    expect(await getOrgQuotaFields(getDb(), orgId)).toEqual({
+      monthlyRunBudgetUsd: null,
+      maxConcurrentRuns: null,
+    });
+  });
+
+  it('never touches a different org row', async () => {
+    const a = await setupOrg({ monthlyRunBudgetUsd: '10.00', maxConcurrentRuns: 1 });
+    const b = await setupOrg({ monthlyRunBudgetUsd: '20.00', maxConcurrentRuns: 2 });
+    await setOrgQuota(getDb(), a.orgId, { monthlyRunBudgetUsd: 99, maxConcurrentRuns: 9 });
+    expect(await getOrgQuotaFields(getDb(), b.orgId)).toEqual({
+      monthlyRunBudgetUsd: 20,
+      maxConcurrentRuns: 2,
+    });
+  });
+
+  it('returns false for an org id that does not exist', async () => {
+    const ok = await setOrgQuota(getDb(), -1, { monthlyRunBudgetUsd: 1, maxConcurrentRuns: 1 });
+    expect(ok).toBe(false);
   });
 });

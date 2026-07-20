@@ -9,6 +9,7 @@
   import { toast } from 'svelte-sonner';
   import { goto, invalidateAll } from '$app/navigation';
   import { UserPlus, Copy, Trash2, MoreHorizontal, Pencil } from '@lucide/svelte';
+  import { untrack } from 'svelte';
 
   type Member = { userId: number; username: string; role: string; joinedAt: string };
   type Invite = {
@@ -19,6 +20,12 @@
     createdAt: string;
   };
   type Org = { id: number; slug: string; name: string } | null;
+  type OrgQuota = {
+    monthlyRunBudgetUsd: number | null;
+    maxConcurrentRuns: number | null;
+    monthToDateCostUsd: number;
+    remainingUsd: number | null;
+  };
   type PageData = {
     org: Org;
     role: string | null;
@@ -27,6 +34,7 @@
     currentUserId: number | null;
     members: Member[];
     invites: Invite[];
+    quota: OrgQuota | null;
   };
   let { data }: { data: PageData } = $props();
 
@@ -232,6 +240,56 @@
     }
   }
 
+  // Quota & budget (admin+): monthly USD run budget and concurrent-run cap
+  // stored on organizations.monthly_run_budget_usd / max_concurrent_runs
+  // (#161). Blank input means unlimited (null). Draft strings are kept
+  // separate from data.quota so a blank field isn't coerced to 0 while typing.
+  function toDraft(n: number | null): string {
+    return n == null ? '' : String(n);
+  }
+  let budgetDraft = $state(untrack(() => toDraft(data.quota?.monthlyRunBudgetUsd ?? null)));
+  let capDraft = $state(untrack(() => toDraft(data.quota?.maxConcurrentRuns ?? null)));
+  let savingQuota = $state(false);
+
+  function money(n: number): string {
+    return n.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+  }
+
+  async function saveQuota() {
+    if (savingQuota) return;
+    const budgetRaw = budgetDraft.trim();
+    const capRaw = capDraft.trim();
+    if (budgetRaw !== '' && Number(budgetRaw) < 0) {
+      toast.error('Monthly budget cannot be negative');
+      return;
+    }
+    if (capRaw !== '' && Number(capRaw) < 0) {
+      toast.error('Max concurrent runs cannot be negative');
+      return;
+    }
+    savingQuota = true;
+    try {
+      const res = await fetch('/api/settings/org-quota', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          monthlyRunBudgetUsd: budgetRaw === '' ? null : Number(budgetRaw),
+          maxConcurrentRuns: capRaw === '' ? null : Number(capRaw),
+        }),
+      });
+      if (!res.ok) {
+        toast.error(res.status === 403 ? 'You need admin access for that' : 'Could not save quota');
+        return;
+      }
+      toast.success('Quota saved');
+      await invalidateAll();
+    } catch {
+      toast.error('Could not save quota');
+    } finally {
+      savingQuota = false;
+    }
+  }
+
   // Leave the organization (self-remove).
   let leaving = $state(false);
   async function leaveOrg() {
@@ -342,6 +400,59 @@
         </div>
       </Card.Content>
     </Card.Root>
+
+    {#if data.canManage && data.quota}
+      <Card.Root>
+        <Card.Header>
+          <Card.Title class="text-base">Quota &amp; budget</Card.Title>
+          <p class="text-sm text-muted-foreground">
+            Cap this organization's cloud-runner spend and concurrency. Leave a field blank for
+            unlimited.
+          </p>
+        </Card.Header>
+        <Card.Content class="flex flex-col gap-4">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="flex flex-col gap-1.5">
+              <label class="text-sm font-medium" for="monthly-budget">Monthly run budget (USD)</label>
+              <Input
+                id="monthly-budget"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Unlimited"
+                bind:value={budgetDraft}
+              />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-sm font-medium" for="max-concurrent-runs">Max concurrent runs</label>
+              <Input
+                id="max-concurrent-runs"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="Unlimited"
+                bind:value={capDraft}
+              />
+            </div>
+          </div>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm font-medium">Month-to-date spend</span>
+              <span class="text-sm text-muted-foreground">{money(data.quota.monthToDateCostUsd)}</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-sm font-medium">Remaining budget</span>
+              <span class="text-sm text-muted-foreground">
+                {data.quota.remainingUsd == null ? 'Unlimited' : money(data.quota.remainingUsd)}
+              </span>
+            </div>
+          </div>
+          <div>
+            <Button onclick={saveQuota} loading={savingQuota}>Save</Button>
+          </div>
+        </Card.Content>
+      </Card.Root>
+    {/if}
 
     <Card.Root>
       <Card.Header>

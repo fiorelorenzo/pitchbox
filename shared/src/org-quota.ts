@@ -102,3 +102,52 @@ export async function getOrgQuotaSnapshot(
   const budgetUsd = Number(org.monthlyRunBudgetUsd);
   return { remainingUsd: budgetUsd - spentUsd, concurrencyCap };
 }
+
+export type OrgQuotaFields = {
+  /** null = unlimited. */
+  monthlyRunBudgetUsd: number | null;
+  /** null = unlimited. */
+  maxConcurrentRuns: number | null;
+};
+
+/**
+ * Read the raw `monthly_run_budget_usd` / `max_concurrent_runs` columns for an
+ * org (the org-quota settings UI, #161). Backs the GET side of
+ * `/api/settings/org-quota`; unlike `getOrgQuotaSnapshot` this returns the
+ * configured budget itself rather than the remaining amount, so the UI can
+ * show what an operator last set. Returns null if the org does not exist.
+ */
+export async function getOrgQuotaFields(db: Db, orgId: number): Promise<OrgQuotaFields | null> {
+  const [org] = await db
+    .select({
+      monthlyRunBudgetUsd: schema.organizations.monthlyRunBudgetUsd,
+      maxConcurrentRuns: schema.organizations.maxConcurrentRuns,
+    })
+    .from(schema.organizations)
+    .where(eq(schema.organizations.id, orgId))
+    .limit(1);
+  if (!org) return null;
+  return {
+    monthlyRunBudgetUsd: org.monthlyRunBudgetUsd == null ? null : Number(org.monthlyRunBudgetUsd),
+    maxConcurrentRuns: org.maxConcurrentRuns,
+  };
+}
+
+/**
+ * Persist an org's budget + concurrency cap (#161). A pure write: callers
+ * (the API route) are responsible for validating the incoming numbers
+ * (non-negative or null) before calling this. Returns true if a row was
+ * updated, false if the org does not exist.
+ */
+export async function setOrgQuota(db: Db, orgId: number, fields: OrgQuotaFields): Promise<boolean> {
+  const rows = await db
+    .update(schema.organizations)
+    .set({
+      monthlyRunBudgetUsd:
+        fields.monthlyRunBudgetUsd == null ? null : fields.monthlyRunBudgetUsd.toFixed(2),
+      maxConcurrentRuns: fields.maxConcurrentRuns,
+    })
+    .where(eq(schema.organizations.id, orgId))
+    .returning({ id: schema.organizations.id });
+  return rows.length > 0;
+}
