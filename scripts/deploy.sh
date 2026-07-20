@@ -104,6 +104,7 @@ prune_images() {
     log "removing old image ${IMAGE_REPO}:${old_tag}"
     docker rmi "${IMAGE_REPO}:${old_tag}" >/dev/null 2>&1 || true
   done
+  return 0
 }
 
 BACKUP_ROOT="$DIR/backups"
@@ -116,6 +117,12 @@ prune_backups() {
     i=$((i + 1))
     [ "$i" -gt "$keep" ] && { log "removing old restore point $d"; rm -rf "$d"; }
   done
+  # The for loop's last iteration is a `[ test ] && { ... }`; when nothing is
+  # pruned (<= keep backups) that test is false and the loop - and thus this
+  # function - would return 1, which under `set -e` aborts the deploy AFTER the
+  # cutover but BEFORE step 11 (runner recreate) + step 12 (retire old color).
+  # Always succeed: pruning is best-effort cleanup, never a deploy gate.
+  return 0
 }
 
 # 1. ensure shared services are up (postgres + runner); builds runner if its image is missing
