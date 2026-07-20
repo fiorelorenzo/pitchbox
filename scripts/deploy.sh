@@ -131,12 +131,17 @@ else
 fi
 log "active=$active(:${active_port:-none}) -> deploying idle=$idle(:$idle_port)"
 
-# 3. build the new image (skipped in --rollback: APP_IMAGE already points at a
-#    previously built, still-local image)
+# 3. build the new images (skipped in --rollback: APP_IMAGE already points at a
+#    previously built, still-local image). Build the RUNNER too: it is a separate
+#    image (built from ./cloud/runner, not bundled into the web image) and it
+#    carries the runner side of every cloud change. It MUST be rebuilt in lockstep
+#    with the web, or a new web/adapter (protocol v2, per-frame seq) would talk to
+#    a stale runner (protocol v1, no seq) and every cloud run would fail the
+#    version handshake. It is recreated at cutover (step 11).
 if [ "$ROLLBACK" = 1 ]; then
   log "skipping build (rollback mode)"
 else
-  log "building..."; "${COMPOSE[@]}" build "web-$idle"
+  log "building web + runner..."; "${COMPOSE[@]}" build "web-$idle" runner
 fi
 
 # 4. start the idle color (image already built -> --no-build to skip slow re-export)
@@ -233,10 +238,10 @@ ACTIVE_WEB="web-$idle" "${COMPOSE[@]}" up -d --no-deps --no-build --force-recrea
 # does, it goes through the standard graceful path - SIGTERM, wait up to
 # stop_grace_period, SIGKILL only if it didn't exit - which is what lets the
 # runner's own CLD-P4 drain (see docs/cloud-runner.md "Drain on cutover")
-# finish in-flight sessions instead of being killed mid-run. This step is a
-# no-op unless the runner image was rebuilt (this script never builds it -
-# `docker compose build runner` first if you're shipping a runner code
-# change). Known gap: unlike web's blue/green colors, there is only ONE
+# finish in-flight sessions instead of being killed mid-run. Step 3 rebuilt the
+# runner image on a normal deploy, so its image ID changed and this `up` picks
+# that up and recreates it here (a --rollback deploy skips the runner rebuild,
+# leaving it as-is). Known gap: unlike web's blue/green colors, there is only ONE
 # runner service, so this is a sequential stop-then-start, not a hot swap -
 # new session.start calls fail during the (bounded) window between the old
 # container stopping and the new one coming up, not just during the old one's
