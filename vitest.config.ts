@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 // Point tests at the dedicated test DB. Allow a per-run override ONLY when it names
 // an isolated `pitchbox_test[_suffix]` database (used by parallel worktree agents so
@@ -20,6 +20,11 @@ export default defineConfig({
   },
   test: {
     include: ['**/tests/**/*.test.ts'],
+    // The cloud/* submodules are separate repos with their own vitest config +
+    // CI (no DB, their own timeouts). The umbrella suite must not reach into
+    // them - CI never checks them out, so excluding them keeps a local run
+    // (where the submodules ARE checked out) matching CI.
+    exclude: [...configDefaults.exclude, 'cloud/**'],
     environment: 'node',
     // Tests hit a shared Postgres; avoid parallel file execution.
     fileParallelism: false,
