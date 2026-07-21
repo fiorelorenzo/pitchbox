@@ -78,4 +78,4 @@ The dashboard is responsive down to roughly 375 px wide: on tablet and phone wid
 
 ## Chrome extension
 
-Build and load `extension/dist/` unpacked, then open your dashboard in any tab and click the Pitchbox toolbar icon to open the side panel. Hit **Pair with this tab** under the Dashboard tab. Cloud users on `app.pitchbox.io` are paired automatically the first time they visit while signed in. Details: [the extension page](/extension).
+Build and load `extension/dist/` unpacked, then open your dashboard in any tab and click the Pitchbox toolbar icon to open the side panel. Hit **Pair with this tab** under the Dashboard tab. Cloud users on `pitchbox.app` are paired automatically the first time they visit while signed in. Details: [the extension page](/extension).

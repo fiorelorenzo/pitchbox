@@ -28,7 +28,7 @@ One click. Open your Pitchbox dashboard in any tab while signed in, open the sid
 3. The dashboard mints a fresh device token tied to your org and returns it.
 4. The extension stores the token in `chrome.storage.local` keyed by backend URL.
 
-For the **cloud edition** (`https://app.pitchbox.io/*`) the same script runs automatically the first time you visit while signed in, so cloud users never see the pairing button.
+For the **cloud edition** (`https://pitchbox.app/*`) the same script runs automatically the first time you visit while signed in, so cloud users never see the pairing button.
 
 ### Pair multiple backends
 
