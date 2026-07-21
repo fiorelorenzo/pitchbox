@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import { requireExtensionAuth } from '$lib/server/extension-auth.js';
+import { assertDraftInDeviceOrg, requireExtensionAuth } from '$lib/server/extension-auth.js';
 import { emit } from '$lib/server/events.js';
 import { evaluateDraftSend } from '@pitchbox/shared/draft-send';
 import { updateDraftWithVersion } from '$lib/server/draft-state.js';
@@ -16,12 +16,13 @@ type SentBody = {
 };
 
 export async function POST({ params, request }: { params: { id: string }; request: Request }) {
-  await requireExtensionAuth(request);
+  const auth = await requireExtensionAuth(request);
   const id = Number(params.id);
   if (!Number.isInteger(id)) throw error(400, 'invalid id');
   const body = (await request.json().catch(() => ({}))) as SentBody;
 
   const db = getDb();
+  await assertDraftInDeviceOrg(db, id, auth);
   const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, id));
   if (!draft) throw error(404, 'draft not found');
   if (draft.state === 'sent') {

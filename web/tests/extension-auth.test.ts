@@ -45,7 +45,10 @@ describe('extension auth', () => {
       .values({ label: 'test device', tokenHash: hashToken(token) })
       .returning();
 
-    await expect(requireExtensionAuth(authedRequest(token))).resolves.toEqual({ deviceId: row.id });
+    await expect(requireExtensionAuth(authedRequest(token))).resolves.toEqual({
+      deviceId: row.id,
+      organizationId: null,
+    });
 
     const [fresh] = await getDb()
       .select({ lastSeenAt: schema.extensionDevices.lastSeenAt })
