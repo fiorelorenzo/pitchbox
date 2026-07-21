@@ -63,6 +63,7 @@ export default defineManifest({
       matches: [
         'https://pitchbox.app/*',
         'https://www.pitchbox.app/*',
+        'https://preview.pitchbox.app/*',
         'http://127.0.0.1:5180/*',
         'http://localhost:5180/*',
       ],
@@ -78,6 +79,7 @@ export default defineManifest({
     'https://matrix.redditspace.com/*',
     'https://pitchbox.app/*',
     'https://www.pitchbox.app/*',
+    'https://preview.pitchbox.app/*',
     'http://127.0.0.1/*',
     'http://localhost/*',
   ],

@@ -171,4 +171,27 @@ export const api = {
     if (!p) return { ok: false, status: 0, error: 'not configured' };
     return getJson(p, '/api/extension/dm-sync/status');
   },
+
+  /**
+   * Redeem a short-lived pairing code against a backend to mint a device
+   * token. Unlike every other call this needs no existing pairing and no
+   * session cookie: the code itself is the one-time secret (see the public
+   * POST /api/extension/pair endpoint), so it works for a self-hosted or
+   * teammate install that never has the dashboard open in a tab. The caller
+   * must already hold host permission for `backendUrl`.
+   */
+  pairWithCode: async (backendUrl: string, code: string): Promise<ApiResult<{ token: string }>> => {
+    const base = backendUrl.replace(/\/$/, '');
+    try {
+      const res = await fetch(`${base}/api/extension/pair`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      if (!res.ok) return { ok: false, status: res.status, error: await res.text() };
+      return { ok: true, data: (await res.json()) as { token: string } };
+    } catch (e) {
+      return { ok: false, status: 0, error: (e as Error).message };
+    }
+  },
 };

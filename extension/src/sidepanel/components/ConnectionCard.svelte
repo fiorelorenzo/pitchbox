@@ -3,12 +3,22 @@
   import { onMount } from 'svelte';
   import { Card, CardContent, CardHeader, CardTitle } from '$ui/card';
   import { Button } from '$ui/button';
+  import { Input } from '$ui/input';
   import { t } from '$ext/i18n';
-  import { getSettings as getStorage, removePairing, type Pairing } from '$ext/storage';
+  import { api } from '$ext/api';
+  import { getSettings as getStorage, removePairing, upsertPairing, type Pairing } from '$ext/storage';
+  import { DEFAULT_BACKEND_URL, normalizeBackendUrl } from '$ext/backend';
 
   let pairings = $state<Pairing[]>([]);
   let busy = $state(false);
   let err = $state<string | null>(null);
+
+  // "Add with a pairing code" form: connects to any backend without needing
+  // its dashboard open in a tab (the code is the one-time secret).
+  let showAdd = $state(false);
+  let formUrl = $state(DEFAULT_BACKEND_URL);
+  let formCode = $state('');
+  let addBusy = $state(false);
 
   async function refresh() {
     const s = await getStorage();
@@ -62,6 +72,45 @@
     await removePairing(url);
     await refresh();
   }
+
+  async function connectWithCode() {
+    addBusy = true;
+    err = null;
+    try {
+      const url = normalizeBackendUrl(formUrl);
+      if (!url) {
+        err = $t('dashboard.connection.bad-url');
+        return;
+      }
+      const code = formCode.trim();
+      if (!code) {
+        err = $t('dashboard.connection.code-required');
+        return;
+      }
+      // Must run in this click's user-gesture context, so request the host
+      // permission before any other await resolves.
+      const granted = await chrome.permissions.request({ origins: [url + '/*'] });
+      if (!granted) {
+        err = $t('dashboard.connection.perm-denied', { host: new URL(url).host });
+        return;
+      }
+      const res = await api.pairWithCode(url, code);
+      if (!res.ok) {
+        err = $t('dashboard.connection.pair-failed', { reason: res.error || String(res.status) });
+        return;
+      }
+      await upsertPairing({
+        backendUrl: url,
+        token: res.data.token,
+        lastHandshakeAt: new Date().toISOString(),
+      });
+      formCode = '';
+      showAdd = false;
+      await refresh();
+    } finally {
+      addBusy = false;
+    }
+  }
 </script>
 
 <Card>
@@ -86,6 +135,9 @@
   <CardContent class="flex flex-col gap-3">
     {#if pairings.length === 0}
       <p class="text-sm text-muted-foreground">{$t('dashboard.connection.empty')}</p>
+      <p class="text-xs text-muted-foreground">
+        {$t('dashboard.connection.default-hint', { url: shortHost(DEFAULT_BACKEND_URL) })}
+      </p>
       <Button disabled={busy} onclick={pair}>
         {$t('dashboard.connection.pair')}
       </Button>
@@ -119,6 +171,25 @@
         {$t('dashboard.connection.pair-another')}
       </Button>
     {/if}
+    <div class="flex flex-col gap-2 border-t pt-3">
+      {#if !showAdd}
+        <Button variant="ghost" size="sm" class="self-start" onclick={() => (showAdd = true)}>
+          {$t('dashboard.connection.add-toggle')}
+        </Button>
+      {:else}
+        <p class="text-xs text-muted-foreground">{$t('dashboard.connection.add-hint')}</p>
+        <Input bind:value={formUrl} placeholder={$t('dashboard.connection.backend-placeholder')} />
+        <Input bind:value={formCode} placeholder={$t('dashboard.connection.code-placeholder')} />
+        <div class="flex gap-2">
+          <Button disabled={addBusy} onclick={connectWithCode}>
+            {addBusy ? $t('dashboard.connection.connecting') : $t('dashboard.connection.connect')}
+          </Button>
+          <Button variant="ghost" disabled={addBusy} onclick={() => (showAdd = false)}>
+            {$t('dashboard.connection.cancel')}
+          </Button>
+        </div>
+      {/if}
+    </div>
     {#if err}
       <p class="text-xs text-destructive">{err}</p>
     {/if}
