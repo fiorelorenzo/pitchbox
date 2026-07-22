@@ -64,8 +64,10 @@ export default defineManifest({
         'https://pitchbox.app/*',
         'https://www.pitchbox.app/*',
         'https://preview.pitchbox.app/*',
-        'http://127.0.0.1:5180/*',
-        'http://localhost:5180/*',
+        // Port-agnostic so a self-host on a non-default WEB_PORT still
+        // auto-pairs (matches the port-agnostic host_permissions below).
+        'http://127.0.0.1/*',
+        'http://localhost/*',
       ],
       js: ['src/content/auto-pair.ts'],
       run_at: 'document_idle',
