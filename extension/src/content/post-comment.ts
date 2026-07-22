@@ -1,9 +1,10 @@
-import { parseDraftId } from '../lib/draft-param.js';
+import { parseBackendUrl, parseDraftId } from '../lib/draft-param.js';
 import { api } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import { findCommentTextarea, findCommentSubmitButton } from './shared/reddit-dom.js';
 
 const draftId = parseDraftId(location.href);
+const backendUrl = parseBackendUrl(location.href) ?? undefined;
 
 function derivePostId(pathname: string): string | null {
   // /r/<sub>/comments/<postId>/<slug>/...   - Reddit's canonical pattern.
@@ -62,7 +63,7 @@ if (draftId !== null) {
   }
 
   async function fill() {
-    const r = await api.getDraft(draftId!);
+    const r = await api.getDraft(draftId!, backendUrl);
     if (!r.ok) return;
     const el = findCommentTextarea();
     if (!el) return;
@@ -79,7 +80,7 @@ if (draftId !== null) {
   async function onSendIntent() {
     if (armed) return;
     armed = true;
-    await api.armed(draftId!);
+    await api.armed(draftId!, backendUrl);
   }
 
   async function onSendCompleted() {
@@ -92,7 +93,14 @@ if (draftId !== null) {
       postId && handle
         ? { postId, accountHandle: handle, postedAt: new Date().toISOString() }
         : undefined;
-    const res = await api.sent(draftId!, sentContent, commentLookup);
+    const res = await api.sent(
+      draftId!,
+      sentContent,
+      commentLookup,
+      undefined,
+      undefined,
+      backendUrl,
+    );
     if (res.ok) {
       logFromContent({
         level: 'info',

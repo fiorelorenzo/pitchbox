@@ -4,6 +4,7 @@
 	import { onMount, tick } from 'svelte';
 	import { invalidateAll, goto, replaceState } from '$app/navigation';
 	import { navigating, page } from '$app/stores';
+	import { composeHref } from '$lib/utils/compose-url';
 	import { ChevronDown, X, Inbox, Keyboard, ArrowLeft, SlidersHorizontal } from '@lucide/svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -363,8 +364,10 @@
 				}
 				case 'o': {
 					if (selected?.composeUrl) {
-						const sep = selected.composeUrl.includes('?') ? '&' : '?';
-						window.open(`${selected.composeUrl}${sep}pitchbox_draft=${selected.id}`, '_blank');
+						window.open(
+							composeHref(selected.composeUrl, selected.id, window.location.origin),
+							'_blank',
+						);
 					}
 					break;
 				}

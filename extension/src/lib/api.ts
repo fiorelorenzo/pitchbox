@@ -14,16 +14,22 @@ type DraftSummary = {
 
 /**
  * Resolve which pairing a single-backend op should target. Compose-time
- * content scripts can pass an explicit `backendUrl` (the dashboard injects
- * it as a query param into compose URLs). When omitted we fall back to the
- * first pairing - keeps single-backend installs working without changes.
+ * content scripts pass the explicit `backendUrl` the dashboard tags onto the
+ * compose URL (`pitchbox_backend`), so armed/sent reach the backend the draft
+ * belongs to when several are paired. Resolution order:
+ *   1. exact match on the requested backend, when given;
+ *   2. otherwise the first pairing (the documented single-backend default) -
+ *      never fail a lone-pairing install just because an origin string differs
+ *      (e.g. localhost vs 127.0.0.1).
+ * Exported for unit testing.
  */
-async function pickPairing(backendUrl?: string): Promise<Pairing | null> {
+export async function pickPairing(backendUrl?: string): Promise<Pairing | null> {
   const { pairings } = await getSettings();
   if (pairings.length === 0) return null;
   if (backendUrl) {
     const url = backendUrl.replace(/\/$/, '');
-    return pairings.find((p) => p.backendUrl === url) ?? null;
+    const match = pairings.find((p) => p.backendUrl === url);
+    if (match) return match;
   }
   return pairings[0];
 }
