@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Clipboard, Check, Send, ExternalLink, MessageSquare } from '@lucide/svelte';
+	import { browser } from '$app/environment';
 	import { invalidateAll } from '$app/navigation';
+	import { composeHref } from '$lib/utils/compose-url';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -372,7 +374,6 @@
 
 {#if draft}
 	{@const primary = getPresenter(draft.platformSlug).primaryLabel(draft)}
-	{@const urlSep = draft.composeUrl?.includes('?') ? '&' : '?'}
 	{@const openLabel =
 		draft.kind === 'dm'
 			? 'Open compose ↗'
@@ -485,7 +486,11 @@
 				{/if}
 				{#if draft.state === 'approved' && draft.composeUrl}
 					<Button
-						href={`${draft.composeUrl}${urlSep}pitchbox_draft=${draft.id}`}
+						href={composeHref(
+							draft.composeUrl,
+							draft.id,
+							browser ? window.location.origin : undefined,
+						)}
 						target="_blank"
 						rel="noopener"
 						size="sm"

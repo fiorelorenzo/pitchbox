@@ -1,4 +1,4 @@
-import { parseDraftId } from '../lib/draft-param.js';
+import { parseBackendUrl, parseDraftId } from '../lib/draft-param.js';
 import { api } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 
@@ -9,6 +9,7 @@ import { logFromContent } from '../lib/log-from-content.js';
 // resulting t3_<id> so the reply poller can pick up future comments.
 
 const draftId = parseDraftId(location.href);
+const backendUrl = parseBackendUrl(location.href) ?? undefined;
 
 if (draftId !== null) {
   let sent = false;
@@ -28,7 +29,7 @@ if (draftId !== null) {
   async function onSubmitted(t3: string) {
     if (sent) return;
     sent = true;
-    const res = await api.sent(draftId!, undefined, undefined, t3);
+    const res = await api.sent(draftId!, undefined, undefined, t3, undefined, backendUrl);
     if (res.ok) {
       logFromContent({
         level: 'info',

@@ -1,9 +1,10 @@
-import { parseDraftId } from '../lib/draft-param.js';
+import { parseBackendUrl, parseDraftId } from '../lib/draft-param.js';
 import { api } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import { findComposeTextarea, findComposeSendButton } from './shared/reddit-dom.js';
 
 const draftId = parseDraftId(location.href);
+const backendUrl = parseBackendUrl(location.href) ?? undefined;
 
 if (draftId !== null) {
   let armed = false;
@@ -15,13 +16,13 @@ if (draftId !== null) {
     armed = true;
     // Capture the textarea content at click time - Reddit clears it on success.
     capturedBody = findComposeTextarea()?.value || undefined;
-    await api.armed(draftId!);
+    await api.armed(draftId!, backendUrl);
   }
 
   async function onSendCompleted() {
     if (sent) return;
     sent = true;
-    const res = await api.sent(draftId!, capturedBody);
+    const res = await api.sent(draftId!, capturedBody, undefined, undefined, undefined, backendUrl);
     if (res.ok) {
       logFromContent({
         level: 'info',
