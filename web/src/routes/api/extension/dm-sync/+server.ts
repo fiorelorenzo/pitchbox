@@ -1,4 +1,5 @@
 import { json, error } from '@sveltejs/kit';
+import { z } from 'zod';
 import { and, eq, inArray } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireExtensionAuth } from '$lib/server/extension-auth.js';
@@ -7,12 +8,11 @@ import { notify } from '@pitchbox/shared/notifications';
 import { enqueueReplyDraft } from '@pitchbox/shared/reply-drafter';
 import { runReplyDrafting } from '$lib/server/runner.js';
 import { getDraftOrgId } from '@pitchbox/shared/orgs';
-import { matchIncomingDms, type ContactRow, type IncomingDm } from '@pitchbox/shared/dm-sync';
+import { matchIncomingDms, type ContactRow } from '@pitchbox/shared/dm-sync';
 import {
   matchIncomingCommentReplies,
   type CommentDraftRow,
   type CommentReplyContact,
-  type IncomingCommentReply,
 } from '@pitchbox/shared/comment-sync';
 
 // Invariant: this route never writes `drafts.sent_at`. It records inbound
@@ -28,12 +28,45 @@ type IncomingStatus = {
   captured_at?: string;
 };
 
-type Body = {
-  platform: string;
-  items: IncomingDm[];
-  comments?: IncomingCommentReply[];
-  status?: IncomingStatus;
-};
+// Bound on how many items/comments a single sync call may carry. The
+// extension polls every ~10 minutes, so a legitimate batch is at most a
+// couple dozen entries; this keeps a malformed or hostile payload from
+// forcing an unbounded amount of DB work per request.
+const MAX_BATCH_SIZE = 500;
+
+const isoDateString = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), { message: 'invalid date' });
+
+// Mirrors the fields matchIncomingDms actually reads (shared/src/dm-sync.ts):
+// norm() reads fromUser/toUser, the rest feed the message row/staleness check.
+const IncomingDmSchema = z.object({
+  fromUser: z.string().min(1),
+  toUser: z.string().min(1),
+  body: z.string(),
+  threadId: z.string().min(1),
+  createdAt: isoDateString,
+  roomId: z.string().optional(),
+});
+
+// Mirrors the fields matchIncomingCommentReplies reads (shared/src/comment-sync.ts).
+const IncomingCommentReplySchema = z.object({
+  parentCommentId: z.string().min(1),
+  replyCommentId: z.string().min(1),
+  author: z.string().min(1),
+  body: z.string(),
+  createdAt: isoDateString,
+  contextUrl: z.string(),
+});
+
+const BodyEnvelopeSchema = z.object({
+  platform: z.string().min(1),
+  // Elements are validated and filtered per-item in the handler (not here), so
+  // a single malformed entry cannot 400 the whole batch - see #182.
+  items: z.array(z.unknown()).max(MAX_BATCH_SIZE),
+  comments: z.array(z.unknown()).max(MAX_BATCH_SIZE).default([]),
+  status: z.unknown().optional(),
+});
 
 const ALLOWED_STATUS: ReadonlySet<SyncChannelStatus> = new Set([
   'ok',
@@ -72,27 +105,39 @@ async function persistDeviceSyncStatus(
 
 export async function POST({ request }: { request: Request }) {
   const auth = await requireExtensionAuth(request);
-  const body = (await request.json().catch(() => null)) as Body | null;
-  if (!body || !Array.isArray(body.items) || typeof body.platform !== 'string') {
-    throw error(400, 'invalid body');
-  }
+  const raw = await request.json().catch(() => null);
+  const parsed = BodyEnvelopeSchema.safeParse(raw);
+  if (!parsed.success) throw error(400, 'invalid body');
+  const env = parsed.data;
+  // Validate elements per-item and DROP malformed ones (bad/absent date, empty
+  // required field) instead of 400ing the whole batch. The extension builds
+  // items from raw Reddit data with `?? ''` fallbacks, so one degenerate entry
+  // must not stall the pairing's cursor and replay forever (#182); well-formed
+  // items still process, and a dropped item would never have matched a contact.
+  const items = env.items
+    .map((it) => IncomingDmSchema.safeParse(it))
+    .flatMap((r) => (r.success ? [r.data] : []));
+  const comments = env.comments
+    .map((it) => IncomingCommentReplySchema.safeParse(it))
+    .flatMap((r) => (r.success ? [r.data] : []));
 
   const db = getDb();
 
   // Persist liveness payload before anything else so the dashboard banner
-  // reacts even when the sync had zero items.
-  if (body.status && typeof body.status === 'object') {
-    await persistDeviceSyncStatus(db, auth.deviceId, body.status);
+  // reacts even when the sync had zero items. Its shape is validated
+  // leniently downstream (normaliseChannel / typeof checks), so it is only
+  // checked here for being present and object-shaped.
+  if (env.status && typeof env.status === 'object') {
+    await persistDeviceSyncStatus(db, auth.deviceId, env.status as IncomingStatus);
   }
 
-  const comments: IncomingCommentReply[] = Array.isArray(body.comments) ? body.comments : [];
-  if (body.items.length === 0 && comments.length === 0) {
+  if (items.length === 0 && comments.length === 0) {
     return json({ ok: true, inserted: 0, replied: 0, commentsInserted: 0, commentsReplied: 0 });
   }
   const [platform] = await db
     .select()
     .from(schema.platforms)
-    .where(eq(schema.platforms.slug, body.platform));
+    .where(eq(schema.platforms.slug, env.platform));
   if (!platform) throw error(404, 'unknown platform');
 
   const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
@@ -121,7 +166,7 @@ export async function POST({ request }: { request: Request }) {
       repliedAt: c.repliedAt,
     }));
 
-  const { inserts, updates, roomIdsByContact } = matchIncomingDms(body.items, fresh);
+  const { inserts, updates, roomIdsByContact } = matchIncomingDms(items, fresh);
 
   // Comment-reply path.
   let commentDrafts: CommentDraftRow[] = [];

@@ -15,6 +15,15 @@ type SentBody = {
   version?: number;
 };
 
+// States a draft can validly transition to `sent` FROM. Mirrors the dashboard's
+// own allowlists (see EDITABLE_STATES / RESCHEDULABLE_STATES in
+// api/drafts/[id] and api/drafts/bulk-reschedule) but scoped to what "ready to
+// send" means: `proposed` and `pending_review` are pre-review, `approved` is
+// post-review - all three are legitimately sendable. `rejected` (including the
+// losing side of an A/B variant cascade, see cascadeRejectSiblings) and any
+// other state are locked out.
+const SENDABLE_STATES = new Set(['proposed', 'pending_review', 'approved']);
+
 export async function POST({ params, request }: { params: { id: string }; request: Request }) {
   const auth = await requireExtensionAuth(request);
   const id = Number(params.id);
@@ -27,6 +36,9 @@ export async function POST({ params, request }: { params: { id: string }; reques
   if (!draft) throw error(404, 'draft not found');
   if (draft.state === 'sent') {
     return json({ ok: true, alreadySent: true });
+  }
+  if (!SENDABLE_STATES.has(draft.state)) {
+    throw error(409, 'state_locked');
   }
 
   // Optimistic-locking: when the extension supplies a version, we verify it;

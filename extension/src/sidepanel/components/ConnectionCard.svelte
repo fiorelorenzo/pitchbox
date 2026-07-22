@@ -8,6 +8,7 @@
   import { api } from '$ext/api';
   import { getSettings as getStorage, removePairing, upsertPairing, type Pairing } from '$ext/storage';
   import { DEFAULT_BACKEND_URL, normalizeBackendUrl } from '$ext/backend';
+  import { originStillNeeded } from '$ext/permissions';
 
   let pairings = $state<Pairing[]>([]);
   let busy = $state(false);
@@ -69,7 +70,21 @@
   }
 
   async function disconnect(url: string) {
-    await removePairing(url);
+    const remaining = await removePairing(url);
+    // Best-effort: also drop the standing host permission granted when this
+    // backend was paired (see pair()/connectWithCode()), but only if no other
+    // remaining pairing still targets the same origin. Revoking an origin
+    // that overlaps a required host permission (reddit.com, pitchbox.app,
+    // localhost) is a documented no-op, not an error, but guard anyway since
+    // this must never block disconnecting.
+    try {
+      const origin = new URL(url).origin;
+      if (!originStillNeeded(remaining, origin)) {
+        await chrome.permissions.remove({ origins: [origin + '/*'] });
+      }
+    } catch {
+      // Ignore: worst case the extension keeps an unused host permission.
+    }
     await refresh();
   }
 

@@ -26,9 +26,15 @@ export async function POST({ request }: { request: Request }) {
 
   const db = getDb();
   const code = parsed.data.code.trim().toUpperCase();
+
+  // Atomically claim the code: the UPDATE only returns a row when it flips
+  // consumed_at from null to now while the code is still unexpired, so two
+  // concurrent redemptions of the same code can never both succeed - the loser
+  // matches zero rows and gets nothing back, instead of racing a separate
+  // select-then-update where both callers could pass the select (#179).
   const [pairing] = await db
-    .select()
-    .from(schema.extensionPairings)
+    .update(schema.extensionPairings)
+    .set({ consumedAt: new Date() })
     .where(
       and(
         eq(schema.extensionPairings.code, code),
@@ -36,15 +42,8 @@ export async function POST({ request }: { request: Request }) {
         gt(schema.extensionPairings.expiresAt, new Date()),
       ),
     )
-    .limit(1);
+    .returning();
   if (!pairing) throw error(404, 'invalid_or_expired_code');
-
-  // Consume the code, then issue a long-lived device token.
-  const now = new Date();
-  await db
-    .update(schema.extensionPairings)
-    .set({ consumedAt: now })
-    .where(eq(schema.extensionPairings.code, code));
 
   const token = randomBytes(32).toString('hex');
   const tokenHash = hashToken(token);
