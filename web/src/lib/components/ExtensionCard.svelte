@@ -48,8 +48,11 @@
         </li>
         <li>Click the Pitchbox icon to open the side panel, then pair as above.</li>
       </ol>
-      <div class="mt-2 font-mono">
-        <div>Backend URL: <code>{backendUrl}</code></div>
+      <div class="mt-2">
+        <div>
+          Backend URL (enter this in the extension's <em>Add connection</em> form, or use a
+          pairing code): <code class="font-mono">{backendUrl}</code>
+        </div>
       </div>
     </details>
   </Card.Content>

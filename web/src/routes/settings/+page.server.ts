@@ -5,7 +5,7 @@ import { loadRunnerConfigs } from '@pitchbox/shared/agents/config';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 
-export async function load() {
+export async function load({ url }) {
   const db = getDb();
   const platforms = await db
     .select({ slug: schema.platforms.slug })
@@ -38,7 +38,11 @@ export async function load() {
 
   return {
     extension: {
-      backendUrl: process.env.PITCHBOX_BACKEND_URL ?? 'http://127.0.0.1:5180',
+      // What the user should point the extension at: an explicit override if
+      // set, otherwise this dashboard's own public origin (which is exactly
+      // the backend the extension auto-pairs against and what you type into
+      // its "Add connection" form). See docs/extension-connection-design.md.
+      backendUrl: process.env.PITCHBOX_BACKEND_URL ?? url.origin,
     },
     quota,
     runners,
