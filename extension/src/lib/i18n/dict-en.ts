@@ -76,6 +76,21 @@ export const en: Dict = {
   'activity.reddit-action.comment-sent': 'Posted comment for draft {draftId}.',
   'activity.reddit-action.submit-sent': 'Posted submission for draft {draftId}.',
   'activity.reddit-action.fail': 'Backend flip failed for draft {draftId}: {reason}',
+  'activity.reddit-action.submit-button-not-found':
+    'Could not find the Reddit submit button for draft {draftId}.',
+  'activity.reddit-action.submit-no-t3':
+    'Reddit submission for draft {draftId} navigated away without a post id.',
+  'activity.reddit-action.submit-poll-timeout':
+    'Timed out waiting for the Reddit submission for draft {draftId} to complete.',
+  'activity.reddit-action.comment-box-missing':
+    'Could not find the comment box for draft {draftId}; it was not pre-filled.',
+  'activity.reddit-action.comment-submit-not-found':
+    'Could not find the comment submit button for draft {draftId} within 15s; posting will not be tracked automatically.',
+  'activity.reddit-action.comment-confirm-timeout':
+    'Could not confirm draft {draftId} was posted within 20s after clicking submit; check its status manually.',
+  'activity.reddit-action.send-button-not-found':
+    'Gave up waiting for the DM send button for draft {draftId}.',
+  'activity.reddit-action.send-poll-timeout': 'Gave up confirming draft {draftId} was sent.',
   'activity.settings.changed': 'Settings updated.',
   'activity.system.boot': 'Service worker started.',
   'activity.system.alarms-applied': 'Alarms re-applied ({interval} min).',

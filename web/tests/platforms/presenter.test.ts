@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getPresenter } from '../../src/lib/platforms/presenter';
+import { getPresenter, isExtensionAutomated } from '../../src/lib/platforms/presenter';
 import '../../src/lib/platforms/reddit/presenter';
 import '../../src/lib/platforms/mastodon/presenter';
 
@@ -35,5 +35,22 @@ describe('presenter registry', () => {
     expect(p.primaryLabel({ kind: 'dm', targetUser: 'bob', metadata: {} })).toBe('@bob');
     expect(p.userLabel('alice')).toBe('@alice');
     expect(p.eventLabel('armed')).toBeNull();
+  });
+});
+
+describe('isExtensionAutomated', () => {
+  it('is true only for reddit, the one platform with a matching content script', () => {
+    expect(isExtensionAutomated('reddit')).toBe(true);
+  });
+
+  it('is false for platforms without a content script (manual send)', () => {
+    expect(isExtensionAutomated('hackernews')).toBe(false);
+    expect(isExtensionAutomated('mastodon')).toBe(false);
+    expect(isExtensionAutomated('mystery')).toBe(false);
+  });
+
+  it('is false for a null or undefined slug', () => {
+    expect(isExtensionAutomated(null)).toBe(false);
+    expect(isExtensionAutomated(undefined)).toBe(false);
   });
 });

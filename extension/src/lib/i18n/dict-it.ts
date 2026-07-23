@@ -78,6 +78,22 @@ export const it: Dict = {
   'activity.reddit-action.comment-sent': 'Commento pubblicato per il draft {draftId}.',
   'activity.reddit-action.submit-sent': 'Post pubblicato per il draft {draftId}.',
   'activity.reddit-action.fail': 'Aggiornamento backend fallito per il draft {draftId}: {reason}',
+  'activity.reddit-action.submit-button-not-found':
+    'Pulsante di invio Reddit non trovato per il draft {draftId}.',
+  'activity.reddit-action.submit-no-t3':
+    'Invio Reddit per il draft {draftId} interrotto senza id del post.',
+  'activity.reddit-action.submit-poll-timeout':
+    'Timeout: invio Reddit per il draft {draftId} non completato in tempo.',
+  'activity.reddit-action.comment-box-missing':
+    'Impossibile trovare il box del commento per il draft {draftId}; non è stato precompilato.',
+  'activity.reddit-action.comment-submit-not-found':
+    'Impossibile trovare il pulsante di invio del commento per il draft {draftId} entro 15s; la pubblicazione non verrà tracciata automaticamente.',
+  'activity.reddit-action.comment-confirm-timeout':
+    'Impossibile confermare che il draft {draftId} sia stato pubblicato entro 20s dal clic su invio; verifica manualmente lo stato.',
+  'activity.reddit-action.send-button-not-found':
+    'Rinunciato ad attendere il pulsante di invio del DM per il draft {draftId}.',
+  'activity.reddit-action.send-poll-timeout':
+    "Rinunciato a confermare l'invio del draft {draftId}.",
   'activity.settings.changed': 'Impostazioni aggiornate.',
   'activity.system.boot': 'Service worker avviato.',
   'activity.system.alarms-applied': 'Alarms riapplicati ({interval} min).',

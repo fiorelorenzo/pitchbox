@@ -14,7 +14,7 @@
 	import Markdown from '$lib/components/Markdown.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { replyUrl } from '$lib/utils/reply-url';
-	import { getPresenter } from '$lib/platforms/presenter';
+	import { getPresenter, isExtensionAutomated } from '$lib/platforms/presenter';
 	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 	import { interpretDraftPatchResponse, DraftVersionConflictError } from '$lib/utils/draft-patch-response';
@@ -335,6 +335,13 @@
 		draft?.sentContent != null && draft.sentContent !== draft.body
 	);
 
+	// Whether the extension can drive this platform's send flow end-to-end
+	// (its content script arms the page and the draft flips to `sent`
+	// automatically). Only reddit.com has a matching content script (see
+	// extension/manifest.config.ts) - every other platform needs the human to
+	// open the link, send it themselves, and click "Mark as sent".
+	const extensionAutomated = $derived(isExtensionAutomated(draft?.platformSlug ?? null));
+
 	const GENERIC_EVENT_LABEL: Record<string, string> = {
 		created: 'Created',
 		approved: 'Approved',
@@ -374,12 +381,16 @@
 
 {#if draft}
 	{@const primary = getPresenter(draft.platformSlug).primaryLabel(draft)}
-	{@const openLabel =
-		draft.kind === 'dm'
+	{@const openLabel = extensionAutomated
+		? draft.kind === 'dm'
 			? 'Open compose ↗'
 			: draft.kind === 'post'
 				? 'Open submit ↗'
-				: 'Open post ↗'}
+				: 'Open post ↗'
+		: 'Open to send (manual) ↗'}
+	{@const openTooltip = extensionAutomated
+		? undefined
+		: 'Pitchbox does not automate sending on this platform - open the link, send it yourself, then click "Mark as sent".'}
 
 	<article class="h-full flex flex-col min-h-0">
 		<!-- Header: borderless, generous spacing -->
@@ -493,6 +504,7 @@
 						)}
 						target="_blank"
 						rel="noopener"
+						title={openTooltip}
 						size="sm"
 					>
 						<ExternalLink class="size-3.5" />
