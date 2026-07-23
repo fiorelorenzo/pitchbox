@@ -159,7 +159,25 @@ export async function POST({ request }: { request: Request }) {
   // in JS, so the query scaled with total history instead of the 60-day
   // window it actually needs.
   const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
-  const fresh: ContactRow[] = await db
+  // #170: when the device is bound to an org (multi-tenant / auth-on), scope
+  // every match candidate to that org so a device token can't flip or attach
+  // messages to another tenant's drafts/contacts. A null org (self-host /
+  // auth-off) keeps full access, mirroring requireRole's no-op and the draft
+  // routes' guard. Scoping goes through draft -> project -> organization.
+  //
+  // We deliberately scope contact_history through its draft, not through its
+  // (accountHandle, targetUser): draft_id proves the owning org, whereas
+  // account_handle is user-entered and not unique across orgs, so a hostile
+  // tenant could register a victim's handle and match its contacts. The cost
+  // is that a contact whose draft was pruned by retention (draft_id is
+  // onDelete: 'set null') becomes unattributable and stops matching for
+  // org-scoped devices - acceptable because under the default 90-day draft
+  // retention a contact ages out of this 60-day match window before its draft
+  // is ever pruned, so this only bites installs that set draft retention below
+  // ~60 days. A durable contact_history.organization_id would remove even that
+  // edge (tracked as a follow-up); self-host (null org) is unaffected.
+  const orgId = auth.organizationId;
+  let freshQuery = db
     .select({
       id: schema.contactHistory.id,
       accountHandle: schema.contactHistory.accountHandle,
@@ -170,12 +188,18 @@ export async function POST({ request }: { request: Request }) {
       repliedAt: schema.contactHistory.repliedAt,
     })
     .from(schema.contactHistory)
-    .where(
-      and(
-        eq(schema.contactHistory.platformId, platform.id),
-        gte(schema.contactHistory.lastContactedAt, since),
-      ),
-    );
+    .$dynamic();
+  const freshConds = [
+    eq(schema.contactHistory.platformId, platform.id),
+    gte(schema.contactHistory.lastContactedAt, since),
+  ];
+  if (orgId != null) {
+    freshQuery = freshQuery
+      .innerJoin(schema.drafts, eq(schema.drafts.id, schema.contactHistory.draftId))
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.drafts.projectId));
+    freshConds.push(eq(schema.projects.organizationId, orgId));
+  }
+  const fresh: ContactRow[] = await freshQuery.where(and(...freshConds));
 
   const { inserts, updates, roomIdsByContact } = matchIncomingDms(items, fresh);
 
@@ -183,12 +207,23 @@ export async function POST({ request }: { request: Request }) {
   let commentDrafts: CommentDraftRow[] = [];
   let commentExisting: CommentReplyContact[] = [];
   if (comments.length > 0) {
-    const accountRows = await db
+    // #170: same org scoping for the comment path's account + draft candidates.
+    let accountQuery = db
       .select({ id: schema.accounts.id, handle: schema.accounts.handle })
       .from(schema.accounts)
-      .where(eq(schema.accounts.platformId, platform.id));
+      .$dynamic();
+    const accountConds = [eq(schema.accounts.platformId, platform.id)];
+    if (orgId != null) {
+      accountQuery = accountQuery.innerJoin(
+        schema.projects,
+        eq(schema.projects.id, schema.accounts.projectId),
+      );
+      accountConds.push(eq(schema.projects.organizationId, orgId));
+    }
+    const accountRows = await accountQuery.where(and(...accountConds));
     const handleByAccountId = new Map(accountRows.map((a) => [a.id, a.handle]));
-    const draftRows = await db
+
+    let draftQuery = db
       .select({
         draftId: schema.drafts.id,
         accountId: schema.drafts.accountId,
@@ -196,7 +231,16 @@ export async function POST({ request }: { request: Request }) {
         platformPostId: schema.drafts.platformPostId,
       })
       .from(schema.drafts)
-      .where(eq(schema.drafts.platformId, platform.id));
+      .$dynamic();
+    const draftConds = [eq(schema.drafts.platformId, platform.id)];
+    if (orgId != null) {
+      draftQuery = draftQuery.innerJoin(
+        schema.projects,
+        eq(schema.projects.id, schema.drafts.projectId),
+      );
+      draftConds.push(eq(schema.projects.organizationId, orgId));
+    }
+    const draftRows = await draftQuery.where(and(...draftConds));
     // Two channels feed the comment matcher with the same shape:
     //   - comment-reply drafts (parent is the t1_ id of our comment)
     //   - reddit-poster drafts (parent is the t3_ id of our submission)
@@ -249,7 +293,21 @@ export async function POST({ request }: { request: Request }) {
 
   const commentMatch = matchIncomingCommentReplies(comments, commentDrafts, commentExisting);
 
+  // Record this device's last successful sync (#197): the device polled Reddit
+  // and reached us, so its last-sync must advance even when nothing new matched
+  // - otherwise the stale-device nudge (#202) would fire on an actively-syncing
+  // extension. We only advance it after a SUCCESSFUL persist, though: on the
+  // no-match path there is nothing to persist so we write it here; on the match
+  // path it is the final statement inside the transaction below, so a failed
+  // persist (rollback -> 500) leaves last-sync untouched and the device retries.
+  const nowIso = new Date().toISOString();
+  const lastSyncRow = { key: dmSyncHeartbeatKey(auth.organizationId), value: nowIso };
+
   if (inserts.length === 0 && commentMatch.messageInserts.length === 0) {
+    await db
+      .insert(schema.appConfig)
+      .values(lastSyncRow)
+      .onConflictDoUpdate({ target: schema.appConfig.key, set: { value: nowIso } });
     return json({ ok: true, inserted: 0, replied: 0, commentsInserted: 0, commentsReplied: 0 });
   }
 
@@ -336,16 +394,14 @@ export async function POST({ request }: { request: Request }) {
         details: { at: ev.repliedAt.toISOString() },
       });
     }
-  });
 
-  const nowIso = new Date().toISOString();
-  await db
-    .insert(schema.appConfig)
-    .values({ key: dmSyncHeartbeatKey(auth.organizationId), value: nowIso })
-    .onConflictDoUpdate({
-      target: schema.appConfig.key,
-      set: { value: nowIso },
-    });
+    // #197: advance last-sync atomically with the replies we just persisted, so
+    // a rolled-back transaction never leaves last-sync ahead of the data.
+    await tx
+      .insert(schema.appConfig)
+      .values(lastSyncRow)
+      .onConflictDoUpdate({ target: schema.appConfig.key, set: { value: nowIso } });
+  });
 
   // Tally replies per org as we go (a single sync batch could in principle
   // touch drafts across orgs) so the summary notification below never gets
