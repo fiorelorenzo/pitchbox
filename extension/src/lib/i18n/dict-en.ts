@@ -64,6 +64,10 @@ export const en: Dict = {
   'activity.chat-sync.ok': 'Reddit Chat sync - {messages} messages, {inserted} new.',
   'activity.chat-sync.unauthorized': 'Reddit Chat sync paused - Matrix token expired.',
   'activity.chat-sync.error': 'Reddit Chat sync failed: {reason}',
+  'activity.chat-sync.timeline-truncated':
+    'Reddit Chat room {roomId} returned more messages than one sync could fetch; some may be delayed.',
+  'activity.chat-sync.cursor-skip':
+    'Reddit Chat sync advanced past an undelivered batch after {cycles} retries to a stuck backend.',
   'activity.pairing.added': 'Paired with {host}.',
   'activity.pairing.removed': 'Disconnected {host}.',
   'activity.matrix-token.captured': 'Captured Reddit Chat token.',

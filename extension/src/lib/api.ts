@@ -75,6 +75,11 @@ export type DmSyncResult = ApiResult<{
 
 export type DmSyncFanout = Array<DmSyncResult & { backendUrl: string }>;
 
+/** Turn a Promise.allSettled rejection reason into a plain error string. */
+function describeRejection(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
 export const api = {
   /**
    * Fan-out: every paired backend gets the same Reddit traffic so each
@@ -91,26 +96,50 @@ export const api = {
     },
   ): Promise<DmSyncFanout> => {
     const { pairings } = await getSettings();
+    // Fan out every pairing's POST concurrently instead of sequentially, so
+    // total latency does not scale with the pairing count - a service-worker
+    // alarm handler has a limited window before MV3 teardown (#193).
+    const settled = await Promise.allSettled(
+      pairings.map((p) => {
+        const payloadStatus =
+          status ??
+          (p.syncStatus
+            ? {
+                chat: p.syncStatus.chat,
+                legacy: p.syncStatus.legacy,
+                captured_at: p.syncStatus.capturedAt,
+              }
+            : undefined);
+        return postJson<{
+          ok: true;
+          inserted: number;
+          replied: number;
+          commentsInserted?: number;
+          commentsReplied?: number;
+        }>(p, '/api/extension/dm-sync', { platform, items, comments, status: payloadStatus });
+      }),
+    );
+    // Fold the settled results back in pairing order. patchPairing is
+    // awaited sequentially (not fanned out) since it does a read-modify-write
+    // over the whole pairings array in chrome.storage.local.
     const out: DmSyncFanout = [];
-    for (const p of pairings) {
-      const payloadStatus =
-        status ??
-        (p.syncStatus
-          ? {
-              chat: p.syncStatus.chat,
-              legacy: p.syncStatus.legacy,
-              captured_at: p.syncStatus.capturedAt,
-            }
-          : undefined);
-      const r = await postJson<{
-        ok: true;
-        inserted: number;
-        replied: number;
-        commentsInserted?: number;
-        commentsReplied?: number;
-      }>(p, '/api/extension/dm-sync', { platform, items, comments, status: payloadStatus });
+    for (let i = 0; i < pairings.length; i++) {
+      const p = pairings[i];
+      const settledResult = settled[i];
+      const r: DmSyncResult =
+        settledResult.status === 'fulfilled'
+          ? settledResult.value
+          : { ok: false, status: 0, error: describeRejection(settledResult.reason) };
       out.push({ ...r, backendUrl: p.backendUrl });
-      if (r.ok) await patchPairing(p.backendUrl, { lastDmSyncAt: new Date().toISOString() });
+      // Only a real delivery (items/comments present) advances the pairing's
+      // sync watermark. The empty status heartbeat (background.ts runAllSyncs)
+      // must NOT bump lastDmSyncAt: doing so would move the inbox cursor
+      // forward even on a tick where the inbox/chat poll actually failed,
+      // silently skipping messages that arrived during the outage (#180/#188
+      // rely on the watermark staying put on a failed poll).
+      if (r.ok && (items.length > 0 || comments.length > 0)) {
+        await patchPairing(p.backendUrl, { lastDmSyncAt: new Date().toISOString() });
+      }
     }
     return out;
   },

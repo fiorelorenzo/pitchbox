@@ -36,16 +36,36 @@ function classifyChat(r: Result): SyncChannelStatus {
   return 'error';
 }
 
+// #174: runInboxSync/runChatSync already catch their own errors internally,
+// but an unexpected throw here must never take down runAllSyncs and
+// suppress the other poller's already-computed results, the per-pairing
+// status write, the heartbeat, or the activity log.
+async function safeRunInboxSync(): Promise<Result> {
+  try {
+    return await runInboxSync();
+  } catch (e) {
+    return { ok: false, reason: (e as Error).message };
+  }
+}
+
+async function safeRunChatSync(): Promise<Result> {
+  try {
+    return await runChatSync();
+  } catch (e) {
+    return { ok: false, reason: (e as Error).message, chatStatus: 'error' };
+  }
+}
+
 async function runAllSyncs() {
   const s = await getExtensionSettings();
 
   // Short-circuit disabled pollers - treat their slot as a no-op success so
   // the heartbeat still fires and the dashboard sees fresh status.
   const inbox: Result = s.legacyPollerEnabled
-    ? await runInboxSync()
+    ? await safeRunInboxSync()
     : { ok: true, inserted: 0, replied: 0 };
   const chat: Result = s.chatPollerEnabled
-    ? await runChatSync()
+    ? await safeRunChatSync()
     : { ok: true, inserted: 0, replied: 0 };
 
   const status = {
@@ -201,7 +221,9 @@ chrome.alarms.onAlarm.addListener(async (a) => {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'pitchbox:dm-sync:run') {
-    runAllSyncs().then((r) => sendResponse(aggregate(r)));
+    runAllSyncs()
+      .then((r) => sendResponse(aggregate(r)))
+      .catch((e) => sendResponse({ ok: false, reason: (e as Error).message }));
     return true;
   }
   if (msg?.type === 'pitchbox:chat-creds') {

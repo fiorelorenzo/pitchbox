@@ -66,6 +66,10 @@ export const it: Dict = {
   'activity.chat-sync.ok': 'Sync Reddit Chat - {messages} messaggi, {inserted} nuovi.',
   'activity.chat-sync.unauthorized': 'Sync Reddit Chat in pausa - token Matrix scaduto.',
   'activity.chat-sync.error': 'Sync Reddit Chat fallito: {reason}',
+  'activity.chat-sync.timeline-truncated':
+    'La room Reddit Chat {roomId} ha restituito più messaggi di quanti una sync possa recuperarne; alcuni potrebbero arrivare in ritardo.',
+  'activity.chat-sync.cursor-skip':
+    'La sync Reddit Chat è avanzata oltre un batch non consegnato dopo {cycles} tentativi verso un backend bloccato.',
   'activity.pairing.added': 'Abbinato a {host}.',
   'activity.pairing.removed': 'Disconnesso {host}.',
   'activity.matrix-token.captured': 'Token di Reddit Chat catturato.',

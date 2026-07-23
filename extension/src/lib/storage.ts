@@ -27,6 +27,13 @@ export type Settings = {
   matrixSince?: string;
   matrixDisplayNames?: Record<string, string>;
   matrixRoomMembers?: Record<string, string[]>;
+  // #175: consecutive cycles matrixSince was held back because at least one
+  // paired backend didn't confirm delivery. Reset to 0 whenever the cursor
+  // advances - see chat-sync.ts for the bounded-hold logic.
+  matrixCursorHoldCount?: number;
+  // #188: ISO timestamp before which chat-sync should not hit the Matrix
+  // /sync endpoint again, set from a 429's Retry-After header.
+  matrixRateLimitedUntil?: string;
 };
 
 const KEYS = [
@@ -43,6 +50,8 @@ const KEYS = [
   'matrixSince',
   'matrixDisplayNames',
   'matrixRoomMembers',
+  'matrixCursorHoldCount',
+  'matrixRateLimitedUntil',
 ];
 
 type StoredShape = Partial<Settings> & {
@@ -93,6 +102,8 @@ export async function getSettings(): Promise<Settings> {
     matrixSince: stored.matrixSince,
     matrixDisplayNames: stored.matrixDisplayNames,
     matrixRoomMembers: stored.matrixRoomMembers,
+    matrixCursorHoldCount: stored.matrixCursorHoldCount,
+    matrixRateLimitedUntil: stored.matrixRateLimitedUntil,
   };
 }
 

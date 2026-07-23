@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { z } from 'zod';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, gte, inArray } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireExtensionAuth } from '$lib/server/extension-auth.js';
 import { emit } from '$lib/server/events.js';
@@ -81,6 +81,20 @@ function normaliseChannel(value: unknown): SyncChannelStatus {
     : 'unknown';
 }
 
+// The extension_last_dm_sync_at heartbeat used to be a single global
+// app_config row: any org's sync overwrote the value every other org read
+// back, and any org's device could read another org's last-sync time (#197).
+// Scope it by widening the key space to one row per organization instead of
+// adding a column/table - lower risk than a schema migration, since
+// app_config is already a free-form key/value store. A null organizationId
+// (self-host / auth-off, where requireExtensionAuth never resolves an org)
+// keeps today's single global key.
+function dmSyncHeartbeatKey(organizationId: number | null): string {
+  return organizationId != null
+    ? `extension_last_dm_sync_at:org:${organizationId}`
+    : 'extension_last_dm_sync_at';
+}
+
 async function persistDeviceSyncStatus(
   db: ReturnType<typeof getDb>,
   deviceId: number,
@@ -140,8 +154,12 @@ export async function POST({ request }: { request: Request }) {
     .where(eq(schema.platforms.slug, env.platform));
   if (!platform) throw error(404, 'unknown platform');
 
+  // Push the freshness predicate into SQL (#198): this used to fetch every
+  // contact_history row for the platform and filter `lastContactedAt >= since`
+  // in JS, so the query scaled with total history instead of the 60-day
+  // window it actually needs.
   const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
-  const candidates = await db
+  const fresh: ContactRow[] = await db
     .select({
       id: schema.contactHistory.id,
       accountHandle: schema.contactHistory.accountHandle,
@@ -152,19 +170,12 @@ export async function POST({ request }: { request: Request }) {
       repliedAt: schema.contactHistory.repliedAt,
     })
     .from(schema.contactHistory)
-    .where(eq(schema.contactHistory.platformId, platform.id));
-
-  const fresh: ContactRow[] = candidates
-    .filter((c) => c.lastContactedAt >= since)
-    .map((c) => ({
-      id: c.id,
-      accountHandle: c.accountHandle,
-      targetUser: c.targetUser,
-      platformId: c.platformId,
-      draftId: c.draftId,
-      lastContactedAt: c.lastContactedAt,
-      repliedAt: c.repliedAt,
-    }));
+    .where(
+      and(
+        eq(schema.contactHistory.platformId, platform.id),
+        gte(schema.contactHistory.lastContactedAt, since),
+      ),
+    );
 
   const { inserts, updates, roomIdsByContact } = matchIncomingDms(items, fresh);
 
@@ -330,7 +341,7 @@ export async function POST({ request }: { request: Request }) {
   const nowIso = new Date().toISOString();
   await db
     .insert(schema.appConfig)
-    .values({ key: 'extension_last_dm_sync_at', value: nowIso })
+    .values({ key: dmSyncHeartbeatKey(auth.organizationId), value: nowIso })
     .onConflictDoUpdate({
       target: schema.appConfig.key,
       set: { value: nowIso },
