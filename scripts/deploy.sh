@@ -31,7 +31,11 @@ case "$ENV" in
     ;;
   preview)
     DIR=/opt/apps/pitchbox-preview; PROJECT=pitchbox-preview; DOMAIN=preview.pitchbox.app
-    BLUE_PORT=5190; GREEN_PORT=5191
+    # Blue is 5192, not 5190: another app on this host (loombox-landing) binds
+    # 127.0.0.1:5190, so the old 5190 blue slot collided with it and every
+    # blue-green swap into blue failed with "port is already allocated". Green
+    # keeps 5191; preview now owns the free 5191/5192 pair.
+    BLUE_PORT=5192; GREEN_PORT=5191
     UPSTREAM=/etc/caddy/upstreams/pitchbox-preview.conf; EXTRA=(-f docker-compose.preview.yml)
     ;;
   *) echo "unknown env: $ENV" >&2; exit 2 ;;
