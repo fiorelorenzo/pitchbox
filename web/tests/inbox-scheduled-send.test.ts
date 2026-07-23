@@ -96,6 +96,20 @@ describe('inbox loader surfaces scheduled_send_after', () => {
     expect(found).toBeTruthy();
     expect(found!.scheduledSendAfter).toBeNull();
   });
+
+  it('stamps the created contact_history with the draft org on manual send (#215)', async () => {
+    const { org, draft } = await seed({ targetUser: 'replyguy' });
+
+    const res = await PATCH(patchEvent(draft.id, { state: 'sent', version: draft.version }));
+    expect(res.status).toBe(200);
+
+    const [contact] = await getDb()
+      .select()
+      .from(schema.contactHistory)
+      .where(eq(schema.contactHistory.draftId, draft.id));
+    expect(contact).toBeTruthy();
+    expect(contact.organizationId).toBe(org.id);
+  });
 });
 
 describe('PATCH /inbox/[id] 409 error codes', () => {

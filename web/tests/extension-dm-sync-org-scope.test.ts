@@ -74,6 +74,7 @@ async function seedOrg(slug: string, handle: string, target: string) {
     targetUser: target,
     lastContactedAt: new Date(Date.now() - 60 * 60 * 1000),
     draftId: draft.id,
+    organizationId: org.id,
     repliedAt: null,
   });
   return { org, proj, account, campaign, run, platform, draft };
@@ -198,6 +199,23 @@ describe('POST /api/extension/dm-sync: cross-tenant matching scope (#170)', () =
     const body = (await res.json()) as { replied: number };
     expect(body.replied).toBe(1);
   });
+
+  it('an org-scoped device still matches its own contact after the draft is pruned (#215)', async () => {
+    const seedA = await seedOrg('org-a', 'a_handle', 'a_target');
+    await mintDevice(seedA.org.id, 'tokA');
+
+    // Simulate retention pruning the draft: draft_id -> null (onDelete set
+    // null), while the durable organization_id anchor survives.
+    await getDb()
+      .update(schema.contactHistory)
+      .set({ draftId: null })
+      .where(eq(schema.contactHistory.draftId, seedA.draft.id));
+
+    const res = await call('tokA', 'a_handle', 'a_target');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { replied: number };
+    expect(body.replied).toBe(1); // still attributable to org A via organization_id
+  });
 });
 
 describe('POST /api/extension/dm-sync: cross-tenant comment scope (#170)', () => {
@@ -255,6 +273,15 @@ describe('POST /api/extension/dm-sync: cross-tenant comment scope (#170)', () =>
       .where(eq(schema.draftEvents.draftId, draftA.id));
     expect(events.length).toBe(1);
     expect(events[0].event).toBe('replied');
+
+    // #215: the contact created for this comment reply carries org A, so it
+    // stays matchable after retention prunes the draft.
+    const [contact] = await getDb()
+      .select()
+      .from(schema.contactHistory)
+      .where(eq(schema.contactHistory.draftId, draftA.id));
+    expect(contact).toBeTruthy();
+    expect(contact.organizationId).toBe(seedA.org.id);
   });
 });
 

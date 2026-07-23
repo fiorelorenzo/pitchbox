@@ -206,6 +206,13 @@ describe('mastodon postRun', () => {
     expect(contacted).toHaveLength(1);
     expect(contacted[0].targetUser).toBe('alice@fosstodon.org');
     expect(contacted[0].accountHandle).toBe(handle);
+    // #215: the contact carries the draft's org so it stays matchable after
+    // retention prunes the draft.
+    const [defaultOrg] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(eq(schema.organizations.slug, 'default'));
+    expect(contacted[0].organizationId).toBe(defaultOrg.id);
   });
 
   it('maps kind "comment" to a public reply using in_reply_to_id', async () => {

@@ -64,6 +64,13 @@
       "when": 1784802259710,
       "tag": "0008_thick_ironclad",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784815565468,
+      "tag": "0009_free_sphinx",
+      "breakpoints": true
     }
   ]
 }

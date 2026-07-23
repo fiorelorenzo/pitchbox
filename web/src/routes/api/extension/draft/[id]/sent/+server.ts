@@ -120,6 +120,11 @@ export async function POST({ params, request }: { params: { id: string }; reques
     })();
   }
 
+  // #215: the contact carries the draft's org (not the device's, which may be
+  // null on a self-host / auto-paired install) so it stays matchable after
+  // retention prunes the draft.
+  const orgId = await getDraftOrgId(db, id);
+
   if (draft.kind === 'dm' && draft.targetUser) {
     const [account] = await db
       .select()
@@ -132,11 +137,11 @@ export async function POST({ params, request }: { params: { id: string }; reques
         targetUser: draft.targetUser,
         lastContactedAt: now,
         draftId: id,
+        organizationId: orgId,
       });
     }
   }
 
-  const orgId = await getDraftOrgId(db, id);
   emit('drafts:changed', { id, state: 'sent' }, orgId);
   return json({ ok: true });
 }

@@ -11,6 +11,7 @@ import {
   describeBlockedSend,
   type DraftLike,
 } from '@pitchbox/shared/draft-send';
+import { getDraftOrgId } from '@pitchbox/shared/orgs';
 import { and, desc, eq } from 'drizzle-orm';
 import { ok, fail } from '../lib/output.js';
 
@@ -259,6 +260,7 @@ export async function postRun(
       targetUser,
       lastContactedAt: now,
       draftId: inserted.id,
+      organizationId: await getDraftOrgId(db, inserted.id), // #215: durable org anchor
     });
   }
 

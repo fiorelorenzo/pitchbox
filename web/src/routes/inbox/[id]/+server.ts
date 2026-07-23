@@ -132,6 +132,7 @@ export async function PATCH(event: RequestEvent) {
         targetUser: draft.targetUser,
         lastContactedAt: now,
         draftId: id,
+        organizationId: orgId, // #215: durable org anchor (== the draft's org here)
       });
     }
   } else if (newState === 'approved' && autoPost) {
@@ -183,6 +184,7 @@ export async function PATCH(event: RequestEvent) {
         targetUser: draft.targetUser,
         lastContactedAt: now,
         draftId: id,
+        organizationId: orgId, // #215: durable org anchor (== the draft's org here)
       });
     }
 

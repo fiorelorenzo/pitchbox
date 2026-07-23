@@ -430,6 +430,15 @@ export const contactHistory = pgTable(
     targetUser: text('target_user').notNull(),
     lastContactedAt: timestamp('last_contacted_at', { withTimezone: true }).notNull().defaultNow(),
     draftId: integer('draft_id').references(() => drafts.id, { onDelete: 'set null' }),
+    // #215: durable org anchor, set from the draft's project at insert time, so a
+    // contact stays attributable to its tenant even after retention prunes the
+    // draft (draft_id -> null). dm-sync scopes org-bound devices by this column
+    // instead of joining through the ephemeral draft. Null for self-host rows
+    // predating it and for rows whose draft was already pruned when the backfill
+    // ran; those simply do not match for org-scoped devices.
+    organizationId: integer('organization_id').references(() => organizations.id, {
+      onDelete: 'cascade',
+    }),
     repliedAt: timestamp('replied_at', { withTimezone: true }),
     replyCheckedAt: timestamp('reply_checked_at', { withTimezone: true }),
     chatRoomId: text('chat_room_id'),
@@ -440,6 +449,9 @@ export const contactHistory = pgTable(
     // Lookup used by dm-sync to attribute incoming Reddit DMs by
     // (accountHandle, targetUser). Index name preserved from issue #44.
     byAccountTarget: index('messages_account_target_idx').on(t.accountHandle, t.targetUser),
+    // #215: supports the org-scoped dm-sync freshness lookup
+    // (organization_id + platform_id + last_contacted_at window).
+    byOrg: index('contact_history_org_idx').on(t.organizationId, t.platformId, t.lastContactedAt),
   }),
 );
 

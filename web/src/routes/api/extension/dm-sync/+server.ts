@@ -159,25 +159,28 @@ export async function POST({ request }: { request: Request }) {
   // in JS, so the query scaled with total history instead of the 60-day
   // window it actually needs.
   const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
-  // #170: when the device is bound to an org (multi-tenant / auth-on), scope
-  // every match candidate to that org so a device token can't flip or attach
-  // messages to another tenant's drafts/contacts. A null org (self-host /
-  // auth-off) keeps full access, mirroring requireRole's no-op and the draft
-  // routes' guard. Scoping goes through draft -> project -> organization.
+  // #170/#215: when the device is bound to an org (multi-tenant / auth-on),
+  // scope every match candidate to that org so a device token can't flip or
+  // attach messages to another tenant's drafts/contacts. A null org (self-host
+  // / auth-off) keeps full access, mirroring requireRole's no-op and the draft
+  // routes' guard.
   //
-  // We deliberately scope contact_history through its draft, not through its
-  // (accountHandle, targetUser): draft_id proves the owning org, whereas
-  // account_handle is user-entered and not unique across orgs, so a hostile
-  // tenant could register a victim's handle and match its contacts. The cost
-  // is that a contact whose draft was pruned by retention (draft_id is
-  // onDelete: 'set null') becomes unattributable and stops matching for
-  // org-scoped devices - acceptable because under the default 90-day draft
-  // retention a contact ages out of this 60-day match window before its draft
-  // is ever pruned, so this only bites installs that set draft retention below
-  // ~60 days. A durable contact_history.organization_id would remove even that
-  // edge (tracked as a follow-up); self-host (null org) is unaffected.
+  // contact_history scopes by its own durable organization_id (#215), set from
+  // the draft's project at insert time, rather than joining through the draft:
+  // retention prunes the draft (draft_id -> null) but the org anchor survives,
+  // so a contact stays matchable for its tenant afterwards. It is also safer
+  // than scoping by (accountHandle, targetUser), which is user-entered and not
+  // unique across orgs. Rows with a null organization_id (self-host rows, or
+  // contacts orphaned before the #215 backfill) do not match org-scoped devices.
   const orgId = auth.organizationId;
-  let freshQuery = db
+  const freshConds = [
+    eq(schema.contactHistory.platformId, platform.id),
+    gte(schema.contactHistory.lastContactedAt, since),
+  ];
+  if (orgId != null) {
+    freshConds.push(eq(schema.contactHistory.organizationId, orgId));
+  }
+  const fresh: ContactRow[] = await db
     .select({
       id: schema.contactHistory.id,
       accountHandle: schema.contactHistory.accountHandle,
@@ -188,18 +191,7 @@ export async function POST({ request }: { request: Request }) {
       repliedAt: schema.contactHistory.repliedAt,
     })
     .from(schema.contactHistory)
-    .$dynamic();
-  const freshConds = [
-    eq(schema.contactHistory.platformId, platform.id),
-    gte(schema.contactHistory.lastContactedAt, since),
-  ];
-  if (orgId != null) {
-    freshQuery = freshQuery
-      .innerJoin(schema.drafts, eq(schema.drafts.id, schema.contactHistory.draftId))
-      .innerJoin(schema.projects, eq(schema.projects.id, schema.drafts.projectId));
-    freshConds.push(eq(schema.projects.organizationId, orgId));
-  }
-  const fresh: ContactRow[] = await freshQuery.where(and(...freshConds));
+    .where(and(...freshConds));
 
   const { inserts, updates, roomIdsByContact } = matchIncomingDms(items, fresh);
 
@@ -311,6 +303,17 @@ export async function POST({ request }: { request: Request }) {
     return json({ ok: true, inserted: 0, replied: 0, commentsInserted: 0, commentsReplied: 0 });
   }
 
+  // #215: resolve the org for each contact the comment path is about to create,
+  // so it carries a durable org anchor (matchable after the draft is pruned).
+  // For an org-scoped device every commentDraft is already that org; a null-org
+  // (self-host) device falls back to the draft's own project org.
+  const createdOrgByDraft = new Map<number, number | null>();
+  for (const c of commentMatch.contactsToCreate) {
+    if (!createdOrgByDraft.has(c.draftId)) {
+      createdOrgByDraft.set(c.draftId, orgId ?? (await getDraftOrgId(db, c.draftId)));
+    }
+  }
+
   await db.transaction(async (tx) => {
     for (const row of inserts) {
       await tx
@@ -354,6 +357,7 @@ export async function POST({ request }: { request: Request }) {
           repliedAt: c.repliedAt,
           replyCheckedAt: new Date(),
           draftId: c.draftId,
+          organizationId: createdOrgByDraft.get(c.draftId) ?? null,
           platformContextUrl: c.platformContextUrl,
         })
         .returning({ id: schema.contactHistory.id });
