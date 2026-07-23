@@ -28,6 +28,12 @@ export type Pairing = {
   // installs that predate this field) leave it unset until the user
   // dismisses the one-time review banner.
   consentAckAt?: string;
+  // #185: expiry of the currently-stored token, set whenever `api.rotate`
+  // mints a fresh one. Unset for a pairing that predates this field or has
+  // never been rotated yet - `api.ts`'s `shouldRotate` treats that the same
+  // as "near expiry" so it gets a token + expiry on the next opportunistic
+  // check instead of never being tracked at all.
+  tokenExpiresAt?: string;
 };
 
 export type PairingHealth = 'ok' | 'warn' | 'error';

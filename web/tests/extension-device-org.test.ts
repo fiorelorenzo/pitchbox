@@ -11,7 +11,7 @@ import { GET as extensionDevicesGet } from '../src/routes/api/settings/extension
  * Task 13c Part 2 regression: extension device/pairing org attribution on the
  * WRITE side must follow the caller's active org, not a hardcoded default org
  * (extension-pairing POST) and not just the user's first membership
- * (auto-pair GET, which used the deprecated loadOrganizationForUser).
+ * (auto-pair POST, which used the deprecated loadOrganizationForUser).
  */
 
 // Captured at import time (before any test mutates it) so afterAll can restore
@@ -82,12 +82,13 @@ describe('extension device/pairing org attribution', () => {
     });
   });
 
-  describe('GET /api/extension/auto-pair', () => {
+  describe('POST /api/extension/auto-pair', () => {
     it('attributes the device to the session active org, not the user first membership', async () => {
       process.env.PITCHBOX_AUTH = 'on';
       // The route reads PITCHBOX_AUTH into a module-level constant at import
       // time, so it must be set before the module is (dynamically) imported.
-      const { GET: autoPairGet } = await import('../src/routes/api/extension/auto-pair/+server.js');
+      const { POST: autoPairPost } =
+        await import('../src/routes/api/extension/auto-pair/+server.js');
 
       const db = getDb();
       const [user] = await db
@@ -112,10 +113,10 @@ describe('extension device/pairing org attribution', () => {
       const session = await createSession(db, user.id);
       await setSessionActiveOrg(db, session.id, orgActive.id);
 
-      const res = await autoPairGet({
+      const res = await autoPairPost({
         cookies: { get: (n: string) => (n === 'pitchbox_session' ? session.id : undefined) },
-        request: new Request('http://x/api/extension/auto-pair'),
-      } as unknown as Parameters<typeof autoPairGet>[0]);
+        request: new Request('http://x/api/extension/auto-pair', { method: 'POST' }),
+      } as unknown as Parameters<typeof autoPairPost>[0]);
       expect(res.status).toBe(200);
       const body = (await res.json()) as { deviceId: number };
 

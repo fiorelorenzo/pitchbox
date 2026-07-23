@@ -1,11 +1,29 @@
 import { error } from '@sveltejs/kit';
-import { createHash } from 'node:crypto';
-import { and, eq, isNull } from 'drizzle-orm';
+import { randomBytes, createHash } from 'node:crypto';
+import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import { draftBelongsToOrg } from '@pitchbox/shared/orgs';
 import { getDb, schema } from './db.js';
 
-function hashToken(token: string): string {
+export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+
+// Issue #185: every device token (auto-pair, pairing-code redemption, rotate)
+// carries a 90-day TTL from the moment it's minted.
+export const DEVICE_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * Mint a fresh device bearer token plus its 90-day expiry. Shared by every
+ * path that mints or renews a device row so the TTL and hashing stay
+ * consistent (auto-pair, the pairing-code redemption endpoint, and rotate).
+ */
+export function mintDeviceToken(): { token: string; tokenHash: string; expiresAt: Date } {
+  const token = randomBytes(32).toString('hex');
+  return {
+    token,
+    tokenHash: hashToken(token),
+    expiresAt: new Date(Date.now() + DEVICE_TOKEN_TTL_MS),
+  };
 }
 
 export type ExtensionAuthContext = {
@@ -34,6 +52,13 @@ export async function requireExtensionAuth(request: Request): Promise<ExtensionA
       and(
         eq(schema.extensionDevices.tokenHash, tokenHash),
         isNull(schema.extensionDevices.revokedAt),
+        // #185: a device with no expiresAt is valid forever; one with an
+        // expiresAt in the past is treated identically to an unknown token
+        // (generic "invalid token" message - don't leak why it failed).
+        or(
+          isNull(schema.extensionDevices.expiresAt),
+          gt(schema.extensionDevices.expiresAt, new Date()),
+        ),
       ),
     )
     .limit(1);

@@ -1,4 +1,4 @@
-import { json, type RequestEvent } from '@sveltejs/kit';
+import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { randomBytes } from 'node:crypto';
 import { getDb, schema } from '$lib/server/db.js';
 import { resolveOrgId, requireRole } from '$lib/server/auth.js';
@@ -18,6 +18,10 @@ export async function POST(event: RequestEvent) {
   // default org when auth is off / no membership exists yet), not always the
   // hardcoded default org.
   const organizationId = await resolveOrgId(event);
+  // #196: fail loudly instead of minting an orphaned (null-org) pairing code
+  // that a later /api/extension/pair redemption could turn into an orphaned
+  // device - no row is inserted below this point.
+  if (organizationId == null) throw error(409, 'no_org');
   const code = generateCode();
   const expiresAt = new Date(Date.now() + TTL_MS);
   await db.insert(schema.extensionPairings).values({

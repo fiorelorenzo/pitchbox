@@ -34,6 +34,24 @@ export async function pickPairing(backendUrl?: string): Promise<Pairing | null> 
   return pairings[0];
 }
 
+// #185: rotate a device token once it's unset (never tracked, or minted
+// before this field existed) or within this many days of its known expiry.
+// A generous 14-day buffer against a 90-day TTL means the opportunistic
+// checks below (handshake / "Test connection") only need to fire every so
+// often to keep a token from ever actually expiring under normal use.
+const ROTATE_BUFFER_MS = 14 * 24 * 60 * 60 * 1000;
+
+/** Exported for unit testing. */
+export function shouldRotate(
+  p: Pick<Pairing, 'tokenExpiresAt'>,
+  now: number = Date.now(),
+): boolean {
+  if (!p.tokenExpiresAt) return true;
+  const expiresAt = new Date(p.tokenExpiresAt).getTime();
+  if (!Number.isFinite(expiresAt)) return true;
+  return expiresAt - now <= ROTATE_BUFFER_MS;
+}
+
 function authHeaders(p: Pairing): HeadersInit {
   return {
     'content-type': 'application/json',
@@ -162,7 +180,40 @@ export const api = {
   handshake: async (backendUrl?: string): Promise<ApiResult<{ ok: true; version: string }>> => {
     const p = await pickPairing(backendUrl);
     if (!p) return { ok: false, status: 0, error: 'not configured' };
-    return postJson(p, '/api/extension/handshake', {});
+    const res = await postJson<{ ok: true; version: string }>(p, '/api/extension/handshake', {});
+    // #185: opportunistic token rotation. Handshake ("Test connection") is
+    // the one place the extension makes an on-demand authenticated call, so
+    // piggyback the near-expiry check here instead of adding a separate
+    // poller. A pairing that has never been rotated yet (tokenExpiresAt
+    // unset) rotates on the very next handshake, which starts tracking its
+    // expiry going forward.
+    if (res.ok && shouldRotate(p)) {
+      await api.rotate(p.backendUrl);
+    }
+    return res;
+  },
+
+  /**
+   * Mint a fresh token for the current pairing's device row and persist it in
+   * place of the old one (see POST /api/extension/rotate). Safe to call
+   * anytime the pairing is still valid - the server invalidates the old hash
+   * immediately, so the next call must use the token this returns.
+   */
+  rotate: async (backendUrl?: string): Promise<ApiResult<{ token: string; expiresAt: string }>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    const res = await postJson<{ token: string; expiresAt: string }>(
+      p,
+      '/api/extension/rotate',
+      {},
+    );
+    if (res.ok) {
+      await patchPairing(p.backendUrl, {
+        token: res.data.token,
+        tokenExpiresAt: res.data.expiresAt,
+      });
+    }
+    return res;
   },
 
   getDraft: async (draftId: number, backendUrl?: string): Promise<ApiResult<DraftSummary>> => {

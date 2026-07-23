@@ -10,6 +10,16 @@ services:
     pull_policy: ${APP_PULL_POLICY:-build}
     environment:
       WEB_PORT: ${WEB_PORT:-5180}
+      # This overlay assumes exactly one trusted reverse proxy in front of
+      # web: host Caddy, terminating TLS and forwarding to this container.
+      # That lets adapter-node trust the X-Forwarded-For header Caddy sets,
+      # one hop deep, so `event.getClientAddress()` (used by e.g. the
+      # extension pairing-code rate limiter, #194) resolves to the real
+      # caller instead of Caddy's own loopback address for every request.
+      # Only set these here, not in the base app overlay - they are only
+      # correct when Caddy is guaranteed to be the sole proxy in front of web.
+      ADDRESS_HEADER: x-forwarded-for
+      XFF_DEPTH: '1'
     ports:
       - '${APP_BIND:-127.0.0.1}:${WEB_PORT:-5180}:${WEB_PORT:-5180}'
     restart: unless-stopped

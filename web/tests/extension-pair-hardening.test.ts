@@ -21,9 +21,16 @@ async function reset() {
 }
 
 async function insertPairing(code: string, expiresInMs = 10 * 60 * 1000) {
-  await getDb()
+  const db = getDb();
+  // A pairing must carry an org (a null-org pairing is now rejected at
+  // redemption, #196), so seed it against the default org.
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
+  await db
     .insert(schema.extensionPairings)
-    .values({ code, organizationId: null, expiresAt: new Date(Date.now() + expiresInMs) });
+    .values({ code, organizationId: org.id, expiresAt: new Date(Date.now() + expiresInMs) });
 }
 
 function consumeEvent(body: unknown): ConsumeEvent {

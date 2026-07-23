@@ -506,6 +506,12 @@ export const extensionDevices = pgTable(
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     lastSyncStatus: jsonb('last_sync_status'),
+    // Token lifecycle (issue #185). Nullable so existing rows (and any device
+    // minted before this landed) stay valid forever; every new device token
+    // (auto-pair, pairing-code redemption, rotate) is minted with this set to
+    // now + 90 days. requireExtensionAuth rejects a request once this is set
+    // and in the past, but never treats a null expiry as expired.
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
   },
   (t) => ({
     byHash: uniqueIndex('extension_devices_token_hash_unique').on(t.tokenHash),

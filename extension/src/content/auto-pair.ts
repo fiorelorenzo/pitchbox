@@ -37,8 +37,11 @@ export async function runAutoPair(): Promise<void> {
 
   let res: Response;
   try {
+    // #195: POST, not GET - this mints a device token as a side effect, and
+    // must not be reachable as a "safe" cross-site GET that rides an ambient
+    // session cookie.
     res = await fetch(`${backendUrl}/api/extension/auto-pair`, {
-      method: 'GET',
+      method: 'POST',
       credentials: 'include',
       headers: { accept: 'application/json' },
     });

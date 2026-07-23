@@ -112,6 +112,12 @@ describe('auto-pair content script', () => {
     await flush();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    // #195: this mints a device token as a side effect, so it must be a POST,
+    // not a "safe" GET that a cross-site request could ride in on.
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/extension/auto-pair'),
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
+    );
     expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalled();
   });
 

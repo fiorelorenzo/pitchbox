@@ -71,6 +71,38 @@ describe('extension auth', () => {
       status: 401,
     });
   });
+
+  it('accepts a device whose expiresAt is set but still in the future', async () => {
+    const token = randomBytes(32).toString('hex');
+    const [row] = await getDb()
+      .insert(schema.extensionDevices)
+      .values({
+        label: 'not yet expired',
+        tokenHash: hashToken(token),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      })
+      .returning();
+
+    await expect(requireExtensionAuth(authedRequest(token))).resolves.toEqual({
+      deviceId: row.id,
+      organizationId: null,
+    });
+  });
+
+  it('rejects an expired device (#185)', async () => {
+    const token = randomBytes(32).toString('hex');
+    await getDb()
+      .insert(schema.extensionDevices)
+      .values({
+        label: 'expired',
+        tokenHash: hashToken(token),
+        expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      });
+
+    await expect(requireExtensionAuth(authedRequest(token))).rejects.toMatchObject({
+      status: 401,
+    });
+  });
 });
 
 afterAll(async () => {
