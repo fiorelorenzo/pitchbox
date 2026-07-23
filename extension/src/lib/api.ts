@@ -110,13 +110,25 @@ export const api = {
                 captured_at: p.syncStatus.capturedAt,
               }
             : undefined);
+        // #186: do NOT send captured Reddit message bodies to a backend the
+        // user hasn't consented to yet (the passive auto-pair persists a
+        // pairing with consentAckAt unset). Still POST the empty status
+        // heartbeat so it shows as paired-awaiting-consent; full delivery
+        // resumes once they acknowledge the review banner. The confirm-before-
+        // persist manual flows set consentAckAt immediately.
+        const consented = !!p.consentAckAt;
         return postJson<{
           ok: true;
           inserted: number;
           replied: number;
           commentsInserted?: number;
           commentsReplied?: number;
-        }>(p, '/api/extension/dm-sync', { platform, items, comments, status: payloadStatus });
+        }>(p, '/api/extension/dm-sync', {
+          platform,
+          items: consented ? items : [],
+          comments: consented ? comments : [],
+          status: payloadStatus,
+        });
       }),
     );
     // Fold the settled results back in pairing order. patchPairing is
@@ -137,7 +149,7 @@ export const api = {
       // forward even on a tick where the inbox/chat poll actually failed,
       // silently skipping messages that arrived during the outage (#180/#188
       // rely on the watermark staying put on a failed poll).
-      if (r.ok && (items.length > 0 || comments.length > 0)) {
+      if (r.ok && p.consentAckAt && (items.length > 0 || comments.length > 0)) {
         await patchPairing(p.backendUrl, { lastDmSyncAt: new Date().toISOString() });
       }
     }
@@ -215,7 +227,10 @@ export const api = {
    * teammate install that never has the dashboard open in a tab. The caller
    * must already hold host permission for `backendUrl`.
    */
-  pairWithCode: async (backendUrl: string, code: string): Promise<ApiResult<{ token: string }>> => {
+  pairWithCode: async (
+    backendUrl: string,
+    code: string,
+  ): Promise<ApiResult<{ token: string; orgName?: string | null; deviceLabel?: string }>> => {
     const base = backendUrl.replace(/\/$/, '');
     try {
       const res = await fetch(`${base}/api/extension/pair`, {
@@ -224,7 +239,14 @@ export const api = {
         body: JSON.stringify({ code }),
       });
       if (!res.ok) return { ok: false, status: res.status, error: await res.text() };
-      return { ok: true, data: (await res.json()) as { token: string } };
+      return {
+        ok: true,
+        data: (await res.json()) as {
+          token: string;
+          orgName?: string | null;
+          deviceLabel?: string;
+        },
+      };
     } catch (e) {
       return { ok: false, status: 0, error: (e as Error).message };
     }

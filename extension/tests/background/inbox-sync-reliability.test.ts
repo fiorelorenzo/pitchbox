@@ -23,6 +23,7 @@ beforeEach(() => {
         backendUrl: 'http://127.0.0.1:5180',
         token: 'x'.repeat(64),
         lastDmSyncAt: new Date('2026-04-24T08:00:00Z').toISOString(),
+        consentAckAt: '2026-01-01T00:00:00Z',
       },
     ],
   };

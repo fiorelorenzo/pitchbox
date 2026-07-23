@@ -14,10 +14,59 @@ export type SyncStatus = {
 export type Pairing = {
   backendUrl: string;
   token: string;
+  // #200: identity of who/what this pairing points at, returned by the
+  // auto-pair/pair endpoints alongside the token.
+  orgName?: string;
+  deviceLabel?: string;
   lastHandshakeAt?: string;
   lastDmSyncAt?: string;
   syncStatus?: SyncStatus;
+  // #186: stamped once the user has explicitly acknowledged what this
+  // pairing shares (every Reddit DM/comment/chat message body). The
+  // confirm-before-persist flows in ConnectionCard set this immediately;
+  // pairings that arrived silently (the passive auto-pair content script, or
+  // installs that predate this field) leave it unset until the user
+  // dismisses the one-time review banner.
+  consentAckAt?: string;
 };
+
+export type PairingHealth = 'ok' | 'warn' | 'error';
+
+// A syncStatus snapshot older than this is treated as unknown/stale rather
+// than trusted at face value - roughly 4.5x the longest configurable poller
+// interval (30 min, see lib/settings.ts) so a dead background worker cannot
+// keep showing a stale "ok" green dot indefinitely.
+const STALE_SYNC_STATUS_MS = 45 * 60 * 1000;
+
+const HEALTH_RANK: Record<PairingHealth, number> = { ok: 0, warn: 1, error: 2 };
+
+function worseHealth(a: PairingHealth, b: PairingHealth): PairingHealth {
+  return HEALTH_RANK[b] > HEALTH_RANK[a] ? b : a;
+}
+
+function channelHealth(status: SyncChannelStatus): PairingHealth {
+  if (status === 'ok') return 'ok';
+  if (status === 'error') return 'error';
+  return 'warn'; // unauthorized or unknown
+}
+
+/**
+ * Worst-of chat/legacy sync health for one pairing (#178), honestly derived
+ * from the syncStatus the background worker persists every cycle rather than
+ * hardcoded to "connected". A missing or stale snapshot counts as warn, not
+ * ok, since a dead worker must not keep showing green.
+ */
+export function pairingHealth(p: Pairing, now: number = Date.now()): PairingHealth {
+  if (!p.syncStatus) return 'warn';
+  const capturedAt = new Date(p.syncStatus.capturedAt).getTime();
+  if (!Number.isFinite(capturedAt) || now - capturedAt > STALE_SYNC_STATUS_MS) return 'warn';
+  return worseHealth(channelHealth(p.syncStatus.chat), channelHealth(p.syncStatus.legacy));
+}
+
+/** Worst-of health across every pairing, for the card-level badge. */
+export function overallHealth(pairings: Pairing[], now: number = Date.now()): PairingHealth {
+  return pairings.reduce<PairingHealth>((acc, p) => worseHealth(acc, pairingHealth(p, now)), 'ok');
+}
 
 export type Settings = {
   pairings: Pairing[];

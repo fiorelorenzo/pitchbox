@@ -1,4 +1,4 @@
-import { isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { getDb, schema } from './db.js';
 
 export type ExtensionSyncChannelStatus = 'ok' | 'unauthorized' | 'error' | 'unknown';
@@ -37,4 +37,51 @@ export async function hasChatUnauthorizedDevice(): Promise<boolean> {
     return true;
   }
   return false;
+}
+
+export type ExtensionDeviceNudgeKind = 'no_device' | 'stale_device';
+
+export type ExtensionDeviceNudge = { kind: ExtensionDeviceNudgeKind } | null;
+
+// Treat an org as having gone quiet if none of its non-revoked devices have
+// shown any activity (a sync report, or even just the pairing itself) for
+// this long. Much wider than STALE_STATUS_MS above: that one flags a chat
+// token going bad while the extension is clearly still running; this one
+// flags the extension not running (or never installed) at all, so it
+// tolerates a much slower cadence before nagging the org to reinstall or
+// re-pair.
+const STALE_DEVICE_MS = 14 * 24 * 60 * 60 * 1000;
+
+// Nudge an org to install or re-pair the browser extension when it has no
+// working device: either it never paired one at all (`no_device`, a
+// discovery nudge) or every device has gone quiet for STALE_DEVICE_MS
+// (`stale_device`, a re-pair nudge). Returns null when at least one
+// non-revoked device shows recent activity, so the Inbox/Conversations
+// banners stay quiet. Unlike `hasChatUnauthorizedDevice`, this is scoped to
+// a single org: device pairing is per-org, so a workspace should only be
+// nudged about its own devices, never another tenant's.
+export async function getExtensionDeviceNudge(orgId: number): Promise<ExtensionDeviceNudge> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      lastSeenAt: schema.extensionDevices.lastSeenAt,
+      createdAt: schema.extensionDevices.createdAt,
+    })
+    .from(schema.extensionDevices)
+    .where(
+      and(
+        eq(schema.extensionDevices.organizationId, orgId),
+        isNull(schema.extensionDevices.revokedAt),
+      ),
+    );
+
+  if (rows.length === 0) return { kind: 'no_device' };
+
+  const newestActivity = rows.reduce((latest, row) => {
+    const activity = row.lastSeenAt ?? row.createdAt;
+    return activity > latest ? activity : latest;
+  }, rows[0].lastSeenAt ?? rows[0].createdAt);
+
+  const cutoff = Date.now() - STALE_DEVICE_MS;
+  return newestActivity.getTime() < cutoff ? { kind: 'stale_device' } : null;
 }

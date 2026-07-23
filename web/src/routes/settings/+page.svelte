@@ -8,6 +8,7 @@
 	import Seo from '$lib/components/Seo.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ExtensionCard from '$lib/components/ExtensionCard.svelte';
+	import ExtensionDevices from '$lib/components/ExtensionDevices.svelte';
 	import SettingsQuotaCard from '$lib/components/SettingsQuotaCard.svelte';
 	import SettingsRunnersCard from '$lib/components/SettingsRunnersCard.svelte';
 	import SettingsAppearanceCard from '$lib/components/SettingsAppearanceCard.svelte';
@@ -202,8 +203,9 @@
 
 		<!-- Integrations tab -->
 		<Tabs.Content value="integrations" class="mt-4">
-			<div class="max-w-2xl">
+			<div class="max-w-2xl flex flex-col gap-4">
 				<ExtensionCard backendUrl={data.extension.backendUrl} />
+				<ExtensionDevices {isAdmin} />
 			</div>
 		</Tabs.Content>
 

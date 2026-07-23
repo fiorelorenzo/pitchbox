@@ -114,4 +114,52 @@ describe('auto-pair content script', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalled();
   });
+
+  it('forwards orgName and deviceLabel from the auto-pair response (#200)', async () => {
+    setBeacon();
+    const fetchMock = vi.fn(async () =>
+      Object.assign(
+        new Response(
+          JSON.stringify({
+            token: 'z'.repeat(64),
+            orgName: 'Acme Inc',
+            deviceLabel: 'Browser extension',
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importModule();
+    await flush();
+
+    const sendMessage = (globalThis as any).chrome.runtime.sendMessage;
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'pitchbox:auto-pair',
+        token: 'z'.repeat(64),
+        orgName: 'Acme Inc',
+        deviceLabel: 'Browser extension',
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it('does not crash when the response omits orgName/deviceLabel', async () => {
+    setBeacon();
+    const fetchMock = vi.fn(async () =>
+      Object.assign(new Response(JSON.stringify({ token: 'w'.repeat(64) }), { status: 200 })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importModule();
+    await flush();
+
+    const sendMessage = (globalThis as any).chrome.runtime.sendMessage;
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'pitchbox:auto-pair', token: 'w'.repeat(64) }),
+      expect.any(Function),
+    );
+  });
 });

@@ -5,7 +5,7 @@ import { listProjects } from '@pitchbox/shared/projects';
 import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
 import { runBelongsToOrg } from '@pitchbox/shared/orgs';
 import { resolveOrgId } from '$lib/server/auth.js';
-import { hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
+import { getExtensionDeviceNudge, hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
 
 export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const { url } = event;
@@ -30,6 +30,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const orgId = await resolveOrgId(event);
   const projects = await listProjects(db, { organizationId: orgId });
   const chatSyncUnauthorized = await hasChatUnauthorizedDevice();
+  const extensionNudge = orgId != null ? await getExtensionDeviceNudge(orgId) : null;
   const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
   const projectsForUi = projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name }));
   const projectIds = projects.map((p) => p.id);
@@ -58,6 +59,8 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       platforms: allPlatforms,
       activePlatform,
       chatSyncUnauthorized,
+      extensionNudge,
+      orgId,
       qualityRubric,
     };
   }
@@ -78,6 +81,8 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       platforms: allPlatforms,
       activePlatform: null,
       chatSyncUnauthorized,
+      extensionNudge,
+      orgId,
       qualityRubric,
     };
   }
@@ -113,6 +118,8 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
         platforms: allPlatforms,
         activePlatform,
         chatSyncUnauthorized,
+        extensionNudge,
+        orgId,
         qualityRubric,
       };
     }
@@ -251,6 +258,8 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     platforms: allPlatforms,
     activePlatform,
     chatSyncUnauthorized,
+    extensionNudge,
+    orgId,
     qualityRubric,
   };
 }

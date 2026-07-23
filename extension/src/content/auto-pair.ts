@@ -55,16 +55,22 @@ export async function runAutoPair(): Promise<void> {
     return;
   }
 
-  let body: { token?: string };
+  let body: { token?: string; orgName?: string; deviceLabel?: string };
   try {
-    body = (await res.json()) as { token?: string };
+    body = (await res.json()) as { token?: string; orgName?: string; deviceLabel?: string };
   } catch {
     return;
   }
   if (!body.token) return;
 
   chrome.runtime.sendMessage(
-    { type: 'pitchbox:auto-pair', backendUrl, token: body.token },
+    {
+      type: 'pitchbox:auto-pair',
+      backendUrl,
+      token: body.token,
+      orgName: body.orgName,
+      deviceLabel: body.deviceLabel,
+    },
     (ack) => {
       if (ack?.ok) {
         console.log('[pitchbox] paired with', backendUrl);

@@ -70,6 +70,15 @@ export async function GET({
 
   if (!organizationId) throw error(500, 'no_org');
 
+  // #200: the client wants to show which org/device a pairing belongs to,
+  // not just a bare token - look up the org name alongside minting the
+  // device row.
+  const [org] = await db
+    .select({ name: schema.organizations.name })
+    .from(schema.organizations)
+    .where(eq(schema.organizations.id, organizationId))
+    .limit(1);
+
   const token = randomBytes(32).toString('hex');
   const tokenHash = hashToken(token);
   const userAgent = request.headers.get('user-agent') ?? '';
@@ -79,5 +88,5 @@ export async function GET({
     .values({ organizationId, label, tokenHash })
     .returning({ id: schema.extensionDevices.id });
 
-  return json({ token, deviceId: row.id });
+  return json({ token, deviceId: row.id, orgName: org?.name ?? null, deviceLabel: label });
 }

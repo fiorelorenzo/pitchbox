@@ -30,6 +30,18 @@ export const en: Dict = {
   'dashboard.connection.code-required': 'Enter the pairing code',
   'dashboard.connection.perm-denied': 'Permission denied for {host}',
   'dashboard.connection.pair-failed': 'Pairing failed: {reason}',
+  'dashboard.connection.degraded': 'Needs attention',
+  'dashboard.connection.sync-error': 'Sync error',
+  'dashboard.connection.test': 'Test connection',
+  'dashboard.connection.testing': 'Testing...',
+  'dashboard.connection.test-ok': 'Connected - server v{version}',
+  'dashboard.connection.test-fail': 'Test failed: {reason}',
+  'dashboard.connection.consent-title': 'Share Reddit activity with {host}?',
+  'dashboard.connection.consent-body':
+    'Every paired backend receives the full stream of Reddit DM, comment, and chat message bodies this extension captures.',
+  'dashboard.connection.consent-confirm': 'Confirm & pair',
+  'dashboard.connection.consent-review-title': 'Review what {host} receives',
+  'dashboard.connection.consent-ack': 'Got it',
 
   'dashboard.sync.title': 'Sync',
   'dashboard.sync.now': 'Sync now',
@@ -61,6 +73,8 @@ export const en: Dict = {
   'activity.dm-sync.ok': 'Reddit inbox sync - {inserted} new, {replied} replied.',
   'activity.dm-sync.unauthorized': 'Reddit inbox sync paused - please log in to reddit.com.',
   'activity.dm-sync.error': 'Reddit inbox sync failed: {reason}',
+  'activity.dm-sync.device-revoked':
+    'A paired backend rejected this device (revoked). Re-pair from Settings > Integrations.',
   'activity.chat-sync.ok': 'Reddit Chat sync - {messages} messages, {inserted} new.',
   'activity.chat-sync.unauthorized': 'Reddit Chat sync paused - Matrix token expired.',
   'activity.chat-sync.error': 'Reddit Chat sync failed: {reason}',
@@ -95,6 +109,7 @@ export const en: Dict = {
   'activity.system.boot': 'Service worker started.',
   'activity.system.alarms-applied': 'Alarms re-applied ({interval} min).',
   'activity.system.upgraded': 'Extension upgraded {from} → {to}.',
+  'activity.system.installed': 'Extension installed.',
 
   'settings.appearance.title': 'Appearance',
   'settings.appearance.theme': 'Theme',

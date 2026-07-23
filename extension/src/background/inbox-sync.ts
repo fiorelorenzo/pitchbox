@@ -163,6 +163,12 @@ export async function runInboxSync(): Promise<{
     const successes = results.filter((r) => r.ok);
     if (successes.length === 0) {
       const first = results[0];
+      // #178: a 401 means the backend rejected our bearer token (e.g. the
+      // extension device was revoked in Settings) - surface a distinct reason
+      // so classifyInbox (background.ts) buckets it as 'unauthorized' instead
+      // of a generic error, mirroring classifyChat's handling of a Matrix
+      // 401/403.
+      if (!first.ok && first.status === 401) return { ok: false, reason: 'device-revoked' };
       return { ok: false, reason: !first.ok ? first.error : 'unknown' };
     }
     const inserted = successes.reduce(

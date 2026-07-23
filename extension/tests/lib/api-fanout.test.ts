@@ -22,7 +22,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
   },
 };
 
-function seed(pairings: Array<{ backendUrl: string; token: string }>) {
+function seed(pairings: Array<{ backendUrl: string; token: string; consentAckAt?: string }>) {
   (globalThis as any).chrome.storage.local._s = { pairings };
 }
 
@@ -31,8 +31,9 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-const A = { backendUrl: 'https://a.example', token: 'ta' };
-const B = { backendUrl: 'https://b.example', token: 'tb' };
+// Consented pairings (#186): delivery of message bodies is gated on consentAckAt.
+const A = { backendUrl: 'https://a.example', token: 'ta', consentAckAt: '2026-01-01T00:00:00Z' };
+const B = { backendUrl: 'https://b.example', token: 'tb', consentAckAt: '2026-01-01T00:00:00Z' };
 
 describe('api.dmSync fan-out concurrency (#193)', () => {
   it('fires per-pairing POSTs concurrently and folds results back in pairing order', async () => {
@@ -114,5 +115,30 @@ describe('api.dmSync fan-out concurrency (#193)', () => {
       lastDmSyncAt?: string;
     }>;
     expect(pairings[0].lastDmSyncAt).toBeUndefined();
+  });
+
+  it('does not send message bodies to a pairing that has not consented (#186)', async () => {
+    seed([
+      { backendUrl: 'https://noconsent.example', token: 'tn' },
+      { backendUrl: 'https://ok.example', token: 'to', consentAckAt: '2026-01-01T00:00:00Z' },
+    ]);
+    const { api } = await import('../../src/lib/api.js');
+    const bodies: Record<string, { items: unknown[]; comments: unknown[] }> = {};
+    const fetchMock = vi.fn((url: string, init: { body: string }) => {
+      bodies[String(url)] = JSON.parse(init.body);
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true, inserted: 0, replied: 0 }), { status: 200 }),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.dmSync('reddit', [{ from: 'x' }], [{ c: 1 }]);
+
+    // Unconsented pairing: no message bodies (status heartbeat only).
+    expect(bodies['https://noconsent.example/api/extension/dm-sync'].items).toEqual([]);
+    expect(bodies['https://noconsent.example/api/extension/dm-sync'].comments).toEqual([]);
+    // Consented pairing: real items + comments delivered.
+    expect(bodies['https://ok.example/api/extension/dm-sync'].items).toEqual([{ from: 'x' }]);
+    expect(bodies['https://ok.example/api/extension/dm-sync'].comments).toEqual([{ c: 1 }]);
   });
 });

@@ -7,7 +7,7 @@ import {
   upsertPairing,
   type SyncChannelStatus,
 } from './lib/storage.js';
-import { api } from './lib/api.js';
+import { api, type DmSyncFanout } from './lib/api.js';
 import { logEvent } from './lib/activity.js';
 import { getSettings as getExtensionSettings } from './lib/settings.js';
 
@@ -22,9 +22,13 @@ type Result = {
   legacyStatus?: SyncChannelStatus;
 };
 
-function classifyInbox(r: Result): SyncChannelStatus {
+export function classifyInbox(r: Result): SyncChannelStatus {
   if (r.ok) return 'ok';
   if (r.reason === 'not-logged-in') return 'unauthorized';
+  // #178: the backend rejects our bearer token with 401 when the device was
+  // revoked in Settings - surface it the same way as an unauthenticated
+  // reddit.com session rather than a generic error.
+  if (r.reason === 'device-revoked') return 'unauthorized';
   return 'error';
 }
 
@@ -73,22 +77,47 @@ async function runAllSyncs() {
     legacy: classifyInbox(inbox),
     capturedAt: new Date().toISOString(),
   };
-  // Per-pairing status - every paired backend gets the same observation.
-  const { pairings } = await getSettings();
-  for (const p of pairings) {
-    await patchPairing(p.backendUrl, { syncStatus: status });
-  }
-  // Heartbeat: report current channel status to the dashboard even when no
-  // items moved. Fire-and-forget - failures here are non-fatal and the next
-  // alarm tick will retry.
+
+  // Heartbeat first: it POSTs to every paired backend every cycle (even a
+  // quiet one with no new Reddit activity), so its per-pairing result is our
+  // reliable signal for whether that specific backend still accepts this
+  // device's token. A 401 back means the device was revoked server-side.
+  let heartbeat: DmSyncFanout = [];
   try {
-    await api.dmSync('reddit', [], [], {
+    heartbeat = await api.dmSync('reddit', [], [], {
       chat: status.chat,
       legacy: status.legacy,
       captured_at: status.capturedAt,
     });
   } catch {
-    // ignored
+    // ignored - api.dmSync already folds per-pairing failures into its result.
+  }
+
+  // Persist a PER-PAIRING status (#178). The Reddit-channel status
+  // (chat/legacy) is shared - it reflects the local Reddit session, the same
+  // for every backend. The backend-token status is per pairing: a revoked
+  // pairing shows 'unauthorized' even when a sibling backend is healthy, so
+  // its dot is honest rather than borrowing a neighbour's green.
+  const { pairings } = await getSettings();
+  let anyRevoked = false;
+  for (const p of pairings) {
+    const hb = heartbeat.find((r) => r.backendUrl === p.backendUrl);
+    const backendRevoked = !!hb && !hb.ok && hb.status === 401;
+    if (backendRevoked) anyRevoked = true;
+    await patchPairing(p.backendUrl, {
+      syncStatus: {
+        chat: status.chat,
+        legacy: backendRevoked ? 'unauthorized' : status.legacy,
+        capturedAt: status.capturedAt,
+      },
+    });
+  }
+  if (anyRevoked) {
+    await logEvent({
+      level: 'warn',
+      source: 'dm-sync',
+      message: 'activity.dm-sync.device-revoked',
+    });
   }
 
   // Activity log entries - one per poller that actually ran this cycle.
@@ -103,7 +132,7 @@ async function runAllSyncs() {
           replied: inbox.replied ?? 0,
         },
       });
-    } else if (inbox.reason === 'not-logged-in') {
+    } else if (inbox.reason === 'not-logged-in' || inbox.reason === 'device-revoked') {
       await logEvent({
         level: 'warn',
         source: 'dm-sync',
@@ -187,8 +216,10 @@ async function applyAlarms(): Promise<void> {
   });
 }
 
-chrome.runtime.onInstalled.addListener(async () => {
-  console.log('[pitchbox] extension installed');
+// #203: exported so tests can drive the install/update branch directly
+// without going through chrome.runtime.onInstalled's listener plumbing.
+export async function handleInstalled(details: chrome.runtime.InstalledDetails): Promise<void> {
+  console.log('[pitchbox] extension installed:', details.reason);
   // Register side panel behaviour - guarded for older Chrome builds without
   // the sidePanel API.
   try {
@@ -197,8 +228,26 @@ chrome.runtime.onInstalled.addListener(async () => {
     console.warn('[pitchbox] sidePanel.setPanelBehavior failed:', err);
   }
   await applyAlarms();
-  await logEvent({ level: 'info', source: 'system', message: 'activity.system.boot' });
-});
+  if (details.reason === 'update') {
+    await logEvent({
+      level: 'info',
+      source: 'system',
+      message: 'activity.system.upgraded',
+      messageParams: {
+        from: details.previousVersion ?? 'unknown',
+        to: chrome.runtime.getManifest().version,
+      },
+    });
+  } else if (details.reason === 'install') {
+    await logEvent({ level: 'info', source: 'system', message: 'activity.system.installed' });
+  } else {
+    // chrome_update / shared_module_update: preserve the prior generic boot
+    // log rather than inventing a distinct message for these edge reasons.
+    await logEvent({ level: 'info', source: 'system', message: 'activity.system.boot' });
+  }
+}
+
+chrome.runtime.onInstalled.addListener(handleInstalled);
 
 chrome.runtime.onStartup.addListener(async () => {
   await logEvent({ level: 'info', source: 'system', message: 'activity.system.boot' });
@@ -251,7 +300,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'pitchbox:auto-pair') {
     // Persist token captured from the dashboard auto-pair handshake. Stored
     // alongside any other pairings so cloud + self-hosted can coexist.
-    const { backendUrl, token } = msg as { backendUrl: string; token: string };
+    const { backendUrl, token, orgName, deviceLabel } = msg as {
+      backendUrl: string;
+      token: string;
+      orgName?: string;
+      deviceLabel?: string;
+    };
     if (typeof backendUrl !== 'string' || typeof token !== 'string') {
       sendResponse({ ok: false, reason: 'invalid_payload' });
       return false;
@@ -259,7 +313,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     upsertPairing({
       backendUrl: backendUrl.replace(/\/$/, ''),
       token,
+      orgName: typeof orgName === 'string' ? orgName : undefined,
+      deviceLabel: typeof deviceLabel === 'string' ? deviceLabel : undefined,
       lastHandshakeAt: new Date().toISOString(),
+      // #186: this pairing came from the passive auto-pair content script
+      // with no user confirmation - leave consentAckAt unset so
+      // ConnectionCard's review banner surfaces it the next time the side
+      // panel is opened.
     }).then(() => sendResponse({ ok: true }));
     return true;
   }

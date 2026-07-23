@@ -20,6 +20,7 @@
 	import { relativeTime } from '$lib/utils/time';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import ChatSyncStalledBanner from '$lib/components/ChatSyncStalledBanner.svelte';
+	import ExtensionDeviceNudgeBanner from '$lib/components/ExtensionDeviceNudgeBanner.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import { SelectField } from '$lib/components/ui/select-field';
 	import { interpretDraftPatchResponse, DraftVersionConflictError } from '$lib/utils/draft-patch-response';
@@ -65,6 +66,8 @@
 			platforms: Array<{ id: number; slug: string }>;
 			activePlatform: { id: number; slug: string } | null;
 			chatSyncUnauthorized?: boolean;
+			extensionNudge?: { kind: 'no_device' | 'stale_device' } | null;
+			orgId?: number | null;
 			qualityRubric: QualityRubric;
 		};
 	} = $props();
@@ -393,6 +396,7 @@
 />
 
 <ChatSyncStalledBanner show={!!data.chatSyncUnauthorized} />
+<ExtensionDeviceNudgeBanner kind={data.extensionNudge?.kind ?? null} orgId={data.orgId ?? null} />
 
 <!-- Filter pills -->
 {#if data.run || data.campaign || data.activeProject}

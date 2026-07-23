@@ -44,14 +44,25 @@ export async function POST({ request }: { request: Request }) {
     )
     .returning();
   if (!pairing) throw error(404, 'invalid_or_expired_code');
+  if (pairing.organizationId == null) throw error(500, 'no_org');
+
+  // #200: the client wants to show which org/device a pairing belongs to,
+  // not just a bare token - look up the org name alongside minting the
+  // device row.
+  const [org] = await db
+    .select({ name: schema.organizations.name })
+    .from(schema.organizations)
+    .where(eq(schema.organizations.id, pairing.organizationId))
+    .limit(1);
 
   const token = randomBytes(32).toString('hex');
   const tokenHash = hashToken(token);
+  const deviceLabel = parsed.data.label ?? 'Chrome extension';
   await db.insert(schema.extensionDevices).values({
     organizationId: pairing.organizationId,
-    label: parsed.data.label ?? 'Chrome extension',
+    label: deviceLabel,
     tokenHash,
   });
 
-  return json({ token });
+  return json({ token, orgName: org?.name ?? null, deviceLabel });
 }

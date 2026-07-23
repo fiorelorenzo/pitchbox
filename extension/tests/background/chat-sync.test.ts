@@ -22,7 +22,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 beforeEach(() => {
   ((globalThis as any).chrome.storage.local as any)._s = {
-    pairings: [{ backendUrl: 'http://127.0.0.1:5180', token: 'x'.repeat(64) }],
+    pairings: [
+      {
+        backendUrl: 'http://127.0.0.1:5180',
+        token: 'x'.repeat(64),
+        consentAckAt: '2026-01-01T00:00:00Z',
+      },
+    ],
     matrixUserId: '@t2_me:reddit.com',
     matrixToken: 'mxtoken',
   };

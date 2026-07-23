@@ -18,7 +18,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 beforeEach(() => {
   ((globalThis as any).chrome.storage.local as any)._s = {
-    pairings: [{ backendUrl: 'http://127.0.0.1:5180', token: 'x'.repeat(64) }],
+    pairings: [
+      {
+        backendUrl: 'http://127.0.0.1:5180',
+        token: 'x'.repeat(64),
+        consentAckAt: '2026-01-01T00:00:00Z',
+      },
+    ],
   };
   vi.restoreAllMocks();
 });
@@ -36,6 +42,39 @@ describe('runInboxSync', () => {
     const { runInboxSync } = await importModule();
     const r = await runInboxSync();
     expect(r).toEqual({ ok: false, reason: 'not-logged-in' });
+  });
+
+  it('returns device-revoked when every pairing dm-sync POST answers 401 (#178)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (String(url).includes('inbox.json')) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                children: [
+                  {
+                    kind: 't4',
+                    data: {
+                      name: 't4_new',
+                      author: 'a',
+                      dest: 'me',
+                      body: 'hi',
+                      created_utc: new Date('2026-04-24T11:00:00Z').getTime() / 1000,
+                    },
+                  },
+                ],
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return new Response('device revoked', { status: 401 });
+      }),
+    );
+    const { runInboxSync } = await importModule();
+    const r = await runInboxSync();
+    expect(r).toEqual({ ok: false, reason: 'device-revoked' });
   });
 
   it('filters t1 items and items older than lastDmSyncAt', async () => {

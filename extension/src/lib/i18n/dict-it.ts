@@ -30,6 +30,18 @@ export const it: Dict = {
   'dashboard.connection.code-required': 'Inserisci il codice di pairing',
   'dashboard.connection.perm-denied': 'Permesso negato per {host}',
   'dashboard.connection.pair-failed': 'Pairing fallito: {reason}',
+  'dashboard.connection.degraded': 'Richiede attenzione',
+  'dashboard.connection.sync-error': 'Errore di sincronizzazione',
+  'dashboard.connection.test': 'Testa connessione',
+  'dashboard.connection.testing': 'Test in corso...',
+  'dashboard.connection.test-ok': 'Connesso - server v{version}',
+  'dashboard.connection.test-fail': 'Test fallito: {reason}',
+  'dashboard.connection.consent-title': "Condividere l'attività Reddit con {host}?",
+  'dashboard.connection.consent-body':
+    "Ogni backend abbinato riceve l'intero flusso di DM, commenti e messaggi chat di Reddit catturati da questa estensione.",
+  'dashboard.connection.consent-confirm': 'Conferma e abbina',
+  'dashboard.connection.consent-review-title': 'Rivedi cosa riceve {host}',
+  'dashboard.connection.consent-ack': 'Ho capito',
 
   'dashboard.sync.title': 'Sincronizzazione',
   'dashboard.sync.now': 'Sincronizza ora',
@@ -63,6 +75,8 @@ export const it: Dict = {
   'activity.dm-sync.ok': 'Sync inbox Reddit - {inserted} nuovi, {replied} risposti.',
   'activity.dm-sync.unauthorized': 'Sync inbox Reddit in pausa - fai login su reddit.com.',
   'activity.dm-sync.error': 'Sync inbox Reddit fallito: {reason}',
+  'activity.dm-sync.device-revoked':
+    'Un backend abbinato ha rifiutato questo dispositivo (revocato). Ri-abbina da Impostazioni > Integrazioni.',
   'activity.chat-sync.ok': 'Sync Reddit Chat - {messages} messaggi, {inserted} nuovi.',
   'activity.chat-sync.unauthorized': 'Sync Reddit Chat in pausa - token Matrix scaduto.',
   'activity.chat-sync.error': 'Sync Reddit Chat fallito: {reason}',
@@ -98,6 +112,7 @@ export const it: Dict = {
   'activity.system.boot': 'Service worker avviato.',
   'activity.system.alarms-applied': 'Alarms riapplicati ({interval} min).',
   'activity.system.upgraded': 'Estensione aggiornata {from} → {to}.',
+  'activity.system.installed': 'Estensione installata.',
 
   'settings.appearance.title': 'Aspetto',
   'settings.appearance.theme': 'Tema',

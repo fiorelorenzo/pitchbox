@@ -2,13 +2,14 @@ import { getDb, schema } from '$lib/server/db.js';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
-import { hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
+import { getExtensionDeviceNudge, hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
 
 export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const db = getDb();
   const chatSyncUnauthorized = await hasChatUnauthorizedDevice();
 
   const orgId = await resolveOrgId(event);
+  const extensionNudge = orgId != null ? await getExtensionDeviceNudge(orgId) : null;
   const projects = await listProjects(db, { organizationId: orgId });
   const projectIds = projects.map((p) => p.id);
   const hasProjects = projectIds.length > 0;
@@ -84,5 +85,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       lastMessage: latestByContact.get(r.contactId) ?? null,
     })),
     chatSyncUnauthorized,
+    extensionNudge,
+    orgId,
   };
 }
