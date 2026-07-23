@@ -6,6 +6,10 @@ export default defineManifest({
   name: 'Pitchbox',
   description: 'Companion extension for the Pitchbox outreach dashboard.',
   version: pkg.version,
+  // The side panel (side_panel + chrome.sidePanel) is a Chrome 114+ API. Set a
+  // floor so Chrome refuses/warns on install for older builds instead of
+  // shipping a toolbar icon that silently does nothing (#208).
+  minimum_chrome_version: '114',
   icons: {
     16: 'public/icons/icon-16.png',
     32: 'public/icons/icon-32.png',

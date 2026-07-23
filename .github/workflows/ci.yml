@@ -24,6 +24,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Workspace versions in lockstep (#207)
+        run: pnpm run version:check
       - name: Lint (eslint + prettier)
         run: pnpm run lint
       - name: Typecheck (tsc + svelte-check)

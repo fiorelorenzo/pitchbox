@@ -32,7 +32,9 @@
     "docs:dev": "vitepress dev docs --port 5181",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "brand:render": "tsx scripts/render-brand.ts"
+    "brand:render": "tsx scripts/render-brand.ts",
+    "set-version": "node scripts/set-version.mjs",
+    "version:check": "node scripts/set-version.mjs --check"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

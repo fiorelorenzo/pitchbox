@@ -2,8 +2,13 @@ name: deploy-prod
 on:
   push:
     tags: ['v*']
+# Prod has its OWN concurrency group so a queued preview deploy can never
+# supersede/cancel a pending prod deploy (GitHub only keeps the newest pending
+# run per group when cancel-in-progress is false). Prod deploys still serialize
+# among themselves; they may briefly overlap a preview build, which the box's
+# swap absorbs. See #214.
 concurrency:
-  group: prodbox-deploy
+  group: prodbox-deploy-prod
   cancel-in-progress: false
 jobs:
   deploy:

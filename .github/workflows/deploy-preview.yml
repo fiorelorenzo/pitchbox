@@ -4,9 +4,13 @@ on:
     workflows: ['CI']
     types: [completed]
     branches: [main]
+# Preview has its own group (distinct from prod's prodbox-deploy-prod) so it
+# never cancels a queued prod deploy (#214). cancel-in-progress de-dups
+# redundant previews: a newer main push supersedes an older, still-queued
+# preview build rather than piling them up.
 concurrency:
-  group: prodbox-deploy
-  cancel-in-progress: false
+  group: prodbox-deploy-preview
+  cancel-in-progress: true
 jobs:
   deploy:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
