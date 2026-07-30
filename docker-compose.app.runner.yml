@@ -11,6 +11,10 @@ services:
       context: ./cloud/runner
       dockerfile: Dockerfile
       target: runtime
+    # tini as PID 1: this container spawns agent CLI children, and anything
+    # they orphan reparents to PID 1 - node would never reap it (#218). tini
+    # forwards SIGTERM, so the CLD-P4 drain below is unaffected.
+    init: true
     environment:
       NODE_ENV: production
       PORT: '8787'

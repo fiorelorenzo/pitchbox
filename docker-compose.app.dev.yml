@@ -69,6 +69,8 @@ services:
       context: ./cloud/runner
       dockerfile: Dockerfile
       target: runtime
+    # Same reaping reason as the prod runner overlay (#218).
+    init: true
     command: ['pnpm', 'dev']
     environment:
       NODE_ENV: development

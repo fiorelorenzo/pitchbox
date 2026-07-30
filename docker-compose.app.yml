@@ -12,6 +12,10 @@ name: pitchbox
 services:
   web:
     image: ${APP_IMAGE:-pitchbox-app:latest}
+    # PID 1 in this container would otherwise be node itself, which never reaps
+    # children it did not await: tsx's esbuild helpers exit at boot and stay as
+    # zombies (#218). tini forwards SIGTERM, so stop_grace_period still works.
+    init: true
     build:
       context: .
       dockerfile: Dockerfile.app
@@ -48,6 +52,7 @@ services:
 
   daemon:
     image: ${APP_IMAGE:-pitchbox-app:latest}
+    init: true
     # Scheduler + reply poller. Runs the TS source under tsx (no build needed).
     command: ['node', '--import', 'tsx', 'daemon/src/index.ts']
     environment:

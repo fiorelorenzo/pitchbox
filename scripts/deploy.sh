@@ -14,6 +14,9 @@
 # Env knobs:
 #   DEPLOY_KEEP_N   how many immutable image tags / restore points to retain per
 #                    env after a successful deploy (default 5)
+#   DEPLOY_CACHE_KEEP_H  how many hours of docker build cache to keep after a
+#                    successful deploy (default 168 = one week); 0 disables the
+#                    cache prune entirely
 #   ALLOW_NO_AUTH   set to 1 to override the PITCHBOX_AUTH guard below (not
 #                    recommended - see step 0b)
 set -euo pipefail
@@ -108,6 +111,20 @@ prune_images() {
     log "removing old image ${IMAGE_REPO}:${old_tag}"
     docker rmi "${IMAGE_REPO}:${old_tag}" >/dev/null 2>&1 || true
   done
+  return 0
+}
+
+prune_build_cache() {
+  # The image prune above only drops old *tags*; the buildx cache behind them
+  # keeps growing forever and dwarfs everything else (154 GB reclaimable against
+  # 42 GB free when this was added, #217), which would eventually wedge the disk
+  # mid-build - i.e. exactly during a deploy. Keep a week by default so the next
+  # incremental build still hits cache. Best-effort like the other prunes.
+  local keep_h="${DEPLOY_CACHE_KEEP_H:-168}"
+  [ "$keep_h" = 0 ] && return 0
+  log "pruning docker build cache older than ${keep_h}h..."
+  docker builder prune -f --filter "until=${keep_h}h" >/dev/null 2>&1 ||
+    log "WARNING: build cache prune failed (ignored)"
   return 0
 }
 
@@ -231,15 +248,17 @@ fi
 log "smoke ok"
 
 # 10. deploy confirmed good: move the env's moving alias (<env>-latest) onto this
-#     image, then prune old immutable tags and old restore points. Both prunes
-#     wait until here (not right after the step-5 backup) so a deploy that
-#     fails partway through never loses older restore points - only a
-#     confirmed-good deploy trims them. Manual rollback later is just:
+#     image, then prune old immutable tags, old restore points and stale build
+#     cache. All three prunes wait until here (not right after the step-5
+#     backup) so a deploy that fails partway through never loses older restore
+#     points - only a confirmed-good deploy trims them. Manual rollback later
+#     is just:
 #       APP_IMAGE=<repo>:<one of the tags kept below> scripts/deploy.sh <env> <ref> --rollback
 log "tagging ${IMAGE_REPO}:${ENV}-latest -> $APP_IMAGE"
 docker tag "$APP_IMAGE" "${IMAGE_REPO}:${ENV}-latest" || log "WARNING: failed to update the ${ENV}-latest alias"
 prune_images
 prune_backups
+prune_build_cache
 
 # 11. cut over daemon (singleton) to the new color; recreate runner
 log "cutting over daemon + runner..."

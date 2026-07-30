@@ -5,6 +5,8 @@
 # via ACTIVE_WEB, set by deploy.sh at cutover.
 x-web-common: &web-common
   image: ${APP_IMAGE:-pitchbox-app:latest}
+  # tini as PID 1 so node is not left holding unreapable children (#218).
+  init: true
   pull_policy: ${APP_PULL_POLICY:-build}
   build:
     context: .
