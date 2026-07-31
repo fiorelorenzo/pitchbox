@@ -1,5 +1,7 @@
 import { createAgentRunner } from '@pitchbox/shared/agents/registry';
+import type { AgentRunner } from '@pitchbox/shared/agents';
 import { loadRunnerConfig } from '@pitchbox/shared/agents/config';
+import { detectRunner, isDetectionConclusive } from '@pitchbox/shared/agents/detect';
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { notify } from '@pitchbox/shared/notifications';
 import { classifyFailure } from '@pitchbox/shared/runlog/classify-failure';
@@ -125,9 +127,24 @@ async function dispatchRun(
   // the join on every event.
   const orgId = await getRunOrgId(db, run.id);
 
-  let runner: ReturnType<typeof createAgentRunner>;
+  let runner: AgentRunner;
   try {
-    const config = await loadRunnerConfig(db, run.agentRunner as AgentRunnerSlug);
+    const slug = run.agentRunner as AgentRunnerSlug;
+    // Pre-flight the snapshot. A run whose runner cannot start here fails the
+    // same way whatever the reason, but the message has to say so: before #219
+    // a cloud-edition install dispatching 'claude-code' spawned the ACP adapter
+    // and surfaced "ACP initialize timed out" 10s later, which says nothing
+    // about the actual problem. Only act on a verdict we can trust - for the
+    // backends we have no probe for, `available: false` means "unknown".
+    const detection = await detectRunner(slug);
+    if (!detection.available && isDetectionConclusive(slug)) {
+      throw new Error(
+        `Agent runner "${slug}" is not available on this deployment: ${
+          detection.error ?? 'not detected'
+        } Change the runner in project or campaign settings.`,
+      );
+    }
+    const config = await loadRunnerConfig(db, slug);
     runner = createAgentRunner(run.agentRunner, config);
   } catch (err) {
     const errMsg = String(err instanceof Error ? err.message : err);

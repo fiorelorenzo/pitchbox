@@ -13,7 +13,9 @@ const Body = z.object({
   platformSlug: z.string().min(1),
   scenarioSlug: z.enum(SCENARIO_SLUGS),
   name: z.string().min(1).max(120),
-  agentRunner: z.string().min(1).default('claude-code'),
+  // Omitted = inherit the project's runner, which is itself resolved from
+  // Settings / the edition at project creation (#219).
+  agentRunner: z.string().min(1).optional(),
   objective: z.string().min(1).max(2000),
   cronExpression: z.string().min(1).optional(),
   // Opt-in per-campaign auto-post (MAS-5): off by default, keeping the
@@ -53,7 +55,7 @@ export async function POST(event: RequestEvent) {
       platformId: platform.id,
       name: body.name,
       skillSlug: body.scenarioSlug,
-      agentRunner: body.agentRunner,
+      agentRunner: body.agentRunner ?? project.defaultAgentRunner,
       cronExpression: body.cronExpression ?? null,
       status: 'draft',
       config: {},

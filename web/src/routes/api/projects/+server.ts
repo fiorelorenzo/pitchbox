@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { resolveOrgId, requireOrgId, requireRole } from '$lib/server/auth.js';
 import { listProjects, createProjectTx, ProjectSlugConflictError } from '@pitchbox/shared/projects';
+import { resolveDefaultRunnerSlug } from '@pitchbox/shared/agents/config';
 
 const slugRegex = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
@@ -11,7 +12,9 @@ const CreateBody = z.object({
   slug: z.string().regex(slugRegex, 'lowercase, digits, hyphens; 1-64 chars').optional(),
   name: z.string().min(1).max(120),
   description: z.string().max(2000).optional(),
-  defaultAgentRunner: z.string().min(1).default('claude-code'),
+  // Omitted = whatever this deployment can actually launch (#219), resolved
+  // server-side: Settings' default runner, else the edition default.
+  defaultAgentRunner: z.string().min(1).optional(),
   account: z
     .object({
       handle: z.string().min(1).max(64),
@@ -74,7 +77,7 @@ export async function POST(event) {
       slug,
       name: body.name,
       description: body.description,
-      defaultAgentRunner: body.defaultAgentRunner,
+      defaultAgentRunner: body.defaultAgentRunner ?? (await resolveDefaultRunnerSlug(db)),
       account: accountArg,
       organizationId,
     });

@@ -111,3 +111,14 @@ export async function detectAllRunners(): Promise<Record<AgentRunnerSlug, Detect
 export function clearDetectionCache(): void {
   cache.clear();
 }
+
+/**
+ * Whether a negative `detectRunner` result proves the runner cannot start here.
+ * Only the slugs we can actually probe qualify: `cloud` (a config flag, not a
+ * binary) and the backends in `BINARY_BY_SLUG`. For the rest an "unavailable"
+ * result just means we have no probe, so callers must not treat it as a
+ * verdict - see the dispatch pre-flight in web/src/lib/server/runner.ts (#219).
+ */
+export function isDetectionConclusive(slug: AgentRunnerSlug): boolean {
+  return slug === 'cloud' || slug in BINARY_BY_SLUG;
+}

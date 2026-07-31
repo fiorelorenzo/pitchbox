@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { appConfig } from '../db/schema.js';
+import { isCloud } from '../edition.js';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from './meta.js';
 import type { PermissionDecision, PermissionRule } from './acp/permission.js';
 
@@ -65,4 +66,46 @@ export async function saveRunnerConfig(
     .insert(appConfig)
     .values({ key: KEY, value: all })
     .onConflictDoUpdate({ target: appConfig.key, set: { value: all } });
+}
+
+const DEFAULT_RUNNER_KEY = 'default_runner';
+
+/** The runner an admin picked in Settings, or null when they never did. */
+export async function loadDefaultRunnerSlug(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+): Promise<AgentRunnerSlug | null> {
+  const [row] = await db.select().from(appConfig).where(eq(appConfig.key, DEFAULT_RUNNER_KEY));
+  const stored = row?.value;
+  if (!stored || typeof stored !== 'object' || !('slug' in stored)) return null;
+  const slug = stored.slug;
+  if (typeof slug !== 'string') return null;
+  return AGENT_RUNNER_META.some((m) => m.slug === slug && m.implemented)
+    ? (slug as AgentRunnerSlug)
+    : null;
+}
+
+export async function saveDefaultRunnerSlug(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+  slug: AgentRunnerSlug,
+): Promise<void> {
+  const value = { slug };
+  await db
+    .insert(appConfig)
+    .values({ key: DEFAULT_RUNNER_KEY, value })
+    .onConflictDoUpdate({ target: appConfig.key, set: { value } });
+}
+
+/**
+ * The runner slug a new project snapshots when the caller doesn't name one.
+ * Settings wins; otherwise the edition decides, because the cloud build ships
+ * no local agent CLI - defaulting it to `claude-code` there hands every new
+ * project a runner the deployment can never launch (#219).
+ */
+export async function resolveDefaultRunnerSlug(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+): Promise<AgentRunnerSlug> {
+  return (await loadDefaultRunnerSlug(db)) ?? (isCloud() ? 'cloud' : 'claude-code');
 }

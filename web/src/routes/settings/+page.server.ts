@@ -1,7 +1,7 @@
 import { loadQuotaLimits } from '@pitchbox/shared/quota';
 import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 import { detectAllRunners } from '@pitchbox/shared/agents/detect';
-import { loadRunnerConfigs } from '@pitchbox/shared/agents/config';
+import { loadRunnerConfigs, loadDefaultRunnerSlug } from '@pitchbox/shared/agents/config';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 
@@ -30,11 +30,7 @@ export async function load({ url }) {
     config: runnerConfigs[m.slug],
   }));
 
-  const [defaultRunnerRow] = await db
-    .select({ value: schema.appConfig.value })
-    .from(schema.appConfig)
-    .where(eq(schema.appConfig.key, 'default_runner'));
-  const defaultRunner = (defaultRunnerRow?.value as { slug?: string })?.slug ?? null;
+  const defaultRunner = await loadDefaultRunnerSlug(db);
 
   return {
     extension: {
