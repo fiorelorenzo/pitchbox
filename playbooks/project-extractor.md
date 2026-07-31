@@ -1,11 +1,11 @@
 ---
 name: project-extractor
-description: Generate a detailed English markdown description for a Pitchbox project, plus 0-10 starter campaign recommendations, by inspecting a local source folder.
+description: Generate a detailed English markdown description for a Pitchbox project, plus 0-10 starter campaign recommendations, by inspecting its source tree through the Pitchbox MCP tools.
 ---
 
 # Pitchbox - Project Extractor Playbook
 
-You are acting inside a Pitchbox project_extraction run. Your job is to read the source files at `sourcePath`, produce a detailed English markdown description for the project, and propose 0-10 campaign starters that fit the project. Both outputs are submitted back through the **`pitchbox` MCP server** (tools named `mcp__pitchbox__*`). Use your native tools (`Read`, `Bash`, `Grep`) only to inspect the source folder; all Pitchbox state goes through the MCP tools.
+You are acting inside a Pitchbox project_extraction run. Your job is to read the project's source files, produce a detailed English markdown description for the project, and propose 0-10 campaign starters that fit the project. Everything - reading the source and submitting the outputs - goes through the **`pitchbox` MCP server** (tools named `mcp__pitchbox__*`). The source tree lives on the Pitchbox client, not on the machine you are running on, so your own file tools (`Read`, `Glob`, `Grep`, `Bash`) cannot see it: use `project_extract_files` and `project_extract_read` instead.
 
 ## Inputs
 
@@ -13,16 +13,18 @@ The run is bound to this session through the environment, so the tools default t
 
 ## Tools
 
-- `project_extract_start` - load context (sourcePath, scaffold, scenarios, existing campaigns).
+- `project_extract_start` - load context (scaffold, scenarios, existing campaigns).
+- `project_extract_files` - list the source tree (paths relative to the source root, with sizes).
+- `project_extract_read` - read one source file by relative path.
 - `project_extract_finish` - submit the description + recommendations.
 
 ## Steps
 
 1. **Start the run and load context.** Call `project_extract_start` (no arguments needed).
 
-   From the result extract: `projectId`, `sourcePath`, `scaffoldTemplate`, `currentDescription`, `scenarios`, `existingCampaigns`.
+   From the result extract: `projectId`, `scaffoldTemplate`, `currentDescription`, `scenarios`, `existingCampaigns`. (`sourcePath` is the path on the client; it is informational only - never pass it to a file tool of your own.)
 
-2. **Explore the source.** Use your native tools (`Read`, `Bash` for `ls -la`, `find <sourcePath> -type f -name '*.md'`, `Grep`) to inspect what is at `sourcePath`. **Stay strictly inside `sourcePath`.** Prefer files likely to describe the product: `README*`, `package.json`, `pyproject.toml`, top-level docs, marketing pages under `docs/`, `app/landing*`, `index.html`, etc. Do not perform network calls.
+2. **Explore the source.** Call `project_extract_files` to see what is there, then `project_extract_read` on the files that matter. Prefer files likely to describe the product: `README*`, `package.json`, `pyproject.toml`, top-level docs, marketing pages under `docs/`, `app/landing*`, `index.html`. Read a handful of the most informative ones rather than everything; a response with `truncated: true` was cut at the size cap, which is normally enough. Do not perform network calls.
 
 3. **Compose the description.** Produce a markdown document that follows the structure of `scaffoldTemplate` exactly:
    - Use the same `## Section` headings, in the same order.

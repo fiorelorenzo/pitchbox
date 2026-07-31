@@ -567,6 +567,49 @@ describe('pitchbox MCP server (project + skill tools)', () => {
     expect(r2?.status).toBe('success');
   });
 
+  it('project_extract_files + project_extract_read serve the source over MCP (#220)', async () => {
+    const db = getDb();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'srcread', name: 'SrcRead' })
+      .returning();
+    const dir = mkdtempSync(join(tmpdir(), 'pb-src-'));
+    writeFileSync(join(dir, 'README.md'), '# Cool Product\nDoes things.', 'utf8');
+    const [run] = await db
+      .insert(schema.runs)
+      .values({
+        kind: 'project_extraction',
+        projectId: project.id,
+        trigger: 'manual',
+        status: 'running',
+        params: { source: { kind: 'folder', value: dir } },
+      })
+      .returning();
+
+    const client = await connectClient();
+    const listed = parse(await call(client, 'project_extract_files', { runId: run.id })) as {
+      files: Array<{ path: string; bytes: number }>;
+    };
+    expect(listed.files.map((f) => f.path)).toContain('README.md');
+
+    const read = parse(
+      await call(client, 'project_extract_read', { runId: run.id, path: 'README.md' }),
+    ) as { content: string };
+    expect(read.content).toContain('Cool Product');
+
+    // The agent is remote and untrusted with client paths: an escape is an
+    // error result, not a read.
+    const escaped = await call(client, 'project_extract_read', {
+      runId: run.id,
+      path: '../../etc/passwd',
+    });
+    expect(JSON.stringify(escaped)).toMatch(/escapes the source root/);
+  });
+
   it('project_insights_context reports counts; project_insights persists a summary', async () => {
     const db = getDb();
     const [org] = await db

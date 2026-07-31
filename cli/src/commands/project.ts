@@ -3,26 +3,90 @@ import { getDb, schema } from '@pitchbox/shared/db';
 import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
 import { SCENARIO_META, RecommendationItemSchema } from '@pitchbox/shared/campaigns';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { stat, rm } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { readFile, readdir, realpath, stat, rm } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ok, fail } from '../lib/output.js';
 import { shallowClone } from '../lib/git-clone.js';
+
+/**
+ * Directories never worth showing an extraction agent: build output, vendored
+ * dependencies and VCS internals bury the handful of files that actually
+ * describe the product, and on a big repo they alone blow the listing cap.
+ */
+const SKIP_DIRS: Record<string, true> = {
+  '.git': true,
+  node_modules: true,
+  dist: true,
+  build: true,
+  out: true,
+  target: true,
+  vendor: true,
+  coverage: true,
+  '.next': true,
+  '.svelte-kit': true,
+  '.turbo': true,
+  '.venv': true,
+  __pycache__: true,
+};
+
+/** Listing cap. A tree past this is already too big to reason about file by file. */
+const MAX_LIST_ENTRIES = 2_000;
+
+/** Read cap, in bytes. Enough for any README/manifest; keeps one Read from
+ * flooding the agent's context (and the run log) with a generated bundle. */
+const MAX_READ_BYTES = 200_000;
 
 type Source =
   | { kind: 'folder'; value: string }
   | { kind: 'git'; value: string }
   | { kind: 'upload'; value: string };
 
+/**
+ * Where this run's source tree lives ON THE CLIENT. `clone: true` is the
+ * extraction's first call, which materialises a git source; every later call
+ * (list/read) resolves the same path without touching the network.
+ */
+async function resolveSourcePath(
+  run: typeof schema.runs.$inferSelect,
+  opts: { clone?: boolean } = {},
+): Promise<string> {
+  const source = (run.params as { source?: Source }).source;
+  if (!source) throw new Error('run has no source in params');
+
+  if (source.kind === 'git') {
+    const path = `/tmp/pitchbox-extract-${run.id}`;
+    if (opts.clone) {
+      await rm(path, { recursive: true, force: true });
+      await shallowClone(source.value, path);
+    }
+    return path;
+  }
+  if (source.kind === 'folder' || source.kind === 'upload') {
+    if (!isAbsolute(source.value)) throw new Error(`${source.kind} path must be absolute`);
+    const s = await stat(source.value).catch(() => null);
+    if (!s || !s.isDirectory())
+      throw new Error(`${source.kind} ${source.value} is not a readable directory`);
+    return source.value;
+  }
+  throw new Error(`unsupported source kind: ${(source as { kind: string }).kind}`);
+}
+
+/** Load the extraction run behind a source-access call, or explain why it isn't one. */
+async function loadExtractionRun(runId: number): Promise<typeof schema.runs.$inferSelect> {
+  if (!Number.isInteger(runId)) throw new Error('invalid run id');
+  const [run] = await getDb().select().from(schema.runs).where(eq(schema.runs.id, runId));
+  if (!run) throw new Error(`run ${runId} not found`);
+  if (run.kind !== 'project_extraction')
+    throw new Error(`run ${runId} is not a project_extraction run`);
+  return run;
+}
+
 // Core project-extraction / insights logic, extracted so both the CLI and the
 // Pitchbox MCP server share it. Returns data (or throws); never touches exit.
 
 export async function projectExtractStart(runId: number) {
-  if (!Number.isInteger(runId)) throw new Error('invalid run id');
   const db = getDb();
-  const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
-  if (!run) throw new Error(`run ${runId} not found`);
-  if (run.kind !== 'project_extraction')
-    throw new Error(`run ${runId} is not a project_extraction run`);
+  const run = await loadExtractionRun(runId);
   if (!run.projectId) throw new Error(`run ${runId} has no project_id`);
 
   const [project] = await db
@@ -31,29 +95,7 @@ export async function projectExtractStart(runId: number) {
     .where(eq(schema.projects.id, run.projectId));
   if (!project) throw new Error(`project ${run.projectId} not found`);
 
-  const source = (run.params as { source?: Source }).source;
-  if (!source) throw new Error('run has no source in params');
-
-  let sourcePath: string;
-  if (source.kind === 'folder') {
-    if (!isAbsolute(source.value)) throw new Error('folder path must be absolute');
-    const s = await stat(source.value).catch(() => null);
-    if (!s || !s.isDirectory())
-      throw new Error(`folder ${source.value} is not a readable directory`);
-    sourcePath = source.value;
-  } else if (source.kind === 'git') {
-    sourcePath = `/tmp/pitchbox-extract-${runId}`;
-    await rm(sourcePath, { recursive: true, force: true });
-    await shallowClone(source.value, sourcePath);
-  } else if (source.kind === 'upload') {
-    if (!isAbsolute(source.value)) throw new Error('upload path must be absolute');
-    const s = await stat(source.value).catch(() => null);
-    if (!s || !s.isDirectory())
-      throw new Error(`upload ${source.value} is not a readable directory`);
-    sourcePath = source.value;
-  } else {
-    throw new Error(`unsupported source kind: ${(source as { kind: string }).kind}`);
-  }
+  const sourcePath = await resolveSourcePath(run, { clone: true });
 
   const scenarios = SCENARIO_META.map((s) => ({
     slug: s.slug,
@@ -70,6 +112,88 @@ export async function projectExtractStart(runId: number) {
     currentDescription: project.description ?? '',
     scenarios,
     existingCampaigns,
+  };
+}
+
+/**
+ * List the run's source tree, client-side (#220). The agent runs on the cloud
+ * runner and has no access to this filesystem, so it navigates the source
+ * through this tool and `projectExtractReadFile` instead of its own Read/Bash.
+ * Paths come back relative to the source root - the agent never needs, and
+ * never gets, an absolute path on the client.
+ */
+export async function projectExtractListFiles(runId: number) {
+  const run = await loadExtractionRun(runId);
+  const root = await realpath(await resolveSourcePath(run));
+
+  const files: Array<{ path: string; bytes: number }> = [];
+  let truncated = false;
+  const walk = async (dir: string): Promise<void> => {
+    if (truncated) return;
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (truncated) return;
+      // Never follow a symlink out of the tree: listing what it points at
+      // would leak paths this run was never pointed at.
+      if (entry.isSymbolicLink()) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS[entry.name]) continue;
+        await walk(full);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (files.length >= MAX_LIST_ENTRIES) {
+        truncated = true;
+        return;
+      }
+      const s = await stat(full).catch(() => null);
+      files.push({ path: relative(root, full), bytes: s?.size ?? 0 });
+    }
+  };
+  await walk(root);
+  files.sort((a, b) => a.path.localeCompare(b.path));
+
+  return {
+    runId: run.id,
+    fileCount: files.length,
+    truncated,
+    maxBytesPerRead: MAX_READ_BYTES,
+    files,
+  };
+}
+
+/**
+ * Read one file from the run's source tree, client-side (#220). `path` is
+ * relative to the source root; anything resolving outside it - `..`, an
+ * absolute path, a symlink pointing away - is refused rather than clamped, so
+ * a playbook (or a prompt-injected agent) cannot walk the client's disk.
+ */
+export async function projectExtractReadFile(runId: number, path: string) {
+  const run = await loadExtractionRun(runId);
+  const root = await realpath(await resolveSourcePath(run));
+
+  if (isAbsolute(path)) throw new Error('path must be relative to the source root');
+  const target = resolve(root, path);
+  if (target !== root && !target.startsWith(root + sep)) {
+    throw new Error('path escapes the source root');
+  }
+  const real = await realpath(target).catch(() => null);
+  if (!real) throw new Error(`${path} not found`);
+  if (real !== root && !real.startsWith(root + sep)) {
+    throw new Error('path escapes the source root');
+  }
+  const s = await stat(real);
+  if (!s.isFile()) throw new Error(`${path} is not a file`);
+
+  const buf = await readFile(real);
+  const slice = buf.subarray(0, MAX_READ_BYTES);
+  return {
+    runId: run.id,
+    path: relative(root, real),
+    bytes: s.size,
+    truncated: s.size > MAX_READ_BYTES,
+    content: slice.toString('utf8'),
   };
 }
 
@@ -214,6 +338,29 @@ export function registerProjectCommands(program: Command) {
     .action(async (opts: { run: string }) => {
       try {
         ok(await projectExtractStart(Number(opts.run)));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
+    });
+
+  program
+    .command('project:extract:files')
+    .requiredOption('--run <id>', 'run id')
+    .action(async (opts: { run: string }) => {
+      try {
+        ok(await projectExtractListFiles(Number(opts.run)));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
+    });
+
+  program
+    .command('project:extract:read')
+    .requiredOption('--run <id>', 'run id')
+    .requiredOption('--path <path>', 'path relative to the source root')
+    .action(async (opts: { run: string; path: string }) => {
+      try {
+        ok(await projectExtractReadFile(Number(opts.run), opts.path));
       } catch (err) {
         fail(String(err instanceof Error ? err.message : err));
       }

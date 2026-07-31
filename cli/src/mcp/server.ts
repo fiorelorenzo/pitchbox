@@ -35,6 +35,8 @@ import { searchHn, HN_LISTINGS } from '../commands/hn.js';
 import type { HnListing } from '@pitchbox/shared/platforms/hackernews';
 import {
   projectExtractStart,
+  projectExtractListFiles,
+  projectExtractReadFile,
   projectExtractFinish,
   projectInsightsContext,
   projectInsights,
@@ -657,6 +659,63 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
         const ownershipErr = await checkOwnership('run', rid);
         if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await projectExtractStart(rid));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'project_extract_files',
+    {
+      title: 'List the extraction source files',
+      description:
+        "List every file in this run's source tree, as paths relative to the source root, with their size in bytes. Build output, node_modules and VCS internals are skipped. Use this instead of your own shell/glob tools: the source lives on the Pitchbox client, not on the machine you run on.",
+      inputSchema: {
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ runId }) => {
+      const rid = runId ?? defaultRunId();
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
+        return jsonResult(await projectExtractListFiles(rid));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'project_extract_read',
+    {
+      title: 'Read one extraction source file',
+      description:
+        "Read a file from this run's source tree. `path` is relative to the source root (as returned by project_extract_files); anything resolving outside it is refused. Long files come back truncated with `truncated: true`. Use this instead of your own file-reading tools: the source lives on the Pitchbox client, not on the machine you run on.",
+      inputSchema: {
+        path: z.string().min(1).describe('file path relative to the source root'),
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ path, runId }) => {
+      const rid = runId ?? defaultRunId();
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
+        return jsonResult(await projectExtractReadFile(rid, path));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }
