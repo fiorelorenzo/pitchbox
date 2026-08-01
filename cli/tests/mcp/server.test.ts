@@ -639,6 +639,37 @@ describe('pitchbox MCP server (project + skill tools)', () => {
     expect(ins.id).toBeGreaterThan(0);
   });
 
+  it('project_insights closes the session run so an empty turn cannot pass as success (#221)', async () => {
+    const db = getDb();
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'ins-run', name: 'InsRun' })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({
+        kind: 'project_insights',
+        projectId: project.id,
+        trigger: 'manual',
+        status: 'running',
+      })
+      .returning();
+
+    const client = await connectClientWithCtx({ runId: run.id, projectId: project.id });
+    const ins = parse(
+      await call(client, 'project_insights', { summaryMd: 'Not enough data yet.' }),
+    ) as { runId: number | null };
+    expect(ins.runId).toBe(run.id);
+
+    const [after] = await db.select().from(schema.runs).where(eq(schema.runs.id, run.id));
+    expect(after.status).toBe('success');
+    expect(after.finishedAt).not.toBeNull();
+  });
+
   it('skill_generate validates the profile: invalid is a tool error, valid writes config', async () => {
     const db = getDb();
     const platformId = await redditPlatformId();

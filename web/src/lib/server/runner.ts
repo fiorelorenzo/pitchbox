@@ -5,6 +5,7 @@ import { detectRunner, isDetectionConclusive } from '@pitchbox/shared/agents/det
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { notify } from '@pitchbox/shared/notifications';
 import { classifyFailure } from '@pitchbox/shared/runlog/classify-failure';
+import { playbookContractError } from '@pitchbox/shared/runlog/contract';
 import type { ParsedEvent, EventKind, EventPayload } from '@pitchbox/shared/runlog/types';
 import { withCampaignLock } from '@pitchbox/shared/scheduler/dispatch-lock';
 import {
@@ -328,14 +329,24 @@ async function dispatchRun(
         if (emitsDrafts && finalStatus === 'success') emit('drafts:changed', {}, orgId);
         return;
       }
-      const finalStatus: 'success' | 'failed' = res.exitCode === 0 ? 'success' : 'failed';
-      const failureReason =
-        finalStatus === 'failed' ? await classifyFailedRun(run.id, res.exitCode) : null;
+      // A clean exit is not a finished playbook (#221): every kind commits its
+      // result through a finish tool that closes the run in the same
+      // transaction, so a run still `running` here saved nothing, whatever the
+      // agent said on its way out.
+      const contractError = res.exitCode === 0 ? await playbookContractError(db, run) : null;
+      const finalStatus: 'success' | 'failed' =
+        res.exitCode === 0 && !contractError ? 'success' : 'failed';
+      const failureReason = contractError
+        ? 'playbook_incomplete'
+        : finalStatus === 'failed'
+          ? await classifyFailedRun(run.id, res.exitCode)
+          : null;
       await db
         .update(schema.runs)
         .set({
           status: finalStatus,
           finishedAt: new Date(),
+          error: contractError,
           stdoutLogPath: res.logPath,
           tokensUsed: res.tokensUsed ?? null,
           inputTokens: res.usage?.inputTokens ?? null,
@@ -353,18 +364,23 @@ async function dispatchRun(
           runId: run.id,
           campaignId: run.campaignId,
           projectId: run.projectId,
-          exitCode: res.exitCode,
+          // The outcome, not the raw process exit code: a run that exited 0
+          // without honouring its contract (#221) is a failure to every client.
+          exitCode: finalStatus === 'success' ? 0 : 1,
+          error: contractError ?? undefined,
         },
         orgId,
       );
-      if (emitsDrafts && res.exitCode === 0) emit('drafts:changed', {}, orgId);
+      if (emitsDrafts && finalStatus === 'success') emit('drafts:changed', {}, orgId);
       if (orgId != null) {
         await notify(
           db,
           {
             kind: `run.${finalStatus}`,
             title: `Run #${run.id} ${finalStatus}`,
-            body: isCampaignRun ? `Campaign ${run.campaignId} run finished.` : undefined,
+            body:
+              contractError ??
+              (isCampaignRun ? `Campaign ${run.campaignId} run finished.` : undefined),
             payload: { runId: run.id, campaignId: run.campaignId, projectId: run.projectId },
             severity: finalStatus === 'success' ? 'success' : 'error',
           },

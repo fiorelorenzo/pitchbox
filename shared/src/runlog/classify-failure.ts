@@ -13,6 +13,7 @@ export type RunFailureReason =
   | 'auth_expired'
   | 'quota_exhausted'
   | 'playbook_error'
+  | 'playbook_incomplete'
   | 'network'
   | 'agent_crashed'
   | 'agent_timeout'
@@ -23,6 +24,7 @@ export const RUN_FAILURE_REASONS: readonly RunFailureReason[] = [
   'auth_expired',
   'quota_exhausted',
   'playbook_error',
+  'playbook_incomplete',
   'network',
   'agent_crashed',
   'agent_timeout',

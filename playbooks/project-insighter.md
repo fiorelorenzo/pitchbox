@@ -12,7 +12,7 @@ The project is bound to this session through the environment, so the tools defau
 ## Tools
 
 - `project_insights_context` - load the project's stats and sampled history.
-- `project_insights` - persist the generated summary.
+- `project_insights` - persist the generated summary. This call also closes the run, so make it your last one: a turn that ends without it is recorded as a failed run.
 
 ## Steps
 

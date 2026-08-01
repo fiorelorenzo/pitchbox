@@ -787,7 +787,8 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     'project_insights',
     {
       title: 'Persist a project insights summary',
-      description: 'Persist a generated insights summary (markdown + evidence) for a project.',
+      description:
+        "Persist a generated insights summary (markdown + evidence) for a project. Closes this session's project_insights run.",
       inputSchema: {
         summaryMd: z.string().min(1).describe('the markdown insights summary'),
         evidence: z
@@ -808,7 +809,7 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       try {
         const ownershipErr = await checkOwnership('project', pid);
         if (ownershipErr) return errorResult(ownershipErr);
-        return jsonResult(await projectInsights(pid, summaryMd, evidence));
+        return jsonResult(await projectInsights(pid, summaryMd, evidence, defaultRunId()));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }

@@ -49,18 +49,21 @@ The dispatch path loads the config via `loadRunnerConfig()` and passes it to `cr
 
 Whenever a run transitions to `failed`, Pitchbox classifies the failure into one of the structured reasons below and writes it to `runs.failure_reason`. The classifier is `classifyFailure(events, exitCode)` in [`shared/src/runlog/classify-failure.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/shared/src/runlog/classify-failure.ts), a pure TypeScript function so the taxonomy can grow without a DB migration. The campaigns detail page surfaces the value as a chip on each failed run and lets you filter the run history by reason.
 
-| Reason            | Heuristic                                                                                               |
-| ----------------- | ------------------------------------------------------------------------------------------------------- |
-| `runner_missing`  | Exit non-zero with `command not found` / `ENOENT`                                                       |
-| `auth_expired`    | Any event mentioning `auth`, `401`, `403`, `token expired`                                              |
-| `quota_exhausted` | Any event mentioning `quota` or `rate limit`                                                            |
-| `playbook_error`  | Exit non-zero with a Node-style or Python stack trace                                                   |
-| `network`         | `ECONNREFUSED`, `ECONNRESET`, `ENOTFOUND`, `ETIMEDOUT`, `getaddrinfo`, `fetch failed`, `socket hang up` |
-| `agent_crashed`   | ACP backend subprocess exited unexpectedly without a `stop_reason`                                      |
-| `agent_timeout`   | ACP backend did not respond within `opts.timeoutMs`                                                     |
-| `unknown`         | Default, nothing else matched                                                                           |
+| Reason                | Heuristic                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| `runner_missing`      | Exit non-zero with `command not found` / `ENOENT`                                                       |
+| `auth_expired`        | Any event mentioning `auth`, `401`, `403`, `token expired`                                              |
+| `quota_exhausted`     | Any event mentioning `quota` or `rate limit`                                                            |
+| `playbook_error`      | Exit non-zero with a Node-style or Python stack trace                                                   |
+| `playbook_incomplete` | Exit zero, but the playbook never called the finish tool that commits its result (see below)            |
+| `network`             | `ECONNREFUSED`, `ECONNRESET`, `ENOTFOUND`, `ETIMEDOUT`, `getaddrinfo`, `fetch failed`, `socket hang up` |
+| `agent_crashed`       | ACP backend subprocess exited unexpectedly without a `stop_reason`                                      |
+| `agent_timeout`       | ACP backend did not respond within `opts.timeoutMs`                                                     |
+| `unknown`             | Default, nothing else matched                                                                           |
 
 The classifier order matters: `runner_missing` wins over `playbook_error` because an `ENOENT` will otherwise look like a generic stack trace. Order beyond that is stable and covered by `shared/tests/runlog/classify-failure.test.ts`.
+
+`playbook_incomplete` is the one reason that does not come from the classifier, because it needs no heuristic. Every playbook commits its result through a finish tool (`project_extract_finish`, `skill_generate_finish`, `draft_regen_finish`, `reply_draft_finish`, `project_insights`, `run_finish` for the campaign scouts) and each of those writes the run's terminal status in the same transaction as the artifact. A run whose agent exits 0 while the row is still `running` therefore proves the tool never ran and nothing was saved, so the dispatcher records it as failed instead of success (`playbookContractError` in [`shared/src/runlog/contract.ts`](https://github.com/fiorelorenzo/pitchbox/tree/development/shared/src/runlog/contract.ts)). Campaign runs are judged on their drafts rather than the run status, since `drafts_create` writes the artifact and `run_finish` is only bookkeeping: a run that drafted something stays a success, one that drafted nothing and never closed the run is a failure.
 
 ## Cost tracking
 

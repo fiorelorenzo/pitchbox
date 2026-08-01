@@ -15,3 +15,4 @@ export {
   RUN_FAILURE_REASONS,
   type RunFailureReason,
 } from './classify-failure.js';
+export { playbookContractError, PLAYBOOK_FINISH_TOOL } from './contract.js';

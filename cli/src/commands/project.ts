@@ -319,16 +319,53 @@ export async function projectInsightsContext(projectId: number) {
   };
 }
 
-export async function projectInsights(projectId: number, summaryMd: string, evidence: unknown) {
+/**
+ * Persist the insights summary and, when the call carries the run it belongs
+ * to, close that run in the same transaction. Every other playbook's finish
+ * tool does the same, which is what lets the dispatcher tell a run that saved
+ * something from one that just ended its turn (#221). The runId stays optional
+ * because the CLI can be pointed at a project with no run behind it.
+ */
+export async function projectInsights(
+  projectId: number,
+  summaryMd: string,
+  evidence: unknown,
+  runId?: number | null,
+) {
   if (!Number.isInteger(projectId)) throw new Error('invalid project id');
   if (!summaryMd || !summaryMd.trim()) throw new Error('summaryMd missing');
   const ev = evidence && typeof evidence === 'object' ? (evidence as Record<string, unknown>) : {};
   const db = getDb();
-  const [row] = await db
-    .insert(schema.projectInsights)
-    .values({ projectId, summaryMd, evidence: ev })
-    .returning({ id: schema.projectInsights.id, generatedAt: schema.projectInsights.generatedAt });
-  return { id: row.id, projectId, generatedAt: row.generatedAt };
+
+  let closeRunId: number | null = null;
+  if (runId != null) {
+    const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+    if (!run) throw new Error(`run ${runId} not found`);
+    if (run.kind !== 'project_insights')
+      throw new Error(`run ${runId} is not a project_insights run`);
+    if (run.projectId !== projectId)
+      throw new Error(`run ${runId} belongs to project ${run.projectId}, not ${projectId}`);
+    if (run.status === 'running') closeRunId = run.id;
+  }
+
+  const row = await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(schema.projectInsights)
+      .values({ projectId, summaryMd, evidence: ev })
+      .returning({
+        id: schema.projectInsights.id,
+        generatedAt: schema.projectInsights.generatedAt,
+      });
+    if (closeRunId != null) {
+      await tx
+        .update(schema.runs)
+        .set({ status: 'success', finishedAt: new Date() })
+        .where(eq(schema.runs.id, closeRunId));
+    }
+    return inserted;
+  });
+
+  return { id: row.id, projectId, generatedAt: row.generatedAt, runId: closeRunId };
 }
 
 export function registerProjectCommands(program: Command) {
@@ -419,7 +456,8 @@ export function registerProjectCommands(program: Command) {
   program
     .command('project:insights')
     .requiredOption('--project <id>', 'project id')
-    .action(async (opts: { project: string }) => {
+    .option('--run <id>', 'run id to close (defaults to PITCHBOX_RUN_ID)')
+    .action(async (opts: { project: string; run?: string }) => {
       const raw = await readStdin();
       if (!raw || !raw.trim()) return fail('empty payload on stdin');
       let payload: { summaryMd?: unknown; evidence?: unknown };
@@ -430,8 +468,16 @@ export function registerProjectCommands(program: Command) {
       }
       const summaryMd =
         typeof payload.summaryMd === 'string' ? payload.summaryMd : String(payload.summaryMd ?? '');
+      const runId = opts.run ?? process.env.PITCHBOX_RUN_ID;
       try {
-        ok(await projectInsights(Number(opts.project), summaryMd, payload.evidence));
+        ok(
+          await projectInsights(
+            Number(opts.project),
+            summaryMd,
+            payload.evidence,
+            runId ? Number(runId) : null,
+          ),
+        );
       } catch (err) {
         fail(String(err instanceof Error ? err.message : err));
       }

@@ -45,6 +45,7 @@
     "./runlog/types": "./src/runlog/types.ts",
     "./runlog/classify-failure": "./src/runlog/classify-failure.ts",
     "./runlog/usage": "./src/runlog/usage.ts",
+    "./runlog/contract": "./src/runlog/contract.ts",
     "./projects": "./src/projects/index.ts",
     "./scheduler/jitter": "./src/scheduler/jitter.ts",
     "./scheduler/backoff": "./src/scheduler/backoff.ts",
