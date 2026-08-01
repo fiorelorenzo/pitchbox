@@ -151,3 +151,50 @@ agent CLIs to stay lean.
 - **Do not run tests against the dev DB.** Vitest pins `DATABASE_URL` to `pitchbox_test` in `vitest.config.ts`; if you override it, match that pattern.
 - **Migrations.** Edit `shared/src/db/schema.ts`, run `pnpm run migrate:generate`, then `pnpm run migrate`. Never hand-edit generated SQL unless you also regenerate.
 - **English everywhere.** All in-code comments and user-facing UI strings are in English (even when the conversation is in another language). No em dashes in any text - use regular hyphens or colons.
+
+## The GitHub Project is the source of truth
+
+Current state and future roadmap live on **Project #3 "Pitchbox roadmap"** (owner `fiorelorenzo`), not in this file and not in a chat transcript. Keeping it current is part of doing the work, not paperwork at the end: the board is how Lorenzo sees where the project stands without reading session logs, so a board that lags reality is worse than no board.
+
+**Status is a claim about reality, keep it true.**
+
+- Before you write code for an issue, move it to `In Progress`. If what you are about to do has no issue, create one first (see below), then start.
+- Move it to `Done` only when the change is merged and verified, not when the code is written. Merged but something is still open? Say so in a comment and leave it `In Progress`.
+- Fields on this board: `Status` (`Todo` / `In Progress` / `Done`), `Priority` (P0-P3), `Effort` (S/M/L/XL). Set them on anything you file. Never write a value that is not already an option, read the schema instead of guessing.
+
+**Comment when a reader would want to know.** A decision taken, an approach tried and abandoned, a blocker hit, a surprise in the code, a scope change, a finding that invalidates the issue as written. One comment per meaningful turn in the work, not one per commit, and no routine progress narration.
+
+**File the work you discover.** When something real surfaces mid-task or in a conversation with Lorenzo (a bug you noticed on the way, a follow-up the fix implies, an idea worth doing later), open an issue for it instead of silently widening the current change or letting it evaporate. Then say in the current issue that you split it out, with a link.
+
+**Conventions for a new issue.** Match what the board already shows, do not invent a parallel style:
+
+- Title in conventional-commit form with the affected workspaces as scope, lowercase after the colon: `fix(web,shared): new projects snapshot a runner the deployment cannot launch`. A plain descriptive sentence is acceptable when no single scope fits.
+- Labels: one or more `area:*` (`web`, `cli-mcp`, `shared`, `daemon`, `extension`, `cloud`, `deploy`, `docs`, `tests`, `playbooks`), exactly one `type:*`, exactly one `priority:*`. Add `flagship` for headline work. `epic` goes on epics only.
+- Milestone: one of the `v0.10`/`v1.0`/`v1.1`/`v1.2`/`v1.3` milestones, when the work belongs to one.
+- **Every issue hangs off an epic.** Epics are titled `[Epic] Name` and carry the `epic` label. Every epic is currently closed, and the issues filed since (#215 onward) have no parent, so expect to create a new epic rather than find one: keep them coarse, one per coherent theme or area (for example `[Epic] Cloud runner productionization`), and parent the issue to it. While you are in an unparented issue anyway, give it a parent too. An issue with no parent is a defect in the board.
+
+```bash
+# Read the schema, never guess an option value
+gh project field-list 3 --owner fiorelorenzo --format json
+gh api repos/fiorelorenzo/pitchbox/milestones --jq '.[].title'
+
+# Ids you need to move a card (fetch once, reuse)
+PROJECT_ID=$(gh project view 3 --owner fiorelorenzo --format json --jq '.id')
+gh project field-list 3 --owner fiorelorenzo --format json \
+  --jq '.fields[] | select(.name=="Status") | {id, options}'
+ITEM_ID=$(gh project item-list 3 --owner fiorelorenzo --format json --limit 500 \
+  --jq '.items[] | select(.content.number==<ISSUE>) | .id')
+
+gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" \
+  --field-id <STATUS_FIELD_ID> --single-select-option-id <OPTION_ID>
+
+# New issue: create, put it on the board, hang it off its epic
+gh issue create -R fiorelorenzo/pitchbox --title "fix(cloud): ..." --body "..." \
+  --label "area:cloud,type:fix,priority:P1"
+gh project item-add 3 --owner fiorelorenzo --url <ISSUE_URL>
+gh api graphql -f query='mutation($p:ID!,$c:ID!){addSubIssue(input:{issueId:$p,subIssueId:$c}){subIssue{number}}}' \
+  -f p="$(gh issue view <EPIC> -R fiorelorenzo/pitchbox --json id --jq '.id')" \
+  -f c="$(gh issue view <NEW>  -R fiorelorenzo/pitchbox --json id --jq '.id')"
+```
+
+`item-edit` is idempotent, so re-setting a value that is already correct is a fine way to make sure the board is right. An issue can have only one parent: to move it to a different epic, pass `replaceParent: true` in the same mutation.
