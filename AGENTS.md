@@ -160,7 +160,7 @@ Current state and future roadmap live on **Project #3 "Pitchbox roadmap"** (owne
 
 - Before you write code for an issue, move it to `In Progress`. If what you are about to do has no issue, create one first (see below), then start.
 - Move it to `Done` only when the change is merged and verified, not when the code is written. Merged but something is still open? Say so in a comment and leave it `In Progress`.
-- Fields on this board: `Status` (`Todo` / `In Progress` / `Done`), `Priority` (P0-P3), `Effort` (S/M/L/XL). Set them on anything you file. Never write a value that is not already an option, read the schema instead of guessing.
+- Board fields, the same four on every one of Lorenzo's roadmap boards on purpose: `Status` (`Todo` / `In Progress` / `Done`), `Priority` (P0-P3), `Effort` (S/M/L/XL) and `Parallel` (Yes/No, whether a parallel agent can take the issue without colliding with other work). Set all four on anything you file. Never write a value that is not already an option, read the schema instead of guessing, and never add, rename or drop a field on this board alone: the convention is shared across the projects.
 
 **Comment when a reader would want to know.** A decision taken, an approach tried and abandoned, a blocker hit, a surprise in the code, a scope change, a finding that invalidates the issue as written. One comment per meaningful turn in the work, not one per commit, and no routine progress narration.
 
