@@ -169,7 +169,8 @@ Current state and future roadmap live on **Project #3 "Pitchbox roadmap"** (owne
 **Conventions for a new issue.** Match what the board already shows, do not invent a parallel style:
 
 - Title in conventional-commit form with the affected workspaces as scope, lowercase after the colon: `fix(web,shared): new projects snapshot a runner the deployment cannot launch`. A plain descriptive sentence is acceptable when no single scope fits.
-- Labels: one or more `area:*` (`web`, `cli-mcp`, `shared`, `daemon`, `extension`, `cloud`, `deploy`, `docs`, `tests`, `playbooks`), exactly one `type:*`, exactly one `priority:*`. Add `flagship` for headline work. `epic` goes on epics only.
+- Labels follow one taxonomy, identical in every repo: exactly one `type:*` (`feature`, `fix`, `refactor`, `test`, `chore`, `ci`, `docs`, `design`, `security`, `spike`), exactly one of `priority:P0`-`priority:P3`, and one or more `area:*` naming the surfaces the change touches. `epic` and `flagship` (an epic, and headline work) are the only unprefixed labels. Priority is deliberately in two places, the `Priority` board field and the `priority:*` label, so set both.
+- `area:*` values here: `cli-mcp`, `cloud`, `daemon`, `deploy`, `docs`, `extension`, `playbooks`, `shared`, `tests`, `web`. Add one only when the surface really is new, and never reintroduce an unprefixed or differently shaped label.
 - Milestone: one of the `v0.10`/`v1.0`/`v1.1`/`v1.2`/`v1.3` milestones, when the work belongs to one.
 - **Every issue hangs off an epic.** Epics are titled `[Epic] Name` and carry the `epic` label. Every epic is currently closed, and the issues filed since (#215 onward) have no parent, so expect to create a new epic rather than find one: keep them coarse, one per coherent theme or area (for example `[Epic] Cloud runner productionization`), and parent the issue to it. While you are in an unparented issue anyway, give it a parent too. An issue with no parent is a defect in the board.
 
