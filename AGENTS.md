@@ -179,23 +179,29 @@ Current state and future roadmap live on **Project #3 "Pitchbox roadmap"** (owne
 gh project field-list 3 --owner fiorelorenzo --format json
 gh api repos/fiorelorenzo/pitchbox/milestones --jq '.[].title'
 
-# Ids you need to move a card (fetch once, reuse)
+# Fill these three in; everything below runs as written, no placeholders to edit
+ISSUE=123                 # the issue you are working on
+EPIC=456                  # its parent epic
+STATUS="In Progress"      # Todo | In Progress | Done
+
 PROJECT_ID=$(gh project view 3 --owner fiorelorenzo --format json --jq '.id')
-gh project field-list 3 --owner fiorelorenzo --format json \
-  --jq '.fields[] | select(.name=="Status") | {id, options}'
+STATUS_FIELD=$(gh project field-list 3 --owner fiorelorenzo --format json \
+  --jq '.fields[] | select(.name=="Status") | .id')
+OPTION_ID=$(gh project field-list 3 --owner fiorelorenzo --format json \
+  --jq ".fields[] | select(.name==\"Status\") | .options[] | select(.name==\"$STATUS\") | .id")
 ITEM_ID=$(gh project item-list 3 --owner fiorelorenzo --format json --limit 500 \
-  --jq '.items[] | select(.content.number==<ISSUE>) | .id')
-
+  --jq ".items[] | select(.content.number==$ISSUE) | .id")
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" \
-  --field-id <STATUS_FIELD_ID> --single-select-option-id <OPTION_ID>
+  --field-id "$STATUS_FIELD" --single-select-option-id "$OPTION_ID"
 
-# New issue: create, put it on the board, hang it off its epic
-gh issue create -R fiorelorenzo/pitchbox --title "fix(cloud): ..." --body "..." \
-  --label "area:cloud,type:fix,priority:P1"
-gh project item-add 3 --owner fiorelorenzo --url <ISSUE_URL>
+# New issue: create, put it on the board, hang it off its epic.
+# `gh issue create` prints the new issue's URL, so capture it and reuse it.
+ISSUE_URL=$(gh issue create -R fiorelorenzo/pitchbox --title "fix(cloud): ..." --body "..." \
+  --label "area:cloud,type:fix,priority:P1")
+gh project item-add 3 --owner fiorelorenzo --url "$ISSUE_URL"
 gh api graphql -f query='mutation($p:ID!,$c:ID!){addSubIssue(input:{issueId:$p,subIssueId:$c}){subIssue{number}}}' \
-  -f p="$(gh issue view <EPIC> -R fiorelorenzo/pitchbox --json id --jq '.id')" \
-  -f c="$(gh issue view <NEW>  -R fiorelorenzo/pitchbox --json id --jq '.id')"
+  -f p="$(gh issue view $EPIC -R fiorelorenzo/pitchbox --json id --jq '.id')" \
+  -f c="$(gh issue view "$ISSUE_URL" --json id --jq '.id')"
 ```
 
 `item-edit` is idempotent, so re-setting a value that is already correct is a fine way to make sure the board is right. An issue can have only one parent: to move it to a different epic, pass `replaceParent: true` in the same mutation.
