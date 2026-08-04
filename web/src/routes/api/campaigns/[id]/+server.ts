@@ -4,7 +4,12 @@ import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { getSchema, type ScenarioSlug } from '@pitchbox/shared/campaigns';
-import { requireOrgId } from '$lib/server/auth.js';
+import {
+  deleteCampaign,
+  CampaignDeleteNameMismatchError,
+  CampaignDeleteRunInFlightError,
+} from '@pitchbox/shared/campaigns/server';
+import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import { campaignBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const Patch = z.object({
@@ -16,6 +21,8 @@ const Patch = z.object({
   autoPost: z.boolean().optional(),
   config: z.unknown().optional(),
 });
+
+const DeleteBody = z.object({ confirmName: z.string().min(1) });
 
 function parseId(idParam: string | undefined): number | null {
   const n = Number(idParam);
@@ -75,5 +82,32 @@ export async function PATCH(event: RequestEvent) {
   if (Object.keys(patch).length === 0) return json({ ok: true });
 
   await db.update(schema.campaigns).set(patch).where(eq(schema.campaigns.id, id));
+  return json({ ok: true });
+}
+
+export async function DELETE(event: RequestEvent) {
+  const { params, request } = event;
+  const id = parseId(params.id);
+  if (!id) return json({ error: 'invalid_id' }, { status: 400 });
+
+  const orgId = await requireOrgId(event);
+  if (!(await campaignBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+  requireRole(event, 'admin');
+
+  const raw = await request.json().catch(() => null);
+  const parsed = DeleteBody.safeParse(raw);
+  if (!parsed.success) return json({ error: 'invalid_body' }, { status: 400 });
+
+  try {
+    await deleteCampaign(getDb(), id, parsed.data.confirmName);
+  } catch (e) {
+    if (e instanceof CampaignDeleteNameMismatchError) {
+      return json({ error: 'name_mismatch' }, { status: 400 });
+    }
+    if (e instanceof CampaignDeleteRunInFlightError) {
+      return json({ error: 'run_in_flight', runId: e.runId }, { status: 409 });
+    }
+    throw e;
+  }
   return json({ ok: true });
 }

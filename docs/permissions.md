@@ -52,7 +52,7 @@ already limits them to the active org). Listed here for completeness.
 `run/[id]` DELETE, `notifications` POST.
 
 **admin** (`requireRole(event, 'admin')`):
-`projects` POST, `projects/[id]` PATCH + DELETE,
+`campaigns/[id]` DELETE, `projects` POST, `projects/[id]` PATCH + DELETE,
 `projects/[id]/accounts` POST, `projects/[id]/accounts/[accountId]` PATCH + DELETE,
 `projects/[id]/recommendations/[recId]` DELETE,
 `projects/[id]/templates/[templateId]` DELETE, `blocklist/[id]` DELETE,
@@ -89,7 +89,8 @@ viewing the page stays `requireRole(event, 'admin')`).
 POST (a new member joining, has no role yet).
 
 Mixed-method files gate per method: `projects/[id]` (GET member / PATCH+DELETE
-admin), `projects/[id]/templates/[templateId]` (PATCH member / DELETE admin).
+admin), `projects/[id]/templates/[templateId]` (PATCH member / DELETE admin),
+`campaigns/[id]` (PATCH member / DELETE admin).
 
 ## UI
 

@@ -2,7 +2,7 @@
 	import { ChevronLeft, Loader2 } from '@lucide/svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -13,6 +13,7 @@
 	import CampaignRunsTab from '$lib/components/campaigns/CampaignRunsTab.svelte';
 	import CampaignTuningTab from '$lib/components/campaigns/CampaignTuningTab.svelte';
 	import RegenerateProfileDialog from '$lib/components/campaigns/RegenerateProfileDialog.svelte';
+	import DeleteCampaignDialog from '$lib/components/campaigns/DeleteCampaignDialog.svelte';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { platformSupportsAutoPost, type ScenarioSlug } from '@pitchbox/shared/campaigns';
 
@@ -78,6 +79,7 @@
 				generatingProfile: boolean;
 				campaignRunning: boolean;
 			};
+			isAdmin?: boolean;
 		};
 	} = $props();
 
@@ -85,6 +87,7 @@
 	let tab = $state<'overview' | 'profile' | 'tuning' | 'runs'>('overview');
 	let regenOpen = $state(false);
 	let autoPostSaving = $state(false);
+	let deleteOpen = $state(false);
 
 	// Live-refresh readiness + run lists when a profile-gen or campaign run
 	// starts or finishes (this tab, another tab, or the daemon). Without this,
@@ -220,6 +223,30 @@
 	}
 
 	const lastObjective = $derived(data.skillRuns[0]?.params?.objective ?? '');
+
+	// Layout data: admin (or auth off) gates the destructive control. The API
+	// stays the real boundary - this only hides what would 403 anyway.
+	const isAdmin = $derived(data.isAdmin ?? true);
+
+	async function remove() {
+		const res = await fetch(`/api/campaigns/${data.campaign.id}`, {
+			method: 'DELETE',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ confirmName: data.campaign.name }),
+		});
+		if (!res.ok) {
+			if (res.status === 409) {
+				toast.error('A run is still in flight', {
+					description: 'Cancel the running run first, then delete the campaign.',
+				});
+			} else {
+				toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
+			}
+			return;
+		}
+		toast.success('Campaign deleted');
+		await goto('/campaigns');
+	}
 </script>
 
 <Seo
@@ -425,6 +452,28 @@
 			</Card.Content>
 		</Card.Root>
 	</div>
+
+	{#if isAdmin}
+		<div
+			class="mt-10 rounded-md border border-destructive/40 bg-destructive/5 p-4 flex items-start justify-between gap-4"
+		>
+			<div class="flex flex-col gap-1">
+				<h3 class="text-sm font-medium text-destructive">Danger zone</h3>
+				<p class="text-xs text-muted-foreground">
+					Permanently delete this campaign, its runs and its drafts. Contact history is kept. To
+					stop the schedule without losing anything, pause the campaign instead.
+				</p>
+			</div>
+			<Button
+				variant="outline"
+				size="sm"
+				class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
+				onclick={() => (deleteOpen = true)}
+			>
+				Delete campaign
+			</Button>
+		</div>
+	{/if}
 {:else if tab === 'profile'}
 	<CampaignProfileTab
 		campaignId={data.campaign.id}
@@ -447,4 +496,11 @@
 		invalidateAll();
 		tab = 'profile';
 	}}
+/>
+
+<DeleteCampaignDialog
+	bind:open={deleteOpen}
+	name={data.campaign.name}
+	onConfirm={remove}
+	onClose={() => (deleteOpen = false)}
 />
