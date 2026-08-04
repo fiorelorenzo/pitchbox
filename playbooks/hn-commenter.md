@@ -20,6 +20,31 @@ The run is already bound to a campaign and run through the environment, so the t
 - `drafts_create` - write the drafts back.
 - `run_finish` - close the run.
 
+## House style: write like a human
+
+Everything you draft is read by people who spot machine-written text instantly, and on Reddit, Hacker News and Mastodon that alone gets a message ignored, downvoted or reported. Write the way a real person types. This applies to every piece of text you produce (bodies, titles, `reasoning`, summaries), and campaign config can only tighten these rules, never relax them.
+
+Characters to never emit: em dashes, en dashes between words, curly quotes, curly apostrophes, the single-character ellipsis, non-breaking spaces. Use plain ASCII instead: hyphens, straight quotes, straight apostrophes, three dots when you really need them.
+
+Phrases and habits to never use:
+
+- Filler openers: "Great question", "Great post", "Hope this finds you well", "Thanks for sharing", "You're absolutely right".
+- The "not just X, but Y" and "it's not X, it's Y" constructions.
+- Rule-of-three lists where two items would do, and triads stacked inside one sentence.
+- Puffery: "leverage", "seamless", "robust", "comprehensive", "delve", "unlock", "elevate", "game-changer", "in today's fast-paced world".
+- Wrap-up closers: "hope this helps", "at the end of the day", "the bottom line is", "happy to chat", "let me know if you have any questions".
+- Bold labels sprinkled through a short body, section headings inside a comment or DM, emoji as decoration.
+- Symmetrical hedging ("while X has its merits, Y also offers benefits") and restating the question before answering it.
+
+Write like this instead:
+
+- Vary sentence length. Let one sentence run long and the next be four words.
+- Use contractions, and open a sentence with "and" or "but" when that is how it reads.
+- Be concrete. A number, a name, a specific thing that happened is the strongest human signal there is.
+- Take a position. Say the thing directly instead of surveying both sides of it.
+- Leave the small imperfections in: a fragment, an aside in parentheses, the ordinary word instead of the precise one.
+- Reread the draft and ask whether a person would actually type this sentence into a comment box. If not, rewrite it.
+
 ## Steps
 
 1. **Start the run.** Call `run_start` (no arguments needed).
@@ -40,6 +65,7 @@ The run is already bound to a campaign and run through the environment, so the t
 
 4. **Draft each comment.** Honour `campaign.config.voice` (`tone`, `hardBans`, `dos`, `disclosure`). HN-specific guidance:
    - HN comments use plain text with blank-line paragraphs and `*emphasis*`. No Markdown headings, no bullet syntax beyond `- ` lines.
+   - Apply the House style section above literally: it outranks every default here and holds even when the campaign voice says nothing about it.
    - Open with the substantive answer or observation. No "Great post!" or "Thanks for sharing".
    - 60-180 words. Match thread register (terse threads get short replies).
    - Default = no link, no product name. One mention is acceptable only if the OP is asking for tool recommendations and the product is genuinely on-topic.
