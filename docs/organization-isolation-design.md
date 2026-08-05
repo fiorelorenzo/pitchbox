@@ -52,7 +52,9 @@ organization, there is no switcher, and behaviour is unchanged.
 Explicitly not part of this work:
 
 - Postgres Row-Level Security / a per-tenant scoped DB client.
-- Scoping `contact_history` per organization (it stays global; see Residual risks).
+- Scoping `contact_history` per organization. Was out of scope here and left as
+  an accepted residual risk; done afterwards in #263, see "Contact history and
+  dedup" below.
 - Re-validating injected ids inside the MCP/agent layer (the dispatch path already
   validates ownership before injecting them).
 - A nested `organization -> team -> project` hierarchy. There is one tenant level.
@@ -73,7 +75,9 @@ Edit `shared/src/db/schema.ts`, then `pnpm run migrate:generate` and
 3. **Project slug becomes unique per organization.** Replace the global
    `unique(slug)` with `uniqueIndex(organization_id, slug)`. Every lookup of a
    project by slug alone becomes org-scoped (see section 5).
-4. **`contact_history` is unchanged** (stays global). Recorded as a residual risk.
+4. **`contact_history` is unchanged** (stays global) as of this design. Superseded
+   by #263, which gave it a `NOT NULL organization_id`; see "Contact history and
+   dedup" below for the schema and the behaviour it changed.
 
 ### 2. Active-organization resolution (session + switcher)
 
@@ -178,14 +182,50 @@ tests before the implementation.
 
 ## Residual risks (accepted)
 
-- **`contact_history` stays global.** Contact dedup is shared across orgs: one org
-  can indirectly observe that another org has contacted a given user. Accepted for
-  now; scoping it is future work.
 - **MCP layer enforces ownership too, but only for ids it can trace to an org.**
   Every run/campaign/project/draft id a tool touches is checked against the
   session's org (`cli/src/mcp/server.ts`). A new dispatch path still must inject
   ids validated against the active org: the MCP-side check is a second layer,
   not a substitute for that first one.
+
+## Contact history and dedup (#263, after this design)
+
+This design deliberately left `contact_history` global and recorded the
+consequence as an accepted risk: contact dedup was shared across organizations,
+so one org could infer that another had already contacted a handle. #263 closed
+that. The entry is gone from the list above rather than marked resolved, because
+a stale accepted-risk list reads as current and is its own hazard.
+
+**Schema.** `contact_history.organization_id` became `NOT NULL`
+(`0010_overconfident_the_anarchist.sql`). #215 had already added the column and
+backfilled it from the row's draft project. The remaining nulls were rows whose
+draft retention had already pruned, plus self-host rows predating the column, so
+the migration attributes them in two steps before adding the constraint: first
+through `(account_handle, platform_id) -> accounts -> projects`, which is the
+second real path from a contact to its tenant and is applied only when it
+resolves to exactly one org, then whatever is left to the `default`
+organization. Null was not an option to keep: a contact belonging to no
+organization is visible to nobody, which loses data silently rather than
+loudly.
+
+**The invariant every read relies on.** A contact's organization always equals
+its draft's project's organization. Writers set it from the draft
+(`getDraftOrgId`) and both backfills preserved it. That is what makes the reads
+cheap: a contact visible to an org can only carry a draft in that org, so the
+drafts joins that used to be scoped by `projectIds` purely to null out another
+tenant's draft fields were removed rather than kept as a second belt.
+
+**What this trades away.** Two organizations contacting the same handle no
+longer deduplicate against each other. Each sees its own history only, so both
+can contact the same person inside the dedup window without a warning. That is
+the correct behaviour for tenancy and a real regression for the recipient, and
+it is the price of the isolation: the alternative is telling org B that org A
+has been in touch, which is exactly the leak. On a single-tenant install
+(`PITCHBOX_AUTH` off, everything under `default`) nothing changes.
+
+**Deliberately still global:** `daemon/src/reply-poller.ts`. It is a system
+process that polls every tenant's contacts for replies and returns nothing to a
+user, so scoping it would mean running it once per org for no gain.
 
 ## Rollout / compatibility
 

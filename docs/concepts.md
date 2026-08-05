@@ -59,7 +59,9 @@ When a project has fewer than 5 drafts the playbook emits a "Not enough data yet
 
 ## Contact deduplication
 
-Pitchbox tracks every successful outreach in `contact_history`. Before creating a draft, `pitchbox drafts:create` queries `shared/src/contact-dedup.ts` (`checkContactDedup`) against the same `(platform, target_user)` pair within a configurable window.
+Pitchbox tracks every successful outreach in `contact_history`. Before creating a draft, `pitchbox drafts:create` queries `shared/src/contact-dedup.ts` (`checkContactDedup`) against the same `(organization, platform, target_user)` triple within a configurable window.
+
+Dedup is per organization (#263). Two organizations reaching the same handle do not warn each other, because doing so would tell one tenant that another had already been in touch. On a single-tenant install everything lives under the `default` organization, so this makes no difference.
 
 Behaviour is governed by `app_config.dedup_policy`:
 
