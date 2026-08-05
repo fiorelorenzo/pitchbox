@@ -15,7 +15,11 @@ import { eq, desc, and } from 'drizzle-orm';
 import type { Db } from './db/client.js';
 import { drafts, draftEvents, messages, contactHistory, runs } from './db/schema.js';
 
-export type ReplyKind = 'reply_dm' | 'reply_comment';
+// Enumerable at runtime, not just a type, so consumers that must stay in step
+// with the full set of draft kinds (the badge registry, for one) can assert it
+// instead of hoping. `DRAFT_KINDS` in quota-types.ts is the outbound half.
+export const REPLY_KINDS = ['reply_dm', 'reply_comment'] as const;
+export type ReplyKind = (typeof REPLY_KINDS)[number];
 
 export interface EnqueueReplyDraftInput {
   // Parent outbound draft (the one the human originally approved/sent).
@@ -54,6 +58,10 @@ export async function enqueueReplyDraft(
     .limit(1);
   if (existing.length > 0) return null;
 
+  const parentMetadata = parent.metadata as { subreddit?: unknown } | null;
+  const parentSubreddit =
+    typeof parentMetadata?.subreddit === 'string' ? parentMetadata.subreddit : null;
+
   const [inserted] = await db
     .insert(drafts)
     .values({
@@ -72,7 +80,13 @@ export async function enqueueReplyDraft(
         parentDraftId: parent.id,
         parentMessageId: input.parentMessageId,
       },
-      metadata: {},
+      // A reply lands in the same place the parent did, so carry the parent's
+      // subreddit across. Only that key: the rest of a parent's metadata
+      // describes the parent (its permalink, its fit score) and would be a
+      // lie on the reply. Without this a `reply_comment` reaches the UI with
+      // no subreddit and the Reddit presenter has to fall back to the
+      // recipient, hiding which thread it belongs to (#258).
+      metadata: parentSubreddit ? { subreddit: parentSubreddit } : {},
     })
     .returning({ id: drafts.id });
 

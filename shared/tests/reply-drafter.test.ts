@@ -126,6 +126,38 @@ describe('reply-drafter', () => {
     expect(found!.parentMessageId).toBe(inboundMsg.id);
   });
 
+  // A reply lands in the same thread the parent did, so it belongs to the same
+  // subreddit. Dropping it left the Reddit presenter with nothing to name the
+  // thread by, which is how #258 surfaced.
+  it('carries the parent subreddit onto a comment reply', async () => {
+    const { db, parentDraft, inboundMsg } = await setup();
+    await db
+      .update(schema.drafts)
+      .set({ kind: 'post_comment', metadata: { subreddit: 'selfhosted', fitScore: 82 } })
+      .where(eq(schema.drafts.id, parentDraft.id));
+
+    const res = await enqueueReplyDraft(db, {
+      parentDraftId: parentDraft.id,
+      parentMessageId: inboundMsg.id,
+      replyKind: 'reply_comment',
+    });
+
+    const [reply] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, res!.draftId));
+    expect(reply.metadata).toEqual({ subreddit: 'selfhosted' });
+  });
+
+  it('does not invent metadata when the parent has no subreddit', async () => {
+    const { db, parentDraft, inboundMsg } = await setup();
+    const res = await enqueueReplyDraft(db, {
+      parentDraftId: parentDraft.id,
+      parentMessageId: inboundMsg.id,
+      replyKind: 'reply_dm',
+    });
+
+    const [reply] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, res!.draftId));
+    expect(reply.metadata).toEqual({});
+  });
+
   it('playbook prompt binds via the reply_draft start/finish tools and reads the thread', () => {
     const path = join(process.cwd(), 'playbooks', 'reply-drafter.md');
     const body = readFileSync(path, 'utf8');

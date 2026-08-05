@@ -104,11 +104,19 @@ export const TONE_BANNER_CLASS: Record<Tone, string> = {
 
 // Kind badges classify content; they don't carry state, so keep hues subtle
 // enough not to compete with the state colours below.
+//
+// Six kinds reach this map. The first four are outbound drafts an agent
+// composes; `reply_dm` and `reply_comment` are the continuations the reply
+// drafter enqueues when an inbound message lands (see shared/src/reply-drafter.ts).
+// Miss one and resolveBadge falls through to `{ label: value }`, which prints
+// the raw enum in the UI, so keep this in step with `ReplyKind` and `DraftKind`.
 export const DRAFT_KIND: Record<string, BadgeStyle> = {
   dm: { label: 'DM', tone: 'sky' },
   post: { label: 'Post', tone: 'violet' },
   post_comment: { label: 'Comment', tone: 'orange' },
   comment_reply: { label: 'Reply', tone: 'slate' },
+  reply_dm: { label: 'DM reply', tone: 'sky' },
+  reply_comment: { label: 'Comment reply', tone: 'slate' },
 };
 
 // The draft lifecycle: pending (amber) → approved (sky) → sent (emerald) ↗ replied (violet)

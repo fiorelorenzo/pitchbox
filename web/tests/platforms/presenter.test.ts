@@ -18,6 +18,32 @@ describe('presenter registry', () => {
     expect(p.eventLabel('armed')).toBe('Send clicked on Reddit');
   });
 
+  // The reply drafter's kinds are `reply_dm` / `reply_comment`, not `dm` /
+  // `comment_reply`. Matching only the latter put every reply-DM into the
+  // branch that expects a subreddit, so a perfectly healthy draft was treated
+  // as a data bug (#258).
+  it('treats a reply DM as DM-shaped, with no subreddit expected', () => {
+    const p = getPresenter('reddit');
+    expect(p.primaryLabel({ kind: 'reply_dm', targetUser: 'bob', metadata: {} })).toBe('u/bob');
+    expect(p.primaryLabel({ kind: 'reply_dm', targetUser: null, metadata: {} })).toBe(
+      'Reddit DM reply',
+    );
+  });
+
+  it('names a comment reply by its subreddit, since it lives in one', () => {
+    const p = getPresenter('reddit');
+    expect(
+      p.primaryLabel({
+        kind: 'reply_comment',
+        targetUser: 'bob',
+        metadata: { subreddit: 'selfhosted' },
+      }),
+    ).toBe('r/selfhosted');
+    expect(p.primaryLabel({ kind: 'reply_comment', targetUser: null, metadata: {} })).toBe(
+      'Reddit reply',
+    );
+  });
+
   it('returns Mastodon presenter with fully-qualified-handle semantics', () => {
     const p = getPresenter('mastodon');
     expect(p.primaryLabel({ kind: 'dm', targetUser: 'alice@fosstodon.org', metadata: {} })).toBe(
