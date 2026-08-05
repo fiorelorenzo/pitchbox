@@ -130,7 +130,7 @@
     err = null;
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id || !tab.url) {
-      err = 'No active tab';
+      err = $t('dashboard.connection.no-active-tab');
       return;
     }
     pendingPairTarget = { tabId: tab.id, origin: new URL(tab.url).origin };
@@ -149,7 +149,7 @@
       // permission before any other await resolves.
       const granted = await chrome.permissions.request({ origins: [target.origin + '/*'] });
       if (!granted) {
-        err = 'Permission denied';
+        err = $t('dashboard.connection.perm-denied', { host: shortHost(target.origin) });
         return;
       }
       await chrome.scripting.executeScript({

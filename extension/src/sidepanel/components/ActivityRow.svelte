@@ -14,15 +14,15 @@
 </script>
 
 <div class="flex items-start gap-3 py-2 border-b border-border">
-  <Badge variant={levelVariant[event.level]} class="mt-0.5 capitalize">
-    {event.level}
+  <Badge variant={levelVariant[event.level]} class="mt-0.5">
+    {$t(`activity.level.${event.level}`)}
   </Badge>
   <div class="flex-1 min-w-0">
     <div class="text-sm">
       {$t(event.message, event.messageParams)}
     </div>
     <div class="text-xs text-muted-foreground flex gap-2">
-      <span>{event.source}</span>
+      <span>{$t(`activity.source.${event.source}`)}</span>
       <span>·</span>
       <span>{new Date(event.ts).toLocaleString()}</span>
       {#if event.backendUrl}

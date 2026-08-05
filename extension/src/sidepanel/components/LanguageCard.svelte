@@ -30,8 +30,8 @@
         fullWidth
         size="sm"
         options={[
-          { value: 'en', label: 'English' },
-          { value: 'it', label: 'Italiano' },
+          { value: 'en', label: $t('settings.language.option.en') },
+          { value: 'it', label: $t('settings.language.option.it') },
         ]}
       />
     </label>

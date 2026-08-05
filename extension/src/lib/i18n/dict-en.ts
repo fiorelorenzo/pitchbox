@@ -1,6 +1,6 @@
 import type { Dict } from './types.js';
 
-export const en: Dict = {
+export const en = {
   'app.name': 'Pitchbox',
   'app.tagline': 'Outreach companion',
 
@@ -11,13 +11,13 @@ export const en: Dict = {
   'dashboard.connection.title': 'Connection',
   'dashboard.connection.connected': 'Connected',
   'dashboard.connection.disconnected': 'Not connected',
-  'dashboard.connection.empty': 'Not paired yet. Open your Pitchbox dashboard and click below.',
+  'dashboard.connection.empty': 'Open your Pitchbox dashboard, sign in, then pair from that tab.',
   'dashboard.connection.pair': 'Pair with this tab',
   'dashboard.connection.pair-another': 'Pair with another tab',
   'dashboard.connection.disconnect': 'Disconnect',
   'dashboard.connection.handshake-ago': 'handshake {ago}',
   'dashboard.connection.sync-ago': 'sync {ago}',
-  'dashboard.connection.default-hint': 'Defaults to {url}',
+  'dashboard.connection.default-hint': 'Using a pairing code instead? It defaults to {url}.',
   'dashboard.connection.add-toggle': 'Add with a pairing code',
   'dashboard.connection.add-hint':
     'Get a code from your dashboard (Settings -> Integrations), then connect without opening that tab.',
@@ -65,6 +65,7 @@ export const en: Dict = {
   'activity.filter.search': 'Search messages…',
   'activity.actions.clear': 'Clear',
   'activity.actions.export': 'Export JSON',
+  'activity.actions.export-done': 'Exported {n} events.',
   'activity.clear.confirm-title': 'Clear activity log?',
   'activity.clear.confirm-body': 'All log entries will be removed. This cannot be undone.',
   'activity.clear.confirm-ok': 'Clear log',
@@ -105,6 +106,10 @@ export const en: Dict = {
   'activity.reddit-action.send-button-not-found':
     'Gave up waiting for the DM send button for draft {draftId}.',
   'activity.reddit-action.send-poll-timeout': 'Gave up confirming draft {draftId} was sent.',
+  'activity.reddit-action.compose-box-missing':
+    'Could not find the DM compose box for draft {draftId}.',
+  'activity.reddit-action.account-handle-unresolved':
+    'Could not determine your Reddit account for draft {draftId}; reply matching may be less accurate.',
   'activity.settings.changed': 'Settings updated.',
   'activity.system.boot': 'Service worker started.',
   'activity.system.alarms-applied': 'Alarms re-applied ({interval} min).',
@@ -123,7 +128,7 @@ export const en: Dict = {
   'settings.language.title': 'Language',
   'settings.language.locale': 'Locale',
 
-  'settings.sync.title': 'Sync',
+  'settings.sync.title': 'Sync schedule',
   'settings.sync.interval': 'Poller interval',
   'settings.sync.interval.5': 'Every 5 minutes',
   'settings.sync.interval.10': 'Every 10 minutes',
@@ -151,5 +156,26 @@ export const en: Dict = {
   'time.hours-ago': '{n}h ago',
   'time.days-ago': '{n}d ago',
 
-  'test.only-en': 'only english',
-};
+  'activity.level.all': 'All',
+  'activity.level.info': 'Info',
+  'activity.level.warn': 'Warn',
+  'activity.level.error': 'Error',
+
+  'activity.source.all': 'All',
+  'activity.source.pairing': 'Pairing',
+  'activity.source.dm-sync': 'DM sync',
+  'activity.source.chat-sync': 'Chat sync',
+  'activity.source.matrix-token': 'Matrix token',
+  'activity.source.reddit-action': 'Reddit action',
+  'activity.source.settings': 'Settings',
+  'activity.source.system': 'System',
+
+  'dashboard.connection.no-active-tab': 'No active tab',
+
+  // Language names are endonyms (each language's own name for itself) and
+  // are intentionally identical across every locale dictionary; a language
+  // picker must stay readable to someone who cannot read the current UI
+  // language yet.
+  'settings.language.option.en': 'English',
+  'settings.language.option.it': 'Italiano',
+} satisfies Dict;

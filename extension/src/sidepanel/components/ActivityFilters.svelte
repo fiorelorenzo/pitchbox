@@ -15,22 +15,22 @@
     source?: ActivitySource | 'all';
   } = $props();
 
-  const levels: { value: ActivityLevel | 'all'; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'info', label: 'Info' },
-    { value: 'warn', label: 'Warn' },
-    { value: 'error', label: 'Error' },
-  ];
-  const sources: { value: ActivitySource | 'all'; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'pairing', label: 'pairing' },
-    { value: 'dm-sync', label: 'dm-sync' },
-    { value: 'chat-sync', label: 'chat-sync' },
-    { value: 'matrix-token', label: 'matrix-token' },
-    { value: 'reddit-action', label: 'reddit-action' },
-    { value: 'settings', label: 'settings' },
-    { value: 'system', label: 'system' },
-  ];
+  let levels: { value: ActivityLevel | 'all'; label: string }[] = $derived([
+    { value: 'all', label: $t('activity.level.all') },
+    { value: 'info', label: $t('activity.level.info') },
+    { value: 'warn', label: $t('activity.level.warn') },
+    { value: 'error', label: $t('activity.level.error') },
+  ]);
+  let sources: { value: ActivitySource | 'all'; label: string }[] = $derived([
+    { value: 'all', label: $t('activity.source.all') },
+    { value: 'pairing', label: $t('activity.source.pairing') },
+    { value: 'dm-sync', label: $t('activity.source.dm-sync') },
+    { value: 'chat-sync', label: $t('activity.source.chat-sync') },
+    { value: 'matrix-token', label: $t('activity.source.matrix-token') },
+    { value: 'reddit-action', label: $t('activity.source.reddit-action') },
+    { value: 'settings', label: $t('activity.source.settings') },
+    { value: 'system', label: $t('activity.source.system') },
+  ]);
 </script>
 
 <div class="flex flex-col gap-2">

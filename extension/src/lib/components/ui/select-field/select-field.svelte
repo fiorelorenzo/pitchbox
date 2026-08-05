@@ -20,7 +20,7 @@
 	let {
 		value = $bindable(),
 		options,
-		placeholder = 'Select…',
+		placeholder = '',
 		size = 'default',
 		fullWidth = false,
 		disabled = false,

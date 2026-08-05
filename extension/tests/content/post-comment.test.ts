@@ -271,6 +271,34 @@ describe('wireSubmit success/failure detection (#181)', () => {
     );
   });
 
+  it('logs a warn and still sends when the account handle cannot be resolved (#246)', async () => {
+    const { ta, fetchMock } = await setUpArmedDraft();
+
+    ta.value = '';
+    await vi.advanceTimersByTimeAsync(500);
+    await flushMicrotasks();
+
+    // installFetchMock() returns 401 for /api/me.json and the test DOM has
+    // no meta[name="user-name"] or a[href^="/user/"] fallback, so every
+    // account-handle strategy misses.
+    const sentCalls = fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/sent'));
+    expect(sentCalls.length).toBe(1);
+    const events = loggedEvents();
+    const warn = events.find(
+      (e) => e.message === 'activity.reddit-action.account-handle-unresolved',
+    );
+    expect(warn).toBeDefined();
+    expect(warn?.level).toBe('warn');
+    expect(warn?.messageParams).toEqual({ draftId: 42 });
+    expect(warn?.meta).toMatchObject({
+      draftId: 42,
+      script: 'post-comment',
+      step: 'resolve-account-handle',
+    });
+    // The miss does not block completion - the draft still flips to sent.
+    expect(events.some((e) => e.message === 'activity.reddit-action.comment-sent')).toBe(true);
+  });
+
   it('does NOT flip to sent when the textarea clears but an inline error banner is visible', async () => {
     const { ta, fetchMock } = await setUpArmedDraft();
 

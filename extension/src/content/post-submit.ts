@@ -41,6 +41,7 @@ async function sendSubmitted(
       level: 'info',
       source: 'reddit-action',
       message: 'activity.reddit-action.submit-sent',
+      messageParams: { draftId },
       meta: { draftId, t3 },
     });
   } else {
@@ -48,7 +49,14 @@ async function sendSubmitted(
       level: 'error',
       source: 'reddit-action',
       message: 'activity.reddit-action.fail',
-      meta: { draftId, reason: res.error || String(res.status), status: res.status },
+      messageParams: { draftId, reason: res.error || String(res.status) },
+      meta: {
+        draftId,
+        script: 'post-submit',
+        reason: res.error || String(res.status),
+        status: res.status,
+        url: location.href,
+      },
     });
   }
 }
@@ -108,7 +116,14 @@ if (draftId !== null) {
         level: 'warn',
         source: 'reddit-action',
         message: 'activity.reddit-action.submit-button-not-found',
-        meta: { draftId },
+        messageParams: { draftId: draftId! },
+        meta: {
+          draftId,
+          script: 'post-submit',
+          step: 'wire-submit-button',
+          selector: 'findPostSubmitButton',
+          url: location.href,
+        },
       });
     }, 15_000);
   }
@@ -133,7 +148,8 @@ if (draftId !== null) {
         level: 'warn',
         source: 'reddit-action',
         message: 'activity.reddit-action.submit-no-t3',
-        meta: { draftId },
+        messageParams: { draftId: draftId! },
+        meta: { draftId, script: 'post-submit', step: 'redirect-no-t3', url: location.href },
       });
     }
   }, 500);
@@ -146,7 +162,8 @@ if (draftId !== null) {
         level: 'warn',
         source: 'reddit-action',
         message: 'activity.reddit-action.submit-poll-timeout',
-        meta: { draftId },
+        messageParams: { draftId: draftId! },
+        meta: { draftId, script: 'post-submit', step: 'redirect-timeout', url: location.href },
       });
     }
   }, 60_000);

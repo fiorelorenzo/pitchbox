@@ -134,7 +134,7 @@ describe('dm-compose auto-fill (#206)', () => {
     expect(textarea().value).toBe('');
   });
 
-  it('does nothing when no compose textarea is present', async () => {
+  it('logs a warn and does nothing else when no compose textarea is present', async () => {
     setPairing();
     document.body.innerHTML = '<button type="submit">Send</button>';
     const fetchMock = makeFetchMock({ draftBody: 'auto-filled body' });
@@ -146,6 +146,49 @@ describe('dm-compose auto-fill (#206)', () => {
     // getDraft was still called (fill() fetches before checking for the
     // textarea), but nothing throws and there is no textarea to assert on.
     expect(fetchMock).toHaveBeenCalled();
+    const calls = logCallsFor('activity.reddit-action.compose-box-missing');
+    expect(calls).toHaveLength(1);
+    const [msg] = calls[0];
+    expect(msg.event.level).toBe('warn');
+    expect(msg.event.meta).toMatchObject({
+      draftId: 42,
+      script: 'dm-compose',
+      step: 'fill',
+      selector: 'findComposeTextarea',
+    });
+  });
+});
+
+describe('dm-compose send-intent give-up (#246)', () => {
+  it('logs a warn when the compose box disappears before the send click is captured', async () => {
+    setPairing();
+    setComposeDom();
+    const fetchMock = makeFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    await importModule();
+    await flush();
+
+    // The box vanishes between wiring and the actual click (e.g. a
+    // React re-render tears it down) - the click still fires on the button.
+    textarea().remove();
+    sendButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flush();
+
+    // Arming still proceeds - a missing box at capture time degrades to no
+    // captured body, it does not block the send-intent signal.
+    expect(fetchMock.mock.calls.some(([u]: [string]) => String(u).endsWith('/armed'))).toBe(true);
+    const calls = logCallsFor('activity.reddit-action.compose-box-missing');
+    expect(calls).toHaveLength(1);
+    const [msg] = calls[0];
+    expect(msg.event.level).toBe('warn');
+    expect(msg.event.meta).toMatchObject({
+      draftId: 42,
+      script: 'dm-compose',
+      step: 'capture-on-send-intent',
+      selector: 'findComposeTextarea',
+    });
   });
 });
 
@@ -232,7 +275,12 @@ describe('dm-compose give-up paths (#173)', () => {
     expect(calls).toHaveLength(1);
     const [msg] = calls[0];
     expect(msg.event.level).toBe('warn');
-    expect(msg.event.meta).toEqual({ draftId: 42 });
+    expect(msg.event.messageParams).toEqual({ draftId: 42 });
+    expect(msg.event.meta).toMatchObject({
+      draftId: 42,
+      script: 'dm-compose',
+      step: 'confirm-send',
+    });
   });
 
   it('logs a distinct reason when the send button never appears', async () => {
@@ -251,7 +299,13 @@ describe('dm-compose give-up paths (#173)', () => {
     expect(calls).toHaveLength(1);
     const [msg] = calls[0];
     expect(msg.event.level).toBe('warn');
-    expect(msg.event.meta).toEqual({ draftId: 42 });
+    expect(msg.event.messageParams).toEqual({ draftId: 42 });
+    expect(msg.event.meta).toMatchObject({
+      draftId: 42,
+      script: 'dm-compose',
+      step: 'wire-send-button',
+      selector: 'findComposeSendButton',
+    });
   });
 
   it('does not log a give-up when the send button is found before the timeout', async () => {

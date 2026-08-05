@@ -62,7 +62,6 @@ async function fetchAccountHandle(draftId: number): Promise<string | null> {
   // Reddit-issued cookies authenticate /api/me.json - works uniformly on old and
   // new Reddit, regardless of which user link happens to be first in the DOM
   // (often the post author, not the logged-in user).
-  void draftId;
   try {
     const res = await fetch('https://www.reddit.com/api/me.json?raw_json=1', {
       credentials: 'include',
@@ -82,7 +81,19 @@ async function fetchAccountHandle(draftId: number): Promise<string | null> {
   const userLink = document.querySelector('a[href^="/user/"]');
   const href = userLink?.getAttribute('href') ?? '';
   const m = /^\/user\/([^/]+)/.exec(href);
-  return m ? m[1] : null;
+  if (m) return m[1];
+  // #246: every strategy missed - log instead of returning null silently.
+  // Not a give-up path for the send itself (the comment is still recorded
+  // as sent without a handle), but reply attribution is lost silently
+  // otherwise.
+  logFromContent({
+    level: 'warn',
+    source: 'reddit-action',
+    message: 'activity.reddit-action.account-handle-unresolved',
+    messageParams: { draftId },
+    meta: { draftId, script: 'post-comment', step: 'resolve-account-handle', url: location.href },
+  });
+  return null;
 }
 
 if (draftId !== null) {
@@ -108,7 +119,14 @@ if (draftId !== null) {
         source: 'reddit-action',
         message: 'activity.reddit-action.comment-box-missing',
         messageParams: { draftId: draftId! },
-        meta: { draftId, reason: 'comment-textarea-not-found' },
+        meta: {
+          draftId,
+          script: 'post-comment',
+          step: 'fill',
+          selector: 'findCommentTextarea',
+          reason: 'comment-textarea-not-found',
+          url: location.href,
+        },
       });
       return;
     }
@@ -160,7 +178,13 @@ if (draftId !== null) {
         source: 'reddit-action',
         message: 'activity.reddit-action.fail',
         messageParams: { draftId: draftId!, reason: res.error || String(res.status) },
-        meta: { draftId, reason: res.error || String(res.status), status: res.status },
+        meta: {
+          draftId,
+          script: 'post-comment',
+          reason: res.error || String(res.status),
+          status: res.status,
+          url: location.href,
+        },
       });
     }
   }
@@ -203,7 +227,13 @@ if (draftId !== null) {
               source: 'reddit-action',
               message: 'activity.reddit-action.comment-confirm-timeout',
               messageParams: { draftId: draftId! },
-              meta: { draftId, reason: 'click-poll-timeout' },
+              meta: {
+                draftId,
+                script: 'post-comment',
+                step: 'confirm-send',
+                reason: 'click-poll-timeout',
+                url: location.href,
+              },
             });
           }
         }, 20_000);
@@ -235,7 +265,14 @@ if (draftId !== null) {
             source: 'reddit-action',
             message: 'activity.reddit-action.comment-submit-not-found',
             messageParams: { draftId: draftId! },
-            meta: { draftId, reason: 'submit-button-not-found' },
+            meta: {
+              draftId,
+              script: 'post-comment',
+              step: 'wire-submit-button',
+              selector: 'findCommentSubmitButton',
+              reason: 'submit-button-not-found',
+              url: location.href,
+            },
           });
         }
       }, 15_000);

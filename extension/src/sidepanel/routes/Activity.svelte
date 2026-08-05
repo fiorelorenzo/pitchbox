@@ -20,6 +20,11 @@
   let level = $state<ActivityLevel | 'all'>('all');
   let source = $state<ActivitySource | 'all'>('all');
   let confirmOpen = $state(false);
+  // Transient confirmation that the export actually wrote a file, cleared a
+  // few seconds after it lands (same pattern as ConnectionCard's per-backend
+  // test-connection result).
+  let exportedCount = $state<number | null>(null);
+  let exportedTimer: ReturnType<typeof setTimeout> | undefined;
 
   const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
     if (area === 'local' && changes.activityLog) {
@@ -54,6 +59,9 @@
     a.download = `pitchbox-activity-${new Date().toISOString()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    exportedCount = events.length;
+    clearTimeout(exportedTimer);
+    exportedTimer = setTimeout(() => (exportedCount = null), 4000);
   }
 
   async function doClear() {
@@ -65,13 +73,18 @@
 <div class="flex flex-col gap-4">
   <ActivityFilters bind:search bind:level bind:source />
 
-  <div class="flex gap-2">
+  <div class="flex items-center gap-2">
     <Button variant="outline" size="sm" onclick={doExport}>
       {$t('activity.actions.export')}
     </Button>
     <Button variant="ghost" size="sm" onclick={() => (confirmOpen = true)}>
       {$t('activity.actions.clear')}
     </Button>
+    {#if exportedCount !== null}
+      <p class="text-xs text-muted-foreground">
+        {$t('activity.actions.export-done', { n: exportedCount })}
+      </p>
+    {/if}
   </div>
 
   <AlertDialog.Root bind:open={confirmOpen}>

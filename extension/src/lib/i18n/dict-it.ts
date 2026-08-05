@@ -1,6 +1,6 @@
-import type { Dict } from './types.js';
+import { en } from './dict-en.js';
 
-export const it: Dict = {
+export const it = {
   'app.name': 'Pitchbox',
   'app.tagline': 'Compagno di outreach',
 
@@ -11,13 +11,14 @@ export const it: Dict = {
   'dashboard.connection.title': 'Connessione',
   'dashboard.connection.connected': 'Connesso',
   'dashboard.connection.disconnected': 'Non connesso',
-  'dashboard.connection.empty': 'Nessun pairing. Apri la dashboard di Pitchbox e clicca qui sotto.',
+  'dashboard.connection.empty':
+    'Apri la dashboard di Pitchbox, accedi, poi abbina da quella scheda.',
   'dashboard.connection.pair': 'Abbina questo tab',
   'dashboard.connection.pair-another': 'Abbina un altro tab',
   'dashboard.connection.disconnect': 'Disconnetti',
   'dashboard.connection.handshake-ago': 'handshake {ago}',
   'dashboard.connection.sync-ago': 'sync {ago}',
-  'dashboard.connection.default-hint': 'Predefinito su {url}',
+  'dashboard.connection.default-hint': 'Usi un codice di pairing? Il valore predefinito è {url}.',
   'dashboard.connection.add-toggle': 'Aggiungi con un codice',
   'dashboard.connection.add-hint':
     'Genera un codice dalla dashboard (Impostazioni -> Integrazioni), poi collega senza aprire quella scheda.',
@@ -66,6 +67,7 @@ export const it: Dict = {
   'activity.filter.search': 'Cerca messaggi…',
   'activity.actions.clear': 'Svuota',
   'activity.actions.export': 'Esporta JSON',
+  'activity.actions.export-done': 'Esportati {n} eventi.',
   'activity.clear.confirm-title': 'Svuotare il log?',
   'activity.clear.confirm-body':
     'Tutte le voci del log saranno rimosse. L’operazione non è reversibile.',
@@ -108,6 +110,10 @@ export const it: Dict = {
     'Rinunciato ad attendere il pulsante di invio del DM per il draft {draftId}.',
   'activity.reddit-action.send-poll-timeout':
     "Rinunciato a confermare l'invio del draft {draftId}.",
+  'activity.reddit-action.compose-box-missing':
+    'Impossibile trovare il box di composizione del DM per il draft {draftId}.',
+  'activity.reddit-action.account-handle-unresolved':
+    'Impossibile determinare il tuo account Reddit per il draft {draftId}; la corrispondenza delle risposte potrebbe essere meno precisa.',
   'activity.settings.changed': 'Impostazioni aggiornate.',
   'activity.system.boot': 'Service worker avviato.',
   'activity.system.alarms-applied': 'Alarms riapplicati ({interval} min).',
@@ -126,7 +132,7 @@ export const it: Dict = {
   'settings.language.title': 'Lingua',
   'settings.language.locale': 'Locale',
 
-  'settings.sync.title': 'Sincronizzazione',
+  'settings.sync.title': 'Pianificazione sync',
   'settings.sync.interval': 'Intervallo del poller',
   'settings.sync.interval.5': 'Ogni 5 minuti',
   'settings.sync.interval.10': 'Ogni 10 minuti',
@@ -152,4 +158,24 @@ export const it: Dict = {
   'time.minutes-ago': '{n}m fa',
   'time.hours-ago': '{n}h fa',
   'time.days-ago': '{n}g fa',
-};
+
+  'activity.level.all': 'Tutti',
+  'activity.level.info': 'Info',
+  'activity.level.warn': 'Avviso',
+  'activity.level.error': 'Errore',
+
+  'activity.source.all': 'Tutte',
+  'activity.source.pairing': 'Pairing',
+  'activity.source.dm-sync': 'Sync DM',
+  'activity.source.chat-sync': 'Sync chat',
+  'activity.source.matrix-token': 'Token Matrix',
+  'activity.source.reddit-action': 'Azione Reddit',
+  'activity.source.settings': 'Impostazioni',
+  'activity.source.system': 'Sistema',
+
+  'dashboard.connection.no-active-tab': 'Nessuna scheda attiva',
+
+  // Language names are endonyms, see the comment in dict-en.ts.
+  'settings.language.option.en': 'English',
+  'settings.language.option.it': 'Italiano',
+} satisfies Record<keyof typeof en, string>;

@@ -46,7 +46,7 @@
         {$t('dashboard.sync.next', { mins: nextRunMins })}
       </p>
     {/if}
-    <Button disabled={busy} onclick={syncNow}>
+    <Button variant="outline" disabled={busy} onclick={syncNow}>
       {busy ? $t('dashboard.sync.syncing') : $t('dashboard.sync.now')}
     </Button>
   </CardContent>

@@ -8,7 +8,7 @@ The companion extension lives in `extension/` (MV3, Vite + `@crxjs/vite-plugin`)
 
 ## Stack
 
-The side panel is a Svelte 5 app (runes mode) bundled with `@crxjs/vite-plugin` and styled with Tailwind 4. It reuses a copy of the dashboard's shadcn-svelte primitives (button, card, tabs, badge, select, switch, dialog, alert-dialog, scroll-area, tooltip) and the dashboard's CSS token palette, so light/dark theming and visual language match 1:1 with the webapp. The bundled i18n module (`src/lib/i18n/`) mirrors the dashboard pattern with English + Italian dictionaries. Content scripts stay as plain TypeScript - they inject directly into Reddit's DOM and don't need a UI framework.
+The side panel is a Svelte 5 app (runes mode) bundled with `@crxjs/vite-plugin` and styled with Tailwind 4. It reuses a copy of the dashboard's shadcn-svelte primitives (button, card, tabs, badge, select, switch, dialog, alert-dialog, scroll-area, tooltip) and the dashboard's CSS token palette, so light/dark theming and visual language match 1:1 with the webapp. The bundled i18n module (`src/lib/i18n/`) is a flat-key dictionary with English + Italian translations and English fallback for missing keys; the dashboard has no i18n layer of its own, this is extension-only. Content scripts stay as plain TypeScript - they inject directly into Reddit's DOM and don't need a UI framework.
 
 ## Install
 
