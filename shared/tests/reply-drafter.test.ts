@@ -57,6 +57,7 @@ async function setup() {
       accountHandle: account.handle,
       targetUser: 'bob',
       draftId: parentDraft.id,
+      organizationId: org.id,
     })
     .returning();
   const [inboundMsg] = await db

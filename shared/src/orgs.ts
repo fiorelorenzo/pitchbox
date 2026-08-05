@@ -165,6 +165,22 @@ export async function getDraftOrgId(db: Db, draftId: number): Promise<number | n
 }
 
 /**
+ * Same lookup, but for callers that cannot proceed without a tenant. Writing a
+ * `contact_history` row is the case that matters: its `organization_id` is NOT
+ * NULL (#263), so a null org means either the draft vanished under us or the
+ * caller passed the wrong id. Both deserve a named error rather than the
+ * column's opaque constraint violation.
+ *
+ * Null is unreachable for a draft that exists: `drafts.project_id` and
+ * `projects.organization_id` are both NOT NULL, so the join always yields one.
+ */
+export async function requireDraftOrgId(db: Db, draftId: number): Promise<number> {
+  const orgId = await getDraftOrgId(db, draftId);
+  if (orgId == null) throw new Error(`draft ${draftId} has no resolvable organization`);
+  return orgId;
+}
+
+/**
  * Resolves a project's org id directly, or null if the project does not
  * exist. Used by daemon loops (keyword watcher, scheduler) that hold a
  * project id but have no run/draft context to resolve the org through.

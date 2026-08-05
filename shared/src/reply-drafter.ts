@@ -13,7 +13,7 @@
 // and fill in the real body asynchronously, then bump the draft.
 import { eq, desc, and } from 'drizzle-orm';
 import type { Db } from './db/client.js';
-import { drafts, draftEvents, messages, contactHistory, runs } from './db/schema.js';
+import { drafts, draftEvents, messages, runs } from './db/schema.js';
 
 // Enumerable at runtime, not just a type, so consumers that must stay in step
 // with the full set of draft kinds (the badge registry, for one) can assert it
@@ -167,10 +167,6 @@ export async function loadPendingReplyDraft(
       };
     }
   }
-  // contactHistory is consulted just to silence the "unused import" lint when
-  // future iterations need to walk by contact row. Keeping the reference here
-  // documents the relationship without affecting runtime behaviour.
-  void contactHistory;
   return null;
 }
 

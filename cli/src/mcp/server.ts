@@ -203,15 +203,28 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     {
       title: 'Check contact history',
       description:
-        'Check whether a target handle was already contacted on a platform. Returns { contacted, lastContactedAt }.',
+        "Check whether a target handle was already contacted on a platform, scoped to one organization. Returns { contacted, lastContactedAt }. Answering this globally across organizations would leak one tenant's outreach history to another, so a missing projectId resolves to the default organization (self-host) rather than every organization.",
       inputSchema: {
         platform: z.string().describe('platform slug, e.g. "reddit"'),
         target: z.string().describe('target handle to check'),
+        projectId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "project id, to scope the check to that project's organization (defaults to PITCHBOX_PROJECT_ID / PROJECT_ID, then the default organization)",
+          ),
       },
     },
-    async ({ platform, target }) => {
+    async ({ platform, target, projectId }) => {
       try {
-        return jsonResult(await checkContactHistory(platform, target));
+        const pid = projectId ?? defaultProjectId();
+        if (pid != null) {
+          const ownershipErr = await checkOwnership('project', pid);
+          if (ownershipErr) return errorResult(ownershipErr);
+        }
+        return jsonResult(await checkContactHistory(platform, target, pid));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }

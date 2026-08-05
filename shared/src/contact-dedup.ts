@@ -1,6 +1,10 @@
 // Helper used by drafts:create (and any other code path producing outreach) to
-// detect repeat contact within a configurable window. Returns the most recent
-// prior contact timestamp and whether it falls inside the policy window.
+// detect repeat contact within a configurable window, scoped to a single
+// organization. Every query here filters by organizationId: contact history
+// from one org is never treated as a prior contact for another, even when the
+// (platformId, targetUser) pair matches, so dedup never leaks across tenants.
+// Returns the most recent prior contact timestamp and whether it falls inside
+// the policy window.
 import { and, desc, eq, gte } from 'drizzle-orm';
 import type { Db } from './db/client.js';
 import { contactHistory } from './db/schema.js';
@@ -9,6 +13,7 @@ export interface CheckContactDedupInput {
   platformId: number;
   targetUser: string;
   windowDays: number;
+  organizationId: number;
 }
 
 export interface ContactDedupResult {
@@ -20,13 +25,14 @@ export async function checkContactDedup(
   db: Db,
   input: CheckContactDedupInput,
 ): Promise<ContactDedupResult> {
-  const { platformId, targetUser, windowDays } = input;
+  const { platformId, targetUser, windowDays, organizationId } = input;
   const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
   const rows = await db
     .select({ lastContactedAt: contactHistory.lastContactedAt })
     .from(contactHistory)
     .where(
       and(
+        eq(contactHistory.organizationId, organizationId),
         eq(contactHistory.platformId, platformId),
         eq(contactHistory.targetUser, targetUser),
         gte(contactHistory.lastContactedAt, cutoff),
@@ -42,7 +48,11 @@ export async function checkContactDedup(
       .select({ lastContactedAt: contactHistory.lastContactedAt })
       .from(contactHistory)
       .where(
-        and(eq(contactHistory.platformId, platformId), eq(contactHistory.targetUser, targetUser)),
+        and(
+          eq(contactHistory.organizationId, organizationId),
+          eq(contactHistory.platformId, platformId),
+          eq(contactHistory.targetUser, targetUser),
+        ),
       )
       .orderBy(desc(contactHistory.lastContactedAt))
       .limit(1);

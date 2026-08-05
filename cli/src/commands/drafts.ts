@@ -80,6 +80,15 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
     .select()
     .from(schema.campaigns)
     .where(eq(schema.campaigns.id, run.campaignId));
+  if (!campaign) throw new Error(`campaign ${run.campaignId} not found`);
+
+  // Resolved once (run -> campaign -> project -> organization_id) rather than
+  // per draft: contact_history.organization_id is NOT NULL, so every dedup
+  // check and the drafts.created notification below share this org id.
+  const orgId = await getProjectOrgId(db, campaign.projectId);
+  if (orgId == null) {
+    throw new Error(`project ${campaign.projectId} has no organization`);
+  }
 
   // Validate that every referenced accountId actually belongs to the
   // campaign's project. The accounts FK only requires the account to exist,
@@ -185,6 +194,7 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
         platformId: campaign.platformId,
         targetUser: d.targetUser,
         windowDays: dedupPolicy.windowDays,
+        organizationId: orgId,
       });
       if (dedup.withinWindow && dedup.priorContactedAt) {
         if (dedupPolicy.mode === 'skip') {
@@ -273,20 +283,17 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
         details: {},
       })),
     );
-    const orgId = await getProjectOrgId(db, campaign.projectId);
-    if (orgId != null) {
-      await notify(
-        db,
-        {
-          kind: 'drafts.created',
-          title: `${inserted.length} draft${inserted.length === 1 ? '' : 's'} ready for review`,
-          body: `Run #${runId} produced ${inserted.length} draft${inserted.length === 1 ? '' : 's'}.`,
-          payload: { runId, count: inserted.length, campaignId: campaign.id },
-          severity: 'info',
-        },
-        orgId,
-      );
-    }
+    await notify(
+      db,
+      {
+        kind: 'drafts.created',
+        title: `${inserted.length} draft${inserted.length === 1 ? '' : 's'} ready for review`,
+        body: `Run #${runId} produced ${inserted.length} draft${inserted.length === 1 ? '' : 's'}.`,
+        payload: { runId, count: inserted.length, campaignId: campaign.id },
+        severity: 'info',
+      },
+      orgId,
+    );
   }
 
   return { runId, inserted: inserted.length, skipped, dedupSkipped };

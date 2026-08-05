@@ -11,7 +11,7 @@ import {
   describeBlockedSend,
   type DraftLike,
 } from '@pitchbox/shared/draft-send';
-import { getDraftOrgId } from '@pitchbox/shared/orgs';
+import { getProjectOrgId, requireDraftOrgId } from '@pitchbox/shared/orgs';
 import { and, desc, eq } from 'drizzle-orm';
 import { ok, fail } from '../lib/output.js';
 
@@ -73,6 +73,11 @@ export async function scoutRun(
     .select()
     .from(schema.campaigns)
     .where(eq(schema.campaigns.id, run.campaignId));
+  if (!campaign) throw new Error(`campaign ${run.campaignId} not found`);
+  const orgId = await getProjectOrgId(db, campaign.projectId);
+  if (orgId == null) {
+    throw new Error(`project ${campaign.projectId} has no organization`);
+  }
 
   const profile = (campaign.config ?? {}) as MastodonScoutProfile;
   if (!profile.targetHashtags?.length) throw new Error('campaign config has no targetHashtags');
@@ -86,7 +91,12 @@ export async function scoutRun(
   const contacted = await db
     .select({ target: schema.contactHistory.targetUser })
     .from(schema.contactHistory)
-    .where(eq(schema.contactHistory.platformId, campaign.platformId));
+    .where(
+      and(
+        eq(schema.contactHistory.organizationId, orgId),
+        eq(schema.contactHistory.platformId, campaign.platformId),
+      ),
+    );
   const contactedHandles = new Set(contacted.map((c) => c.target));
 
   if (verbose) {
@@ -254,13 +264,16 @@ export async function postRun(
   });
 
   if (targetUser) {
+    // #263: contact_history.organization_id is NOT NULL, so resolve the draft's
+    // org through the helper that fails loudly rather than hitting the column.
+    const orgId = await requireDraftOrgId(db, inserted.id);
     await db.insert(schema.contactHistory).values({
       platformId: campaign.platformId,
       accountHandle: account.handle,
       targetUser,
       lastContactedAt: now,
       draftId: inserted.id,
-      organizationId: await getDraftOrgId(db, inserted.id), // #215: durable org anchor
+      organizationId: orgId,
     });
   }
 

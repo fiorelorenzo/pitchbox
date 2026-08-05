@@ -9,7 +9,25 @@ async function platformId(slug: string) {
   return p!.id;
 }
 
-async function insertHistory(platformId: number, targetUser: string, daysAgo: number) {
+// Resolves an org by slug, creating it on first use. `onConflictDoNothing`
+// makes this safe to call across repeated test runs against the shared test
+// DB (the 'default' org always exists; a second org is created once).
+async function ensureOrg(slug: string) {
+  const db = getDb();
+  await db.insert(schema.organizations).values({ slug, name: slug }).onConflictDoNothing();
+  const [org] = await db
+    .select()
+    .from(schema.organizations)
+    .where(eq(schema.organizations.slug, slug));
+  return org!.id;
+}
+
+async function insertHistory(
+  platformId: number,
+  targetUser: string,
+  daysAgo: number,
+  organizationId: number,
+) {
   const db = getDb();
   const when = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
   await db.insert(schema.contactHistory).values({
@@ -17,6 +35,7 @@ async function insertHistory(platformId: number, targetUser: string, daysAgo: nu
     accountHandle: 'tester',
     targetUser,
     lastContactedAt: when,
+    organizationId,
   });
 }
 
@@ -27,11 +46,13 @@ describe('checkContactDedup', () => {
 
   it('returns withinWindow=true when prior contact lies inside window', async () => {
     const pid = await platformId('reddit');
-    await insertHistory(pid, 'alice', 10);
+    const orgId = await ensureOrg('default');
+    await insertHistory(pid, 'alice', 10, orgId);
     const r = await checkContactDedup(getDb(), {
       platformId: pid,
       targetUser: 'alice',
       windowDays: 90,
+      organizationId: orgId,
     });
     expect(r.withinWindow).toBe(true);
     expect(r.priorContactedAt).toBeInstanceOf(Date);
@@ -39,11 +60,13 @@ describe('checkContactDedup', () => {
 
   it('returns withinWindow=false when prior contact is outside window', async () => {
     const pid = await platformId('reddit');
-    await insertHistory(pid, 'bob', 120);
+    const orgId = await ensureOrg('default');
+    await insertHistory(pid, 'bob', 120, orgId);
     const r = await checkContactDedup(getDb(), {
       platformId: pid,
       targetUser: 'bob',
       windowDays: 90,
+      organizationId: orgId,
     });
     expect(r.withinWindow).toBe(false);
     expect(r.priorContactedAt).toBeInstanceOf(Date);
@@ -51,13 +74,33 @@ describe('checkContactDedup', () => {
 
   it('returns nulls when no prior contact exists', async () => {
     const pid = await platformId('reddit');
+    const orgId = await ensureOrg('default');
     const r = await checkContactDedup(getDb(), {
       platformId: pid,
       targetUser: 'nobody',
       windowDays: 90,
+      organizationId: orgId,
     });
     expect(r.withinWindow).toBe(false);
     expect(r.priorContactedAt).toBeNull();
+  });
+
+  it('does not dedupe the same (platformId, targetUser) across organizations', async () => {
+    const pid = await platformId('reddit');
+    const orgA = await ensureOrg('default');
+    const orgB = await ensureOrg('dedup-test-org-b');
+    // Org A contacted this handle recently, well inside any window.
+    await insertHistory(pid, 'shared-handle', 1, orgA);
+    // Org B checking the same platform + handle must see no prior contact:
+    // org A's outreach history is invisible to org B.
+    const r = await checkContactDedup(getDb(), {
+      platformId: pid,
+      targetUser: 'shared-handle',
+      windowDays: 90,
+      organizationId: orgB,
+    });
+    expect(r.priorContactedAt).toBeNull();
+    expect(r.withinWindow).toBe(false);
   });
 });
 

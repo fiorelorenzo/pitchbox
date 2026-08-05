@@ -166,10 +166,18 @@ describe('pitchbox MCP server (read-only tools)', () => {
   });
 
   it('contact_history_check reports a prior contact', async () => {
+    const db = getDb();
     const pid = await redditPlatformId();
-    await getDb()
-      .insert(schema.contactHistory)
-      .values({ platformId: pid, accountHandle: 'alice', targetUser: 'reached' });
+    const [defaultOrg] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(eq(schema.organizations.slug, 'default'));
+    await db.insert(schema.contactHistory).values({
+      platformId: pid,
+      accountHandle: 'alice',
+      targetUser: 'reached',
+      organizationId: defaultOrg.id,
+    });
     const client = await connectClient();
     const res = await call(client, 'contact_history_check', {
       platform: 'reddit',
@@ -1066,6 +1074,56 @@ describe('pitchbox MCP server (org ownership enforcement, defense-in-depth)', ()
     });
     expect(sameOrg.isError).toBeFalsy();
     expect(parse(sameOrg)).toEqual({ blocked: false, reason: null });
+  });
+
+  it('rejects a projectId belonging to another organization (contact_history_check)', async () => {
+    const a = await seedOrgScoutCampaign('mcp-own-ch-a');
+    const b = await seedOrgScoutCampaign('mcp-own-ch-b');
+
+    // Session bound to org A's project; the agent-supplied projectId argument
+    // tries to probe org B's contact history.
+    const attacker = await connectClientWithCtx({ projectId: a.projectId });
+    const crossOrg = await call(attacker, 'contact_history_check', {
+      platform: 'reddit',
+      target: 'someone',
+      projectId: b.projectId,
+    });
+    expect(crossOrg.isError).toBe(true);
+    expect(crossOrg.content[0]?.text ?? '').toContain(
+      "does not belong to this session's organization",
+    );
+
+    // Same-org projectId still works.
+    const sameOrg = await call(attacker, 'contact_history_check', {
+      platform: 'reddit',
+      target: 'someone',
+      projectId: a.projectId,
+    });
+    expect(sameOrg.isError).toBeFalsy();
+    expect(parse(sameOrg)).toEqual({ contacted: false, lastContactedAt: null });
+  });
+
+  it('contact_history_check scopes to the project organization, not every organization', async () => {
+    const a = await seedOrgScoutCampaign('mcp-own-ch-data-a');
+    const b = await seedOrgScoutCampaign('mcp-own-ch-data-b');
+    const db = getDb();
+    // Org B contacted this handle; org A never has.
+    await db.insert(schema.contactHistory).values({
+      platformId: b.platformId,
+      accountHandle: 'org-b-account',
+      targetUser: 'shared-handle',
+      organizationId: b.orgId,
+    });
+
+    // Querying with org A's own project must not see org B's contact.
+    const client = await connectClientWithCtx({ projectId: a.projectId });
+    const res = await call(client, 'contact_history_check', {
+      platform: 'reddit',
+      target: 'shared-handle',
+      projectId: a.projectId,
+    });
+    expect(res.isError).toBeFalsy();
+    expect(parse(res)).toEqual({ contacted: false, lastContactedAt: null });
   });
 });
 

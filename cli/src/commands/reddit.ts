@@ -9,7 +9,8 @@ import {
   browserGetSubredditAbout,
   browserGetSubredditRules,
 } from '@pitchbox/shared/platforms/reddit';
-import { eq } from 'drizzle-orm';
+import { getProjectOrgId } from '@pitchbox/shared/orgs';
+import { and, eq } from 'drizzle-orm';
 import { ok, fail } from '../lib/output.js';
 
 // Fetch Reddit candidates for a run and stage them. Extracted from the commander
@@ -27,6 +28,11 @@ export async function scoutRun(
     .select()
     .from(schema.campaigns)
     .where(eq(schema.campaigns.id, run.campaignId));
+  if (!campaign) throw new Error(`campaign ${run.campaignId} not found`);
+  const orgId = await getProjectOrgId(db, campaign.projectId);
+  if (orgId == null) {
+    throw new Error(`project ${campaign.projectId} has no organization`);
+  }
 
   const profile = (campaign.config ?? {}) as {
     targetSubreddits: string[];
@@ -44,7 +50,12 @@ export async function scoutRun(
   const contacted = await db
     .select({ target: schema.contactHistory.targetUser })
     .from(schema.contactHistory)
-    .where(eq(schema.contactHistory.platformId, campaign.platformId));
+    .where(
+      and(
+        eq(schema.contactHistory.organizationId, orgId),
+        eq(schema.contactHistory.platformId, campaign.platformId),
+      ),
+    );
   const contactedHandles = new Set(contacted.map((c) => c.target));
 
   const candidates = await runScout({ profile, contactedHandles, blockedHandles, verbose });

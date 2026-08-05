@@ -99,7 +99,13 @@ async function seedRun(
     .insert(schema.runs)
     .values({ campaignId: campaign.id, projectId: project.id, trigger: 'manual' })
     .returning();
-  return { platformId, projectId: project.id, campaignId: campaign.id, runId: run.id };
+  return {
+    platformId,
+    projectId: project.id,
+    campaignId: campaign.id,
+    runId: run.id,
+    orgId: org.id,
+  };
 }
 
 beforeEach(async () => {
@@ -122,7 +128,7 @@ describe('mastodon scoutRun', () => {
 
   it('resolves blocklist + contact history and stages candidates from runScout', async () => {
     const db = getDb();
-    const { platformId, runId } = await seedRun({
+    const { platformId, runId, orgId } = await seedRun({
       targetHashtags: ['outreach'],
       keywords: ['crm'],
     });
@@ -134,6 +140,7 @@ describe('mastodon scoutRun', () => {
       platformId,
       accountHandle: 'our-account',
       targetUser: 'already-contacted',
+      organizationId: orgId,
     });
 
     runScout.mockResolvedValue([
