@@ -430,15 +430,17 @@ export const contactHistory = pgTable(
     targetUser: text('target_user').notNull(),
     lastContactedAt: timestamp('last_contacted_at', { withTimezone: true }).notNull().defaultNow(),
     draftId: integer('draft_id').references(() => drafts.id, { onDelete: 'set null' }),
-    // #215: durable org anchor, set from the draft's project at insert time, so a
-    // contact stays attributable to its tenant even after retention prunes the
-    // draft (draft_id -> null). dm-sync scopes org-bound devices by this column
-    // instead of joining through the ephemeral draft. Null for self-host rows
-    // predating it and for rows whose draft was already pruned when the backfill
-    // ran; those simply do not match for org-scoped devices.
-    organizationId: integer('organization_id').references(() => organizations.id, {
-      onDelete: 'cascade',
-    }),
+    // #263: the tenant this contact belongs to, set from the draft's project at
+    // insert time so it survives retention pruning the draft (draft_id -> null).
+    // Not null: a contact that belongs to no organization is visible to nobody,
+    // which is a silent way to lose data. Every user-facing read filters on this
+    // column, so contact dedup no longer crosses tenants - see the dedup section
+    // of docs/organization-isolation-design.md for what that trades away.
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, {
+        onDelete: 'cascade',
+      }),
     repliedAt: timestamp('replied_at', { withTimezone: true }),
     replyCheckedAt: timestamp('reply_checked_at', { withTimezone: true }),
     chatRoomId: text('chat_room_id'),
@@ -449,8 +451,8 @@ export const contactHistory = pgTable(
     // Lookup used by dm-sync to attribute incoming Reddit DMs by
     // (accountHandle, targetUser). Index name preserved from issue #44.
     byAccountTarget: index('messages_account_target_idx').on(t.accountHandle, t.targetUser),
-    // #215: supports the org-scoped dm-sync freshness lookup
-    // (organization_id + platform_id + last_contacted_at window).
+    // Supports the org-scoped dm-sync freshness lookup and, since #263, every
+    // org-scoped listing (organization_id + platform_id + last_contacted_at).
     byOrg: index('contact_history_org_idx').on(t.organizationId, t.platformId, t.lastContactedAt),
   }),
 );

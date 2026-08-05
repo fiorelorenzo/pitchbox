@@ -71,6 +71,13 @@
       "when": 1784815565468,
       "tag": "0009_free_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785930865721,
+      "tag": "0010_overconfident_the_anarchist",
+      "breakpoints": true
     }
   ]
 }
