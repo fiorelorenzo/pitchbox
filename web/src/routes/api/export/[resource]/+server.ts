@@ -19,5 +19,5 @@ export async function GET(event: import('@sveltejs/kit').RequestEvent): Promise<
   const orgId = await resolveOrgId(event);
   const projects = await listProjects(getDb(), { organizationId: orgId });
   const projectIds = projects.map((p) => p.id);
-  return streamCsv(resource, url.searchParams, projectIds);
+  return streamCsv(resource, url.searchParams, projectIds, orgId);
 }

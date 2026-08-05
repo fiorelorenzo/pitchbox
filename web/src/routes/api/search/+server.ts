@@ -13,6 +13,7 @@ export async function GET(event: RequestEvent) {
   const results = await search(
     q,
     projects.map((p) => p.id),
+    orgId,
   );
   return json({ results });
 }

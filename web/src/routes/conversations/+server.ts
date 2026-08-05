@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db.js';
-import { resolveOrgId } from '$lib/server/auth.js';
+import { requireOrgId } from '$lib/server/auth.js';
 import {
   resolveConversationsScope,
   queryConversationsPage,
@@ -16,7 +16,7 @@ import {
  */
 export async function GET(event: RequestEvent) {
   const db = getDb();
-  const orgId = await resolveOrgId(event);
+  const orgId = await requireOrgId(event);
   const scope = await resolveConversationsScope(db, orgId, event.url);
   const { conversations, nextCursor } = await queryConversationsPage(db, scope);
   return json({ conversations, nextCursor });

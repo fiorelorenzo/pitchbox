@@ -76,6 +76,7 @@ async function insertContact(platformSlug: string, targetUser: string) {
       lastContactedAt: recent,
       replyCheckedAt: null,
       repliedAt: null,
+      organizationId: org.id,
     })
     .returning();
   return contact;

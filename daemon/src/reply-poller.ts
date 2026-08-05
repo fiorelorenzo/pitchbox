@@ -15,31 +15,39 @@ async function pickContactsToCheck(limit: number, platformSlugs: string[]) {
   const db = getDb();
   const cutoff = new Date(Date.now() - RECHECK_SECONDS * 1000);
 
-  return db
-    .select({
-      id: schema.contactHistory.id,
-      platformId: schema.contactHistory.platformId,
-      platformSlug: schema.platforms.slug,
-      accountHandle: schema.contactHistory.accountHandle,
-      targetUser: schema.contactHistory.targetUser,
-      lastContactedAt: schema.contactHistory.lastContactedAt,
-      draftId: schema.contactHistory.draftId,
-    })
-    .from(schema.contactHistory)
-    .innerJoin(schema.platforms, eq(schema.contactHistory.platformId, schema.platforms.id))
-    .where(
-      and(
-        inArray(schema.platforms.slug, platformSlugs),
-        isNull(schema.contactHistory.repliedAt),
-        sql`${schema.contactHistory.lastContactedAt} > now() - interval '${sql.raw(`${LOOKBACK_DAYS} days`)}'`,
-        or(
-          isNull(schema.contactHistory.replyCheckedAt),
-          lt(schema.contactHistory.replyCheckedAt, cutoff),
+  return (
+    db
+      .select({
+        id: schema.contactHistory.id,
+        platformId: schema.contactHistory.platformId,
+        platformSlug: schema.platforms.slug,
+        accountHandle: schema.contactHistory.accountHandle,
+        targetUser: schema.contactHistory.targetUser,
+        lastContactedAt: schema.contactHistory.lastContactedAt,
+        draftId: schema.contactHistory.draftId,
+      })
+      .from(schema.contactHistory)
+      .innerJoin(schema.platforms, eq(schema.contactHistory.platformId, schema.platforms.id))
+      // The reply poller is a system process that polls every tenant's contacts
+      // for replies and exposes nothing to a user, so it is intentionally not
+      // org-scoped (issue #263).
+      .where(
+        and(
+          inArray(schema.platforms.slug, platformSlugs),
+          isNull(schema.contactHistory.repliedAt),
+          sql`${schema.contactHistory.lastContactedAt} > now() - interval '${sql.raw(`${LOOKBACK_DAYS} days`)}'`,
+          or(
+            isNull(schema.contactHistory.replyCheckedAt),
+            lt(schema.contactHistory.replyCheckedAt, cutoff),
+          ),
         ),
-      ),
-    )
-    .orderBy(asc(schema.contactHistory.replyCheckedAt), desc(schema.contactHistory.lastContactedAt))
-    .limit(limit);
+      )
+      .orderBy(
+        asc(schema.contactHistory.replyCheckedAt),
+        desc(schema.contactHistory.lastContactedAt),
+      )
+      .limit(limit)
+  );
 }
 
 async function markReplyChecked(contactId: number): Promise<void> {

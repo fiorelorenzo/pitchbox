@@ -1,4 +1,4 @@
-import { and, ilike, inArray, or } from 'drizzle-orm';
+import { and, eq, ilike, inArray, or } from 'drizzle-orm';
 import { getDb, schema } from './db.js';
 
 export type SearchResult = {
@@ -11,14 +11,22 @@ export type SearchResult = {
 
 /**
  * Full-text-ish search scoped to the given projects. `projectIds` must be the
- * active org's project ids (see `requireOrgId` + `listProjects` in the caller) -
- * the drafts/campaigns/projects legs never cross that boundary. `contact_history`
- * stays global by design (accepted residual, see
- * docs/organization-isolation-design.md) since contact dedup is shared across
- * orgs. `inArray(x, [])` is a SQL error, so an empty `projectIds` short-circuits
- * those three legs to empty results instead of querying.
+ * active org's project ids (see `requireOrgId` + `listProjects` in the
+ * caller) - the drafts/campaigns/projects legs never cross that boundary.
+ * `orgId` must be that same org's id, and scopes `contact_history` directly:
+ * `contact_history.organization_id` is set once from the draft's project at
+ * insert time and survives retention pruning the draft (draft_id -> null,
+ * see docs/organization-isolation-design.md and shared/src/db/schema.ts), so
+ * a `projectIds`/`drafts` join would silently drop exactly the pruned,
+ * oldest contacts - the direct column is the only correct way to scope it.
+ * `inArray(x, [])` is a SQL error, so an empty `projectIds` short-circuits
+ * the drafts/campaigns/projects legs to empty results instead of querying.
  */
-export async function search(q: string, projectIds: number[]): Promise<SearchResult[]> {
+export async function search(
+  q: string,
+  projectIds: number[],
+  orgId: number,
+): Promise<SearchResult[]> {
   const trimmed = q.trim();
   if (!trimmed) return [];
   const db = getDb();
@@ -50,7 +58,12 @@ export async function search(q: string, projectIds: number[]): Promise<SearchRes
         accountHandle: schema.contactHistory.accountHandle,
       })
       .from(schema.contactHistory)
-      .where(ilike(schema.contactHistory.targetUser, like))
+      .where(
+        and(
+          eq(schema.contactHistory.organizationId, orgId),
+          ilike(schema.contactHistory.targetUser, like),
+        ),
+      )
       .limit(5),
     hasProjects
       ? db

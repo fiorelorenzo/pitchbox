@@ -15,6 +15,7 @@ export function parseConversationsCursor(url: URL): ConversationsCursor {
 }
 
 export type ConversationsScope = {
+  orgId: number;
   projectIds: number[];
   hasProjects: boolean;
   filterParam: string | null;
@@ -30,12 +31,13 @@ export type ConversationsScope = {
  */
 export async function resolveConversationsScope(
   db: Db,
-  orgId: number | null,
+  orgId: number,
   url: URL,
 ): Promise<ConversationsScope> {
   const projects = await listProjects(db, { organizationId: orgId });
   const projectIds = projects.map((p) => p.id);
   return {
+    orgId,
     projectIds,
     hasProjects: projectIds.length > 0,
     filterParam: url.searchParams.get('filter'),
@@ -83,15 +85,10 @@ export async function queryConversationsPage(
   scope: ConversationsScope,
   pageSize = CONVERSATIONS_PAGE_SIZE,
 ): Promise<ConversationsPage> {
-  // contact_history is a global accepted residual (see the
-  // organization-isolation design doc), so every contact row stays visible.
-  // The attached draft is not: scope the drafts join to the active org's
-  // projects so a cross-org draft's kind/state/body/metadata never renders -
-  // when there is no match (or the org has no projects) the join yields nulls.
-  const draftJoinCond = and(
-    eq(schema.contactHistory.draftId, schema.drafts.id),
-    scope.hasProjects ? inArray(schema.drafts.projectId, scope.projectIds) : sql`false`,
-  );
+  // contact_history is org-scoped (#263): a row's organization_id always
+  // equals its draft's project org by construction, so the drafts join
+  // needs no extra guard.
+  const draftJoinCond = eq(schema.contactHistory.draftId, schema.drafts.id);
 
   // Latest inbound/outbound message per contact, scoped the same way
   // draftJoinCond scopes drafts: a message with no org-attributable draft is
@@ -126,7 +123,7 @@ export async function queryConversationsPage(
     .where(eq(rankedMessages.rn, 1))
     .as('latest_message');
 
-  const filters: SQL[] = [];
+  const filters: SQL[] = [eq(schema.contactHistory.organizationId, scope.orgId)];
   if (scope.filterParam === 'replied') filters.push(isNotNull(schema.contactHistory.repliedAt));
   else if (scope.filterParam === 'awaiting') filters.push(isNull(schema.contactHistory.repliedAt));
   if (scope.kindParam && scope.kindParam !== 'all')

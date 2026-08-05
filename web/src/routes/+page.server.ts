@@ -82,17 +82,27 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     );
 
   // ----- Contacts -----
-  // contact_history has no project_id of its own; every real row is created
-  // with a draft_id (see inbox/[id], extension dm-sync, extension sent
-  // routes), so join through drafts to scope to the org's projects.
-  const [contactsRow] = await db
-    .select({
-      unique: sql<number>`COUNT(DISTINCT (${schema.contactHistory.platformId}, ${schema.contactHistory.targetUser}))::int`,
-      replied: sql<number>`COUNT(*) FILTER (WHERE ${schema.contactHistory.repliedAt} IS NOT NULL)::int`,
-    })
-    .from(schema.contactHistory)
-    .innerJoin(schema.drafts, eq(schema.drafts.id, schema.contactHistory.draftId))
-    .where(inArray(schema.drafts.projectId, projectIds));
+  // contact_history.organization_id is set once from the draft's project at
+  // insert time and survives retention pruning the draft (draft_id -> null,
+  // see docs/organization-isolation-design.md and shared/src/db/schema.ts).
+  // The previous version of this query scoped by inner-joining `drafts` on
+  // `draft_id` and filtering `drafts.projectId` - that silently dropped
+  // every contact whose draft has since been pruned (undercounting
+  // uniqueContacts/replies for any org with retention-pruned history), so
+  // it was NOT redundant with a direct filter, it was actively wrong for
+  // pruned rows. `organization_id` is the only column that scopes this
+  // correctly; `orgId` is guarded for null the same way `resolveOrgId`'s
+  // other callers in this file (via `projectIds`) already are.
+  const [contactsRow] =
+    orgId == null
+      ? [{ unique: 0, replied: 0 }]
+      : await db
+          .select({
+            unique: sql<number>`COUNT(DISTINCT (${schema.contactHistory.platformId}, ${schema.contactHistory.targetUser}))::int`,
+            replied: sql<number>`COUNT(*) FILTER (WHERE ${schema.contactHistory.repliedAt} IS NOT NULL)::int`,
+          })
+          .from(schema.contactHistory)
+          .where(eq(schema.contactHistory.organizationId, orgId));
 
   // ----- Recent runs (campaign runs only - the widget is labelled
   // 'Last 5 campaign runs' so project_extraction / skill_generation runs

@@ -1,7 +1,7 @@
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
-import { sql } from 'drizzle-orm';
-import { requireOrgId, resolveOrgId } from '$lib/server/auth.js';
+import { eq, sql } from 'drizzle-orm';
+import { requireOrgId } from '$lib/server/auth.js';
 import {
   getExtensionDeviceNudge,
   hasChatUnauthorizedDevice,
@@ -43,7 +43,7 @@ export type ThreadsTabData = {
   nextCursor: ConversationsPage['nextCursor'];
   chatSyncUnauthorized: boolean;
   extensionNudge: ExtensionDeviceNudge;
-  orgId: number | null;
+  orgId: number;
 };
 
 export type PeoplePageData = ContactsTabData | ThreadsTabData;
@@ -78,7 +78,8 @@ export async function load(event: RequestEvent): Promise<PeoplePageData> {
         total: sql<number>`COUNT(*)::int`,
         replied: sql<number>`COUNT(*) FILTER (WHERE replied_at IS NOT NULL)::int`,
       })
-      .from(schema.contactHistory);
+      .from(schema.contactHistory)
+      .where(eq(schema.contactHistory.organizationId, orgId));
 
     return {
       tab,
@@ -99,8 +100,8 @@ export async function load(event: RequestEvent): Promise<PeoplePageData> {
   }
 
   const chatSyncUnauthorized = await hasChatUnauthorizedDevice();
-  const orgId = await resolveOrgId(event);
-  const extensionNudge = orgId != null ? await getExtensionDeviceNudge(orgId) : null;
+  const orgId = await requireOrgId(event);
+  const extensionNudge = await getExtensionDeviceNudge(orgId);
 
   const scope = await resolveConversationsScope(db, orgId, url);
   const { conversations, nextCursor } = await queryConversationsPage(db, scope);
@@ -112,7 +113,8 @@ export async function load(event: RequestEvent): Promise<PeoplePageData> {
       replied: sql<number>`COUNT(*) FILTER (WHERE replied_at IS NOT NULL)::int`,
       awaiting: sql<number>`COUNT(*) FILTER (WHERE replied_at IS NULL)::int`,
     })
-    .from(schema.contactHistory);
+    .from(schema.contactHistory)
+    .where(eq(schema.contactHistory.organizationId, orgId));
 
   return {
     tab,

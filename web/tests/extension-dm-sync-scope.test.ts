@@ -85,6 +85,7 @@ async function seed() {
       lastContactedAt: new Date(Date.now() - 60 * 60 * 1000),
       draftId: targetDraft.id,
       repliedAt: null,
+      organizationId: org.id,
     })
     .returning();
 
@@ -114,6 +115,7 @@ async function seed() {
       lastContactedAt: new Date(Date.now() - 60 * 60 * 1000),
       draftId: noiseDraft.id,
       repliedAt: new Date(Date.now() - 30 * 60 * 1000),
+      organizationId: org.id,
     })
     .returning();
 

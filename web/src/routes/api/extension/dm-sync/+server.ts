@@ -7,7 +7,7 @@ import { emit } from '$lib/server/events.js';
 import { notify } from '@pitchbox/shared/notifications';
 import { enqueueReplyDraft } from '@pitchbox/shared/reply-drafter';
 import { runReplyDrafting } from '$lib/server/runner.js';
-import { getDraftOrgId } from '@pitchbox/shared/orgs';
+import { getDraftOrgId, requireDraftOrgId } from '@pitchbox/shared/orgs';
 import { matchIncomingDms, type ContactRow } from '@pitchbox/shared/dm-sync';
 import {
   matchIncomingCommentReplies,
@@ -303,14 +303,15 @@ export async function POST({ request }: { request: Request }) {
     return json({ ok: true, inserted: 0, replied: 0, commentsInserted: 0, commentsReplied: 0 });
   }
 
-  // #215: resolve the org for each contact the comment path is about to create,
-  // so it carries a durable org anchor (matchable after the draft is pruned).
-  // For an org-scoped device every commentDraft is already that org; a null-org
-  // (self-host) device falls back to the draft's own project org.
-  const createdOrgByDraft = new Map<number, number | null>();
+  // Resolve the org for each contact the comment path is about to create, so it
+  // carries a durable org anchor (matchable after the draft is pruned). For an
+  // org-scoped device every commentDraft is already that org; a null-org
+  // (self-host) device falls back to the draft's own project org. Required, not
+  // nullable: contact_history.organization_id is NOT NULL since #263.
+  const createdOrgByDraft = new Map<number, number>();
   for (const c of commentMatch.contactsToCreate) {
     if (!createdOrgByDraft.has(c.draftId)) {
-      createdOrgByDraft.set(c.draftId, orgId ?? (await getDraftOrgId(db, c.draftId)));
+      createdOrgByDraft.set(c.draftId, orgId ?? (await requireDraftOrgId(db, c.draftId)));
     }
   }
 
@@ -347,6 +348,12 @@ export async function POST({ request }: { request: Request }) {
     // Comment-reply path: create new contacts, then insert messages, then mark replied.
     const createdContactIdByKey = new Map<string, number>();
     for (const c of commentMatch.contactsToCreate) {
+      // Populated for every draftId in this same array just above the
+      // transaction, so a miss is a bug, not a tenantless contact to store.
+      const contactOrgId = createdOrgByDraft.get(c.draftId);
+      if (contactOrgId == null) {
+        throw new Error(`draft ${c.draftId} has no resolvable organization`);
+      }
       const [row] = await tx
         .insert(schema.contactHistory)
         .values({
@@ -357,7 +364,7 @@ export async function POST({ request }: { request: Request }) {
           repliedAt: c.repliedAt,
           replyCheckedAt: new Date(),
           draftId: c.draftId,
-          organizationId: createdOrgByDraft.get(c.draftId) ?? null,
+          organizationId: contactOrgId,
           platformContextUrl: c.platformContextUrl,
         })
         .returning({ id: schema.contactHistory.id });

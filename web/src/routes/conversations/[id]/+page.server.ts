@@ -34,11 +34,16 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   // contact_history is the per-(account_handle, target_user, platform) source of
   // truth; we may have several rows for the same pair if the agent contacted
   // the user multiple times - pick the most recent for first/last/outcome.
+  // Scoped directly by organization_id (not via a drafts join) since it's set
+  // once from the draft's project and survives retention pruning the draft
+  // (draft_id -> null), so a guessed or pasted thread id from another
+  // tenant 404s below rather than rendering.
   const contacts = await db
     .select()
     .from(schema.contactHistory)
     .where(
       and(
+        eq(schema.contactHistory.organizationId, orgId),
         eq(schema.contactHistory.platformId, platform.id),
         eq(schema.contactHistory.accountHandle, key.accountHandle),
         eq(schema.contactHistory.targetUser, key.targetUser),
@@ -54,10 +59,10 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
 
   // Parent draft for the thread = the draft attached to the most recent
   // contact_history row (that's the one the agent last produced for the pair).
-  // contact_history is a global accepted residual (see the
-  // organization-isolation design doc), so a thread id reached by an org-B
-  // user can point at an org-A contact whose draft belongs to org A - never
-  // return that draft to a caller outside its org.
+  // `contacts` above is already scoped to this org's organization_id, and by
+  // construction a contact's draft is always in the same org (see
+  // docs/organization-isolation-design.md), so draftBelongsToOrg here is
+  // defense in depth rather than the load-bearing guard it used to be.
   let parentDraft: typeof schema.drafts.$inferSelect | null = null;
   if (latest.draftId != null && (await draftBelongsToOrg(db, latest.draftId, orgId))) {
     const [d] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, latest.draftId));
@@ -109,10 +114,10 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   }
 
   // Reply drafting (issue #49): show the pending auto-drafted reply (if any)
-  // attached to one of this thread's inbound messages. Same residual risk as
-  // parentDraft above - contactIds come from the global contact_history, so
-  // the reply draft they resolve to can belong to another org; never return
-  // it to a caller outside its org.
+  // attached to one of this thread's inbound messages. contactIds come from
+  // the org-scoped `contacts` above, but a reply draft is found by
+  // parent_message_id, not contact_history.draft_id, so it isn't covered by
+  // that same guarantee - keep the explicit ownership check.
   let replyDraft = null as Awaited<ReturnType<typeof loadPendingReplyDraft>> | null;
   for (const cid of contactIds) {
     const found = await loadPendingReplyDraft(db, cid);

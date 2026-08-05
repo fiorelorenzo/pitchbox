@@ -96,6 +96,7 @@ describe('conversations pagination', () => {
       platformId: platform.id,
       accountHandle: 'bot',
       targetUser: `t-${i}`,
+      organizationId: orgId,
       lastContactedAt: new Date(base + i * 1000),
     }));
     const inserted = await db.insert(schema.contactHistory).values(distinctRows).returning();
@@ -107,12 +108,14 @@ describe('conversations pagination', () => {
           platformId: platform.id,
           accountHandle: 'bot',
           targetUser: 'tied-a',
+          organizationId: orgId,
           lastContactedAt: tiedAt,
         },
         {
           platformId: platform.id,
           accountHandle: 'bot',
           targetUser: 'tied-b',
+          organizationId: orgId,
           lastContactedAt: tiedAt,
         },
       ])
@@ -166,6 +169,7 @@ describe('conversations pagination', () => {
       platformId,
       accountHandle: 'bot',
       targetUser: `filler-${i}`,
+      organizationId: orgId,
       lastContactedAt: new Date(base + (i + 1) * 1000),
     }));
     await db.insert(schema.contactHistory).values(fillers);
@@ -190,6 +194,7 @@ describe('conversations pagination', () => {
         accountHandle: 'target-acc',
         targetUser: 'target-user',
         draftId: draft.id,
+        organizationId: orgId,
         lastContactedAt: new Date(base),
       })
       .returning();

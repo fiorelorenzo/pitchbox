@@ -80,12 +80,16 @@ async function seedOrg(orgSlug: string, label: string) {
       body: `Hello ${label}, loved your launch post.`,
     })
     .returning();
-  await db.insert(schema.contactHistory).values({
-    platformId: platform.id,
-    accountHandle: `${orgSlug}-me`,
-    targetUser: `${label}Founder`,
-  });
-  return { orgId: org.id, project, campaign, draft };
+  const [contact] = await db
+    .insert(schema.contactHistory)
+    .values({
+      platformId: platform.id,
+      accountHandle: `${orgSlug}-me`,
+      targetUser: `${label}Founder`,
+      organizationId: org.id,
+    })
+    .returning();
+  return { orgId: org.id, project, campaign, draft, contact };
 }
 
 function fakeEvent(orgId: number, url: string): RequestEvent {
@@ -103,8 +107,8 @@ describe('search()', () => {
   beforeEach(reset);
 
   it('returns matching results across drafts, contacts, campaigns and projects', async () => {
-    const { project, draft } = await seedOrg('default', 'Acme');
-    const results = await search('acme', [project.id]);
+    const { orgId, project, draft } = await seedOrg('default', 'Acme');
+    const results = await search('acme', [project.id], orgId);
     const kinds = new Set(results.map((r) => r.kind));
     expect(kinds.has('draft')).toBe(true);
     expect(kinds.has('contact')).toBe(true);
@@ -136,16 +140,16 @@ describe('search()', () => {
   });
 
   it('returns no results for an empty query (no static actions on server)', async () => {
-    const { project } = await seedOrg('default', 'Acme');
-    expect(await search('', [project.id])).toEqual([]);
-    expect(await search('   ', [project.id])).toEqual([]);
+    const { orgId, project } = await seedOrg('default', 'Acme');
+    expect(await search('', [project.id], orgId)).toEqual([]);
+    expect(await search('   ', [project.id], orgId)).toEqual([]);
   });
 
-  it('does not return drafts/campaigns/projects outside the given project scope', async () => {
+  it('does not return drafts/campaigns/projects/contacts outside the given project/org scope', async () => {
     const a = await seedOrg('search-scope-a', 'Widget');
     const b = await seedOrg('search-scope-b', 'Widget');
 
-    const results = await search('widget', [a.project.id]);
+    const results = await search('widget', [a.project.id], a.orgId);
     const nonContactIds = results
       .filter((r) => r.kind !== 'contact')
       .map((r) => `${r.kind}:${r.id}`);
@@ -156,11 +160,19 @@ describe('search()', () => {
     expect(nonContactIds).not.toContain(`draft:${b.draft.id}`);
     expect(nonContactIds).not.toContain(`campaign:${b.campaign.id}`);
     expect(nonContactIds).not.toContain(`project:${b.project.id}`);
+
+    // #263: contact_history.organization_id now scopes the contacts leg
+    // directly. This fails if that filter is removed - org b's contact,
+    // which shares the same searchable label ('Widget'), would leak into
+    // org a's results.
+    const contactIds = results.filter((r) => r.kind === 'contact').map((r) => r.id);
+    expect(contactIds).toContain(a.contact.id);
+    expect(contactIds).not.toContain(b.contact.id);
   });
 
   it('guards an empty projectIds list without a SQL error', async () => {
-    await seedOrg('default', 'Acme');
-    const results = await search('acme', []);
+    const { orgId } = await seedOrg('default', 'Acme');
+    const results = await search('acme', [], orgId);
     const kinds = new Set(results.map((r) => r.kind));
     expect(kinds.has('draft')).toBe(false);
     expect(kinds.has('campaign')).toBe(false);

@@ -156,6 +156,7 @@ describe('retention worker', () => {
       targetUser: 'someone',
       lastContactedAt: ancient,
       draftId: oldSent.id,
+      organizationId: proj.organizationId,
     });
 
     // run_events: one old (delete), one fresh (keep).

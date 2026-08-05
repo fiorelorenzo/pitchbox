@@ -94,6 +94,7 @@ async function seedOrgWithProject(slug: string) {
     accountHandle: account.handle,
     targetUser: draft.targetUser as string,
     draftId: draft.id,
+    organizationId: org.id,
     lastContactedAt: new Date(),
   });
   const [blocklistRow] = await db

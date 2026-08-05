@@ -5,7 +5,7 @@ import { assertDraftInDeviceOrg, requireExtensionAuth } from '$lib/server/extens
 import { emit } from '$lib/server/events.js';
 import { evaluateDraftSend } from '@pitchbox/shared/draft-send';
 import { updateDraftWithVersion } from '$lib/server/draft-state.js';
-import { getDraftOrgId } from '@pitchbox/shared/orgs';
+import { requireDraftOrgId } from '@pitchbox/shared/orgs';
 
 type SentBody = {
   sentContent?: string;
@@ -120,10 +120,12 @@ export async function POST({ params, request }: { params: { id: string }; reques
     })();
   }
 
-  // #215: the contact carries the draft's org (not the device's, which may be
-  // null on a self-host / auto-paired install) so it stays matchable after
-  // retention prunes the draft.
-  const orgId = await getDraftOrgId(db, id);
+  // The contact carries the draft's org (not the device's, which may be null on
+  // a self-host / auto-paired install) so it stays matchable after retention
+  // prunes the draft. Required, not optional: contact_history.organization_id is
+  // NOT NULL since #263, and the draft was already loaded above, so an
+  // unresolvable org here is a bug worth naming rather than a DB error.
+  const orgId = await requireDraftOrgId(db, id);
 
   if (draft.kind === 'dm' && draft.targetUser) {
     const [account] = await db

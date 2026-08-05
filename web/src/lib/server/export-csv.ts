@@ -187,9 +187,17 @@ async function* draftRows(
 
 async function* contactRows(
   filters: ContactFilters,
+  orgId: number | null,
 ): AsyncGenerator<readonly unknown[], void, unknown> {
+  // No resolved org - nothing to export (fail closed, not open).
+  if (orgId == null) return;
   const db = getDb();
-  const sqlFilters: SQL[] = [];
+  // contact_history.organization_id is set from the draft's project at
+  // insert time and survives retention pruning the draft (draft_id -> null,
+  // see docs/organization-isolation-design.md and shared/src/db/schema.ts),
+  // so it - not a join through drafts.projectId - is the only column that
+  // can scope this without silently dropping pruned contacts.
+  const sqlFilters: SQL[] = [eq(schema.contactHistory.organizationId, orgId)];
   if (filters.platformSlug) {
     const [plat] = await db
       .select({ id: schema.platforms.id })
@@ -218,10 +226,13 @@ async function* contactRows(
     })
     .from(schema.contactHistory)
     .innerJoin(schema.platforms, eq(schema.contactHistory.platformId, schema.platforms.id))
-    .where(sqlFilters.length > 0 ? and(...sqlFilters) : undefined)
+    .where(and(...sqlFilters))
     .orderBy(schema.contactHistory.id);
 
-  // Pre-compute first_contacted_at per tuple using a SQL min() pass.
+  // Pre-compute first_contacted_at per tuple using a SQL min() pass, scoped
+  // to the same org directly so a cross-org row sharing a
+  // (platform, account_handle, target_user) tuple never leaks into this
+  // export's first-contacted date.
   const firstByKey = new Map<string, Date>();
   const firstRows = await db
     .select({
@@ -231,6 +242,7 @@ async function* contactRows(
       firstAt: sql<Date>`min(${schema.contactHistory.lastContactedAt})`,
     })
     .from(schema.contactHistory)
+    .where(eq(schema.contactHistory.organizationId, orgId))
     .groupBy(
       schema.contactHistory.platformId,
       schema.contactHistory.accountHandle,
@@ -261,19 +273,22 @@ async function* contactRows(
 async function* conversationRows(
   filters: ConversationFilters,
   projectIds: number[],
+  orgId: number | null,
 ): AsyncGenerator<readonly unknown[], void, unknown> {
+  // No resolved org - nothing to export (fail closed, not open).
+  if (orgId == null) return;
   const db = getDb();
   const hasProjects = projectIds.length > 0;
 
-  // contact_history is a global accepted residual (see "Residual risks" in
-  // docs/organization-isolation-design.md), so every contact row stays in the
-  // export. The attached draft is not: scope the join to the active org's
-  // projects so a cross-org draft's kind never leaks into the export.
-  const draftJoinCond = and(
-    eq(schema.contactHistory.draftId, schema.drafts.id),
-    hasProjects ? inArray(schema.drafts.projectId, projectIds) : sql`false`,
-  );
-
+  // contact_history.organization_id is set from the draft's project at
+  // insert time and survives retention pruning the draft (draft_id -> null,
+  // see docs/organization-isolation-design.md and shared/src/db/schema.ts),
+  // so it directly scopes contact_history here. The draft join below is now
+  // a plain join for display fields only: any draft still reachable from an
+  // org-scoped contact is guaranteed to be in the same org (that's exactly
+  // what organization_id is derived from), so it needs no extra filter of
+  // its own.
+  //
   // Per-contact message aggregate joined onto contact_history.
   // thread_id := chat_room_id when present, otherwise `contact:<id>`.
   const rows = await db
@@ -287,14 +302,17 @@ async function* conversationRows(
       draftKind: schema.drafts.kind,
     })
     .from(schema.contactHistory)
-    .leftJoin(schema.drafts, draftJoinCond)
+    .leftJoin(schema.drafts, eq(schema.contactHistory.draftId, schema.drafts.id))
+    .where(eq(schema.contactHistory.organizationId, orgId))
     .orderBy(schema.contactHistory.id);
 
   const contactIds = rows.map((r) => r.contactId);
   const counts = new Map<number, { count: number; last: Date | null }>();
-  // Messages are attributed to an org through the draft they were matched to
-  // (drafts.projectId); a message with no draftId cannot be attributed to any
-  // org, so it is excluded here rather than risk counting it across tenants.
+  // Messages have no organization_id column of their own - unlike
+  // contact_history, they're attributed to an org only through the draft
+  // they were matched to (drafts.projectId). A message with no draftId (or
+  // a pruned one) cannot be attributed to any org, so it is excluded here
+  // rather than risk counting it across tenants.
   if (contactIds.length > 0 && hasProjects) {
     const aggs = await db
       .select({
@@ -338,19 +356,24 @@ async function* conversationRows(
 }
 
 /**
- * `projectIds` scopes the export to the active organization's projects.
- * `drafts` carries a `project_id` column directly and is filtered on it
- * directly; `conversations` has no project column on `contact_history` itself
- * but reaches the org through the attached draft (`drafts.projectId`), so its
- * message aggregate and draft fields are scoped the same way. `contacts` is
- * backed only by `contact_history`, which has no project column at all and
- * stays global by design (see "Residual risks" in
- * `docs/organization-isolation-design.md`).
+ * `projectIds` scopes `drafts` (a real per-project filter: it carries a
+ * `project_id` column directly) and the `conversations` message aggregate,
+ * which has to reach org through the matched draft since `messages` has no
+ * organization column of its own.
+ *
+ * `orgId` scopes `contact_history` directly (`contacts`, and the top-level
+ * row set for `conversations`). `contact_history.organization_id` is set
+ * once from the draft's project at insert time and survives retention
+ * pruning the draft (draft_id -> null, see
+ * docs/organization-isolation-design.md), so a `projectIds`/`drafts` join
+ * would silently drop exactly the pruned, oldest rows - the direct column is
+ * the only correct way to scope it.
  */
 export function streamCsv(
   resource: ResourceName,
   params: URLSearchParams,
   projectIds: number[],
+  orgId: number | null,
 ): Response {
   let header: readonly string[];
   let gen: AsyncGenerator<readonly unknown[], void, unknown>;
@@ -361,11 +384,11 @@ export function streamCsv(
       break;
     case 'contacts':
       header = CONTACTS_COLUMNS;
-      gen = contactRows(parseContactFilters(params));
+      gen = contactRows(parseContactFilters(params), orgId);
       break;
     case 'conversations':
       header = CONVERSATIONS_COLUMNS;
-      gen = conversationRows(parseConversationFilters(params), projectIds);
+      gen = conversationRows(parseConversationFilters(params), projectIds, orgId);
       break;
   }
 

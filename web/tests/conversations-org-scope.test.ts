@@ -11,11 +11,12 @@ import { load as loadThread } from '../src/routes/conversations/[id]/+page.serve
 import { encodeThreadId } from '../src/routes/conversations/[id]/thread-id.js';
 
 /**
- * Cross-tenant isolation for the Conversations pages. `contact_history` is a
- * global accepted residual (see docs/organization-isolation-design.md), so a
- * thread id reached by any org resolves to the same global contact row - but
- * the draft content attached to it must never render for an org that does
- * not own that draft.
+ * Cross-tenant isolation for the Conversations pages. `contact_history.
+ * organization_id` is NOT NULL and always matches the org of the row's
+ * draft's project (#263), so both the People page's threads tab and the
+ * thread-detail route (`/conversations/[id]`) must exclude a cross-org
+ * contact row entirely, rather than resolving it with draft/message fields
+ * nulled out - see docs/organization-isolation-design.md.
  */
 
 async function reset() {
@@ -100,6 +101,7 @@ async function seedOrgConversation(slug: string, opts: { withPendingReply?: bool
       accountHandle: `${slug}-acc`,
       targetUser: `${slug}-target`,
       draftId: draft.id,
+      organizationId: org.id,
       lastContactedAt: new Date('2026-05-01T10:00:00Z'),
       repliedAt: new Date('2026-05-02T10:00:00Z'),
     })
@@ -185,7 +187,7 @@ function asThreadsTab(data: PeoplePageData): ThreadsTabData {
 describe('conversations list is scoped to the active org', () => {
   beforeEach(reset);
 
-  it('does not attach another org draft body/state to a cross-org contact row', async () => {
+  it('excludes a cross-org contact row entirely from the conversations list', async () => {
     const a = await seedOrgConversation('conv-list-a');
     const b = await seedOrgConversation('conv-list-b');
 
@@ -196,15 +198,12 @@ describe('conversations list is scoped to the active org', () => {
     expect(rowA).toBeTruthy();
     expect(rowA?.draftBody).toBe('conv-list-a-secret-draft-body');
 
-    // contact_history itself stays global (accepted residual), so org B's
-    // contact row may still be listed - but its draft content must be nulled.
-    expect(rowB).toBeTruthy();
-    expect(rowB?.draftBody).toBeNull();
-    expect(rowB?.draftState).toBeNull();
-    expect(rowB?.draftMetadata).toBeNull();
+    // contact_history is org-scoped (#263): org B's contact row must not
+    // appear at all when loading as org A.
+    expect(rowB).toBeUndefined();
   });
 
-  it('does not include another org message in the last-message preview', async () => {
+  it('does not leak another org message into the caller org conversations list', async () => {
     const a = await seedOrgConversation('conv-list-c');
     const b = await seedOrgConversation('conv-list-d');
 
@@ -213,24 +212,25 @@ describe('conversations list is scoped to the active org', () => {
     const rowB = data.conversations.find((c: { contactId: number }) => c.contactId === b.contactId);
 
     expect(rowA?.lastMessage?.body).toBe('conv-list-c-secret-message-in');
-    expect(rowB?.lastMessage).toBeNull();
+    // contact_history is org-scoped (#263): org B's row (and its message)
+    // must not appear at all when loading as org A.
+    expect(rowB).toBeUndefined();
   });
 });
 
 describe('conversation thread detail is scoped to the active org', () => {
   beforeEach(reset);
 
-  it('returns a null parentDraft for a thread whose draft belongs to another org', async () => {
+  it('404s a cross-org thread id rather than leaking the draft attached to it', async () => {
     const a = await seedOrgConversation('conv-thread-a');
     const b = await seedOrgConversation('conv-thread-b');
 
-    // org A reaches org B's thread id directly (contact_history is global, so
-    // the thread lookup itself is not org-scoped).
-    const data = await loadThread(
-      fakeEvent(a.orgId, 'http://x/conversations/x', { id: b.threadId }),
-    );
-
-    expect(data.parentDraft).toBeNull();
+    // org A reaches org B's thread id: contact_history is org-scoped (#263),
+    // so the lookup itself now 404s instead of resolving org B's contact
+    // row with the draft nulled out.
+    await expect(
+      loadThread(fakeEvent(a.orgId, 'http://x/conversations/x', { id: b.threadId })),
+    ).rejects.toMatchObject({ status: 404 });
   });
 
   it('returns the parentDraft for a same-org thread id', async () => {
@@ -244,28 +244,24 @@ describe('conversation thread detail is scoped to the active org', () => {
     expect(data.parentDraft?.body).toBe('conv-thread-c-secret-draft-body');
   });
 
-  it('excludes messages attributed to another org draft from the thread', async () => {
+  it('404s a cross-org thread id rather than leaking its messages', async () => {
     const a = await seedOrgConversation('conv-thread-d');
     const b = await seedOrgConversation('conv-thread-e');
 
-    const data = await loadThread(
-      fakeEvent(a.orgId, 'http://x/conversations/x', { id: b.threadId }),
-    );
-
-    const bodies = data.messages.map((m: { body: string }) => m.body);
-    expect(bodies).not.toContain('conv-thread-e-secret-message-in');
-    expect(bodies).not.toContain('conv-thread-e-secret-message-out');
+    // contact_history is org-scoped (#263): org A can no longer reach org
+    // B's thread id at all, so its messages never load in the first place.
+    await expect(
+      loadThread(fakeEvent(a.orgId, 'http://x/conversations/x', { id: b.threadId })),
+    ).rejects.toMatchObject({ status: 404 });
   });
 
-  it('returns a null replyDraft for a thread whose pending reply belongs to another org', async () => {
+  it('404s a cross-org thread id rather than leaking its pending reply draft', async () => {
     const a = await seedOrgConversation('conv-thread-f');
     const b = await seedOrgConversation('conv-thread-g', { withPendingReply: true });
 
-    const data = await loadThread(
-      fakeEvent(a.orgId, 'http://x/conversations/x', { id: b.threadId }),
-    );
-
-    expect(data.replyDraft).toBeNull();
+    await expect(
+      loadThread(fakeEvent(a.orgId, 'http://x/conversations/x', { id: b.threadId })),
+    ).rejects.toMatchObject({ status: 404 });
   });
 
   it('returns the replyDraft for a same-org pending reply', async () => {

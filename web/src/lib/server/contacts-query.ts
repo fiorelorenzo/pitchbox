@@ -1,6 +1,5 @@
-import { and, desc, eq, ilike, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, ilike, sql, type SQL } from 'drizzle-orm';
 import { schema, type Db } from './db.js';
-import { listProjects } from '@pitchbox/shared/projects';
 
 export const CONTACTS_PAGE_SIZE = 50;
 
@@ -16,8 +15,7 @@ export function parseContactsCursor(url: URL): ContactsCursor {
 
 export type ContactsScope = {
   platforms: { id: number; slug: string }[];
-  projectIds: number[];
-  hasProjects: boolean;
+  orgId: number;
   platformId: number | null;
   query: string;
   cursor: ContactsCursor;
@@ -33,8 +31,6 @@ export async function resolveContactsScope(
   orgId: number,
   url: URL,
 ): Promise<ContactsScope> {
-  const projects = await listProjects(db, { organizationId: orgId });
-  const projectIds = projects.map((p) => p.id);
   const platforms = await db.select().from(schema.platforms).orderBy(schema.platforms.slug);
   const platformSlug = url.searchParams.get('platform');
   const platformMatch = platformSlug
@@ -43,8 +39,7 @@ export async function resolveContactsScope(
 
   return {
     platforms,
-    projectIds,
-    hasProjects: projectIds.length > 0,
+    orgId,
     platformId: platformMatch?.id ?? null,
     query: url.searchParams.get('q')?.trim() ?? '',
     cursor: parseContactsCursor(url),
@@ -80,25 +75,20 @@ export async function queryContactsPage(
   scope: ContactsScope,
   pageSize = CONTACTS_PAGE_SIZE,
 ): Promise<ContactsPage> {
-  const filters: SQL[] = [];
+  const filters: SQL[] = [eq(schema.contactHistory.organizationId, scope.orgId)];
   if (scope.platformId != null)
     filters.push(eq(schema.contactHistory.platformId, scope.platformId));
   if (scope.query) filters.push(ilike(schema.contactHistory.targetUser, `%${scope.query}%`));
 
-  // contact_history is a global accepted residual (see the
-  // organization-isolation design doc), so every contact row stays visible.
-  // The attached draft is not: scope the drafts join to the active org's
-  // projects so a cross-org draft's kind/run/state never renders - when
-  // there is no match (or the org has no projects) the join yields nulls.
-  const draftJoinCond = and(
-    eq(schema.contactHistory.draftId, schema.drafts.id),
-    scope.hasProjects ? inArray(schema.drafts.projectId, scope.projectIds) : sql`false`,
-  );
+  // contact_history is org-scoped (#263): a row's organization_id always
+  // equals its draft's project org by construction, so the drafts join
+  // needs no extra guard.
+  const draftJoinCond = eq(schema.contactHistory.draftId, schema.drafts.id);
 
   const [matchingRow] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(schema.contactHistory)
-    .where(filters.length > 0 ? and(...filters) : undefined);
+    .where(and(...filters));
   const matchingCount = matchingRow?.count ?? 0;
 
   const pageFilters = scope.cursor
@@ -126,7 +116,7 @@ export async function queryContactsPage(
     .from(schema.contactHistory)
     .leftJoin(schema.platforms, eq(schema.contactHistory.platformId, schema.platforms.id))
     .leftJoin(schema.drafts, draftJoinCond)
-    .where(pageFilters.length > 0 ? and(...pageFilters) : undefined)
+    .where(and(...pageFilters))
     .orderBy(desc(schema.contactHistory.lastContactedAt), desc(schema.contactHistory.id))
     .limit(pageSize);
 

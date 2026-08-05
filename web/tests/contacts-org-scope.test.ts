@@ -9,10 +9,11 @@ import {
 } from '../src/routes/people/+page.server.js';
 
 /**
- * Cross-tenant isolation for the Contacts page. `contact_history` is a global
- * accepted residual (see docs/organization-isolation-design.md), so contact
- * rows from every org stay in the list - but the draft fields the page joins
- * in (kind/run id/state) must never surface another org's draft.
+ * Cross-tenant isolation for the Contacts page (#263). `contact_history.
+ * organization_id` is NOT NULL and always matches the org of the row's
+ * draft's project, so a cross-org contact row must be entirely absent from
+ * the list and its aggregate counts, not merely have its draft fields
+ * nulled - see docs/organization-isolation-design.md.
  */
 
 async function reset() {
@@ -94,6 +95,7 @@ async function seedOrgContact(slug: string) {
       accountHandle: `${slug}-acc`,
       targetUser: `${slug}-target`,
       draftId: draft.id,
+      organizationId: org.id,
       lastContactedAt: new Date('2026-05-01T10:00:00Z'),
     })
     .returning();
@@ -119,7 +121,7 @@ function asContactsTab(data: PeoplePageData): ContactsTabData {
 describe('contacts page is scoped to the active org', () => {
   beforeEach(reset);
 
-  it('nulls the joined draft fields for a cross-org contact but keeps the contact row', async () => {
+  it('excludes a cross-org contact row entirely, from both the list and the totals', async () => {
     const a = await seedOrgContact('contacts-a');
     const b = await seedOrgContact('contacts-b');
 
@@ -134,11 +136,11 @@ describe('contacts page is scoped to the active org', () => {
     expect(rowA?.draftState).toBe('sent');
     expect(rowA?.draftRunId).not.toBeNull();
 
-    // contact_history itself stays global (accepted residual), so org B's
-    // contact row may still be listed - but its draft fields must be nulled.
-    expect(rowB).toBeTruthy();
-    expect(rowB?.draftKind).toBeNull();
-    expect(rowB?.draftState).toBeNull();
-    expect(rowB?.draftRunId).toBeNull();
+    // contact_history is org-scoped (#263): org B's contact row must not
+    // appear at all when loading as org A, and must not inflate org A's
+    // aggregate totals either.
+    expect(rowB).toBeUndefined();
+    expect(data.matchingCount).toBe(1);
+    expect(data.totals.total).toBe(1);
   });
 });

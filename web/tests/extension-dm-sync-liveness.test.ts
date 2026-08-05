@@ -51,6 +51,7 @@ async function seedContact(
   accountHandle: string,
   targetUser: string,
   lastContactedAt: Date,
+  organizationId: number,
 ): Promise<void> {
   await getDb().insert(schema.contactHistory).values({
     platformId,
@@ -59,6 +60,7 @@ async function seedContact(
     lastContactedAt,
     draftId: null,
     repliedAt: null,
+    organizationId,
   });
 }
 
@@ -115,12 +117,14 @@ describe('dm-sync liveness heartbeat scoping (#197)', () => {
       'org_a_us',
       'org_a_target',
       new Date(Date.now() - 60 * 60 * 1000),
+      orgA.id,
     );
     await seedContact(
       platformId,
       'org_b_us',
       'org_b_target',
       new Date(Date.now() - 60 * 60 * 1000),
+      orgB.id,
     );
 
     const resA = await callSync(tokenA, {
@@ -178,13 +182,19 @@ describe('dm-sync liveness heartbeat scoping (#197)', () => {
   });
 
   it('keeps the single global key for a self-hosted (null-org) device', async () => {
+    const db = getDb();
     const platformId = await redditPlatformId();
     const token = await mintDevice(null);
+    const [defaultOrg] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     await seedContact(
       platformId,
       'self_host_us',
       'self_host_target',
       new Date(Date.now() - 60 * 60 * 1000),
+      defaultOrg.id,
     );
 
     expect(await callStatus(token)).toBeNull();
@@ -219,20 +229,24 @@ describe('dm-sync freshness window pushed into SQL (#198)', () => {
     const db = getDb();
     const platformId = await redditPlatformId();
     const token = await mintDevice(null);
+    const [defaultOrg] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
 
-    // Fresh contact: inside the 60-day window, should match.
     await seedContact(
       platformId,
       'freshness_us',
       'fresh_target',
       new Date(Date.now() - 24 * 60 * 60 * 1000),
+      defaultOrg.id,
     );
-    // Stale contact: well outside the 60-day window, must be filtered out.
     await seedContact(
       platformId,
       'freshness_us',
       'stale_target',
       new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
+      defaultOrg.id,
     );
 
     const pool = getPool();

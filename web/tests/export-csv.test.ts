@@ -118,7 +118,7 @@ describe('streamCsv', () => {
   beforeEach(reset);
 
   it('drafts: emits header in the documented column order', async () => {
-    const res = streamCsv('drafts', new URLSearchParams('state=all'), []);
+    const res = streamCsv('drafts', new URLSearchParams('state=all'), [], null);
     const rows = parseCsv(await bodyOf(res));
     expect(rows[0]).toEqual([...DRAFTS_COLUMNS]);
   });
@@ -183,7 +183,7 @@ describe('streamCsv', () => {
       metadata: { subreddit: 'rpg' },
     });
 
-    const res = streamCsv('drafts', new URLSearchParams('state=all'), [project.id]);
+    const res = streamCsv('drafts', new URLSearchParams('state=all'), [project.id], org.id);
     const text = await bodyOf(res);
     const rows = parseCsv(text);
     expect(rows[0]).toEqual([...DRAFTS_COLUMNS]);
@@ -262,14 +262,14 @@ describe('streamCsv', () => {
     ]);
 
     const sentOnly = parseCsv(
-      await bodyOf(streamCsv('drafts', new URLSearchParams('state=sent'), [project.id])),
+      await bodyOf(streamCsv('drafts', new URLSearchParams('state=sent'), [project.id], org.id)),
     );
     // Header + 1 data row.
     expect(sentOnly.length).toBe(2);
     expect(sentOnly[1][2]).toBe('sent');
 
     const allRows = parseCsv(
-      await bodyOf(streamCsv('drafts', new URLSearchParams('state=all'), [project.id])),
+      await bodyOf(streamCsv('drafts', new URLSearchParams('state=all'), [project.id], org.id)),
     );
     expect(allRows.length).toBe(3);
   });
@@ -280,11 +280,16 @@ describe('streamCsv', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     await db.insert(schema.contactHistory).values([
       {
         platformId: platform.id,
         accountHandle: 'me',
         targetUser: 'alice',
+        organizationId: org.id,
         lastContactedAt: new Date('2026-05-01T10:00:00Z'),
         repliedAt: new Date('2026-05-02T10:00:00Z'),
       },
@@ -292,18 +297,20 @@ describe('streamCsv', () => {
         platformId: platform.id,
         accountHandle: 'me',
         targetUser: 'alice',
+        organizationId: org.id,
         lastContactedAt: new Date('2026-05-05T10:00:00Z'),
       },
       {
         platformId: platform.id,
         accountHandle: 'me',
         targetUser: 'bob',
+        organizationId: org.id,
         lastContactedAt: new Date('2026-05-03T10:00:00Z'),
         replyCheckedAt: new Date('2026-05-04T10:00:00Z'),
       },
     ]);
 
-    const rows = parseCsv(await bodyOf(streamCsv('contacts', new URLSearchParams(), [])));
+    const rows = parseCsv(await bodyOf(streamCsv('contacts', new URLSearchParams(), [], org.id)));
     expect(rows[0]).toEqual([...CONTACTS_COLUMNS]);
     expect(rows.length).toBe(4);
 
@@ -321,28 +328,78 @@ describe('streamCsv', () => {
     expect(bob?.[6]).toBe('no_reply');
   });
 
+  // #263: contact_history.organization_id must be filtered on directly, not
+  // derived through a drafts join (which would silently drop rows whose
+  // draft has since been retention-pruned). This fails if that filter is
+  // removed - the other org's row would show up in `targets`.
+  it('contacts: does not include another organization contact', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [otherOrg] = await db
+      .insert(schema.organizations)
+      .values({ slug: `export-contacts-org-${Date.now()}`, name: 'other org' })
+      .returning();
+
+    await db.insert(schema.contactHistory).values([
+      {
+        platformId: platform.id,
+        accountHandle: 'me',
+        targetUser: 'mine-target',
+        organizationId: org.id,
+        lastContactedAt: new Date(),
+      },
+      {
+        platformId: platform.id,
+        accountHandle: 'them',
+        targetUser: 'other-target',
+        organizationId: otherOrg.id,
+        lastContactedAt: new Date(),
+      },
+    ]);
+
+    const rows = parseCsv(await bodyOf(streamCsv('contacts', new URLSearchParams(), [], org.id)));
+    const targets = rows.slice(1).map((r) => r[3]);
+    expect(targets).toContain('mine-target');
+    expect(targets).not.toContain('other-target');
+  });
+
   it('contacts: filters by platform and q', async () => {
     const db = getDb();
     const [platform] = await db
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     await db.insert(schema.contactHistory).values([
       {
         platformId: platform.id,
         accountHandle: 'me',
         targetUser: 'alice_smith',
+        organizationId: org.id,
         lastContactedAt: new Date(),
       },
       {
         platformId: platform.id,
         accountHandle: 'me',
         targetUser: 'bob',
+        organizationId: org.id,
         lastContactedAt: new Date(),
       },
     ]);
 
-    const rows = parseCsv(await bodyOf(streamCsv('contacts', new URLSearchParams('q=alice'), [])));
+    const rows = parseCsv(
+      await bodyOf(streamCsv('contacts', new URLSearchParams('q=alice'), [], org.id)),
+    );
     expect(rows.length).toBe(2);
     expect(rows[1][3]).toBe('alice_smith');
   });
@@ -402,6 +459,7 @@ describe('streamCsv', () => {
         accountHandle: 'me',
         targetUser: 'alice',
         draftId: draft.id,
+        organizationId: org.id,
         lastContactedAt: new Date('2026-05-01T10:00:00Z'),
         repliedAt: new Date('2026-05-02T10:00:00Z'),
         chatRoomId: '!room:reddit',
@@ -433,7 +491,7 @@ describe('streamCsv', () => {
     ]);
 
     const rows = parseCsv(
-      await bodyOf(streamCsv('conversations', new URLSearchParams(), [project.id])),
+      await bodyOf(streamCsv('conversations', new URLSearchParams(), [project.id], org.id)),
     );
     expect(rows[0]).toEqual([...CONVERSATIONS_COLUMNS]);
     expect(rows.length).toBe(2);
@@ -446,7 +504,7 @@ describe('streamCsv', () => {
     expect(row[5]).toBe('2');
   });
 
-  it('conversations: excludes another org draft kind and messages from the export', async () => {
+  it('conversations: excludes another org contact, draft kind and messages from the export', async () => {
     const db = getDb();
     const [platform] = await db
       .select()
@@ -507,6 +565,7 @@ describe('streamCsv', () => {
           accountHandle: tag,
           targetUser: `${tag}-target`,
           draftId: draft.id,
+          organizationId,
           lastContactedAt: new Date('2026-05-01T10:00:00Z'),
           repliedAt: new Date('2026-05-02T10:00:00Z'),
         })
@@ -529,17 +588,18 @@ describe('streamCsv', () => {
     await seedOrgThread(otherOrg.id, 'other');
 
     const rows = parseCsv(
-      await bodyOf(streamCsv('conversations', new URLSearchParams(), [mine.project.id])),
+      await bodyOf(streamCsv('conversations', new URLSearchParams(), [mine.project.id], org.id)),
     );
 
     const bodies = rows.map((r) => r.join(','));
     expect(bodies.some((b) => b.includes('mine'))).toBe(true);
-    // The other org's contact row survives (contact_history is a global
-    // accepted residual), but its draft kind and message count must not leak.
+    // #263: contact_history.organization_id now scopes this export
+    // directly, so the other org's contact row must not appear at all - it
+    // used to survive with its draft kind/message count nulled out, and that
+    // residual is now gone. This fails if the organizationId filter is
+    // removed (the row and its secret message would leak back in).
     const otherRow = rows.find((r) => r[2] === `other-target`);
-    expect(otherRow).toBeTruthy();
-    expect(otherRow?.[3]).toBe('');
-    expect(otherRow?.[5]).toBe('0');
+    expect(otherRow).toBeUndefined();
     expect(bodies.some((b) => b.includes('other-secret-message'))).toBe(false);
   });
 
@@ -549,11 +609,16 @@ describe('streamCsv', () => {
       .select()
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
     await db.insert(schema.contactHistory).values([
       {
         platformId: platform.id,
         accountHandle: 'me',
         targetUser: 'alice',
+        organizationId: org.id,
         lastContactedAt: new Date(),
         repliedAt: new Date(),
       },
@@ -561,12 +626,13 @@ describe('streamCsv', () => {
         platformId: platform.id,
         accountHandle: 'me',
         targetUser: 'bob',
+        organizationId: org.id,
         lastContactedAt: new Date(),
       },
     ]);
 
     const rows = parseCsv(
-      await bodyOf(streamCsv('conversations', new URLSearchParams('filter=replied'), [])),
+      await bodyOf(streamCsv('conversations', new URLSearchParams('filter=replied'), [], org.id)),
     );
     // Header + alice only.
     expect(rows.length).toBe(2);
@@ -574,7 +640,7 @@ describe('streamCsv', () => {
   });
 
   it('Content-Disposition advertises a .csv attachment', async () => {
-    const res = streamCsv('drafts', new URLSearchParams('state=all'), []);
+    const res = streamCsv('drafts', new URLSearchParams('state=all'), [], null);
     expect(res.headers.get('content-type')).toContain('text/csv');
     expect(res.headers.get('content-disposition')).toMatch(/attachment; filename="drafts-.*\.csv"/);
   });

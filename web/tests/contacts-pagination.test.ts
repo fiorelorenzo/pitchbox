@@ -57,7 +57,7 @@ function asContactsTab(data: PeoplePageData): ContactsTabData {
 // that share the single newest timestamp (a stand-in for two rows inserted
 // concurrently) - 51 rows total, one more than a page. Returns them in
 // expected page order (newest/highest-id first).
-async function seedContacts() {
+async function seedContacts(orgId: number) {
   const db = getDb();
   const [platform] = await db
     .select()
@@ -69,6 +69,7 @@ async function seedContacts() {
     platformId: platform.id,
     accountHandle: 'bot',
     targetUser: `t-${i}`,
+    organizationId: orgId,
     lastContactedAt: new Date(base + i * 1000),
   }));
   const inserted = await db.insert(schema.contactHistory).values(distinctRows).returning();
@@ -83,12 +84,14 @@ async function seedContacts() {
         platformId: platform.id,
         accountHandle: 'bot',
         targetUser: 'tied-a',
+        organizationId: orgId,
         lastContactedAt: tiedAt,
       },
       {
         platformId: platform.id,
         accountHandle: 'bot',
         targetUser: 'tied-b',
+        organizationId: orgId,
         lastContactedAt: tiedAt,
       },
     ])
@@ -106,7 +109,7 @@ describe('contacts pagination', () => {
 
   it('caps the first page at the page size and reports the true total', async () => {
     const orgId = await getDefaultOrgId();
-    await seedContacts();
+    await seedContacts(orgId);
 
     const data = asContactsTab(await loadPeople(fakeEvent(orgId, 'http://x/people?tab=contacts')));
 
@@ -117,7 +120,7 @@ describe('contacts pagination', () => {
 
   it('"Load more" appends page two onto page one with no duplicates and no gaps, tied timestamp included', async () => {
     const orgId = await getDefaultOrgId();
-    const { all, total } = await seedContacts();
+    const { all, total } = await seedContacts(orgId);
 
     const page1 = asContactsTab(await loadPeople(fakeEvent(orgId, 'http://x/people?tab=contacts')));
     expect(page1.contacts.map((c) => c.id)).toEqual(all.slice(0, PAGE_SIZE).map((c) => c.id));

@@ -65,7 +65,7 @@ function asContactsTab(data: PeoplePageData): ContactsTabData {
 // tabs' pagination tests already seed with, since both tabs page the same
 // underlying table. Returns rows in expected page order (newest/highest-id
 // first).
-async function seedRows() {
+async function seedRows(orgId: number) {
   const db = getDb();
   const [platform] = await db
     .select()
@@ -77,6 +77,7 @@ async function seedRows() {
     platformId: platform.id,
     accountHandle: 'bot',
     targetUser: `t-${i}`,
+    organizationId: orgId,
     lastContactedAt: new Date(base + i * 1000),
   }));
   const inserted = await db.insert(schema.contactHistory).values(distinctRows).returning();
@@ -89,12 +90,14 @@ async function seedRows() {
         platformId: platform.id,
         accountHandle: 'bot',
         targetUser: 'tied-a',
+        organizationId: orgId,
         lastContactedAt: tiedAt,
       },
       {
         platformId: platform.id,
         accountHandle: 'bot',
         targetUser: 'tied-b',
+        organizationId: orgId,
         lastContactedAt: tiedAt,
       },
     ])
@@ -131,7 +134,7 @@ describe('People merge (#252)', () => {
 
   it('?tab= selects the right tab, defaulting to Threads', async () => {
     const orgId = await getDefaultOrgId();
-    await seedRows();
+    await seedRows(orgId);
 
     const threads = await loadPeople(fakeEvent(orgId, 'http://x/people'));
     expect(threads.tab).toBe('threads');
@@ -146,7 +149,7 @@ describe('People merge (#252)', () => {
 
   it('serves both tabs off the same underlying rows, each with its own count and empty-state fields', async () => {
     const orgId = await getDefaultOrgId();
-    const { total } = await seedRows();
+    const { total } = await seedRows(orgId);
 
     const threads = asThreadsTab(await loadPeople(fakeEvent(orgId, 'http://x/people')));
     expect(threads.conversations).toHaveLength(PAGE_SIZE);
@@ -176,7 +179,7 @@ describe('People merge (#252)', () => {
 
   it('each tab pages independently through its own JSON endpoint - no cross-tab bleed', async () => {
     const orgId = await getDefaultOrgId();
-    const { all, total } = await seedRows();
+    const { all, total } = await seedRows(orgId);
 
     // Threads tab: page one from the merged loader, page two from the old
     // /conversations JSON endpoint - the exact fetch the tab's own "Load
