@@ -38,6 +38,17 @@
   main is the only scrollable surface, so the sidebar stays put when page
   content is longer than the viewport.
 -->
+<!--
+	Mounted before the page content on purpose. Svelte runs child effects before
+	parent ones, so a page that raises a toast from an `$effect` during its own
+	mount (the "Run link ignored" warning on a stale `?run=` deep link, for one)
+	would emit it before a Toaster declared further down had mounted, and the
+	toast was silently dropped. It only ever appeared on a client-side
+	navigation, when the Toaster was already up. Position is unaffected: the
+	toaster is fixed-position, not in flow.
+-->
+<Toaster />
+
 <div class="h-screen overflow-hidden bg-background text-foreground flex">
 	<!-- Mobile hamburger: visible only below md. Fixed top-left so it floats above content. -->
 	<button
@@ -99,8 +110,6 @@
 
 	<main class="flex-1 overflow-auto p-4 sm:p-6 pt-14 md:pt-6 min-w-0">{@render children()}</main>
 </div>
-
-<Toaster />
 
 <!-- Global Cmd/Ctrl-K command palette: single instance for the whole app. -->
 <CommandPalette />

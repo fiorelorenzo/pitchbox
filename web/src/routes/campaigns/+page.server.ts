@@ -16,12 +16,14 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
   const projectIds = projects.map((p) => p.id);
 
-  // `?run=<id>` (from the Audit log) targets one specific run, which belongs
-  // to exactly one campaign. This list has no per-run view, so resolve the
-  // owning campaign and hand off to its detail page, which knows how to
-  // expand and scroll to that run. A malformed or foreign-org id falls back
-  // to the unfiltered list with `runFilterInvalid` set so the page can say
-  // so, rather than silently ignoring the link (#239).
+  // `?run=<id>` (from the Audit log) targets one specific run. This list has
+  // no per-run view, so resolve what the run belongs to and hand off to the
+  // page that knows how to expand and scroll to it. A run is owned by a
+  // campaign or, for the project-scoped kinds (extraction, insights), by a
+  // project. Only a malformed or foreign-org id falls through to
+  // `runFilterInvalid`: a valid project run used to land here too and be
+  // reported as "not a valid run id", which was the app lying about its own
+  // data (#239, corrected while closing #259).
   let runFilterInvalid: string | null = null;
   if (runParam != null) {
     const runId = Number(runParam);
@@ -32,11 +34,14 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       (await runBelongsToOrg(db, runId, orgId))
     ) {
       const [runRow] = await db
-        .select({ campaignId: schema.runs.campaignId })
+        .select({ campaignId: schema.runs.campaignId, projectId: schema.runs.projectId })
         .from(schema.runs)
         .where(eq(schema.runs.id, runId));
       if (runRow?.campaignId != null) {
         throw redirect(302, `/campaigns/${runRow.campaignId}?run=${runId}`);
+      }
+      if (runRow?.projectId != null) {
+        throw redirect(302, `/projects/${runRow.projectId}?run=${runId}`);
       }
     }
     runFilterInvalid = runParam;
