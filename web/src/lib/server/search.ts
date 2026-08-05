@@ -107,7 +107,7 @@ export async function search(q: string, projectIds: number[]): Promise<SearchRes
       id: p.id,
       label: p.name,
       sublabel: p.slug,
-      href: `/settings`,
+      href: `/projects/${p.id}`,
     });
   }
 

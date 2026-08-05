@@ -48,10 +48,21 @@
   type Props = {
     project: Project;
     extractionRuns: ExtractionRun[];
+    extractionRunsTotalCount: number;
+    extractionRunsNextCursor: { startedAt: string; id: string } | null;
     recommendations: Recommendation[];
     isAdmin: boolean;
+    highlightRunId?: number | null;
   };
-  let { project, extractionRuns, recommendations, isAdmin }: Props = $props();
+  let {
+    project,
+    extractionRuns,
+    extractionRunsTotalCount,
+    extractionRunsNextCursor,
+    recommendations,
+    isAdmin,
+    highlightRunId = null,
+  }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let name = $state(project.name);
@@ -318,7 +329,13 @@
     {/if}
   </div>
 
-  <ProjectExtractionRunsTable runs={extractionRunsState} />
+  <ProjectExtractionRunsTable
+    runs={extractionRunsState}
+    totalCount={extractionRunsTotalCount}
+    nextCursor={extractionRunsNextCursor}
+    projectId={project.id}
+    {highlightRunId}
+  />
 
   {#if recommendations.length > 0}
     <div class="flex flex-col gap-2">

@@ -10,6 +10,7 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { UserPlus, Copy, Trash2, MoreHorizontal, Pencil } from '@lucide/svelte';
   import { untrack } from 'svelte';
+  import { dev } from '$app/environment';
   import PageContainer from '$lib/components/PageContainer.svelte';
   import RemoveMemberDialog from '$lib/components/settings/RemoveMemberDialog.svelte';
   import LeaveOrgDialog from '$lib/components/settings/LeaveOrgDialog.svelte';
@@ -30,6 +31,7 @@
     remainingUsd: number | null;
   };
   type PageData = {
+    authOn: boolean;
     org: Org;
     role: string | null;
     canManage: boolean;
@@ -40,6 +42,10 @@
     quota: OrgQuota | null;
   };
   let { data }: { data: PageData } = $props();
+
+  // VitePress dev server runs on :5181 with base /pitchbox/. In production
+  // the published Pages site is the source of truth.
+  const DOCS_URL = dev ? 'http://localhost:5181/pitchbox/' : 'https://fiorelorenzo.github.io/pitchbox/';
 
   const ROLE_CAPS = [
     {
@@ -370,7 +376,18 @@
 {#if !data.org}
   <Card.Root class="mt-4">
     <Card.Content class="py-6 text-sm text-muted-foreground">
-      Sign in to see and manage the people in your organization.
+      {#if data.authOn}
+        Sign in to see and manage the people in your organization.
+      {:else}
+        This instance runs with PITCHBOX_AUTH off, so there are no organizations or membership roles
+        to manage. Set PITCHBOX_AUTH=on in your environment to enable them; see the
+        <a
+          href="{DOCS_URL}auth"
+          target="_blank"
+          rel="noopener"
+          class="underline hover:no-underline"
+        >authentication docs</a> for how to turn it on.
+      {/if}
     </Card.Content>
   </Card.Root>
 {:else}

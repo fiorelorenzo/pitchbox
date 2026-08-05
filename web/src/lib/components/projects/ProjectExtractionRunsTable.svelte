@@ -1,12 +1,16 @@
 <script lang="ts">
-  import { ChevronDown, ChevronUp } from '@lucide/svelte';
+  import { tick } from 'svelte';
+  import { AlertTriangle, ChevronDown, ChevronUp } from '@lucide/svelte';
+  import { toast } from 'svelte-sonner';
   import { Badge } from '$lib/components/ui/badge';
+  import { Button } from '$lib/components/ui/button';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import { relativeTime, formatDuration } from '$lib/utils/time';
   import { slide } from 'svelte/transition';
   import RunLog from '$lib/components/RunLog.svelte';
+  import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
 
   type Run = {
     id: number;
@@ -19,12 +23,100 @@
     tokensUsed: number | null;
     params: { source?: { kind: string; value: string } } | null;
   };
-  type Props = { runs: Run[] };
-  let { runs }: Props = $props();
+  type RunsCursor = { startedAt: string; id: string } | null;
+  type Props = {
+    runs: Run[];
+    totalCount: number;
+    nextCursor: RunsCursor;
+    projectId: number;
+    highlightRunId?: number | null;
+  };
+  let { runs, totalCount, nextCursor, projectId, highlightRunId = null }: Props = $props();
 
   let expandedRunId = $state<number | null>(null);
   function toggle(id: number) {
     expandedRunId = expandedRunId === id ? null : id;
+  }
+
+  // A ?run= deep link (mirrors CampaignRunsTab.svelte - #239, #259) can
+  // change while this tab stays mounted, so expand and scroll from an
+  // effect keyed on the prop instead of seeding state once at init. Keying
+  // on highlightRunId alone means a manual toggle() is never fought: the
+  // effect only re-runs when the deep link itself changes.
+  $effect(() => {
+    if (highlightRunId == null) return;
+    expandedRunId = highlightRunId;
+    void tick().then(() => {
+      document.getElementById(`run-row-${highlightRunId}`)?.scrollIntoView({ block: 'center' });
+    });
+  });
+
+  // Only the rows appended via "Load more" live in state; the server page
+  // (`runs`, from the loader on first render or a real navigation /
+  // invalidateAll()) stays the source of truth and is read directly, so
+  // `items` is correct during SSR too - nothing captures a stale initial
+  // value the way seeding local state from a prop would. `appendedCursor`
+  // shadows `nextCursor` only once a page past the first has been fetched
+  // (`undefined` means "still page one", distinct from `null`, which means
+  // "no more pages").
+  let appended = $state<Run[]>([]);
+  let appendedCursor = $state<RunsCursor | undefined>(undefined);
+  let loadingMore = $state(false);
+  let loadMoreError = $state<string | null>(null);
+
+  const items = $derived([...runs, ...appended]);
+  const itemsNextCursor = $derived(appendedCursor === undefined ? nextCursor : appendedCursor);
+
+  // Reset accumulated "Load more" state whenever the upstream `runs` page
+  // changes underneath us - a real navigation or invalidateAll() - so the
+  // list always starts back at page one of whatever now renders
+  // server-side (mirrors /audit and /inbox). Reading `runs` here is what
+  // makes the effect re-run when it changes.
+  $effect(() => {
+    void runs;
+    appended = [];
+    appendedCursor = undefined;
+    loadMoreError = null;
+  });
+
+  // Fetches the next page from the co-located `+server.ts` and appends it -
+  // no navigation, so scroll position and the expanded row stay put.
+  async function loadMore() {
+    if (!itemsNextCursor || loadingMore) return;
+    loadingMore = true;
+    loadMoreError = null;
+    try {
+      const params = new URLSearchParams();
+      params.set('cursor_at', itemsNextCursor.startedAt);
+      params.set('cursor_id', itemsNextCursor.id);
+      const res = await fetch(`/projects/${projectId}?${params.toString()}`, {
+        headers: { accept: 'application/json' },
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+        const message =
+          res.status >= 500
+            ? 'Could not load more extractions. Please try again.'
+            : (body.error ?? body.message ?? 'Could not load more extractions.');
+        if (res.status >= 500) console.error('failed to load more extraction runs', res.status, body);
+        loadMoreError = message;
+        toast.error(message);
+        return;
+      }
+      const nextPage = (await res.json()) as {
+        runs: Run[];
+        totalCount: number;
+        nextCursor: RunsCursor;
+      };
+      const existingIds = new Set(items.map((r) => r.id));
+      appended = [...appended, ...nextPage.runs.filter((r) => !existingIds.has(r.id))];
+      appendedCursor = nextPage.nextCursor;
+    } catch {
+      loadMoreError = 'Could not reach the server. Check your connection and try again.';
+      toast.error(loadMoreError);
+    } finally {
+      loadingMore = false;
+    }
   }
 
   function sourceLabel(p: Run['params']): { kind: string; detail: string | null } {
@@ -42,10 +134,10 @@
 <Card.Root size="sm">
   <Card.Header>
     <Card.Title class="text-base">Extraction history</Card.Title>
-    <Card.Description class="text-xs">Last {runs.length} extractions</Card.Description>
+    <Card.Description class="text-xs">Showing {items.length} of {totalCount} extractions</Card.Description>
   </Card.Header>
   <Card.Content class="p-0">
-    {#if runs.length === 0}
+    {#if items.length === 0}
       <div class="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
         <p class="text-sm">No extractions yet</p>
         <p class="text-xs">Click "Auto-extract" on the description above to start one.</p>
@@ -76,9 +168,10 @@
           </Table.Row>
         </Table.Header>
         <Table.Body>
-          {#each runs as run (run.id)}
+          {#each items as run (run.id)}
             {@const expanded = expandedRunId === run.id}
             <Table.Row
+              id="run-row-{run.id}"
               onclick={() => toggle(run.id)}
               onkeydown={(e: KeyboardEvent) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -163,6 +256,31 @@
           {/each}
         </Table.Body>
       </Table.Root>
+      {#if itemsNextCursor}
+        <div class="flex flex-col items-center gap-2 py-3">
+          <Button variant="outline" size="sm" onclick={loadMore} loading={loadingMore}>
+            Load more
+          </Button>
+          {#if loadMoreError}
+            <div
+              role="alert"
+              class="flex max-w-sm items-start gap-2 rounded-lg border px-3 py-2 text-xs {TONE_BANNER_CLASS.rose}"
+            >
+              <AlertTriangle class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              <div class="flex-1">
+                <p>{loadMoreError}</p>
+                <button
+                  type="button"
+                  onclick={loadMore}
+                  class="mt-1 underline underline-offset-2 hover:no-underline"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
     {/if}
   </Card.Content>
 </Card.Root>

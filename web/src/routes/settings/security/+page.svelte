@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
+	import * as Table from '$lib/components/ui/table';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -114,26 +115,24 @@
 					<Alert.Description>No failed login attempts on record.</Alert.Description>
 				</Alert.Root>
 			{:else}
-				<div class="overflow-x-auto rounded-md border">
-					<table class="min-w-full text-sm">
-						<thead class="bg-muted/40 text-left text-xs uppercase tracking-wide">
-							<tr>
-								<th class="px-3 py-2 font-medium">Identifier</th>
-								<th class="px-3 py-2 font-medium">Kind</th>
-								<th class="px-3 py-2 font-medium">When</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each data.failures as f (f.id)}
-								<tr class="border-t">
-									<td class="px-3 py-2 font-mono text-xs">{f.identifier}</td>
-									<td class="px-3 py-2">{f.kind}</td>
-									<td class="px-3 py-2 text-muted-foreground">{relative(f.failedAt)}</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
+				<Table.Root>
+					<Table.Header>
+						<Table.Row>
+							<Table.Head>Identifier</Table.Head>
+							<Table.Head>Kind</Table.Head>
+							<Table.Head>When</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each data.failures as f (f.id)}
+							<Table.Row>
+								<Table.Cell class="font-mono text-xs">{f.identifier}</Table.Cell>
+								<Table.Cell>{f.kind}</Table.Cell>
+								<Table.Cell class="text-muted-foreground">{relative(f.failedAt)}</Table.Cell>
+							</Table.Row>
+						{/each}
+					</Table.Body>
+				</Table.Root>
 			{/if}
 		</Card.Content>
 	</Card.Root>

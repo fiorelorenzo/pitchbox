@@ -73,6 +73,8 @@
 				tokensUsed: number | null;
 				failureReason?: string | null;
 			}>;
+			runsTotalCount: number;
+			runsNextCursor: { startedAt: string; id: string } | null;
 			skillRuns: SkillRun[];
 			tuningRuns: Array<{
 				id: number;
@@ -618,7 +620,13 @@
 {:else if tab === 'watches'}
 	<CampaignWatchesTab campaignId={data.campaign.id} watches={data.watches} />
 {:else}
-	<CampaignRunsTab runs={data.runs} {highlightRunId} />
+	<CampaignRunsTab
+		runs={data.runs}
+		totalCount={data.runsTotalCount}
+		nextCursor={data.runsNextCursor}
+		campaignId={data.campaign.id}
+		{highlightRunId}
+	/>
 {/if}
 
 <RegenerateProfileDialog

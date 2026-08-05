@@ -101,7 +101,9 @@ function getEvent(orgId: number, id: number): RequestEvent {
 // The page loaders are typed via the generated `PageServerLoad` (a
 // `ServerLoadEvent`, stricter than the plain `RequestEvent` the `+server.ts`
 // handlers take), so build their fake events with the loader's own inferred
-// parameter type rather than a separately-declared `RequestEvent`.
+// parameter type rather than a separately-declared `RequestEvent`. Both
+// loaders now read `event.url` for run-history cursor pagination and the
+// `?run=` deep link (#259), so a bare, param-less URL is included.
 function loadEvent<Load extends (event: never) => unknown>(
   orgId: number,
   id: number,
@@ -109,6 +111,7 @@ function loadEvent<Load extends (event: never) => unknown>(
   return {
     locals: orgLocals(orgId),
     params: { id: String(id) },
+    url: new URL(`http://x/${id}`),
   } as unknown as Parameters<Load>[0];
 }
 

@@ -1,13 +1,18 @@
 import type { PageServerLoad } from './$types';
 import { error } from '@sveltejs/kit';
-import { and, desc, eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { getProjectById } from '@pitchbox/shared/projects';
 import { requireOrgId } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
+import {
+  queryProjectRunsPage,
+  parseProjectRunsCursor,
+  fetchProjectRunById,
+} from '$lib/server/project-runs-query.js';
 
 export const load: PageServerLoad = async (event) => {
-  const { params } = event;
+  const { params, url } = event;
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) throw error(400, 'invalid id');
   const orgId = await requireOrgId(event);
@@ -15,16 +20,12 @@ export const load: PageServerLoad = async (event) => {
   const db = getDb();
   const project = await getProjectById(db, id);
   if (!project) throw error(404, 'project not found');
-  const [accounts, platforms, runRows, recommendations, templates, latestInsight] =
+  const cursor = parseProjectRunsCursor(url);
+  const [accounts, platforms, extractionRunsPage, recommendations, templates, latestInsight] =
     await Promise.all([
       db.select().from(schema.accounts).where(eq(schema.accounts.projectId, id)),
       db.select().from(schema.platforms),
-      db
-        .select()
-        .from(schema.runs)
-        .where(and(eq(schema.runs.projectId, id), eq(schema.runs.kind, 'project_extraction')))
-        .orderBy(desc(schema.runs.startedAt))
-        .limit(30),
+      queryProjectRunsPage(db, id, cursor),
       db
         .select()
         .from(schema.campaignRecommendations)
@@ -43,38 +44,35 @@ export const load: PageServerLoad = async (event) => {
         .limit(1)
         .then((rows) => rows[0] ?? null),
     ]);
-  const extractionRuns = runRows.map((r) => {
-    const startedAtMs =
-      r.startedAt instanceof Date
-        ? r.startedAt.getTime()
-        : new Date(r.startedAt as unknown as string).getTime();
-    const finishedAtMs =
-      r.finishedAt == null
-        ? null
-        : r.finishedAt instanceof Date
-          ? r.finishedAt.getTime()
-          : new Date(r.finishedAt as unknown as string).getTime();
-    return {
-      id: r.id,
-      status: r.status,
-      trigger: r.trigger,
-      agentRunner: r.agentRunner,
-      startedAt:
-        r.startedAt instanceof Date
-          ? r.startedAt.toISOString()
-          : (r.startedAt as unknown as string),
-      finishedAt:
-        r.finishedAt == null
-          ? null
-          : r.finishedAt instanceof Date
-            ? r.finishedAt.toISOString()
-            : (r.finishedAt as unknown as string),
-      durationMs: finishedAtMs != null ? finishedAtMs - startedAtMs : null,
-      tokensUsed: r.tokensUsed ?? null,
-      error: r.error,
-      params: (r.params ?? null) as { source?: { kind: string; value: string } } | null,
-    };
-  });
+  let {
+    runs: extractionRuns,
+    totalCount: extractionRunsTotalCount,
+    nextCursor: extractionRunsNextCursor,
+  } = extractionRunsPage;
+
+  // A `?run=<id>` deep link (mirrors the campaign detail page's - #239,
+  // #259) can target an extraction run older than this first page: fetch
+  // it out of band and splice it into the rows handed to the Overview tab
+  // so it is present and highlightable on first load, rather than hoping
+  // the user pages far enough to reach it. Cursor pagination never touches
+  // the address bar (the "Load more" fetch builds its own URL - see
+  // ProjectExtractionRunsTable.svelte), so a non-null cursor here means
+  // this is not a fresh page-one load and the splice is skipped.
+  const runParam = url.searchParams.get('run');
+  const highlightRunId = runParam && /^\d+$/.test(runParam) ? Number(runParam) : null;
+  if (highlightRunId != null && !cursor && !extractionRuns.some((r) => r.id === highlightRunId)) {
+    const highlighted = await fetchProjectRunById(db, id, highlightRunId);
+    // A missing, foreign, or wrong-kind run id leaves extractionRuns
+    // untouched: the page toasts when the raw `?run=` value is not even
+    // numeric; a syntactically valid but nonexistent/foreign id keeps the
+    // same silent "nothing highlighted" behaviour the campaign page has.
+    if (highlighted) {
+      extractionRuns = [...extractionRuns, highlighted].sort((a, b) => {
+        const diff = new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime();
+        return diff !== 0 ? diff : b.id - a.id;
+      });
+    }
+  }
   const latestInsightSerialized = latestInsight
     ? {
         id: latestInsight.id,
@@ -91,6 +89,8 @@ export const load: PageServerLoad = async (event) => {
     accounts,
     platforms,
     extractionRuns,
+    extractionRunsTotalCount,
+    extractionRunsNextCursor,
     recommendations,
     templates,
     latestInsight: latestInsightSerialized,

@@ -6,10 +6,12 @@ import { listOrgMembers, listPendingInvites } from '@pitchbox/shared/orgs';
 import { getOrgMonthToDateCostUsd, getOrgQuotaSnapshot } from '@pitchbox/shared/org-quota';
 
 export const load: PageServerLoad = async (event) => {
+  const authOn = process.env.PITCHBOX_AUTH === 'on';
   const db = getDb();
   const orgId = await resolveOrgId(event);
   if (orgId == null) {
     return {
+      authOn,
       org: null,
       role: null,
       canManage: false,
@@ -58,6 +60,7 @@ export const load: PageServerLoad = async (event) => {
   }
 
   return {
+    authOn,
     org: org ? { id: org.id, slug: org.slug, name: org.name } : null,
     role,
     canManage,

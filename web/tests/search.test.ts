@@ -115,10 +115,24 @@ describe('search()', () => {
       expect(typeof r.href).toBe('string');
       expect(r.href.length).toBeGreaterThan(0);
     }
+    // Contact results deep-link into the People page's Contacts tab and
+    // pre-fill its search box with the target user, rather than the old
+    // standalone (now-redirecting) `/contacts` route.
+    const contactResult = results.find((r) => r.kind === 'contact');
+    expect(contactResult?.href).toBe(`/people?tab=contacts&q=${encodeURIComponent('AcmeFounder')}`);
     // Draft results must use the `?draft=<id>` deep-link the inbox reads, the
     // same one Contacts/Audit produce (see inbox-draft-deep-link.test.ts).
     const draftResult = results.find((r) => r.kind === 'draft' && r.id === draft.id);
     expect(draftResult?.href).toBe(`/inbox?draft=${draft.id}`);
+    // Campaign results link straight to the campaign's own page, not a
+    // settings route.
+    const campaignResult = results.find((r) => r.kind === 'campaign');
+    expect(campaignResult?.href).toBe(`/campaigns/${campaignResult?.id}`);
+    // Project results link to the project's own page (#261): this used to
+    // be a hardcoded `/settings`, which quietly 307-redirected instead of
+    // 404ing.
+    const projectResult = results.find((r) => r.kind === 'project' && r.id === project.id);
+    expect(projectResult?.href).toBe(`/projects/${project.id}`);
   });
 
   it('returns no results for an empty query (no static actions on server)', async () => {

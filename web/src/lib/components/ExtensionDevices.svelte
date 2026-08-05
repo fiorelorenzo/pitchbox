@@ -199,7 +199,7 @@
 									Revoked
 								</span>
 							{:else}
-								<span class="text-xs text-muted-foreground">
+								<span class="text-xs text-muted-foreground" title={d.lastSeenAt ?? undefined}>
 									{d.lastSeenAt ? `seen ${relativeTime(d.lastSeenAt)}` : 'never seen'}
 								</span>
 							{/if}
