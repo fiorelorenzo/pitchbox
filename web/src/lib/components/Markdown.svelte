@@ -1,15 +1,29 @@
 <script lang="ts" module>
-	import { marked } from 'marked';
-	import DOMPurify from 'dompurify';
-
-	marked.setOptions({ breaks: true, gfm: true });
+	// marked and dompurify are loaded lazily so routes that only ever read
+	// markdown (never edit it) don't pay parse/eval cost for them before
+	// first paint. Loaded once per session and cached (single-flight); types
+	// are inferred from the dynamic imports themselves.
+	function loadMarkdownModules() {
+		return Promise.all([import('marked'), import('dompurify')]).then(
+			([markedMod, dompurifyMod]) => {
+				markedMod.marked.setOptions({ breaks: true, gfm: true });
+				return { marked: markedMod.marked, DOMPurify: dompurifyMod.default };
+			},
+		);
+	}
+	let modulesPromise: ReturnType<typeof loadMarkdownModules> | undefined;
+	function loadModules() {
+		return (modulesPromise ??= loadMarkdownModules());
+	}
 
 	// Cache parsed markdown by source string so re-renders don't re-parse.
 	const cache = new Map<string, string>();
 
-	export function render(source: string): string {
+	async function render(source: string): Promise<string> {
+		if (!source) return '';
 		const hit = cache.get(source);
 		if (hit !== undefined) return hit;
+		const { marked, DOMPurify } = await loadModules();
 		const html = marked.parse(source) as string;
 		const clean = DOMPurify.sanitize(html, {
 			USE_PROFILES: { html: true },
@@ -21,6 +35,8 @@
 </script>
 
 <script lang="ts">
+	import { Skeleton } from '$lib/components/ui/skeleton';
+
 	let {
 		source,
 		class: className = '',
@@ -29,12 +45,34 @@
 		class?: string;
 	} = $props();
 
-	const html = $derived(render(source));
+	// Keep showing the previously rendered HTML while the next render resolves,
+	// so streaming consumers (assistant/thinking events) never flash a
+	// placeholder on every token update - only the very first render (before
+	// marked/dompurify have loaded) shows the skeleton.
+	let html = $state<string | null>(null);
+
+	$effect(() => {
+		const current = source;
+		let cancelled = false;
+		render(current).then((result) => {
+			if (!cancelled) html = result;
+		});
+		return () => {
+			cancelled = true;
+		};
+	});
 </script>
 
-<div class="prose prose-invert prose-sm max-w-none min-w-0 [overflow-wrap:anywhere] {className}">
-	{@html html}
-</div>
+{#if html === null}
+	<div class="flex flex-col gap-2 {className}">
+		<Skeleton class="h-3.5 w-3/4" />
+		<Skeleton class="h-3.5 w-1/2" />
+	</div>
+{:else}
+	<div class="prose prose-invert prose-sm max-w-none min-w-0 [overflow-wrap:anywhere] {className}">
+		{@html html}
+	</div>
+{/if}
 
 <style>
 	/* Keep the rendered output from escaping its container on long lines */

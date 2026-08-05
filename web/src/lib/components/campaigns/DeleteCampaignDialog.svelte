@@ -25,7 +25,7 @@
 
 {#if open}
   <div
-    class="fixed inset-0 bg-black/40 z-40"
+    class="fixed inset-0 bg-overlay/40 z-40"
     onclick={onClose}
     role="button"
     tabindex="-1"

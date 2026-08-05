@@ -3,6 +3,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { SelectField } from '$lib/components/ui/select-field';
+  import * as AlertDialog from '$lib/components/ui/alert-dialog';
   import { toast } from 'svelte-sonner';
 
   type Template = {
@@ -63,13 +64,32 @@
     else await invalidateAll();
   }
 
-  async function remove(t: Template) {
-    if (!confirm(`Delete template "${t.title}"?`)) return;
-    const res = await fetch(`/api/projects/${projectId}/templates/${t.id}`, {
-      method: 'DELETE',
-    });
-    if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
-    else await invalidateAll();
+  let deleteDialogOpen = $state(false);
+  let deleteTarget = $state<Template | null>(null);
+  let deleting = $state(false);
+
+  function openDeleteDialog(t: Template) {
+    deleteTarget = t;
+    deleteDialogOpen = true;
+  }
+
+  async function confirmRemove() {
+    if (!deleteTarget) return;
+    deleting = true;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/templates/${deleteTarget.id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
+        return;
+      }
+      deleteDialogOpen = false;
+      deleteTarget = null;
+      await invalidateAll();
+    } finally {
+      deleting = false;
+    }
   }
 </script>
 
@@ -126,7 +146,7 @@
               {t.isActive ? 'Archive' : 'Restore'}
             </Button>
             {#if isAdmin}
-              <Button variant="outline" size="sm" onclick={() => remove(t)}>Delete</Button>
+              <Button variant="outline" size="sm" onclick={() => openDeleteDialog(t)}>Delete</Button>
             {/if}
           </div>
         </div>
@@ -135,3 +155,21 @@
     {/each}
   </div>
 {/if}
+
+<AlertDialog.Root bind:open={deleteDialogOpen}>
+  <AlertDialog.Content>
+    <AlertDialog.Header>
+      <AlertDialog.Title>Delete template "{deleteTarget?.title}"?</AlertDialog.Title>
+      <AlertDialog.Description>
+        This removes the template from the project. It will no longer be surfaced to the agent on
+        future runs.
+      </AlertDialog.Description>
+    </AlertDialog.Header>
+    <AlertDialog.Footer>
+      <AlertDialog.Cancel onclick={() => (deleteDialogOpen = false)}>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Action onclick={confirmRemove} disabled={deleting}>
+        {deleting ? 'Deleting…' : 'Delete template'}
+      </AlertDialog.Action>
+    </AlertDialog.Footer>
+  </AlertDialog.Content>
+</AlertDialog.Root>

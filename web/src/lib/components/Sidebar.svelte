@@ -6,7 +6,6 @@
 		FolderKanban,
 		PlayCircle,
 		Users,
-		MessagesSquare,
 		Shield,
 		Settings,
 		BookOpen,
@@ -14,16 +13,16 @@
 		History,
 		BarChart3,
 		LogOut,
-		LogIn,
 		type LucideIcon,
 	} from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { dev } from '$app/environment';
 	import { cn } from '$lib/utils';
+	import { toast } from 'svelte-sonner';
 	import SystemStatusCard from '$lib/components/SystemStatusCard.svelte';
 	import OrgSwitcher from '$lib/components/OrgSwitcher.svelte';
-	import { t } from '$lib/i18n';
+	import { resolveTone, PULSE_DOT_CLASS } from '$lib/config/status-badges';
 
 	// VitePress dev server runs on :5181 with base /pitchbox/. In production
 	// the published Pages site is the source of truth.
@@ -31,36 +30,85 @@
 
 	type NavItem = {
 		href: string;
-		labelKey: string;
+		label: string;
 		icon: LucideIcon;
 		exact?: boolean;
 	};
 
-	const navItems: NavItem[] = [
-		{ href: '/', labelKey: 'nav.home', icon: Home, exact: true },
-		{ href: '/inbox', labelKey: 'nav.inbox', icon: Inbox },
-		{ href: '/projects', labelKey: 'nav.projects', icon: FolderKanban },
-		{ href: '/campaigns', labelKey: 'nav.campaigns', icon: PlayCircle },
-		{ href: '/contacts', labelKey: 'nav.contacts', icon: Users },
-		{ href: '/conversations', labelKey: 'nav.conversations', icon: MessagesSquare },
-		{ href: '/blocklist', labelKey: 'nav.blocklist', icon: Shield },
-		{ href: '/playbooks', labelKey: 'nav.playbooks', icon: BookOpen },
-		{ href: '/notifications', labelKey: 'nav.notifications', icon: Bell },
-		{ href: '/analytics', labelKey: 'nav.analytics', icon: BarChart3 },
-		{ href: '/audit', labelKey: 'nav.audit', icon: History },
-		{ href: '/settings', labelKey: 'nav.settings', icon: Settings },
+	type NavGroup = {
+		// Group label, or null for the loose top/bottom items that sit
+		// outside the three labelled sections.
+		label: string | null;
+		items: NavItem[];
+	};
+
+	// Grouped per the UX review (#251): Home and Inbox stay loose above the
+	// groups as the daily pair, Notifications and Settings stay loose below.
+	// PEOPLE held Conversations + Contacts + Blocklist; #252 merged
+	// Conversations and Contacts into the single /people destination, so the
+	// group is now People + Blocklist. Nothing here assumes a fixed item
+	// count per group.
+	const navGroups: NavGroup[] = [
+		{
+			label: null,
+			items: [
+				{ href: '/', label: 'Home', icon: Home, exact: true },
+				{ href: '/inbox', label: 'Inbox', icon: Inbox },
+			],
+		},
+		{
+			label: 'Outreach',
+			items: [
+				{ href: '/projects', label: 'Projects', icon: FolderKanban },
+				{ href: '/campaigns', label: 'Campaigns', icon: PlayCircle },
+				{ href: '/playbooks', label: 'Playbooks', icon: BookOpen },
+			],
+		},
+		{
+			label: 'People',
+			items: [
+				{ href: '/people', label: 'People', icon: Users },
+				{ href: '/blocklist', label: 'Blocklist', icon: Shield },
+			],
+		},
+		{
+			label: 'Insight',
+			items: [
+				{ href: '/analytics', label: 'Analytics', icon: BarChart3 },
+				{ href: '/audit', label: 'Audit', icon: History },
+			],
+		},
+		{
+			label: null,
+			items: [
+				{ href: '/notifications', label: 'Notifications', icon: Bell },
+				{ href: '/settings', label: 'Settings', icon: Settings },
+			],
+		},
 	];
 
 	let unread = $state(0);
+	// Set once a poll fails and cleared on the next success, so the badge can
+	// show a "stale" dot instead of quietly freezing on the last-known count.
+	let unreadStale = $state(false);
 
 	async function refreshUnread() {
 		try {
 			const res = await fetch('/api/notifications');
-			if (!res.ok) return;
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({}));
+				if (res.status >= 500) console.error('failed to refresh notification count', res.status, body);
+				// Toast only on the transition into failure, not on every 30s poll.
+				if (!unreadStale) toast.error(body.error ?? 'Could not refresh notification count');
+				unreadStale = true;
+				return;
+			}
 			const body = await res.json();
 			unread = body.unread ?? 0;
+			unreadStale = false;
 		} catch {
-			// network errors are non-fatal for the bell badge.
+			if (!unreadStale) toast.error('Could not refresh notification count, check your connection');
+			unreadStale = true;
 		}
 	}
 
@@ -106,28 +154,43 @@
 	     status card always stays visible; only the nav itself can scroll if a
 	     viewport is too short for all entries. -->
 	<nav class="flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto">
-		{#each navItems as item (item.href)}
-			{@const active = item.exact
-				? $page.url.pathname === item.href
-				: $page.url.pathname.startsWith(item.href)}
-			{@const Icon = item.icon}
-			<a
-				href={item.href}
-				class={cn(
-					'flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors',
-					active
-						? 'bg-accent text-accent-foreground font-medium'
-						: 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-				)}
-			>
-				<Icon class="size-4 shrink-0" />
-				<span class="flex-1">{$t(item.labelKey)}</span>
-				{#if item.href === '/notifications' && unread > 0}
-					<span class="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300">
-						{unread > 99 ? '99+' : unread}
-					</span>
-				{/if}
-			</a>
+		{#each navGroups as group, groupIndex (groupIndex)}
+			{#if group.label}
+				<p class="px-3 pt-3 pb-1 text-xs uppercase text-muted-foreground">
+					{group.label}
+				</p>
+			{:else if groupIndex > 0}
+				<div class="my-2 border-t border-border"></div>
+			{/if}
+			{#each group.items as item (item.href)}
+				{@const active = item.exact
+					? $page.url.pathname === item.href
+					: $page.url.pathname.startsWith(item.href) ||
+						(item.href === '/people' && $page.url.pathname.startsWith('/conversations/'))}
+				{@const Icon = item.icon}
+				<a
+					href={item.href}
+					class={cn(
+						'flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors',
+						active
+							? 'bg-accent text-accent-foreground font-medium'
+							: 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+					)}
+				>
+					<Icon class="size-4 shrink-0" />
+					<span class="flex-1">{item.label}</span>
+					{#if item.href === '/notifications' && unreadStale}
+						<span
+							title="Could not refresh notification count"
+							class="size-1.5 rounded-full shrink-0 {PULSE_DOT_CLASS[resolveTone('connection-status', 'down')]}"
+						></span>
+					{:else if item.href === '/notifications' && unread > 0}
+						<span class="rounded-full bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300">
+							{unread > 99 ? '99+' : unread}
+						</span>
+					{/if}
+				</a>
+			{/each}
 		{/each}
 	</nav>
 
@@ -140,28 +203,28 @@
 			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
 		>
 			<BookOpen class="size-4 shrink-0" />
-			{$t('nav.docs')}
+			Docs
 		</a>
 		{#if authOn}
 			<button
 				type="button"
 				onclick={async () => {
-					await fetch('/api/auth/logout', { method: 'POST' });
-					await goto('/login');
+					try {
+						const res = await fetch('/api/auth/logout', { method: 'POST' });
+						if (!res.ok) {
+							toast.error('Could not sign out. Please try again.');
+							return;
+						}
+						await goto('/login');
+					} catch {
+						toast.error('Could not sign out, check your connection.');
+					}
 				}}
 				class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors text-left"
 			>
 				<LogOut class="size-4 shrink-0" />
-				{$t('nav.signOut')}
+				Sign out
 			</button>
-		{:else}
-			<a
-				href="/login"
-				class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
-			>
-				<LogIn class="size-4 shrink-0" />
-				{$t('nav.signIn')}
-			</a>
 		{/if}
 		<div class="px-1 pt-1">
 			<SystemStatusCard />

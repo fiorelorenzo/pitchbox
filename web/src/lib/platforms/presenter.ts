@@ -11,8 +11,26 @@ export type Presenter = {
   replyActionLabel(): string;
 };
 
+// Honest, punctuation-free fallback when a draft has no recipient at all.
+// Platform presenters override this with something more specific (see
+// reddit/presenter.ts); this generic one only has the draft kind to go on.
+function fallbackLabel(kind: string): string {
+  switch (kind) {
+    case 'dm':
+      return 'DM';
+    case 'post':
+      return 'Post';
+    case 'post_comment':
+      return 'Comment';
+    case 'comment_reply':
+      return 'Reply';
+    default:
+      return 'Draft';
+  }
+}
+
 const generic: Presenter = {
-  primaryLabel: (d) => (d.targetUser ? `@${d.targetUser}` : '-'),
+  primaryLabel: (d) => (d.targetUser ? `@${d.targetUser}` : fallbackLabel(d.kind)),
   userLabel: (handle) => `@${handle}`,
   eventLabel: () => null,
   replyActionLabel: () => 'Reply',

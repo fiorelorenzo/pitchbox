@@ -7,6 +7,8 @@
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import * as Card from '$lib/components/ui/card';
   import { toast } from 'svelte-sonner';
+  import { getSseManager } from '$lib/realtime/sse';
+  import StreamStatusBanner from '$lib/realtime/StreamStatusBanner.svelte';
 
   type TuningRun = {
     id: number;
@@ -150,29 +152,35 @@
     await invalidateAll();
   }
 
-  let es: EventSource | null = null;
+  // The shared SSE singleton (web/src/lib/realtime/sse.ts), not a raw
+  // EventSource: a component-owned connection would compete with every
+  // other tab's stream for the same server-side capacity and its own
+  // reconnect/backoff, so a dropped connection would only be visible here.
+  const unsubs: Array<() => void> = [];
   onMount(() => {
-    es = new EventSource('/api/stream');
-    es.addEventListener('run:finished', async (ev: MessageEvent) => {
-      let payload: { campaignId?: number | null; runId?: number } = {};
-      try {
-        payload = JSON.parse(ev.data);
-      } catch {
-        /* ignore */
-      }
-      if (payload.campaignId !== campaignId) return;
-      if (runningRunId !== null && payload.runId === runningRunId) {
-        runningRunId = null;
-        selectedRunId = payload.runId ?? selectedRunId;
-        await invalidateAll();
-        toast.success('Tuning finished - review the diff');
-      }
-    });
+    unsubs.push(
+      getSseManager().on('run:finished', async (ev: MessageEvent) => {
+        let payload: { campaignId?: number | null; runId?: number } = {};
+        try {
+          payload = JSON.parse(ev.data);
+        } catch {
+          /* non-JSON heartbeat: ignore */
+        }
+        if (payload.campaignId !== campaignId) return;
+        if (runningRunId !== null && payload.runId === runningRunId) {
+          runningRunId = null;
+          selectedRunId = payload.runId ?? selectedRunId;
+          await invalidateAll();
+          toast.success('Tuning finished - review the diff');
+        }
+      }),
+    );
   });
-  onDestroy(() => es?.close());
+  onDestroy(() => unsubs.forEach((unsub) => unsub()));
 </script>
 
 <div class="space-y-6">
+  <StreamStatusBanner active={runningRunId !== null} onReconnect={() => invalidateAll()} />
   <Card.Root size="sm">
     <Card.Header>
       <Card.Title class="text-base">Tune this campaign</Card.Title>

@@ -7,8 +7,10 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { relativeTime } from '$lib/utils/time';
 	import { toast } from 'svelte-sonner';
+	import PageContainer from '$lib/components/PageContainer.svelte';
 
 	type PlaybookRow = {
 		id: number;
@@ -57,14 +59,34 @@
 		}
 	}
 
-	async function remove(id: number) {
-		if (!confirm('Delete this playbook?')) return;
-		const res = await fetch(`/api/playbooks/${id}`, { method: 'DELETE' });
-		if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Delete failed');
-		else await invalidateAll();
+	let deleteDialogOpen = $state(false);
+	let deleteTarget = $state<PlaybookRow | null>(null);
+	let deleting = $state(false);
+
+	function openDeleteDialog(p: PlaybookRow) {
+		deleteTarget = p;
+		deleteDialogOpen = true;
+	}
+
+	async function confirmRemove() {
+		if (!deleteTarget) return;
+		deleting = true;
+		try {
+			const res = await fetch(`/api/playbooks/${deleteTarget.id}`, { method: 'DELETE' });
+			if (!res.ok) {
+				toast.error(res.status === 403 ? 'You need admin access for that' : 'Delete failed');
+				return;
+			}
+			deleteDialogOpen = false;
+			deleteTarget = null;
+			await invalidateAll();
+		} finally {
+			deleting = false;
+		}
 	}
 </script>
 
+<PageContainer size="narrow">
 <Seo title="Playbooks" description="Edit or create the markdown playbooks the agent runner executes." />
 
 <PageHeader
@@ -106,7 +128,7 @@
 						{p.isBuiltin ? 'View' : 'Edit'}
 					</Button>
 					{#if !p.isBuiltin && isAdmin}
-						<Button size="sm" variant="ghost" onclick={() => remove(p.id)}>Delete</Button>
+						<Button size="sm" variant="ghost" onclick={() => openDeleteDialog(p)}>Delete</Button>
 					{/if}
 				</div>
 			</Card.Content>
@@ -152,3 +174,22 @@
 		</div>
 	</Dialog.Content>
 </Dialog.Root>
+
+<AlertDialog.Root bind:open={deleteDialogOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Delete "{deleteTarget?.name}"?</AlertDialog.Title>
+			<AlertDialog.Description>
+				This removes the playbook. Campaigns using its skill slug will need another playbook
+				before they can run again.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel onclick={() => (deleteDialogOpen = false)}>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={confirmRemove} disabled={deleting}>
+				{deleting ? 'Deleting…' : 'Delete playbook'}
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+</PageContainer>

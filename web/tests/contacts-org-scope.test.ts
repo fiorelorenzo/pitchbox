@@ -2,7 +2,11 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { sql } from 'drizzle-orm';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { load as loadContacts } from '../src/routes/contacts/+page.server.js';
+import {
+  load as loadPeople,
+  type PeoplePageData,
+  type ContactsTabData,
+} from '../src/routes/people/+page.server.js';
 
 /**
  * Cross-tenant isolation for the Contacts page. `contact_history` is a global
@@ -104,6 +108,14 @@ function fakeEvent(orgId: number, url: string): RequestEvent {
   } as unknown as RequestEvent;
 }
 
+// `/people`'s loader returns a discriminated union keyed on `tab`
+// (contacts-shaped vs. threads-shaped data - see +page.server.ts); narrow
+// on the real discriminant rather than asserting the whole result.
+function asContactsTab(data: PeoplePageData): ContactsTabData {
+  if (data.tab !== 'contacts') throw new Error('expected the contacts tab');
+  return data;
+}
+
 describe('contacts page is scoped to the active org', () => {
   beforeEach(reset);
 
@@ -111,7 +123,9 @@ describe('contacts page is scoped to the active org', () => {
     const a = await seedOrgContact('contacts-a');
     const b = await seedOrgContact('contacts-b');
 
-    const data = await loadContacts(fakeEvent(a.orgId, 'http://x/contacts'));
+    const data = asContactsTab(
+      await loadPeople(fakeEvent(a.orgId, 'http://x/people?tab=contacts')),
+    );
     const rowA = data.contacts.find((c: { id: number }) => c.id === a.contactId);
     const rowB = data.contacts.find((c: { id: number }) => c.id === b.contactId);
 

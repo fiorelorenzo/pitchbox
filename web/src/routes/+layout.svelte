@@ -2,6 +2,7 @@
 	import '../app.css';
 	import '$lib/platforms/register';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import SseIndicator from '$lib/realtime/SseIndicator.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import CommandPalette from '$lib/components/command-palette/CommandPalette.svelte';
 	import { ModeWatcher } from 'mode-watcher';
@@ -49,13 +50,24 @@
 		<Menu class="size-4" />
 	</button>
 
+	<!--
+	  Mobile connection indicator: the sidebar (and SystemStatusCard inside it)
+	  is off-canvas below md, so without this there is no way to see stream
+	  health on a phone short of opening the drawer.
+	-->
+	<div
+		class="md:hidden fixed top-3 right-3 z-40 rounded-md border border-border bg-background/90 backdrop-blur shadow-sm px-2 py-1.5"
+	>
+		<SseIndicator />
+	</div>
+
 	<!-- Backdrop for mobile drawer -->
 	{#if sidebarOpen}
 		<button
 			type="button"
 			aria-label="Close navigation"
 			onclick={() => (sidebarOpen = false)}
-			class="md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+			class="md:hidden fixed inset-0 z-40 bg-overlay/50 backdrop-blur-sm"
 		></button>
 	{/if}
 

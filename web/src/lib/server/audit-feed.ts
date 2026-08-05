@@ -64,6 +64,12 @@ export async function loadAuditFeed(
   if (filters.actor) runWhere.append(sql` and false`);
   if (filters.draftId !== undefined) runWhere.append(sql` and false`);
 
+  // Compares as bigint, not text: `id` stays a native bigint column below
+  // (node-postgres already stringifies bigint output to avoid precision
+  // loss, so `AuditRow.id` is still a JS string) - casting it to `::text`
+  // here would make this a text/bigint tuple comparison, which Postgres
+  // rejects outright ("operator does not exist: text < bigint"), so every
+  // "Load more" past page one would 500.
   const cursorClause = filters.cursor
     ? sql` where (created_at, id) < (${filters.cursor.createdAt.toISOString()}::timestamptz, ${filters.cursor.id}::bigint)`
     : sql.empty();
@@ -81,7 +87,7 @@ export async function loadAuditFeed(
     with feed as (
       select
         'draft'::text as kind,
-        de.id::text as id,
+        de.id as id,
         de.event as event,
         de.actor as actor,
         de.draft_id as draft_id,
@@ -95,7 +101,7 @@ export async function loadAuditFeed(
       union all
       select
         'run'::text as kind,
-        re.id::text as id,
+        re.id as id,
         re.kind as event,
         null::text as actor,
         null::int as draft_id,
@@ -141,4 +147,56 @@ export async function loadAuditEventTypes(): Promise<string[]> {
     order by event asc
   `);
   return res.rows.map((r) => r.event);
+}
+
+function parseIntParam(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) && Number.isInteger(n) ? n : undefined;
+}
+
+function parseDateParam(value: string | null): Date | undefined {
+  if (!value) return undefined;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+/**
+ * Parses the audit page's query params into `AuditFilters`, cursor
+ * included. Shared by `+page.server.ts` (first page, server-rendered) and
+ * `+server.ts` (subsequent pages, fetched by "Load more") so the two can
+ * never filter differently - see the routing docs on co-located
+ * `+page.server.js` / `+server.js` files negotiated by Accept header.
+ */
+export function parseAuditFiltersFromUrl(url: URL, limit = 100): AuditFilters {
+  const filters: AuditFilters = {
+    actor: url.searchParams.get('actor') ?? undefined,
+    event: url.searchParams.get('event') ?? undefined,
+    draftId: parseIntParam(url.searchParams.get('draft_id')),
+    runId: parseIntParam(url.searchParams.get('run_id')),
+    from: parseDateParam(url.searchParams.get('from')),
+    to: parseDateParam(url.searchParams.get('to')),
+    limit,
+  };
+
+  const cursorCreatedAt = url.searchParams.get('cursor_at');
+  const cursorId = url.searchParams.get('cursor_id');
+  if (cursorCreatedAt && cursorId) {
+    const at = new Date(cursorCreatedAt);
+    if (!Number.isNaN(at.getTime())) {
+      filters.cursor = { createdAt: at, id: cursorId };
+    }
+  }
+
+  return filters;
+}
+
+/** Computes the next-page cursor from a page of `loadAuditFeed` rows. */
+export function nextAuditCursor(
+  rows: AuditRow[],
+  limit: number,
+): { createdAt: string; id: string } | null {
+  if (rows.length !== limit) return null;
+  const last = rows[rows.length - 1];
+  return { createdAt: last.createdAt.toISOString(), id: last.id };
 }

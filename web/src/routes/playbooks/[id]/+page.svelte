@@ -8,6 +8,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
 	import { untrack } from 'svelte';
+	import PageContainer from '$lib/components/PageContainer.svelte';
 
 	type Playbook = {
 		id: number;
@@ -81,6 +82,7 @@
 	}
 </script>
 
+<PageContainer size="default">
 <Seo title={`Playbook · ${data.playbook.name}`} description="Edit a Pitchbox playbook." />
 
 <PageHeader title={data.playbook.name} description={`Slug: ${data.playbook.slug}`}>
@@ -124,3 +126,4 @@
 		</label>
 	</Card.Content>
 </Card.Root>
+</PageContainer>

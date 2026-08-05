@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Circle, Loader2, CheckCircle2 } from '@lucide/svelte';
+	import { TONE_TEXT_CLASS } from '$lib/config/status-badges';
 
 	let {
 		todos = [],
@@ -40,7 +41,7 @@
 			{#each todos as todo}
 				<li class="flex items-start gap-2 text-xs min-w-0">
 					{#if todo.status === 'completed'}
-						<CheckCircle2 class="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+						<CheckCircle2 class="size-3.5 {TONE_TEXT_CLASS.emerald} shrink-0 mt-0.5" />
 						<span class="line-through text-muted-foreground/50 break-words min-w-0">{todo.content}</span>
 					{:else if todo.status === 'in_progress'}
 						<Loader2 class="size-3.5 text-primary animate-spin shrink-0 mt-0.5" />

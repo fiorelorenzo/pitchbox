@@ -10,6 +10,9 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { UserPlus, Copy, Trash2, MoreHorizontal, Pencil } from '@lucide/svelte';
   import { untrack } from 'svelte';
+  import PageContainer from '$lib/components/PageContainer.svelte';
+  import RemoveMemberDialog from '$lib/components/settings/RemoveMemberDialog.svelte';
+  import LeaveOrgDialog from '$lib/components/settings/LeaveOrgDialog.svelte';
 
   type Member = { userId: number; username: string; role: string; joinedAt: string };
   type Invite = {
@@ -181,9 +184,18 @@
       acting = null;
     }
   }
-  async function removeMemberAction(userId: number, username: string) {
-    if (!data.org || acting) return;
-    if (!confirm(`Remove ${username} from ${data.org.name}?`)) return;
+
+  let removeMemberDialogOpen = $state(false);
+  let removeMemberTarget = $state<{ userId: number; username: string } | null>(null);
+
+  function openRemoveMemberDialog(userId: number, username: string) {
+    removeMemberTarget = { userId, username };
+    removeMemberDialogOpen = true;
+  }
+
+  async function removeMemberAction() {
+    if (!data.org || !removeMemberTarget || acting) return;
+    const { userId, username } = removeMemberTarget;
     acting = userId;
     try {
       const res = await fetch(`/api/orgs/${data.org.slug}/members/${userId}`, { method: 'DELETE' });
@@ -195,6 +207,8 @@
         return;
       }
       toast.success(`${username} removed`);
+      removeMemberDialogOpen = false;
+      removeMemberTarget = null;
       await invalidateAll();
     } catch {
       toast.error('Could not remove the member');
@@ -290,11 +304,11 @@
     }
   }
 
-  // Leave the organization (self-remove).
+  // Leave the organization (self-remove), guarded by a typed-name confirmation.
   let leaving = $state(false);
+  let leaveDialogOpen = $state(false);
   async function leaveOrg() {
     if (!data.org || leaving) return;
-    if (!confirm(`Leave ${data.org.name}?`)) return;
     leaving = true;
     try {
       const res = await fetch(`/api/orgs/${data.org.slug}/leave`, { method: 'POST' });
@@ -304,6 +318,7 @@
         return;
       }
       toast.success('You left the organization');
+      leaveDialogOpen = false;
       await goto('/', { invalidateAll: true });
     } catch {
       toast.error('Could not leave the organization');
@@ -341,6 +356,7 @@
   }
 </script>
 
+<PageContainer size="default">
 <Seo
   title="Settings - Organization"
   description="Organization name, roles, members, invites, and danger zone."
@@ -541,7 +557,7 @@
                   <DropdownMenu.Separator />
                   <DropdownMenu.Item
                     class="gap-2 text-destructive"
-                    onclick={() => removeMemberAction(m.userId, m.username)}
+                    onclick={() => openRemoveMemberDialog(m.userId, m.username)}
                   >
                     <Trash2 class="size-4" />
                     Remove from organization
@@ -607,7 +623,7 @@
             <p class="text-sm font-medium">Leave organization</p>
             <p class="text-xs text-muted-foreground">Remove yourself from {data.org.name}.</p>
           </div>
-          <Button variant="outline" onclick={leaveOrg} loading={leaving}>Leave</Button>
+          <Button variant="outline" onclick={() => (leaveDialogOpen = true)} loading={leaving}>Leave</Button>
         </div>
         {#if data.isOwner && data.org.slug !== 'default'}
           <div
@@ -710,7 +726,7 @@
     <Dialog.Footer>
       <Button variant="ghost" onclick={() => (deleteOpen = false)} disabled={deleting}>Cancel</Button>
       <Button
-        class="bg-destructive text-white hover:bg-destructive/90"
+        variant="destructive"
         onclick={deleteOrg}
         loading={deleting}
         disabled={deleteConfirm !== data.org?.name}
@@ -720,3 +736,19 @@
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
+
+<RemoveMemberDialog
+  bind:open={removeMemberDialogOpen}
+  name={removeMemberTarget?.username ?? ''}
+  orgName={data.org?.name ?? ''}
+  onConfirm={removeMemberAction}
+  onClose={() => (removeMemberDialogOpen = false)}
+/>
+
+<LeaveOrgDialog
+  bind:open={leaveDialogOpen}
+  name={data.org?.name ?? ''}
+  onConfirm={leaveOrg}
+  onClose={() => (leaveDialogOpen = false)}
+/>
+</PageContainer>

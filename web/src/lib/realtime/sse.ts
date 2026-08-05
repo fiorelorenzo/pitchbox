@@ -13,6 +13,21 @@
 
 export type SseStatus = 'connecting' | 'live' | 'reconnecting' | 'closed';
 
+/** The four keys of the shared `connection-status` badge domain
+ * (web/src/lib/config/status-badges.ts). Every consumer that renders SSE
+ * health should map through this instead of re-deriving its own palette. */
+export type ConnectionKey = 'live' | 'warn' | 'down' | 'idle';
+
+export function connectionKeyFor(status: SseStatus): ConnectionKey {
+  return status === 'live'
+    ? 'live'
+    : status === 'reconnecting'
+      ? 'warn'
+      : status === 'closed'
+        ? 'down'
+        : 'idle';
+}
+
 type Handler = (event: MessageEvent) => void;
 
 export interface SseManager {

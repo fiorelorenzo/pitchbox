@@ -7,7 +7,7 @@ import {
 } from '@pitchbox/shared/agents/config';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { z } from 'zod';
-import { requireInstanceAdmin } from '$lib/server/auth.js';
+import { requireInstanceAdmin, requireRole } from '$lib/server/auth.js';
 
 const ConfigSchema = z.object({
   model: z.string().min(1).optional(),
@@ -24,7 +24,11 @@ function isRunnerSlug(slug: string): slug is AgentRunnerSlug {
   return AGENT_RUNNER_META.some((m) => m.slug === slug);
 }
 
-export async function GET() {
+// Same view/mutate split as settings/+page.server.ts: viewing per-runner
+// config is gated to the per-org 'admin' role, changing it is instance-wide
+// config so it needs the stricter requireInstanceAdmin (#137).
+export async function GET(event: RequestEvent) {
+  requireRole(event, 'admin');
   const db = getDb();
   const configs = await loadRunnerConfigs(db);
   return json({ configs });

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { AlertTriangle } from '@lucide/svelte';
+	import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
 
 	let { show = false }: { show?: boolean } = $props();
 </script>
@@ -7,7 +8,7 @@
 {#if show}
 	<div
 		role="alert"
-		class="mb-3 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:text-amber-200"
+		class="mb-3 flex items-start gap-2 rounded-lg border {TONE_BANNER_CLASS.amber}"
 	>
 		<AlertTriangle class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
 		<div class="flex-1">

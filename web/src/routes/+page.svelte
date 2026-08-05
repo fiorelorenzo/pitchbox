@@ -17,6 +17,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { relativeTime } from '$lib/utils/time';
+	import PageContainer from '$lib/components/PageContainer.svelte';
 
 	type Run = {
 		id: number;
@@ -78,6 +79,7 @@
 	);
 </script>
 
+<PageContainer size="default">
 <Seo
 	title="Home"
 	description="Outreach overview - drafts awaiting review, recent runs, campaign status."
@@ -117,7 +119,7 @@
 		label="Reply rate"
 		value={replyRate > 0 ? `${replyRate}%` : '-'}
 		icon={MessageCircle}
-		href="/contacts"
+		href="/people?tab=contacts"
 		hint="{data.stats.replies} replies · {data.stats.uniqueContacts} contacts"
 	/>
 </div>
@@ -152,7 +154,7 @@
 		label="Unique people contacted"
 		value={data.stats.uniqueContacts}
 		icon={Users}
-		href="/contacts"
+		href="/people?tab=contacts"
 		hint="All-time outreach"
 	/>
 </div>
@@ -205,6 +207,9 @@
 			<Card.Title class="text-base">Campaigns</Card.Title>
 			<Card.Description class="text-xs">
 				{activeCampaigns.length} active · {pausedCampaigns.length} paused
+				{#if data.campaigns.length > 6}
+					· showing 6 of {data.campaigns.length}
+				{/if}
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>
@@ -241,8 +246,14 @@
 							</span>
 						</li>
 					{/each}
-				</ul>
+			</ul>
+			{#if data.campaigns.length > 6}
+				<a href="/campaigns" class="mt-2 block text-center text-xs text-primary hover:underline">
+					View all {data.campaigns.length} campaigns
+				</a>
+			{/if}
 			{/if}
 		</Card.Content>
 	</Card.Root>
 </div>
+</PageContainer>

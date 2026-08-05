@@ -4,6 +4,9 @@
   import { Button } from '$lib/components/ui/button';
   import { toast } from 'svelte-sonner';
   import { getSchema, type ScenarioSlug } from '@pitchbox/shared/campaigns';
+  import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
+  import StreamStatusBanner from '$lib/realtime/StreamStatusBanner.svelte';
+  import { getSseManager } from '$lib/realtime/sse';
 
   import RegenerateProfileDialog from './RegenerateProfileDialog.svelte';
   import RedditScoutTargetingForm from './forms/RedditScoutTargetingForm.svelte';
@@ -74,31 +77,33 @@
     }
   }
 
-  let es: EventSource | null = null;
+  const unsubs: Array<() => void> = [];
   onMount(() => {
-    es = new EventSource('/api/stream');
-    es.addEventListener('run:finished', async (ev: MessageEvent) => {
-      let payload: { campaignId?: number | null; runId?: number } = {};
-      try {
-        payload = JSON.parse(ev.data);
-      } catch {
-        /* ignore */
-      }
-      if (payload.campaignId !== campaignId) return;
-      if (runningRunId !== null && payload.runId === runningRunId) {
-        runningRunId = null;
-        await invalidateAll();
-        toast.success('Profile generated');
-      }
-    });
+    unsubs.push(
+      getSseManager().on('run:finished', async (ev: MessageEvent) => {
+        let payload: { campaignId?: number | null; runId?: number } = {};
+        try {
+          payload = JSON.parse(ev.data);
+        } catch {
+          /* ignore */
+        }
+        if (payload.campaignId !== campaignId) return;
+        if (runningRunId !== null && payload.runId === runningRunId) {
+          runningRunId = null;
+          await invalidateAll();
+          toast.success('Profile generated');
+        }
+      }),
+    );
   });
-  onDestroy(() => es?.close());
+  onDestroy(() => unsubs.forEach((unsub) => unsub()));
 </script>
 
 <div class="space-y-6">
+  <StreamStatusBanner active={generationRunning} onReconnect={() => invalidateAll()} />
   {#if generationRunning}
     <div
-      class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+      class="rounded-md border px-3 py-2 text-xs {TONE_BANNER_CLASS.amber}"
     >
       Generation running - profile is locked until it finishes.
     </div>

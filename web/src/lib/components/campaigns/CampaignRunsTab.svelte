@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ChevronDown, ChevronUp } from '@lucide/svelte';
+  import { tick } from 'svelte';
   import { Badge } from '$lib/components/ui/badge';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import * as Card from '$lib/components/ui/card';
@@ -22,13 +23,26 @@
     costUsd?: string | number | null;
     failureReason?: string | null;
   };
-  type Props = { runs: Run[] };
-  let { runs }: Props = $props();
+  type Props = { runs: Run[]; highlightRunId?: number | null };
+  let { runs, highlightRunId = null }: Props = $props();
 
   let expandedRunId = $state<number | null>(null);
   function toggle(id: number) {
     expandedRunId = expandedRunId === id ? null : id;
   }
+
+  // A ?run= deep link (#239) can change while this tab stays mounted, for
+  // instance when following a second link from a notification, so expand and
+  // scroll from an effect keyed on the prop instead of seeding state once at
+  // init. Keying on highlightRunId alone means a manual toggle() is never
+  // fought: the effect only re-runs when the deep link itself changes.
+  $effect(() => {
+    if (highlightRunId == null) return;
+    expandedRunId = highlightRunId;
+    void tick().then(() => {
+      document.getElementById(`run-row-${highlightRunId}`)?.scrollIntoView({ block: 'center' });
+    });
+  });
 
   function kindLabel(k: string): string {
     return k === 'campaign_skill_generation' ? 'skill-generation' : k;
@@ -109,6 +123,7 @@
           {#each visibleRuns as run (run.id)}
             {@const expanded = expandedRunId === run.id}
             <Table.Row
+              id="run-row-{run.id}"
               onclick={() => toggle(run.id)}
               onkeydown={(e: KeyboardEvent) => {
                 if (e.key === 'Enter' || e.key === ' ') {

@@ -2,20 +2,49 @@ import { getDb, schema } from '$lib/server/db.js';
 import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
+import { runBelongsToOrg } from '@pitchbox/shared/orgs';
+import { redirect } from '@sveltejs/kit';
 
 export async function load(event: import('@sveltejs/kit').RequestEvent) {
   const { url } = event;
   const db = getDb();
   const projectSlug = url.searchParams.get('project') ?? '';
+  const runParam = url.searchParams.get('run');
 
   const orgId = await resolveOrgId(event);
   const projects = await listProjects(db, { organizationId: orgId });
   const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
   const projectIds = projects.map((p) => p.id);
 
+  // `?run=<id>` (from the Audit log) targets one specific run, which belongs
+  // to exactly one campaign. This list has no per-run view, so resolve the
+  // owning campaign and hand off to its detail page, which knows how to
+  // expand and scroll to that run. A malformed or foreign-org id falls back
+  // to the unfiltered list with `runFilterInvalid` set so the page can say
+  // so, rather than silently ignoring the link (#239).
+  let runFilterInvalid: string | null = null;
+  if (runParam != null) {
+    const runId = Number(runParam);
+    if (
+      orgId != null &&
+      Number.isInteger(runId) &&
+      runId > 0 &&
+      (await runBelongsToOrg(db, runId, orgId))
+    ) {
+      const [runRow] = await db
+        .select({ campaignId: schema.runs.campaignId })
+        .from(schema.runs)
+        .where(eq(schema.runs.id, runId));
+      if (runRow?.campaignId != null) {
+        throw redirect(302, `/campaigns/${runRow.campaignId}?run=${runId}`);
+      }
+    }
+    runFilterInvalid = runParam;
+  }
+
   // No projects in this org - nothing to show, and `inArray(x, [])` is a SQL error.
   if (projectIds.length === 0) {
-    return { campaigns: [], projects: [], activeProject: null };
+    return { campaigns: [], projects: [], activeProject: null, runFilterInvalid };
   }
 
   const campaignScope = activeProject
@@ -141,5 +170,6 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     campaigns: enrichedCampaigns,
     projects: projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name })),
     activeProject,
+    runFilterInvalid,
   };
 }

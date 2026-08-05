@@ -3,6 +3,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { toast } from 'svelte-sonner';
+  import PageContainer from '$lib/components/PageContainer.svelte';
 
   let name = $state('');
   let slug = $state('');
@@ -48,6 +49,7 @@
   }
 </script>
 
+<PageContainer size="narrow">
 <h1 class="text-2xl font-semibold mb-2">New project</h1>
 <p class="text-sm text-muted-foreground mb-6">
   Just a name to get started. Description, accounts, and campaign settings can be added from the
@@ -75,3 +77,4 @@
     <a href="/projects"><Button type="button" variant="ghost">Cancel</Button></a>
   </div>
 </form>
+</PageContainer>

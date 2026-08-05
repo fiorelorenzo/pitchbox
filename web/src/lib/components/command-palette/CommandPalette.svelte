@@ -16,12 +16,13 @@
 	let query = $state('');
 	let results = $state<SearchResult[]>([]);
 	let loading = $state(false);
+	let searchError = $state<string | null>(null);
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// Static fallback actions shown when the query is empty.
 	const staticActions: Array<{ label: string; href: string; icon: typeof Plus }> = [
 		{ label: 'Create campaign', href: '/campaigns/new', icon: Plus },
-		{ label: 'Generate extension token', href: '/settings', icon: Key },
+		{ label: 'Generate extension token', href: '/settings/extension', icon: Key },
 		{ label: 'Open Settings', href: '/settings', icon: Settings },
 	];
 
@@ -41,19 +42,29 @@
 	async function runSearch(q: string) {
 		if (!q.trim()) {
 			results = [];
+			searchError = null;
 			loading = false;
 			return;
 		}
 		loading = true;
+		searchError = null;
 		try {
 			const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
 			if (!res.ok) {
+				const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+				if (res.status >= 500) {
+					console.error('search failed', res.status, body);
+					searchError = 'Search is temporarily unavailable.';
+				} else {
+					searchError = body.error ?? body.message ?? 'Search request was rejected.';
+				}
 				results = [];
 				return;
 			}
 			const data = (await res.json()) as { results: SearchResult[] };
 			results = data.results ?? [];
 		} catch {
+			searchError = 'Search is temporarily unavailable, check your connection.';
 			results = [];
 		} finally {
 			loading = false;
@@ -100,6 +111,8 @@
 			</Command.Group>
 		{:else if loading && results.length === 0}
 			<Command.Loading>Searching...</Command.Loading>
+		{:else if searchError}
+			<Command.Empty>{searchError}</Command.Empty>
 		{:else if results.length === 0}
 			<Command.Empty>No results found.</Command.Empty>
 		{:else}

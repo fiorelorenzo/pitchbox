@@ -10,8 +10,10 @@
 	import { SelectField } from '$lib/components/ui/select-field';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { relativeTime } from '$lib/utils/time';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import PageContainer from '$lib/components/PageContainer.svelte';
 
 	type Entry = {
 		id: number;
@@ -97,9 +99,26 @@
 		}
 	}
 
-	async function remove(id: number) {
+	function entryLabel(entry: Entry): string {
+		if (entry.kind === 'subreddit') return `r/${entry.value}`;
+		if (entry.kind === 'user') return `u/${entry.value}`;
+		return `"${entry.value}"`;
+	}
+
+	let deleteDialogOpen = $state(false);
+	let deleteTarget = $state<Entry | null>(null);
+	let removing = $state(false);
+
+	function openDeleteDialog(entry: Entry) {
+		deleteTarget = entry;
+		deleteDialogOpen = true;
+	}
+
+	async function confirmRemove() {
+		if (!deleteTarget) return;
+		removing = true;
 		try {
-			const res = await fetch(`/api/blocklist/${id}`, { method: 'DELETE' });
+			const res = await fetch(`/api/blocklist/${deleteTarget.id}`, { method: 'DELETE' });
 			if (!res.ok) {
 				if (res.status === 403) {
 					toast.error('You need admin access for that');
@@ -108,14 +127,19 @@
 				throw new Error(await res.text());
 			}
 			toast.success('Removed');
+			deleteDialogOpen = false;
+			deleteTarget = null;
 			await invalidateAll();
 		} catch (err) {
 			toast.error('Failed', { description: (err as Error).message });
+		} finally {
+			removing = false;
 		}
 	}
 
 </script>
 
+<PageContainer size="default">
 <Seo
 	title="Blocklist"
 	description="Subreddits, users and keywords that campaigns will skip during outreach."
@@ -229,7 +253,7 @@
 											variant="ghost"
 											size="icon"
 											aria-label="Remove"
-											onclick={() => remove(e.id)}
+											onclick={() => openDeleteDialog(e)}
 											class="text-muted-foreground hover:text-destructive"
 										>
 											<Trash2 class="size-4" />
@@ -244,3 +268,24 @@
 		</Card.Content>
 	</Card.Root>
 </div>
+
+<AlertDialog.Root bind:open={deleteDialogOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>
+				Remove {deleteTarget ? entryLabel(deleteTarget) : 'this entry'} from the blocklist?
+			</AlertDialog.Title>
+			<AlertDialog.Description>
+				Campaigns will be able to contact {deleteTarget ? entryLabel(deleteTarget) : 'this entry'} again
+				immediately. There is no undo.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel onclick={() => (deleteDialogOpen = false)}>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={confirmRemove} disabled={removing}>
+				{removing ? 'Removing…' : 'Remove'}
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+</PageContainer>

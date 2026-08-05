@@ -3,11 +3,16 @@ import { z } from 'zod';
 import { getDb } from '$lib/server/db.js';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { loadDefaultRunnerSlug, saveDefaultRunnerSlug } from '@pitchbox/shared/agents/config';
-import { requireInstanceAdmin } from '$lib/server/auth.js';
+import { requireInstanceAdmin, requireRole } from '$lib/server/auth.js';
 
 const Body = z.object({ slug: z.string() });
 
-export async function GET() {
+// Same view/mutate split as settings/+page.server.ts and
+// settings/retention/+page.server.ts: viewing the configured default runner
+// is gated to the per-org 'admin' role, changing it is instance-wide config
+// so it needs the stricter requireInstanceAdmin (#137).
+export async function GET(event: RequestEvent) {
+  requireRole(event, 'admin');
   return json({ slug: await loadDefaultRunnerSlug(getDb()) });
 }
 

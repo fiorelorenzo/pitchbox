@@ -3,19 +3,26 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import * as Card from '$lib/components/ui/card';
-	import { formatDuration } from '$lib/utils/time';
+	import { formatDuration, relativeTimeUntil } from '$lib/utils/time';
 	import Seo from '$lib/components/Seo.svelte';
 	import CampaignProfileTab from '$lib/components/campaigns/CampaignProfileTab.svelte';
 	import CampaignRunsTab from '$lib/components/campaigns/CampaignRunsTab.svelte';
 	import CampaignTuningTab from '$lib/components/campaigns/CampaignTuningTab.svelte';
+	import CampaignWatchesTab from '$lib/components/campaigns/CampaignWatchesTab.svelte';
 	import RegenerateProfileDialog from '$lib/components/campaigns/RegenerateProfileDialog.svelte';
 	import DeleteCampaignDialog from '$lib/components/campaigns/DeleteCampaignDialog.svelte';
+	import CronScheduleField from '$lib/components/campaigns/CronScheduleField.svelte';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { platformSupportsAutoPost, type ScenarioSlug } from '@pitchbox/shared/campaigns';
+	import PageContainer from '$lib/components/PageContainer.svelte';
+	import { TONE_BANNER_CLASS, TONE_TEXT_CLASS } from '$lib/config/status-badges';
+	import StreamStatusBanner from '$lib/realtime/StreamStatusBanner.svelte';
+	import { getSseManager } from '$lib/realtime/sse';
 
 	type SkillRun = { id: number; status: string; params: { objective?: string } | null };
 
@@ -47,6 +54,7 @@
 				status: string;
 				config: Record<string, unknown> | null;
 				cronExpression: string | null;
+				nextRunAt: string | Date | null;
 				rateLimit: unknown;
 				autoPost: boolean;
 			};
@@ -73,6 +81,18 @@
 				finishedAt: string | Date | null;
 				params: Record<string, unknown> | null;
 			}>;
+			watches: Array<{
+				id: number;
+				subreddit: string;
+				pattern: string;
+				matchField: 'title' | 'selftext' | 'comment';
+				isActive: boolean;
+				lastSeenAt: string | null;
+				cooldownMinutes: number;
+				consecutiveFailures: number;
+				nextAttemptAfter: string | null;
+				createdAt: string;
+			}>;
 			readiness: {
 				ready: boolean;
 				issues: ReadinessIssue[];
@@ -84,17 +104,54 @@
 	} = $props();
 
 	let isStarting = $state(false);
-	let tab = $state<'overview' | 'profile' | 'tuning' | 'runs'>('overview');
+	// `?run=<id>` (from the campaigns list or Audit log) targets one run inside
+	// this campaign's history: land straight on the Runs tab so it does not
+	// look like the link went nowhere. A non-numeric value is ignored (and
+	// reported below) rather than crashing the tab computation (#239).
+	const highlightRunId = $derived.by(() => {
+		const raw = $page.url.searchParams.get('run');
+		if (!raw) return null;
+		const n = Number(raw);
+		return Number.isInteger(n) && n > 0 ? n : null;
+	});
+	let tab = $state<'overview' | 'profile' | 'tuning' | 'watches' | 'runs'>('overview');
+	// A ?run= link must open the Runs tab, including when it arrives while the
+	// page is already mounted (following a second link from a notification, say).
+	// Keying the effect on highlightRunId means clicking another tab afterwards
+	// is never overridden: it only re-runs when the deep link itself changes.
+	$effect(() => {
+		if (highlightRunId != null) tab = 'runs';
+	});
+
+	let warnedInvalidRun: string | null = null;
+	$effect(() => {
+		const raw = $page.url.searchParams.get('run');
+		if (raw && highlightRunId == null) {
+			if (warnedInvalidRun !== raw) {
+				warnedInvalidRun = raw;
+				toast.warning('Run link ignored', {
+					description: `"${raw}" is not a valid run id - showing the campaign overview instead.`,
+				});
+			}
+		} else {
+			warnedInvalidRun = null;
+		}
+	});
 	let regenOpen = $state(false);
 	let autoPostSaving = $state(false);
 	let deleteOpen = $state(false);
+	// svelte-ignore state_referenced_locally
+	let cronDraft = $state(data.campaign.cronExpression ?? '');
+	let cronEditing = $state(false);
+	let cronValid = $state(true);
+	let cronSaving = $state(false);
 
 	// Live-refresh readiness + run lists when a profile-gen or campaign run
 	// starts or finishes (this tab, another tab, or the daemon). Without this,
 	// the banner stays stuck on the snapshot taken at page load.
-	let es: EventSource | null = null;
+	const unsubs: Array<() => void> = [];
 	onMount(() => {
-		es = new EventSource('/api/stream');
+		const sseManager = getSseManager();
 		const refreshIfRelevant = (e: MessageEvent) => {
 			try {
 				const payload = JSON.parse(e.data);
@@ -103,16 +160,17 @@
 				// non-JSON heartbeat: ignore
 			}
 		};
-		es.addEventListener('run:started', refreshIfRelevant);
-		es.addEventListener('run:finished', refreshIfRelevant);
-		es.addEventListener('run:failed', refreshIfRelevant);
+		unsubs.push(sseManager.on('run:started', refreshIfRelevant));
+		unsubs.push(sseManager.on('run:finished', refreshIfRelevant));
+		unsubs.push(sseManager.on('run:failed', refreshIfRelevant));
 	});
-	onDestroy(() => es?.close());
+	onDestroy(() => unsubs.forEach((unsub) => unsub()));
 
 	const tabs = [
 		{ k: 'overview' as const, label: 'Overview' },
 		{ k: 'profile' as const, label: 'Profile' },
 		{ k: 'tuning' as const, label: 'Tuning' },
+		{ k: 'watches' as const, label: 'Watches' },
 		{ k: 'runs' as const, label: 'Runs' },
 	];
 
@@ -125,9 +183,6 @@
 		!!data.campaign.rateLimit && JSON.stringify(data.campaign.rateLimit) !== '{}',
 	);
 	const autoPostSupported = $derived(platformSupportsAutoPost(data.platform?.slug ?? ''));
-	const hasConfigCard = $derived(
-		!!data.campaign.cronExpression || hasRateLimit || autoPostSupported,
-	);
 
 	async function toggleAutoPost(value: boolean) {
 		if (autoPostSaving) return;
@@ -147,6 +202,36 @@
 			await invalidateAll();
 		} finally {
 			autoPostSaving = false;
+		}
+	}
+
+	async function saveCron() {
+		if (cronSaving) return;
+		const trimmed = cronDraft.trim();
+		if (trimmed && !cronValid) {
+			toast.error('Fix the cron expression before saving');
+			return;
+		}
+		cronSaving = true;
+		try {
+			const res = await fetch(`/api/campaigns/${data.campaign.id}`, {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ cronExpression: trimmed || null }),
+			});
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok) {
+				if (res.status >= 500) console.error('failed to update campaign schedule', body);
+				toast.error(body.message ?? body.error ?? 'Failed to update schedule');
+				return;
+			}
+			toast.success(trimmed ? 'Schedule updated' : 'Schedule cleared');
+			cronEditing = false;
+			await invalidateAll();
+		} catch {
+			toast.error('Failed to update schedule, check your connection');
+		} finally {
+			cronSaving = false;
 		}
 	}
 
@@ -249,6 +334,7 @@
 	}
 </script>
 
+<PageContainer size="default">
 <Seo
 	title={data.campaign.name}
 	description="Campaign detail - cron schedule, recent runs, agent configuration."
@@ -303,14 +389,16 @@
 	</Button>
 </header>
 
+<StreamStatusBanner active={campaignRunning} onReconnect={() => invalidateAll()} />
+
 {#if issues.length > 0}
 	{@const blocking = issues.filter((i) => i.fix.kind !== 'progress').length}
-	<div class="mb-6 rounded-md border border-amber-500/40 bg-amber-500/10 p-4">
+	<div class="mb-6 rounded-md border p-4 {TONE_BANNER_CLASS.amber}">
 		<div class="flex items-baseline justify-between gap-3 mb-3">
-			<h2 class="text-sm font-medium text-amber-700 dark:text-amber-300">
+			<h2 class="text-sm font-medium {TONE_TEXT_CLASS.amber}">
 				{blocking > 0 ? 'Setup required' : 'In progress'}
 			</h2>
-			<span class="text-xs text-amber-700/70 dark:text-amber-300/70">
+			<span class="text-xs {TONE_TEXT_CLASS.amber} opacity-70">
 				{#if blocking > 0}
 					{blocking} item{blocking === 1 ? '' : 's'} blocking this campaign
 				{:else}
@@ -323,7 +411,7 @@
 				<li class="flex items-start justify-between gap-3">
 					<div class="min-w-0 flex items-start gap-2">
 						{#if issue.fix.kind === 'progress'}
-							<Loader2 class="size-4 animate-spin text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+							<Loader2 class="size-4 animate-spin {TONE_TEXT_CLASS.amber} shrink-0 mt-0.5" />
 						{/if}
 						<div class="min-w-0">
 							<p class="text-sm font-medium">{issue.title}</p>
@@ -332,7 +420,7 @@
 					</div>
 					{#if issue.fix.kind === 'progress'}
 						<span
-							class="shrink-0 text-xs font-mono text-amber-700/80 dark:text-amber-300/80 px-2 py-1"
+							class="shrink-0 text-xs font-mono {TONE_TEXT_CLASS.amber} opacity-80 px-2 py-1"
 						>
 							{issue.fix.label}
 						</span>
@@ -367,54 +455,98 @@
 
 {#if tab === 'overview'}
 
-	<div class={`grid gap-4 mb-6 ${hasConfigCard ? 'md:grid-cols-2' : ''}`}>
-		{#if hasConfigCard}
-			<Card.Root size="sm">
-				<Card.Header>
-					<Card.Title class="text-base">Configuration</Card.Title>
-				</Card.Header>
-				<Card.Content class="space-y-3">
-					{#if data.campaign.cronExpression}
-						<div>
-							<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Cron (UTC)</p>
-							<code class="font-mono text-xs bg-muted px-2 py-1 rounded"
-								>{data.campaign.cronExpression}</code
+	<div class="grid gap-4 mb-6 md:grid-cols-2">
+		<Card.Root size="sm">
+			<Card.Header>
+				<Card.Title class="text-base">Configuration</Card.Title>
+			</Card.Header>
+			<Card.Content class="space-y-3">
+				<div>
+					<div class="flex items-center justify-between mb-1">
+						<p class="text-xs text-muted-foreground uppercase tracking-wide">Schedule</p>
+						{#if !cronEditing}
+							<button
+								type="button"
+								class="text-xs text-primary hover:underline"
+								onclick={() => {
+									cronDraft = data.campaign.cronExpression ?? '';
+									cronEditing = true;
+								}}
 							>
-							<p class="text-xs text-muted-foreground mt-1">
-								Schedule times are in UTC, not your local timezone.
-							</p>
+								Edit
+							</button>
+						{/if}
+					</div>
+					{#if cronEditing}
+						<CronScheduleField bind:value={cronDraft} bind:valid={cronValid} disabled={cronSaving} />
+						<div class="flex gap-2 mt-2">
+							<Button
+								size="sm"
+								loading={cronSaving}
+								disabled={cronDraft.trim() !== '' && !cronValid}
+								onclick={saveCron}
+							>
+								Save
+							</Button>
+							<Button
+								size="sm"
+								variant="ghost"
+								disabled={cronSaving}
+								onclick={() => (cronEditing = false)}
+							>
+								Cancel
+							</Button>
 						</div>
+					{:else if data.campaign.cronExpression}
+						<code class="font-mono text-xs bg-muted px-2 py-1 rounded"
+							>{data.campaign.cronExpression}</code
+						>
+						<p class="text-xs text-muted-foreground mt-1">
+							Times are in UTC. Next run:
+							<span
+								class={data.campaign.nextRunAt &&
+								new Date(data.campaign.nextRunAt).getTime() < Date.now()
+									? TONE_TEXT_CLASS.rose
+									: undefined}
+							>
+								{relativeTimeUntil(data.campaign.nextRunAt)}
+							</span>
+						</p>
+					{:else}
+						<p class="text-xs text-muted-foreground">
+							No schedule set - use "Run now" or add a cron expression.
+						</p>
 					{/if}
-					{#if hasRateLimit}
-						<div>
-							<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Rate limit</p>
-							<pre class="font-mono text-xs whitespace-pre-wrap bg-muted p-2 rounded">{JSON.stringify(
-									data.campaign.rateLimit,
-									null,
-									2
-								)}</pre>
-						</div>
-					{/if}
-					{#if autoPostSupported}
-						<div>
-							<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Auto-post</p>
-							<label class="flex items-center gap-2 text-sm">
-								<Checkbox
-									checked={data.campaign.autoPost}
-									onCheckedChange={toggleAutoPost}
-									disabled={autoPostSaving}
-								/>
-								Send approved drafts automatically
-							</label>
-							<p class="text-xs text-muted-foreground mt-1">
-								When enabled, an approved draft is posted immediately via the platform's API
-								instead of waiting for a manual send. Off by default.
-							</p>
-						</div>
-					{/if}
-				</Card.Content>
-			</Card.Root>
-		{/if}
+				</div>
+				{#if hasRateLimit}
+					<div>
+						<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Rate limit</p>
+						<pre class="font-mono text-xs whitespace-pre-wrap bg-muted p-2 rounded">{JSON.stringify(
+								data.campaign.rateLimit,
+								null,
+								2
+							)}</pre>
+					</div>
+				{/if}
+				{#if autoPostSupported}
+					<div>
+						<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Auto-post</p>
+						<label class="flex items-center gap-2 text-sm">
+							<Checkbox
+								checked={data.campaign.autoPost}
+								onCheckedChange={toggleAutoPost}
+								disabled={autoPostSaving}
+							/>
+							Send approved drafts automatically
+						</label>
+						<p class="text-xs text-muted-foreground mt-1">
+							When enabled, an approved draft is posted immediately via the platform's API
+							instead of waiting for a manual send. Off by default.
+						</p>
+					</div>
+				{/if}
+			</Card.Content>
+		</Card.Root>
 
 		<!-- Recent activity summary card -->
 		<Card.Root size="sm">
@@ -483,8 +615,10 @@
 	/>
 {:else if tab === 'tuning'}
 	<CampaignTuningTab campaignId={data.campaign.id} tuningRuns={data.tuningRuns} />
+{:else if tab === 'watches'}
+	<CampaignWatchesTab campaignId={data.campaign.id} watches={data.watches} />
 {:else}
-	<CampaignRunsTab runs={data.runs} />
+	<CampaignRunsTab runs={data.runs} {highlightRunId} />
 {/if}
 
 <RegenerateProfileDialog
@@ -504,3 +638,4 @@
 	onConfirm={remove}
 	onClose={() => (deleteOpen = false)}
 />
+</PageContainer>

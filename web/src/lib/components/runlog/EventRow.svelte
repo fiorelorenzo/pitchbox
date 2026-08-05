@@ -2,6 +2,7 @@
 	import { fly } from 'svelte/transition';
 	import type { EventKind } from './types';
 	import type { Snippet } from 'svelte';
+	import { resolveTone, PULSE_DOT_CLASS } from '$lib/config/status-badges';
 
 	let {
 		kind,
@@ -19,19 +20,14 @@
 		children: Snippet;
 	} = $props();
 
-	const DOT_COLOR: Record<EventKind, string> = {
-		session: 'bg-violet-400',
-		thinking: 'bg-slate-400',
-		'tool-call': 'bg-blue-400',
-		'tool-result': 'bg-green-400',
-		assistant: 'bg-sky-400',
-		'rate-limit': 'bg-yellow-400/30',
-		result: 'bg-primary',
-		unknown: 'bg-slate-300/30',
-	};
-
+	// 'result' keeps the app's primary accent rather than a registry tone: it
+	// marks the final summary of the run, not a status or event kind.
 	let dotColor = $derived(
-		isError && (kind === 'tool-result' || kind === 'result') ? 'bg-destructive' : DOT_COLOR[kind],
+		isError && (kind === 'tool-result' || kind === 'result')
+			? 'bg-destructive'
+			: kind === 'result'
+				? 'bg-primary'
+				: PULSE_DOT_CLASS[resolveTone('event-kind', kind)],
 	);
 </script>
 

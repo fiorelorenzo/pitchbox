@@ -7,6 +7,7 @@
 	import { toast } from 'svelte-sonner';
 	import { enhance } from '$app/forms';
 	import { untrack } from 'svelte';
+	import PageContainer from '$lib/components/PageContainer.svelte';
 
 	type Policy = {
 		drafts_days: number;
@@ -38,6 +39,7 @@
 	});
 </script>
 
+<PageContainer size="default">
 <Seo title="Settings - Retention" description="Configure how long drafts and event logs are kept before pruning." />
 
 <PageHeader
@@ -90,3 +92,4 @@
 		</Card.Content>
 	</Card.Root>
 </div>
+</PageContainer>

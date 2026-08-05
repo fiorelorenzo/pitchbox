@@ -8,6 +8,7 @@
 	import { toast } from 'svelte-sonner';
 	import { invalidateAll } from '$app/navigation';
 	import { ShieldAlert } from '@lucide/svelte';
+	import PageContainer from '$lib/components/PageContainer.svelte';
 
 	type Failure = { id: number; identifier: string; failedAt: string; kind: string };
 	type Policy = { maxAttempts: number; windowMinutes: number; lockoutMinutes: number };
@@ -57,6 +58,7 @@
 	}
 </script>
 
+<PageContainer size="default">
 <Seo title="Settings - Security" description="Recent failed logins and account lockout controls." />
 
 <PageHeader
@@ -136,3 +138,4 @@
 		</Card.Content>
 	</Card.Root>
 </div>
+</PageContainer>

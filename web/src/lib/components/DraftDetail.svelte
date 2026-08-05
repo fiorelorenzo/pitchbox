@@ -13,6 +13,7 @@
 	import { relativeTime } from '$lib/utils/time';
 	import Markdown from '$lib/components/Markdown.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import { TONE_CLASS, TONE_BANNER_CLASS } from '$lib/config/status-badges';
 	import { replyUrl } from '$lib/utils/reply-url';
 	import { getPresenter, isExtensionAutomated } from '$lib/platforms/presenter';
 	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
@@ -381,6 +382,12 @@
 
 {#if draft}
 	{@const primary = getPresenter(draft.platformSlug).primaryLabel(draft)}
+	{@const metaSegments = [
+		...(draft.fitScore != null ? [{ key: 'fit', text: `fit ${draft.fitScore}/5`, href: undefined }] : []),
+		{ key: 'run', text: `run #${draft.runId}`, href: `/inbox?run=${draft.runId}` },
+		...(draft.createdAt ? [{ key: 'created', text: relativeTime(draft.createdAt), href: undefined }] : []),
+		...(draft.sentAt ? [{ key: 'sent', text: `sent ${relativeTime(draft.sentAt)}`, href: undefined }] : []),
+	]}
 	{@const openLabel = extensionAutomated
 		? draft.kind === 'dm'
 			? 'Open compose ↗'
@@ -405,25 +412,19 @@
 				<div class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
 					<StatusBadge domain="draft-kind" value={draft.kind} />
 					<StatusBadge domain="draft-state" value={draft.state} />
-					<span class="text-muted-foreground/40">·</span>
-					<span>fit {draft.fitScore ?? '?'}/5</span>
-					<span class="text-muted-foreground/40">·</span>
-					<a href="/inbox?run={draft.runId}" class="hover:text-foreground transition-colors">
-						run #{draft.runId}
-					</a>
-					{#if draft.createdAt}
+					{#each metaSegments as segment (segment.key)}
 						<span class="text-muted-foreground/40">·</span>
-						<span>{relativeTime(draft.createdAt)}</span>
-					{/if}
-					{#if draft.sentAt}
-						<span class="text-muted-foreground/40">·</span>
-						<span>sent {relativeTime(draft.sentAt)}</span>
-					{/if}
+						{#if segment.href}
+							<a href={segment.href} class="hover:text-foreground transition-colors">{segment.text}</a>
+						{:else}
+							<span>{segment.text}</span>
+						{/if}
+					{/each}
 				</div>
 				{#if scheduledUntil}
 					<div class="text-xs">
 						<span
-							class="inline-flex items-center gap-1 rounded-sm bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 px-1.5 py-0.5 text-[10px] font-medium"
+							class="inline-flex items-center gap-1 rounded-sm ring-1 ring-inset {TONE_CLASS.amber} px-1.5 py-0.5 text-[10px] font-medium"
 							title="This draft will not be sendable until {scheduledUntil.toLocaleString()}"
 						>
 							Scheduled until {scheduledUntil.toLocaleString()}
@@ -483,16 +484,25 @@
 						{/if}
 					{/if}
 					<Button
+						onclick={reject}
+						loading={rejecting}
+						disabled={approving || rejecting}
+						variant="outline"
+						size="sm"
+						class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
+						aria-label="Reject draft"
+					>
+						Reject
+					</Button>
+					<Button
 						onclick={approve}
 						loading={approving}
-						disabled={isRegenerating || isDrafting || draftingFailed}
+						disabled={approving || rejecting || isRegenerating || isDrafting || draftingFailed}
 						variant="default"
 						size="sm"
+						aria-label="Approve draft"
 					>
 						Approve
-					</Button>
-					<Button onclick={reject} loading={rejecting} variant="destructive" size="sm">
-						Reject
 					</Button>
 				{/if}
 				{#if draft.state === 'approved' && draft.composeUrl}
@@ -651,7 +661,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		{#if overQuota && quotaKind && usage && limits}
-			<div class="rounded-md bg-red-50 ring-1 ring-red-200 px-3 py-2 text-sm text-red-800">
+			<div class="rounded-md border px-3 py-2 text-sm {TONE_BANNER_CLASS.rose}">
 				<strong>Quota reached.</strong>
 				You've already sent {usage[quotaKind].day}/{limits[quotaKind].perDay} {labelFor(quotaKind)} today
 				{#if overWeek}and {usage[quotaKind].week}/{limits[quotaKind].perWeek} this week{/if}

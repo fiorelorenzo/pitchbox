@@ -6,6 +6,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { toast } from 'svelte-sonner';
 	import Seo from '$lib/components/Seo.svelte';
+	import { TONE_TEXT_CLASS } from '$lib/config/status-badges';
 
 	let { data }: { data: { authOn: boolean; firstUser: boolean } } = $props();
 
@@ -34,32 +35,46 @@
 	}
 </script>
 
-<Seo title="Sign in" description="Sign in to Pitchbox" />
+<Seo
+	title={data.authOn ? 'Sign in' : 'Authentication disabled'}
+	description="Sign in to Pitchbox"
+/>
 
 <div class="min-h-screen flex items-center justify-center bg-background p-6">
 	<Card.Root class="w-full max-w-sm">
-		<Card.Header>
-			<Card.Title>{data.firstUser ? 'Create the first user' : 'Sign in to Pitchbox'}</Card.Title>
-			{#if !data.authOn}
-				<p class="text-xs text-amber-700 dark:text-amber-300">Authentication is disabled - set PITCHBOX_AUTH=on in your environment.</p>
-			{:else if data.firstUser}
-				<p class="text-xs text-muted-foreground">
-					No user exists yet. The credentials you enter below will create the admin account.
+		{#if !data.authOn}
+			<Card.Header>
+				<Card.Title>Authentication is disabled</Card.Title>
+				<p class="text-xs {TONE_TEXT_CLASS.amber}">
+					This instance runs with PITCHBOX_AUTH off, so there is no account to sign in to. Set
+					PITCHBOX_AUTH=on in your environment to enable sign-in.
 				</p>
-			{/if}
-		</Card.Header>
-		<Card.Content class="flex flex-col gap-3">
-			<label class="flex flex-col gap-1 text-xs">
-				Username
-				<Input bind:value={username} autocomplete="username" />
-			</label>
-			<label class="flex flex-col gap-1 text-xs">
-				Password
-				<Input type="password" bind:value={password} autocomplete="current-password" />
-			</label>
-			<Button onclick={submit} disabled={busy || !username || password.length < 8}>
-				{data.firstUser ? 'Create' : 'Sign in'}
-			</Button>
-		</Card.Content>
+			</Card.Header>
+			<Card.Content>
+				<Button href="/" variant="outline" class="w-full">Go to Pitchbox</Button>
+			</Card.Content>
+		{:else}
+			<Card.Header>
+				<Card.Title>{data.firstUser ? 'Create the first user' : 'Sign in to Pitchbox'}</Card.Title>
+				{#if data.firstUser}
+					<p class="text-xs text-muted-foreground">
+						No user exists yet. The credentials you enter below will create the admin account.
+					</p>
+				{/if}
+			</Card.Header>
+			<Card.Content class="flex flex-col gap-3">
+				<label class="flex flex-col gap-1 text-xs">
+					Username
+					<Input bind:value={username} autocomplete="username" />
+				</label>
+				<label class="flex flex-col gap-1 text-xs">
+					Password
+					<Input type="password" bind:value={password} autocomplete="current-password" />
+				</label>
+				<Button onclick={submit} disabled={busy || !username || password.length < 8}>
+					{data.firstUser ? 'Create' : 'Sign in'}
+				</Button>
+			</Card.Content>
+		{/if}
 	</Card.Root>
 </div>

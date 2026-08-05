@@ -63,3 +63,26 @@ export function relativeTimeFine(date: Date | string | null | undefined): string
   const day = Math.floor(hr / 24);
   return `${day}d ago`;
 }
+
+/**
+ * Formats a future timestamp relative to now, e.g. "in 5 min", "in 2h" - the
+ * counterpart to `relativeTime` for a scheduled next run. A timestamp that
+ * has already passed is flagged "overdue" rather than misreported as "in
+ * -5 min": an active campaign's next run should never lag behind now, so
+ * this doubles as a diagnostic signal (#234).
+ */
+export function relativeTimeUntil(date: Date | string | null | undefined): string {
+  if (!date) return '-';
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const diffMs = d.getTime() - Date.now();
+  const overdue = diffMs < 0;
+  const diffSec = Math.floor(Math.abs(diffMs) / 1000);
+  if (diffSec < 10) return overdue ? 'overdue' : 'due now';
+  if (diffSec < 60) return overdue ? `overdue by ${diffSec}s` : `in ${diffSec}s`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return overdue ? `overdue by ${diffMin} min` : `in ${diffMin} min`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return overdue ? `overdue by ${diffHr}h` : `in ${diffHr}h`;
+  const diffDay = Math.floor(diffHr / 24);
+  return overdue ? `overdue by ${diffDay}d` : `in ${diffDay}d`;
+}

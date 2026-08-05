@@ -5,7 +5,7 @@
 	import { invalidateAll, goto, replaceState } from '$app/navigation';
 	import { navigating, page } from '$app/stores';
 	import { composeHref } from '$lib/utils/compose-url';
-	import { ChevronDown, X, Inbox, Keyboard, ArrowLeft, SlidersHorizontal } from '@lucide/svelte';
+	import { ChevronDown, X, Inbox, Keyboard, ArrowLeft, SlidersHorizontal, AlertTriangle } from '@lucide/svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -21,38 +21,45 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import ChatSyncStalledBanner from '$lib/components/ChatSyncStalledBanner.svelte';
 	import ExtensionDeviceNudgeBanner from '$lib/components/ExtensionDeviceNudgeBanner.svelte';
+	import StreamStatusBanner from '$lib/realtime/StreamStatusBanner.svelte';
+	import { getSseManager } from '$lib/realtime/sse';
 	import Seo from '$lib/components/Seo.svelte';
 	import { SelectField } from '$lib/components/ui/select-field';
 	import { interpretDraftPatchResponse, DraftVersionConflictError } from '$lib/utils/draft-patch-response';
+	import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
 
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
+	import PageContainer from '$lib/components/PageContainer.svelte';
 	import type { QualityRubric } from '@pitchbox/shared/quality-judge';
+
+	type Draft = {
+		id: number;
+		accountId: number;
+		platformId: number;
+		platformSlug: string | null;
+		metadata: Record<string, unknown> | null;
+		runId: number;
+		kind: string;
+		targetUser: string | null;
+		fitScore: number | null;
+		qualityScore?: number | null;
+		state: string;
+		body: string;
+		composeUrl: string | null;
+		reasoning: string | null;
+		createdAt: string | Date | null;
+		sentAt: string | Date | null;
+		sentContent: string | null;
+		version: number;
+		project: { id: number; slug: string; name: string };
+	};
+	type Cursor = { createdAt: string; id: string } | null;
 
 	let {
 		data,
 	}: {
 		data: {
-			drafts: Array<{
-				id: number;
-				accountId: number;
-				platformId: number;
-				platformSlug: string | null;
-				metadata: Record<string, unknown> | null;
-				runId: number;
-				kind: string;
-				targetUser: string | null;
-				fitScore: number | null;
-				qualityScore?: number | null;
-				state: string;
-				body: string;
-				composeUrl: string | null;
-				reasoning: string | null;
-				createdAt: string | Date | null;
-				sentAt: string | Date | null;
-				sentContent: string | null;
-				version: number;
-				project: { id: number; slug: string; name: string };
-			}>;
+			drafts: Draft[];
 			state: string;
 			kind: string | null;
 			run: string | null;
@@ -69,6 +76,12 @@
 			extensionNudge?: { kind: 'no_device' | 'stale_device' } | null;
 			orgId?: number | null;
 			qualityRubric: QualityRubric;
+			nextCursor: Cursor;
+			totalCount: number;
+			stateFilterInvalid?: string | null;
+			kindFilterInvalid?: string | null;
+			runFilterInvalid?: string | null;
+			campaignFilterInvalid?: string | null;
 		};
 	} = $props();
 
@@ -78,15 +91,38 @@
 	let editRequestId = $state<number | null>(null);
 	// The `?draft=N` deep-link (from Contacts / Search / Audit) selects that draft
 	// once on load, scrolls it into view, then is stripped from the URL. Stripping
-	// matters: otherwise the effect below re-reads it every time `data.drafts`
+	// matters: otherwise the effect below re-reads it every time `items`
 	// changes (invalidateAll, the org SSE stream) and snaps the selection back to
 	// the deep-linked draft for the rest of the session, overriding j/k/click.
 	let deepLinkApplied = false;
+
+	// Accumulated drafts (plus their usage/quota lookups) across every "Load
+	// more" click. Reset whenever `data` itself changes underneath us - a real
+	// navigation (filter/state/kind change) or `invalidateAll()` (an
+	// approve/reject, the SSE `drafts:changed` event, …) - so the list always
+	// starts back at page one of whatever is now selected.
+	let items = $state<Draft[]>([]);
+	let itemsUsage = $state<Record<number, UsageByKind>>({});
+	let itemsQuota = $state<Record<number, QuotaLimits>>({});
+	let itemsNextCursor = $state<Cursor>(null);
+	let itemsTotalCount = $state(0);
+	let loadingMore = $state(false);
+	let loadMoreError = $state<string | null>(null);
+
+	$effect(() => {
+		items = data.drafts;
+		itemsUsage = data.usage;
+		itemsQuota = data.quotaLimitsByPlatform;
+		itemsNextCursor = data.nextCursor;
+		itemsTotalCount = data.totalCount;
+		loadMoreError = null;
+	});
+
 	$effect(() => {
 		if (!deepLinkApplied) {
 			const draftParam = $page.url.searchParams.get('draft');
 			const draftId = draftParam ? Number(draftParam) : null;
-			if (draftId && data.drafts.find((d) => d.id === draftId)) {
+			if (draftId && items.find((d) => d.id === draftId)) {
 				selectedId = draftId;
 				deepLinkApplied = true;
 				void tick().then(() => {
@@ -99,15 +135,37 @@
 			}
 		}
 		// Otherwise keep a valid selection, defaulting to the first draft.
-		if (data.drafts.length > 0 && (selectedId === null || !data.drafts.find((d) => d.id === selectedId))) {
-			selectedId = data.drafts[0].id;
-		} else if (data.drafts.length === 0) {
+		if (items.length > 0 && (selectedId === null || !items.find((d) => d.id === selectedId))) {
+			selectedId = items[0].id;
+		} else if (items.length === 0) {
 			selectedId = null;
 		}
 	});
-	let selected = $derived(data.drafts.find((d) => d.id === selectedId) ?? null);
-	let selectedIndex = $derived(data.drafts.findIndex((d) => d.id === selectedId));
-	let pendingCount = $derived(data.drafts.filter((d) => d.state === 'pending_review').length);
+
+	// Tell the user (once per distinct bad value) when a filter param in the
+	// URL was not recognized and the server fell back to the default instead
+	// of quietly showing an unfiltered list (#239).
+	let warnedInvalidFilters: string | null = null;
+	$effect(() => {
+		const invalid = [
+			data.stateFilterInvalid != null ? `state "${data.stateFilterInvalid}"` : null,
+			data.kindFilterInvalid != null ? `kind "${data.kindFilterInvalid}"` : null,
+			data.runFilterInvalid != null ? `run "${data.runFilterInvalid}"` : null,
+			data.campaignFilterInvalid != null ? `campaign "${data.campaignFilterInvalid}"` : null,
+		].filter((v): v is string => v != null);
+		const key = invalid.join(',');
+		if (key && key !== warnedInvalidFilters) {
+			warnedInvalidFilters = key;
+			toast.warning('Filter ignored', {
+				description: `Unrecognized ${invalid.join(', ')} - showing the default view instead.`,
+			});
+		} else if (!key) {
+			warnedInvalidFilters = null;
+		}
+	});
+	let selected = $derived(items.find((d) => d.id === selectedId) ?? null);
+	let selectedIndex = $derived(items.findIndex((d) => d.id === selectedId));
+	let pendingCount = $derived(items.filter((d) => d.state === 'pending_review').length);
 
 	// Checkbox selection for bulk actions
 	let checkedIds = $state<Set<number>>(new Set());
@@ -166,6 +224,53 @@
 		navigate({ campaign: null });
 	}
 
+	// Fetches the next page and appends it - no navigation, so scroll
+	// position is kept and the drafts already on screen never disappear. The
+	// cursor rides only on this fetch's URL, never on `$page.url` (that copy
+	// of the search params never carries `cursor_at`/`cursor_id`), so a
+	// shared link always starts at page one of whatever filters it encodes.
+	async function loadMore() {
+		if (!itemsNextCursor || loadingMore) return;
+		loadingMore = true;
+		loadMoreError = null;
+		try {
+			const params = new URLSearchParams($page.url.searchParams);
+			params.set('cursor_at', itemsNextCursor.createdAt);
+			params.set('cursor_id', itemsNextCursor.id);
+			const res = await fetch(`/inbox?${params.toString()}`, {
+				headers: { accept: 'application/json' },
+			});
+			if (!res.ok) {
+				const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+				const message =
+					res.status >= 500
+						? 'Could not load more drafts. Please try again.'
+						: (body.error ?? body.message ?? 'Could not load more drafts.');
+				if (res.status >= 500) console.error('failed to load more drafts', res.status, body);
+				loadMoreError = message;
+				toast.error(message);
+				return;
+			}
+			const nextPage = (await res.json()) as {
+				drafts: Draft[];
+				nextCursor: Cursor;
+				totalCount: number;
+				usage: Record<number, UsageByKind>;
+				quotaLimitsByPlatform: Record<number, QuotaLimits>;
+			};
+			items = [...items, ...nextPage.drafts];
+			itemsUsage = { ...itemsUsage, ...nextPage.usage };
+			itemsQuota = { ...itemsQuota, ...nextPage.quotaLimitsByPlatform };
+			itemsNextCursor = nextPage.nextCursor;
+			itemsTotalCount = nextPage.totalCount;
+		} catch {
+			loadMoreError = 'Could not reach the server. Check your connection and try again.';
+			toast.error(loadMoreError);
+		} finally {
+			loadingMore = false;
+		}
+	}
+
 	function toggleCheck(id: number) {
 		const next = new Set(checkedIds);
 		if (next.has(id)) next.delete(id);
@@ -177,7 +282,7 @@
 		// Send back the version last observed for this draft (issue #106/GRD-3)
 		// so the server's optimistic-locking check fires when another tab (or
 		// the extension) moved the row on in the meantime.
-		const version = data.drafts.find((d) => d.id === id)?.version;
+		const version = items.find((d) => d.id === id)?.version;
 		const res = await fetch(`/inbox/${id}`, {
 			method: 'PATCH',
 			headers: { 'content-type': 'application/json' },
@@ -326,9 +431,7 @@
 	}
 
 	onMount(() => {
-		const es = new EventSource('/api/stream');
-		es.addEventListener('drafts:changed', () => invalidateAll());
-		return () => es.close();
+		return getSseManager().on('drafts:changed', () => invalidateAll());
 	});
 
 	// Keyboard shortcuts
@@ -340,14 +443,14 @@
 				case 'j':
 				case 'ArrowDown': {
 					e.preventDefault();
-					const next = data.drafts[selectedIndex + 1];
+					const next = items[selectedIndex + 1];
 					if (next) selectedId = next.id;
 					break;
 				}
 				case 'k':
 				case 'ArrowUp': {
 					e.preventDefault();
-					const prev = data.drafts[selectedIndex - 1];
+					const prev = items[selectedIndex - 1];
 					if (prev) selectedId = prev.id;
 					break;
 				}
@@ -385,6 +488,7 @@
 	});
 </script>
 
+<PageContainer size="full">
 <Seo
 	title={pendingCount > 0 ? `Inbox (${pendingCount})` : 'Inbox'}
 	description="Review and approve drafts generated by campaign runs. Human-in-the-loop outreach."
@@ -397,6 +501,7 @@
 
 <ChatSyncStalledBanner show={!!data.chatSyncUnauthorized} />
 <ExtensionDeviceNudgeBanner kind={data.extensionNudge?.kind ?? null} orgId={data.orgId ?? null} />
+<StreamStatusBanner onReconnect={() => invalidateAll()} />
 
 <!-- Filter pills -->
 {#if data.run || data.campaign || data.activeProject}
@@ -523,7 +628,9 @@
 		</div>
 	</details>
 
-	<div class="hidden md:flex items-center gap-2">
+	<!-- flex-wrap: at exactly md this row of filters is wider than the viewport,
+	     so without wrapping its last control sits partly off-screen. -->
+	<div class="hidden md:flex flex-wrap items-center gap-2">
 		<SelectField
 			value={data.activeProject?.slug ?? ''}
 			onValueChange={(v) => navigate({ project: v || null })}
@@ -590,6 +697,10 @@
 	</div>
 </div>
 
+<div class="mb-2 text-xs text-muted-foreground">
+	Showing {items.length} of {itemsTotalCount}
+</div>
+
 <Card.Root
 	class="grid grid-cols-1 lg:grid-cols-[360px_1fr] h-[calc(100vh-11rem)] min-h-[28rem] overflow-hidden"
 >
@@ -606,7 +717,7 @@
 					<Skeleton class="h-16 w-full rounded" />
 				{/each}
 			</div>
-		{:else if data.drafts.length === 0}
+		{:else if items.length === 0}
 			<EmptyState
 				icon={Inbox}
 				title="No drafts yet"
@@ -616,7 +727,7 @@
 				<Button variant="outline" size="sm" href="/campaigns">Go to Campaigns</Button>
 			</EmptyState>
 		{:else}
-			{#each data.drafts as draft (draft.id)}
+			{#each items as draft (draft.id)}
 				{@const isSelected = draft.id === selectedId}
 				{@const isChecked = checkedIds.has(draft.id)}
 				<div
@@ -662,6 +773,29 @@
 					</div>
 				</div>
 			{/each}
+			{#if itemsNextCursor}
+				<div class="flex flex-col items-center gap-2 py-3">
+					<Button variant="outline" size="sm" onclick={loadMore} loading={loadingMore}>Load more</Button>
+					{#if loadMoreError}
+						<div
+							role="alert"
+							class="flex max-w-xs items-start gap-2 rounded-lg border px-3 py-2 text-xs {TONE_BANNER_CLASS.rose}"
+						>
+							<AlertTriangle class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+							<div class="flex-1">
+								<p>{loadMoreError}</p>
+								<button
+									type="button"
+									onclick={loadMore}
+									class="mt-1 underline underline-offset-2 hover:no-underline"
+								>
+									Retry
+								</button>
+							</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
 		{/if}
 	</aside>
 	<section
@@ -683,8 +817,8 @@
 		</button>
 		<DraftDetail
 			draft={selected}
-			usage={selected != null ? data.usage[selected.accountId] : undefined}
-			limits={selected ? (data.quotaLimitsByPlatform[selected.platformId] ?? null) : null}
+			usage={selected != null ? itemsUsage[selected.accountId] : undefined}
+			limits={selected ? (itemsQuota[selected.platformId] ?? null) : null}
 			bind:editRequestId
 		/>
 	</section>
@@ -697,11 +831,26 @@
 	>
 		<span class="text-muted-foreground font-medium">{checkedIds.size} selected</span>
 		<div class="w-px h-4 bg-border"></div>
-		<Button size="sm" variant="default" loading={bulkApproving} onclick={bulkApprove}>
-			Approve all
-		</Button>
-		<Button size="sm" variant="destructive" loading={bulkRejecting} onclick={confirmAndReject}>
+		<Button
+			size="sm"
+			variant="outline"
+			loading={bulkRejecting}
+			disabled={bulkApproving || bulkRejecting}
+			class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
+			onclick={confirmAndReject}
+			aria-label="Reject all selected drafts"
+		>
 			Reject all
+		</Button>
+		<Button
+			size="sm"
+			variant="default"
+			loading={bulkApproving}
+			disabled={bulkApproving || bulkRejecting}
+			onclick={bulkApprove}
+			aria-label="Approve all selected drafts"
+		>
+			Approve all
 		</Button>
 		<Button size="sm" variant="outline" onclick={openRescheduleDialog}>Reschedule</Button>
 		<Button
@@ -786,3 +935,4 @@
 		</div>
 	</Dialog.Content>
 </Dialog.Root>
+</PageContainer>

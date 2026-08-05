@@ -13,6 +13,8 @@
     interpretDraftPatchResponse,
     DraftVersionConflictError,
   } from '$lib/utils/draft-patch-response';
+  import { TONE_TEXT_CLASS, TONE_BANNER_CLASS } from '$lib/config/status-badges';
+  import PageContainer from '$lib/components/PageContainer.svelte';
 
   type Message = {
     id: number;
@@ -72,10 +74,44 @@
       data.replyDraft?.draftingRunStatus !== 'running',
   );
 
+  let retryingReply = $state(false);
+  let rejectingReply = $state(false);
+  let approvingReply = $state(false);
+  let retryError = $state<string | null>(null);
+  const replyActionBusy = $derived(retryingReply || rejectingReply || approvingReply);
+
   async function retryReplyDraft() {
     if (!data.replyDraft) return;
-    await fetch(`/api/drafts/${data.replyDraft.id}/reply-draft/retry`, { method: 'POST' });
-    location.reload();
+    retryingReply = true;
+    retryError = null;
+    try {
+      const res = await fetch(`/api/drafts/${data.replyDraft.id}/reply-draft/retry`, { method: 'POST' });
+      if (res.status === 409) {
+        toast.info('Reply drafting is already in progress');
+        location.reload();
+        return;
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+        const message =
+          res.status >= 500
+            ? 'Could not retry the reply draft. Please try again.'
+            : (body.error ?? body.message ?? 'Could not retry the reply draft.');
+        if (res.status >= 500) {
+          console.error('failed to retry reply draft', data.replyDraft.id, res.status, body);
+        }
+        retryError = message;
+        toast.error(message);
+        return;
+      }
+      location.reload();
+    } catch {
+      const message = 'Could not retry the reply draft, check your connection.';
+      retryError = message;
+      toast.error(message);
+    } finally {
+      retryingReply = false;
+    }
   }
 
   async function patchReplyDraft(body: Record<string, unknown>) {
@@ -99,25 +135,32 @@
 
   async function rejectReplyDraft() {
     if (!data.replyDraft) return;
+    rejectingReply = true;
     try {
       await patchReplyDraft({ state: 'rejected' });
     } catch (e) {
       if (e instanceof DraftVersionConflictError) return;
       toast.error('Action failed', { description: (e as Error).message });
+    } finally {
+      rejectingReply = false;
     }
   }
 
   async function approveReplyDraft() {
     if (!data.replyDraft) return;
+    approvingReply = true;
     try {
       await patchReplyDraft({ state: 'approved' });
     } catch (e) {
       if (e instanceof DraftVersionConflictError) return;
       toast.error('Action failed', { description: (e as Error).message });
+    } finally {
+      approvingReply = false;
     }
   }
 </script>
 
+<PageContainer size="default">
 <Seo
   title={`Conversation with ${data.thread.targetUser}`}
   description="Threaded view of an outreach conversation."
@@ -129,10 +172,10 @@
 >
   {#snippet actions()}
     <a
-      href="/conversations"
+      href="/people"
       class="inline-flex items-center rounded-md border border-border/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
     >
-      Back to conversations
+      Back to threads
     </a>
   {/snippet}
 </PageHeader>
@@ -205,7 +248,7 @@
   <Card.Root size="sm" class="mt-4 border-emerald-500/40">
     <Card.Content class="flex flex-col gap-2 p-4">
       <div class="flex items-center justify-between">
-        <span class="text-xs font-medium text-emerald-700 dark:text-emerald-300"
+        <span class="text-xs font-medium {TONE_TEXT_CLASS.emerald}"
           >Suggested reply (auto-drafted)</span
         >
         <StatusBadge domain="draft-kind" value={data.replyDraft.kind} />
@@ -221,6 +264,10 @@
           <Button
             size="sm"
             variant="outline"
+            loading={rejectingReply}
+            disabled={replyActionBusy}
+            class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            aria-label="Reject reply draft"
             onclick={async (e: MouseEvent) => {
               e.preventDefault();
               await rejectReplyDraft();
@@ -231,14 +278,29 @@
           <span class="text-xs text-muted-foreground">Drafting reply…</span>
         {:else if draftingFailed}
           <span class="text-xs text-destructive">Reply drafting failed</span>
-          <Button size="sm" variant="outline" onclick={retryReplyDraft}>Retry</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            loading={retryingReply}
+            disabled={replyActionBusy}
+            aria-label="Retry drafting the reply"
+            onclick={retryReplyDraft}>Retry</Button
+          >
         {:else}
           <Button
             size="sm"
+            loading={approvingReply}
+            disabled={replyActionBusy}
+            aria-label="Approve reply draft"
             onclick={approveReplyDraft}>Approve</Button
           >
         {/if}
       </div>
+      {#if retryError}
+        <div role="alert" class="rounded-md border px-2 py-1.5 text-xs {TONE_BANNER_CLASS.rose}">
+          {retryError}
+        </div>
+      {/if}
     </Card.Content>
   </Card.Root>
 {:else}
@@ -257,3 +319,4 @@
     </Card.Content>
   </Card.Root>
 {/if}
+</PageContainer>

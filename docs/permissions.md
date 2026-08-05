@@ -59,6 +59,8 @@ already limits them to the active org). Listed here for completeness.
 `settings/extension-devices/[id]` DELETE,
 `settings/extension-pairing` POST, `runners` POST, `playbooks` POST,
 `playbooks/[id]` PATCH + DELETE,
+`settings/default-runner` GET, `settings/quota` GET, `settings/runner-config` GET
+(view only - saving these needs instance admin, see below),
 `orgs/[slug]/invites` POST, `orgs/[slug]/invites/[token]` DELETE,
 `orgs/[slug]/members/[userId]` PATCH + DELETE (with the member-management rules).
 
@@ -82,7 +84,33 @@ unless flipped directly in the database.
 POST, `settings/webhooks` PUT, `webhooks/deliveries/[id]/retry` POST (also
 tenant-guarded: the delivery must belong to the caller's org before the
 instance-admin gate runs), `settings/retention` form action (saving only -
-viewing the page stays `requireRole(event, 'admin')`).
+viewing the page, and the three GET routes above, stay `requireRole(event,
+'admin')`).
+
+The General settings page (four tabs behind one route) was flattened into
+seven top-level routes, one flat rail with no tabs (#254): `settings/status`,
+`settings/runners`, `settings/extension`, `settings/quota`,
+`settings/organization`, `settings/retention`, `settings/security`. `/settings`
+itself now just redirects (307) to `/settings/status`. The four routes that
+used to be General's tabs each gate their own data set in their own loader,
+the same per-data-set split #237 landed on the old combined page: `status`
+(daemon health from a client store, plus the extension `backendUrl`, which is
+not privileged) needs no role gate at all; `runners` (agent runner
+detection/config, `settings/default-runner` + `settings/runner-config`
+GET-equivalent data) and `quota` (posting quota defaults, `settings/quota`
+GET-equivalent data) only populate their payload when `isAdmin` (per-org role
+`admin`/`owner`, or no `locals.org` when auth is off); each route's
+`+page.svelte` shows an "Admin access required" message instead of an
+empty/misleading state when it isn't. `extension`'s paired-devices list
+(`settings/extension-devices` GET) stays member-visible (read-only device
+status); only revoking a device (DELETE) and minting a pairing code (POST
+`settings/extension-pairing`) are admin-gated. The settings rail
+(`web/src/routes/settings/+layout.svelte`) hides the `organization` link when
+auth is off (no org context to show), and hides the `retention`/`security`
+links from a non-admin since those two routes' loaders
+`requireRole(event, 'admin')` and would 403; `status`/`runners`/`extension`/
+`quota` are always shown because none of their loaders throw, they only
+narrow the payload.
 
 **Exempt** (no org role): `auth/*`, `extension/*` (token-auth companion),
 `orgs` POST + `orgs/switch` POST (self-service), `orgs/[slug]/invites/[token]/accept`

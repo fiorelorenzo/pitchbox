@@ -16,6 +16,8 @@
 	import CampaignRecommendationsList, {
 		type Recommendation,
 	} from '$lib/components/projects/CampaignRecommendationsList.svelte';
+	import PageContainer from '$lib/components/PageContainer.svelte';
+	import CronScheduleField from '$lib/components/campaigns/CronScheduleField.svelte';
 	import { untrack } from 'svelte';
 
 	let { data }: { data: PageData } = $props();
@@ -52,19 +54,30 @@
 	);
 	let objective = $state(untrack(() => data.preselected?.objective ?? ''));
 	let cron = $state('');
+	let cronValid = $state(true);
 	let autoPost = $state(false);
 	let saving = $state(false);
 	let preselectedRecId = $state<number | null>(untrack(() => data.preselected?.id ?? null));
 	let recommendations = $state<Recommendation[]>(untrack(() => data.recommendations));
 
 	async function loadRecommendationsFor(pid: number) {
-		const res = await fetch(`/api/projects/${pid}/recommendations`);
-		if (!res.ok) {
+		try {
+			const res = await fetch(`/api/projects/${pid}/recommendations`);
+			if (!res.ok) {
+				const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+				if (res.status >= 500) {
+					console.error('failed to load campaign recommendations', pid, res.status, body);
+				}
+				recommendations = [];
+				toast.error(body.error ?? body.message ?? 'Could not load suggested campaigns for this project');
+				return;
+			}
+			const body = await res.json();
+			recommendations = body.recommendations ?? [];
+		} catch {
 			recommendations = [];
-			return;
+			toast.error('Could not load suggested campaigns for this project, check your connection');
 		}
-		const body = await res.json();
-		recommendations = body.recommendations ?? [];
 	}
 
 	const projectOptions = $derived(data.projects.map((p) => ({ value: p.id, label: p.name })));
@@ -79,7 +92,7 @@
 		const det = data.runners.find((r) => r.slug === m.slug);
 		const available = det?.available ?? false;
 		let label = m.label;
-		if (!m.implemented) label = `${m.label} (coming soon)`;
+		if (!m.implemented) label = `${m.label} (not available yet)`;
 		else if (!available) label = `${m.label} (not installed)`;
 		return { value: m.slug, label, disabled: !available };
 	});
@@ -100,6 +113,10 @@
 		if (saving) return;
 		if (!projectId || !name.trim() || !objective.trim()) {
 			toast.error('Fill all required fields');
+			return;
+		}
+		if (cron.trim() && !cronValid) {
+			toast.error('Fix the cron expression before saving');
 			return;
 		}
 		saving = true;
@@ -139,6 +156,7 @@
 	}
 </script>
 
+<PageContainer size="narrow">
 <h1 class="text-2xl font-semibold mb-6">New campaign</h1>
 
 {#if !preselectedRecId && recommendations.length > 0}
@@ -219,11 +237,8 @@
 		/>
 	</label>
 	<label class="flex flex-col gap-1 text-xs">
-		Cron (optional, UTC)
-		<Input bind:value={cron} placeholder="0 9 * * *" />
-		<span class="text-xs text-muted-foreground">
-			The schedule is interpreted in UTC, not your local timezone.
-		</span>
+		Cron schedule (optional)
+		<CronScheduleField bind:value={cron} bind:valid={cronValid} />
 	</label>
 	{#if autoPostSupported}
 		<label class="flex items-center gap-2 text-xs">
@@ -240,3 +255,4 @@
 		<Button type="button" variant="ghost" onclick={() => goto('/campaigns')}>Cancel</Button>
 	</div>
 </form>
+</PageContainer>

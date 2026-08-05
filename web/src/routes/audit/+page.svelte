@@ -6,9 +6,13 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import { SelectField } from '$lib/components/ui/select-field';
+	import { AlertTriangle } from '@lucide/svelte';
+	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { untrack } from 'svelte';
+	import PageContainer from '$lib/components/PageContainer.svelte';
+	import { TONE_CLASS, TONE_BANNER_CLASS } from '$lib/config/status-badges';
 
 	type Row = {
 		kind: 'draft' | 'run';
@@ -21,6 +25,8 @@
 		createdAt: string;
 	};
 
+	type Cursor = { createdAt: string; id: string } | null;
+
 	type PageData = {
 		rows: Row[];
 		eventTypes: string[];
@@ -32,7 +38,7 @@
 			from: string;
 			to: string;
 		};
-		nextCursor: { createdAt: string; id: string } | null;
+		nextCursor: Cursor;
 	};
 
 	let { data }: { data: PageData } = $props();
@@ -53,6 +59,21 @@
 		...data.eventTypes.map((e) => ({ value: e, label: e })),
 	]);
 
+	// Accumulated rows across every "Load more" click. Reset whenever `data`
+	// itself changes underneath us - a real navigation (filters applied/reset)
+	// or `invalidateAll()` - so the list always starts back at page one of
+	// whatever is now selected.
+	let items = $state<Row[]>([]);
+	let itemsNextCursor = $state<Cursor>(null);
+	let loadingMore = $state(false);
+	let loadMoreError = $state<string | null>(null);
+
+	$effect(() => {
+		items = data.rows;
+		itemsNextCursor = data.nextCursor;
+		loadMoreError = null;
+	});
+
 	function applyFilters() {
 		const params = new URLSearchParams();
 		if (event) params.set('event', event);
@@ -65,12 +86,42 @@
 		goto(qs ? `/audit?${qs}` : '/audit', { replaceState: false, keepFocus: true });
 	}
 
-	function loadMore() {
-		if (!data.nextCursor) return;
-		const params = new URLSearchParams($page.url.searchParams);
-		params.set('cursor_at', data.nextCursor.createdAt);
-		params.set('cursor_id', data.nextCursor.id);
-		goto(`/audit?${params.toString()}`);
+	// Fetches the next page and appends it - no navigation, so scroll
+	// position is kept and the rows already on screen never disappear. The
+	// cursor rides only on this fetch's URL, never on `$page.url` (that copy
+	// of the search params never carries `cursor_at`/`cursor_id`), so a
+	// shared link always starts at page one of whatever filters it encodes.
+	async function loadMore() {
+		if (!itemsNextCursor || loadingMore) return;
+		loadingMore = true;
+		loadMoreError = null;
+		try {
+			const params = new URLSearchParams($page.url.searchParams);
+			params.set('cursor_at', itemsNextCursor.createdAt);
+			params.set('cursor_id', itemsNextCursor.id);
+			const res = await fetch(`/audit?${params.toString()}`, {
+				headers: { accept: 'application/json' },
+			});
+			if (!res.ok) {
+				const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+				const message =
+					res.status >= 500
+						? 'Could not load more events. Please try again.'
+						: (body.error ?? body.message ?? 'Could not load more events.');
+				if (res.status >= 500) console.error('failed to load more audit events', res.status, body);
+				loadMoreError = message;
+				toast.error(message);
+				return;
+			}
+			const nextPage = (await res.json()) as { rows: Row[]; nextCursor: Cursor };
+			items = [...items, ...nextPage.rows];
+			itemsNextCursor = nextPage.nextCursor;
+		} catch {
+			loadMoreError = 'Could not reach the server. Check your connection and try again.';
+			toast.error(loadMoreError);
+		} finally {
+			loadingMore = false;
+		}
 	}
 
 	function fmt(d: string): string {
@@ -79,6 +130,7 @@
 	}
 </script>
 
+<PageContainer size="wide">
 <Seo title="Audit" description="Unified audit log of draft and run events." />
 
 <PageHeader title="Audit log" description="Time-ordered feed of draft and run events." />
@@ -140,17 +192,16 @@
 				</Table.Row>
 			</Table.Header>
 			<Table.Body>
-				{#each data.rows as r (r.kind + ':' + r.id)}
+				{#each items as r (r.kind + ':' + r.id)}
 					<Table.Row>
 						<Table.Cell class="text-xs font-mono text-muted-foreground"
 							>{fmt(r.createdAt)}</Table.Cell
 						>
 						<Table.Cell>
 							<span
-								class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold {r.kind ===
-								'draft'
-									? 'bg-sky-500/15 text-sky-700 dark:text-sky-300'
-									: 'bg-violet-500/15 text-violet-700 dark:text-violet-300'}"
+								class="inline-flex items-center rounded-full ring-1 ring-inset px-2 py-0.5 text-[10px] font-semibold {TONE_CLASS[
+									r.kind === 'draft' ? 'sky' : 'violet'
+								]}"
 							>
 								{r.kind}
 							</span>
@@ -172,7 +223,7 @@
 						<Table.Cell class="text-xs">{r.actor ?? '-'}</Table.Cell>
 					</Table.Row>
 				{/each}
-				{#if data.rows.length === 0}
+				{#if items.length === 0}
 					<Table.Row>
 						<Table.Cell colspan={5} class="text-center text-sm text-muted-foreground py-8">
 							No events match the current filters.
@@ -181,10 +232,29 @@
 				{/if}
 			</Table.Body>
 		</Table.Root>
-		{#if data.nextCursor}
-			<div class="flex justify-center py-3">
-				<Button variant="outline" onclick={loadMore}>Load more</Button>
+		{#if itemsNextCursor}
+			<div class="flex flex-col items-center gap-2 py-3">
+				<Button variant="outline" onclick={loadMore} loading={loadingMore}>Load more</Button>
+				{#if loadMoreError}
+					<div
+						role="alert"
+						class="flex max-w-sm items-start gap-2 rounded-lg border px-3 py-2 text-xs {TONE_BANNER_CLASS.rose}"
+					>
+						<AlertTriangle class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+						<div class="flex-1">
+							<p>{loadMoreError}</p>
+							<button
+								type="button"
+								onclick={loadMore}
+								class="mt-1 underline underline-offset-2 hover:no-underline"
+							>
+								Retry
+							</button>
+						</div>
+					</div>
+				{/if}
 			</div>
 		{/if}
 	</Card.Content>
 </Card.Root>
+</PageContainer>

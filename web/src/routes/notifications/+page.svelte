@@ -8,6 +8,8 @@
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { untrack } from 'svelte';
+	import PageContainer from '$lib/components/PageContainer.svelte';
+	import { resolveTone, TONE_TEXT_CLASS, PULSE_DOT_CLASS } from '$lib/config/status-badges';
 
 	type Notification = {
 		id: number;
@@ -59,12 +61,6 @@
 		}
 	}
 
-	const STATUS_TONE: Record<string, string> = {
-		pending: 'text-amber-700 dark:text-amber-300',
-		delivered: 'text-emerald-700 dark:text-emerald-300',
-		dead: 'text-rose-700 dark:text-rose-300',
-	};
-
 	async function markAllRead() {
 		const res = await fetch('/api/notifications', { method: 'POST' });
 		if (!res.ok) toast.error('Failed to mark as read');
@@ -85,15 +81,9 @@
 			savingWebhook = false;
 		}
 	}
-
-	const SEVERITY_TONE: Record<string, string> = {
-		info: 'text-foreground',
-		success: 'text-emerald-700 dark:text-emerald-300',
-		warning: 'text-amber-700 dark:text-amber-300',
-		error: 'text-rose-700 dark:text-rose-300',
-	};
 </script>
 
+<PageContainer size="default">
 <Seo title="Notifications" description="Recent system events and notification delivery configuration." />
 
 <PageHeader title="Notifications" description="Recent run, draft, and reply events.">
@@ -114,10 +104,10 @@
 						<span
 							class="mt-1 inline-block size-2 rounded-full {n.readAt
 								? 'bg-muted-foreground/40'
-								: 'bg-sky-400'}"
+								: PULSE_DOT_CLASS.sky}"
 						></span>
 						<div class="min-w-0 flex-1">
-							<p class="text-sm font-medium {SEVERITY_TONE[n.severity] ?? ''}">{n.title}</p>
+							<p class="text-sm font-medium {TONE_TEXT_CLASS[resolveTone('alert-severity', n.severity)]}">{n.title}</p>
 							{#if n.body}
 								<p class="text-xs text-muted-foreground mt-0.5">{n.body}</p>
 							{/if}
@@ -160,14 +150,14 @@
 						{#each data.deliveries as d (d.id)}
 							<div class="py-2 flex items-start gap-2 text-xs">
 								<div class="min-w-0 flex-1">
-									<p class="font-medium {STATUS_TONE[d.status] ?? ''}">
+									<p class="font-medium {TONE_TEXT_CLASS[resolveTone('webhook-delivery-status', d.status)]}">
 										{d.status} · <span class="font-mono">{d.eventType}</span>
 									</p>
 									<p class="text-muted-foreground/80 mt-0.5">
 										attempt {d.attempts}/{d.maxAttempts} · {relativeTime(d.createdAt)}
 									</p>
 									{#if d.lastError}
-										<p class="text-rose-700/90 dark:text-rose-300/80 mt-0.5 truncate" title={d.lastError}>
+										<p class="{TONE_TEXT_CLASS.rose} mt-0.5 truncate" title={d.lastError}>
 											{d.lastError}
 										</p>
 									{/if}
@@ -190,3 +180,4 @@
 		</Card.Root>
 	</div>
 </div>
+</PageContainer>

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { runCampaignSkillGeneration } from '$lib/server/runner.js';
+import { previewCron } from '@pitchbox/daemon/cron';
 import { requireOrgId } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 import { SCENARIO_SLUGS } from '@pitchbox/shared/campaigns';
@@ -48,6 +49,19 @@ export async function POST(event: RequestEvent) {
     .where(eq(schema.platforms.slug, body.platformSlug));
   if (!platform) return json({ error: 'platform_not_found' }, { status: 400 });
 
+  // Validate with the exact library the scheduler daemon uses
+  // (@pitchbox/daemon/cron, backed by cron-parser) so this can never
+  // persist an expression the scheduler will reject at run time (#234).
+  let cronExpression: string | null = null;
+  if (body.cronExpression) {
+    const trimmed = body.cronExpression.trim();
+    const preview = previewCron(trimmed);
+    if (!preview.valid) {
+      return json({ error: 'invalid_cron', message: preview.error }, { status: 400 });
+    }
+    cronExpression = trimmed;
+  }
+
   const [campaign] = await db
     .insert(schema.campaigns)
     .values({
@@ -56,7 +70,7 @@ export async function POST(event: RequestEvent) {
       name: body.name,
       skillSlug: body.scenarioSlug,
       agentRunner: body.agentRunner ?? project.defaultAgentRunner,
-      cronExpression: body.cronExpression ?? null,
+      cronExpression,
       status: 'draft',
       config: {},
       autoPost: body.autoPost,

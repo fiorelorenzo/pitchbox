@@ -7,7 +7,7 @@
   import { SelectField } from '$lib/components/ui/select-field';
   import { toast } from 'svelte-sonner';
   import DeleteProjectDialog from './DeleteProjectDialog.svelte';
-  import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
+  import Markdown from '$lib/components/Markdown.svelte';
   import ExtractDescriptionDialog from './ExtractDescriptionDialog.svelte';
   import DescriptionDiffModal from './DescriptionDiffModal.svelte';
   import ProjectExtractionRunsTable from './ProjectExtractionRunsTable.svelte';
@@ -16,10 +16,13 @@
   } from './CampaignRecommendationsList.svelte';
   import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
   import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
+  import { TONE_BANNER_CLASS, TONE_TEXT_CLASS } from '$lib/config/status-badges';
+  import StreamStatusBanner from '$lib/realtime/StreamStatusBanner.svelte';
+  import { getSseManager } from '$lib/realtime/sse';
 
   const RUNNER_OPTIONS = AGENT_RUNNER_META.map((m) => ({
     value: m.slug,
-    label: m.implemented ? m.label : `${m.label} (coming soon)`,
+    label: m.implemented ? m.label : `${m.label} (not available yet)`,
     disabled: !m.implemented,
   }));
 
@@ -58,6 +61,9 @@
   let runner = $state(project.defaultAgentRunner);
   let saving = $state(false);
   let deleteOpen = $state(false);
+  // Gates loading the bytemd editor stack: only fetched once the user
+  // actually starts editing, keeping the read path free of it.
+  let editingDescription = $state(false);
 
   let extractOpen = $state(false);
   let diffOpen = $state(false);
@@ -142,50 +148,64 @@
     await goto('/projects');
   }
 
-  let es: EventSource | null = null;
+  const unsubs: Array<() => void> = [];
 
   onMount(() => {
-    es = new EventSource('/api/stream');
-    es.addEventListener('project:description:updated', async (ev: MessageEvent) => {
-      let payload: { projectId?: number; runId?: number } = {};
-      try {
-        payload = JSON.parse(ev.data);
-      } catch {
-        /* ignore */
-      }
-      if (payload.projectId !== project.id) return;
-      if (runningRunId !== null && payload.runId !== runningRunId) return;
-      descriptionBeforeUpdate = descriptionAtLaunch;
-      runningRunId = null;
-      await invalidateAll();
-      // Wait for Svelte to flush the new props before reading project.description,
-      // otherwise this branch may race with the load and re-show the empty state.
-      await tick();
-      description = project.description ?? '';
-      extractionRunsState = extractionRuns;
-      toast.success('Description updated', {
-        action: { label: 'View diff', onClick: () => (diffOpen = true) },
-      });
-    });
-    es.addEventListener('run:finished', async (ev: MessageEvent) => {
-      // Refresh recent extractions list when a project_extraction run finishes (success or otherwise).
-      let payload: { projectId?: number | null } = {};
-      try {
-        payload = JSON.parse(ev.data);
-      } catch {
-        /* ignore */
-      }
-      if (payload.projectId === project.id) {
+    const sseManager = getSseManager();
+
+    unsubs.push(
+      sseManager.on('project:description:updated', async (ev: MessageEvent) => {
+        let payload: { projectId?: number; runId?: number } = {};
+        try {
+          payload = JSON.parse(ev.data);
+        } catch {
+          /* ignore */
+        }
+        if (payload.projectId !== project.id) return;
+        if (runningRunId !== null && payload.runId !== runningRunId) return;
+        descriptionBeforeUpdate = descriptionAtLaunch;
+        runningRunId = null;
         await invalidateAll();
+        // Wait for Svelte to flush the new props before reading project.description,
+        // otherwise this branch may race with the load and re-show the empty state.
+        await tick();
+        description = project.description ?? '';
+        editingDescription = true;
         extractionRunsState = extractionRuns;
-      }
-    });
+        toast.success('Description updated', {
+          action: { label: 'View diff', onClick: () => (diffOpen = true) },
+        });
+      }),
+    );
+
+    unsubs.push(
+      sseManager.on('run:finished', async (ev: MessageEvent) => {
+        // Refresh recent extractions list when a project_extraction run finishes (success or otherwise).
+        let payload: { projectId?: number | null } = {};
+        try {
+          payload = JSON.parse(ev.data);
+        } catch {
+          /* ignore */
+        }
+        if (payload.projectId === project.id) {
+          await invalidateAll();
+          extractionRunsState = extractionRuns;
+        }
+      }),
+    );
   });
 
-  onDestroy(() => es?.close());
+  onDestroy(() => unsubs.forEach((unsub) => unsub()));
 </script>
 
 <div class="space-y-6">
+  <StreamStatusBanner
+    active={extractionRunning}
+    onReconnect={async () => {
+      await invalidateAll();
+      extractionRunsState = extractionRuns;
+    }}
+  />
   <div class="grid gap-4 md:grid-cols-3">
     <label class="flex flex-col gap-1 text-xs">
       Slug
@@ -211,8 +231,27 @@
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
       <span class="text-xs">Description</span>
-      {#if description || extractionRunning}
+      {#if description || extractionRunning || editingDescription}
         <div class="flex gap-2">
+          {#if !extractionRunning && description && !editingDescription}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onclick={() => (editingDescription = true)}
+            >
+              Edit
+            </Button>
+          {:else if !extractionRunning && editingDescription}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onclick={() => (editingDescription = false)}
+            >
+              Preview
+            </Button>
+          {/if}
           <Button
             type="button"
             variant="outline"
@@ -227,19 +266,29 @@
     </div>
     {#if extractionRunning}
       <div
-        class="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+        class="flex items-center gap-2 rounded-md border px-3 py-2 text-xs {TONE_BANNER_CLASS.amber}"
       >
-        <Spinner size="xs" class="text-amber-600 dark:text-amber-300" />
-        <span>An extraction is running - the editor is locked until it finishes.</span>
+        <Spinner size="xs" class={TONE_TEXT_CLASS.amber} />
+        <span>An extraction is running - editing is locked until it finishes.</span>
       </div>
-      <MarkdownEditor
-        value={description}
-        onchange={(v) => (description = v)}
-        height="540px"
-        disabled
-      />
+      <div class="rounded-md border border-border p-3">
+        <Markdown source={description} />
+      </div>
+    {:else if editingDescription}
+      {#await import('$lib/components/MarkdownEditor.svelte')}
+        <div
+          class="flex items-center justify-center rounded-md border border-border text-xs text-muted-foreground"
+          style="height: 540px"
+        >
+          <Spinner size="sm" />
+        </div>
+      {:then { default: MarkdownEditor }}
+        <MarkdownEditor value={description} onchange={(v) => (description = v)} height="540px" />
+      {/await}
     {:else if description}
-      <MarkdownEditor value={description} onchange={(v) => (description = v)} height="540px" />
+      <div class="rounded-md border border-border p-3">
+        <Markdown source={description} />
+      </div>
     {:else}
       <div
         class="flex flex-col items-center justify-center gap-4 rounded-md border border-dashed border-border bg-muted/30 px-6 py-16 text-center"
@@ -257,7 +306,10 @@
             type="button"
             variant="outline"
             size="lg"
-            onclick={() => (description = DESCRIPTION_SCAFFOLD)}
+            onclick={() => {
+              description = DESCRIPTION_SCAFFOLD;
+              editingDescription = true;
+            }}
           >
             Start from template
           </Button>

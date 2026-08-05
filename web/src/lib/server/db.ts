@@ -1,1 +1,1 @@
-export { getDb, getPool, schema } from '@pitchbox/shared/db';
+export { getDb, getPool, schema, type Db } from '@pitchbox/shared/db';

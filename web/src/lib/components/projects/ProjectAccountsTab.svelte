@@ -4,6 +4,8 @@
   import { Input } from '$lib/components/ui/input';
   import { SelectField } from '$lib/components/ui/select-field';
   import { toast } from 'svelte-sonner';
+  import { TONE_CLASS } from '$lib/config/status-badges';
+  import DeleteAccountDialog from './DeleteAccountDialog.svelte';
 
   type Account = {
     id: number;
@@ -79,11 +81,26 @@
     }
   }
 
-  async function remove(id: number) {
-    if (!confirm('Delete account?')) return;
-    const res = await fetch(`/api/projects/${projectId}/accounts/${id}`, { method: 'DELETE' });
-    if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
-    else await invalidateAll();
+  let deleteDialogOpen = $state(false);
+  let deleteTarget = $state<Account | null>(null);
+
+  function openDeleteDialog(a: Account) {
+    deleteTarget = a;
+    deleteDialogOpen = true;
+  }
+
+  async function confirmRemove() {
+    if (!deleteTarget) return;
+    const res = await fetch(`/api/projects/${projectId}/accounts/${deleteTarget.id}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
+      return;
+    }
+    deleteDialogOpen = false;
+    deleteTarget = null;
+    await invalidateAll();
   }
 
   async function changeRole(id: number, role: 'personal' | 'brand') {
@@ -113,7 +130,7 @@
       <code class="text-sm">{a.handle}</code>
       <span class="text-xs text-muted-foreground">{platformSlug(a.platformId)}</span>
       {#if a.isDefault}
-        <span class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+        <span class="rounded-full ring-1 ring-inset {TONE_CLASS.emerald} px-2 py-0.5 text-[10px] font-medium">
           default
         </span>
       {:else if isAdmin}
@@ -133,7 +150,7 @@
         disabled={!isAdmin}
       />
       {#if isAdmin}
-        <Button size="sm" variant="ghost" onclick={() => remove(a.id)}>Delete</Button>
+        <Button size="sm" variant="ghost" onclick={() => openDeleteDialog(a)}>Delete</Button>
       {/if}
     </div>
   {/each}
@@ -196,3 +213,10 @@
     {/if}
   {/if}
 </div>
+
+<DeleteAccountDialog
+  bind:open={deleteDialogOpen}
+  name={deleteTarget?.handle ?? ''}
+  onConfirm={confirmRemove}
+  onClose={() => (deleteDialogOpen = false)}
+/>

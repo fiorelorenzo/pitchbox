@@ -24,17 +24,23 @@ export type ThreadKey = {
 };
 
 function toBase64Url(input: string): string {
-  return Buffer.from(input, 'utf8')
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
+  const bytes = new TextEncoder().encode(input);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
 function fromBase64Url(input: string): string {
   const pad = input.length % 4 === 0 ? '' : '='.repeat(4 - (input.length % 4));
   const std = input.replace(/-/g, '+').replace(/_/g, '/') + pad;
-  return Buffer.from(std, 'base64').toString('utf8');
+  const binary = atob(std);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 export function encodeThreadId(key: ThreadKey): string {

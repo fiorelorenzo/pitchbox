@@ -90,7 +90,7 @@ export async function search(q: string, projectIds: number[]): Promise<SearchRes
       id: c.id,
       label: `@${c.targetUser}`,
       sublabel: c.accountHandle ? `via ${c.accountHandle}` : undefined,
-      href: `/contacts?q=${encodeURIComponent(c.targetUser)}`,
+      href: `/people?tab=contacts&q=${encodeURIComponent(c.targetUser)}`,
     });
   }
   for (const c of campaignRows) {

@@ -2,7 +2,7 @@ import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import { requireInstanceAdmin } from '$lib/server/auth.js';
+import { requireInstanceAdmin, requireRole } from '$lib/server/auth.js';
 
 const Window = z
   .object({ perDay: z.number().int().min(0), perWeek: z.number().int().min(0) })
@@ -19,7 +19,11 @@ const PlatformLimits = z.object({
 
 const Body = z.record(z.string().min(1), PlatformLimits);
 
-export async function GET() {
+// Same view/mutate split as settings/+page.server.ts: viewing the platform
+// quota defaults is gated to the per-org 'admin' role, saving them is
+// instance-wide config so it needs the stricter requireInstanceAdmin (#137).
+export async function GET(event: RequestEvent) {
+  requireRole(event, 'admin');
   const db = getDb();
   const [row] = await db
     .select()

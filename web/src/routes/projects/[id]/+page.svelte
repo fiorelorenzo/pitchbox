@@ -1,14 +1,15 @@
 <script lang="ts">
-  import { page } from '$app/state';
+  import { page } from '$app/stores';
   import type { PageData } from './$types';
   import ProjectOverviewTab from '$lib/components/projects/ProjectOverviewTab.svelte';
   import ProjectAccountsTab from '$lib/components/projects/ProjectAccountsTab.svelte';
   import ProjectTemplatesTab from '$lib/components/projects/ProjectTemplatesTab.svelte';
   import ProjectInsightsTab from '$lib/components/projects/ProjectInsightsTab.svelte';
+  import PageContainer from '$lib/components/PageContainer.svelte';
 
   let { data }: { data: PageData } = $props();
   const isAdmin = $derived(data.isAdmin ?? true);
-  const tabParam = page.url.searchParams.get('tab');
+  const tabParam = $page.url.searchParams.get('tab');
   const initialTab =
     tabParam === 'accounts'
       ? 'accounts'
@@ -27,6 +28,7 @@
   ];
 </script>
 
+<PageContainer size="default">
 <div class="flex items-baseline justify-between mb-4">
   <h1 class="text-2xl font-semibold">{data.project.name}</h1>
   <code class="text-sm text-muted-foreground">{data.project.slug}</code>
@@ -63,3 +65,4 @@
 {:else}
   <ProjectInsightsTab projectId={data.project.id} latestInsight={data.latestInsight} />
 {/if}
+</PageContainer>

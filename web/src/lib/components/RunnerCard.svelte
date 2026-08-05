@@ -4,6 +4,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { SelectField } from '$lib/components/ui/select-field';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import { TONE_CLASS, TONE_TEXT_CLASS } from '$lib/config/status-badges';
 	import { toast } from 'svelte-sonner';
 	import {
 		AGENT_RUNNER_META,
@@ -79,7 +80,7 @@
 				{/if}
 				{#if isDefault}
 					<span
-						class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300"
+						class="rounded-full ring-1 ring-inset {TONE_CLASS.emerald} px-2 py-0.5 text-[10px] font-medium"
 					>
 						default
 					</span>
@@ -95,9 +96,9 @@
 				</p>
 			{/if}
 			{#if !runner.implemented}
-				<p class="text-[11px] text-amber-700 dark:text-amber-300 mt-1.5">Coming soon - adapter not implemented yet.</p>
+				<p class="text-[11px] {TONE_TEXT_CLASS.amber} mt-1.5">Not available in this build yet.</p>
 			{:else if runner.error && !runner.available}
-				<p class="text-[11px] text-rose-700 dark:text-rose-300 mt-1.5">{runner.error}</p>
+				<p class="text-[11px] {TONE_TEXT_CLASS.rose} mt-1.5">{runner.error}</p>
 			{/if}
 		</div>
 		{#if runner.implemented && runner.available && !isDefault && isAdmin}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Puzzle, RefreshCw, X } from '@lucide/svelte';
+	import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
 
 	// Nudges an org toward installing or re-pairing the browser extension.
 	// `kind` comes from `getExtensionDeviceNudge` (web/src/lib/server/extension-sync.ts):
@@ -46,11 +47,11 @@
 		kind === 'no_device'
 			? {
 					title: 'Get faster reply detection with the browser extension',
-					body: 'No browser extension is paired with this workspace yet. Install it and pair a device from Settings > Integrations so incoming Reddit replies show up here automatically.',
+					body: 'No browser extension is paired with this workspace yet. Install it and pair a device from Settings > Browser extension so incoming Reddit replies show up here automatically.',
 				}
 			: {
 					title: 'Your browser extension has gone quiet',
-					body: "No paired device has reported in for a while. Open Reddit in the browser it's installed in, or pair a new device from Settings > Integrations, so incoming replies keep syncing.",
+					body: "No paired device has reported in for a while. Open Reddit in the browser it's installed in, or pair a new device from Settings > Browser extension, so incoming replies keep syncing.",
 				},
 	);
 </script>
@@ -58,7 +59,7 @@
 {#if visible}
 	<div
 		role="alert"
-		class="mb-3 flex items-start gap-2 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-800 dark:border-sky-500/30 dark:text-sky-200"
+		class="mb-3 flex items-start gap-2 rounded-lg border {TONE_BANNER_CLASS.sky}"
 	>
 		{#if kind === 'no_device'}
 			<Puzzle class="mt-0.5 size-4 shrink-0" aria-hidden="true" />

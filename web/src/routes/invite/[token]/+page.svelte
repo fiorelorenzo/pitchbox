@@ -1,12 +1,13 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { Button } from '$lib/components/ui/button';
+  import PageContainer from '$lib/components/PageContainer.svelte';
 
   let { data } = $props();
   let busy = $state(false);
 </script>
 
-<div class="mx-auto max-w-md p-8 text-center">
+<PageContainer size="narrow" class="text-center">
   {#if data?.ok === false}
     <h1 class="text-xl font-semibold">Invite invalid or expired</h1>
     <p class="mt-2 text-muted-foreground">
@@ -36,4 +37,4 @@
       <Button type="submit" disabled={busy}>{busy ? 'Accepting…' : 'Accept invite'}</Button>
     </form>
   {/if}
-</div>
+</PageContainer>

@@ -99,9 +99,9 @@ export async function getCampaignReadiness(campaignId: number): Promise<Campaign
   if (!runnerMeta || !runnerMeta.implemented) {
     issues.push({
       id: 'runner_unavailable',
-      title: 'Agent runner not implemented',
+      title: 'Agent runner unavailable',
       hint: `${campaign.agentRunner} is not a supported agent runner.`,
-      fix: { label: 'Open settings', kind: 'runner', href: '/settings' },
+      fix: { label: 'Open settings', kind: 'runner', href: '/settings/runners' },
     });
   } else {
     const detection = await detectRunner(campaign.agentRunner as AgentRunnerSlug);
@@ -110,7 +110,7 @@ export async function getCampaignReadiness(campaignId: number): Promise<Campaign
         id: 'runner_unavailable',
         title: `${runnerMeta.label} not installed`,
         hint: detection.error ?? 'Runner CLI not detected on PATH.',
-        fix: { label: 'Open settings', kind: 'runner', href: '/settings' },
+        fix: { label: 'Open settings', kind: 'runner', href: '/settings/runners' },
       });
     }
   }

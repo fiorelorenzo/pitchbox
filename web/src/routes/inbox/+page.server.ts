@@ -1,202 +1,59 @@
+import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
-import { and, eq, desc, gte, inArray, type SQL } from 'drizzle-orm';
-import { getUsageForAccounts, loadQuotaLimits } from '@pitchbox/shared/quota';
-import { listProjects } from '@pitchbox/shared/projects';
+import { and, eq, inArray } from 'drizzle-orm';
 import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
 import { runBelongsToOrg } from '@pitchbox/shared/orgs';
 import { resolveOrgId } from '$lib/server/auth.js';
 import { getExtensionDeviceNudge, hasChatUnauthorizedDevice } from '$lib/server/extension-sync.js';
+import {
+  resolveInboxScope,
+  queryInboxDraftsPage,
+  parseInboxCursor,
+} from '$lib/server/inbox-query.js';
 
-export async function load(event: import('@sveltejs/kit').RequestEvent) {
+export async function load(event: RequestEvent) {
   const { url } = event;
-  const draftParam = url.searchParams.get('draft');
-  // A `?draft=<id>` deep link (from Contacts, Search, Audit, …) must be able to
-  // find the draft regardless of its current state, so the default state
-  // filter widens to `all` unless the caller pins an explicit `state`.
-  const state = url.searchParams.get('state') ?? (draftParam ? 'all' : 'pending_review');
-  const kind = url.searchParams.get('kind');
-  const run = url.searchParams.get('run');
-  const campaign = url.searchParams.get('campaign');
-  const projectSlug = url.searchParams.get('project') ?? '';
-  const platformSlugFilter = url.searchParams.get('platform');
-  const minQualityRaw = url.searchParams.get('minQuality');
-  const minQuality =
-    minQualityRaw != null && minQualityRaw !== '' && Number.isFinite(Number(minQualityRaw))
-      ? Math.max(0, Math.min(100, Number(minQualityRaw)))
-      : null;
   const db = getDb();
   const qualityRubric = await loadQualityRubric(db);
 
   const orgId = await resolveOrgId(event);
-  const projects = await listProjects(db, { organizationId: orgId });
   const chatSyncUnauthorized = await hasChatUnauthorizedDevice();
   const extensionNudge = orgId != null ? await getExtensionDeviceNudge(orgId) : null;
-  const activeProject = projectSlug ? (projects.find((p) => p.slug === projectSlug) ?? null) : null;
-  const projectsForUi = projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name }));
-  const projectIds = projects.map((p) => p.id);
 
-  const allPlatforms = await db
-    .select({ id: schema.platforms.id, slug: schema.platforms.slug })
-    .from(schema.platforms);
-  const activePlatform = platformSlugFilter
-    ? (allPlatforms.find((p) => p.slug === platformSlugFilter) ?? null)
-    : null;
+  const scope = await resolveInboxScope(db, orgId, url);
 
-  // No projects in this org - render an empty inbox. `inArray(x, [])` is a SQL error.
-  if (projectIds.length === 0) {
+  const base = {
+    state: scope.state,
+    kind: scope.kind,
+    campaign: scope.campaign,
+    projects: scope.projectsForUi,
+    activeProject: scope.activeProject,
+    platforms: scope.allPlatforms,
+    activePlatform: scope.activePlatform,
+    chatSyncUnauthorized,
+    extensionNudge,
+    orgId,
+    qualityRubric,
+    ...scope.filterInvalid,
+  };
+
+  if (scope.empty) {
     return {
+      ...base,
       drafts: [],
-      state,
-      kind,
       run: null,
-      campaign,
       runInfo: null,
       campaignInfo: null,
       usage: {},
       quotaLimitsByPlatform: {},
-      projects: projectsForUi,
-      activeProject,
-      platforms: allPlatforms,
-      activePlatform,
-      chatSyncUnauthorized,
-      extensionNudge,
-      orgId,
-      qualityRubric,
+      nextCursor: null,
+      totalCount: 0,
     };
   }
 
-  if (platformSlugFilter && !activePlatform) {
-    return {
-      drafts: [],
-      state,
-      kind,
-      run: null,
-      campaign,
-      runInfo: null,
-      campaignInfo: null,
-      usage: {},
-      quotaLimitsByPlatform: {},
-      projects: projectsForUi,
-      activeProject,
-      platforms: allPlatforms,
-      activePlatform: null,
-      chatSyncUnauthorized,
-      extensionNudge,
-      orgId,
-      qualityRubric,
-    };
-  }
-
-  // Mandatory org scope - applies even with no project selected.
-  const filters: SQL[] = [inArray(schema.drafts.projectId, projectIds)];
-  if (state !== 'all') filters.push(eq(schema.drafts.state, state));
-  if (kind) filters.push(eq(schema.drafts.kind, kind));
-  if (activeProject) filters.push(eq(schema.drafts.projectId, activeProject.id));
-  if (activePlatform) filters.push(eq(schema.drafts.platformId, activePlatform.id));
-  if (minQuality != null) filters.push(gte(schema.drafts.qualityScore, minQuality));
-
-  if (run) {
-    filters.push(eq(schema.drafts.runId, Number(run)));
-  } else if (campaign) {
-    const runs = await db
-      .select({ id: schema.runs.id })
-      .from(schema.runs)
-      .where(eq(schema.runs.campaignId, Number(campaign)));
-    if (runs.length === 0) {
-      return {
-        drafts: [],
-        state,
-        kind,
-        run: null,
-        campaign,
-        runInfo: null,
-        campaignInfo: null,
-        usage: {},
-        quotaLimitsByPlatform: {},
-        projects: projectsForUi,
-        activeProject,
-        platforms: allPlatforms,
-        activePlatform,
-        chatSyncUnauthorized,
-        extensionNudge,
-        orgId,
-        qualityRubric,
-      };
-    }
-    filters.push(
-      inArray(
-        schema.drafts.runId,
-        runs.map((r) => r.id),
-      ),
-    );
-  }
-
-  // JOIN projects. Enumerate every draft column explicitly so the page does not lose data.
-  const draftRows = await db
-    .select({
-      id: schema.drafts.id,
-      runId: schema.drafts.runId,
-      projectId: schema.drafts.projectId,
-      platformId: schema.drafts.platformId,
-      accountId: schema.drafts.accountId,
-      kind: schema.drafts.kind,
-      state: schema.drafts.state,
-      fitScore: schema.drafts.fitScore,
-      targetUser: schema.drafts.targetUser,
-      sourceRef: schema.drafts.sourceRef,
-      title: schema.drafts.title,
-      body: schema.drafts.body,
-      composeUrl: schema.drafts.composeUrl,
-      reasoning: schema.drafts.reasoning,
-      metadata: schema.drafts.metadata,
-      createdAt: schema.drafts.createdAt,
-      reviewedAt: schema.drafts.reviewedAt,
-      sentAt: schema.drafts.sentAt,
-      sentContent: schema.drafts.sentContent,
-      platformCommentId: schema.drafts.platformCommentId,
-      dedupWarning: schema.drafts.dedupWarning,
-      scheduledSendAfter: schema.drafts.scheduledSendAfter,
-      qualityScore: schema.drafts.qualityScore,
-      qualityReason: schema.drafts.qualityReason,
-      variantGroupId: schema.drafts.variantGroupId,
-      variantLabel: schema.drafts.variantLabel,
-      regenerationCount: schema.drafts.regenerationCount,
-      regeneratingRunId: schema.drafts.regeneratingRunId,
-      draftingRunId: schema.drafts.draftingRunId,
-      draftingRunStatus: schema.runs.status,
-      version: schema.drafts.version,
-      projectSlug: schema.projects.slug,
-      projectName: schema.projects.name,
-      platformSlug: schema.platforms.slug,
-    })
-    .from(schema.drafts)
-    .innerJoin(schema.projects, eq(schema.projects.id, schema.drafts.projectId))
-    .innerJoin(schema.platforms, eq(schema.platforms.id, schema.drafts.platformId))
-    .leftJoin(schema.runs, eq(schema.runs.id, schema.drafts.draftingRunId))
-    .where(filters.length > 0 ? and(...filters) : undefined)
-    .orderBy(desc(schema.drafts.createdAt))
-    .limit(200);
-
-  const drafts = draftRows.map(({ projectSlug, projectName, platformSlug, ...rest }) => ({
-    ...rest,
-    platformSlug,
-    project: { id: rest.projectId, slug: projectSlug, name: projectName },
-  }));
-
-  const accountIds = Array.from(new Set(drafts.map((d) => d.accountId)));
-  const platformIds = Array.from(new Set(drafts.map((d) => d.platformId)));
-  const usage = accountIds.length > 0 ? await getUsageForAccounts(db, accountIds) : {};
-
-  const quotaLimitsByPlatform: Record<number, Awaited<ReturnType<typeof loadQuotaLimits>>> = {};
-  if (platformIds.length > 0) {
-    const rows = await db
-      .select({ id: schema.platforms.id, slug: schema.platforms.slug })
-      .from(schema.platforms)
-      .where(inArray(schema.platforms.id, platformIds));
-    for (const row of rows) {
-      quotaLimitsByPlatform[row.id] = await loadQuotaLimits(db, row.slug);
-    }
-  }
+  const cursor = parseInboxCursor(url);
+  const { drafts, totalCount, nextCursor, usage, quotaLimitsByPlatform } =
+    await queryInboxDraftsPage(db, scope, cursor);
 
   let runInfo: {
     id: number;
@@ -207,12 +64,12 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
   } | null = null;
   let campaignInfo: { id: number; name: string } | null = null;
 
-  if (run && orgId != null) {
+  if (scope.run && orgId != null) {
     // A run-scoped `inArray(runs.projectId, projectIds)` filter misses every
     // kind:'campaign' run (runs.projectId is NULL for those - the project
     // lives on runs.campaignId -> campaigns.projectId instead), so gate this
     // by-id lookup with the helper that already matches both paths instead.
-    const runId = Number(run);
+    const runId = Number(scope.run);
     if (await runBelongsToOrg(db, runId, orgId)) {
       const [r] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
       if (r && r.campaignId != null) {
@@ -230,36 +87,28 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       }
     }
   }
-  if (campaign) {
+  if (scope.campaign) {
     const [c] = await db
       .select()
       .from(schema.campaigns)
       .where(
         and(
-          eq(schema.campaigns.id, Number(campaign)),
-          inArray(schema.campaigns.projectId, projectIds),
+          eq(schema.campaigns.id, Number(scope.campaign)),
+          inArray(schema.campaigns.projectId, scope.projectIds),
         ),
       );
     if (c) campaignInfo = c;
   }
 
   return {
+    ...base,
     drafts,
-    state,
-    kind,
-    run,
-    campaign,
+    run: scope.run,
     runInfo,
     campaignInfo,
     usage,
     quotaLimitsByPlatform,
-    projects: projectsForUi,
-    activeProject,
-    platforms: allPlatforms,
-    activePlatform,
-    chatSyncUnauthorized,
-    extensionNudge,
-    orgId,
-    qualityRubric,
+    nextCursor,
+    totalCount,
   };
 }

@@ -1,47 +1,11 @@
-import { loadQuotaLimits } from '@pitchbox/shared/quota';
-import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
-import { detectAllRunners } from '@pitchbox/shared/agents/detect';
-import { loadRunnerConfigs, loadDefaultRunnerSlug } from '@pitchbox/shared/agents/config';
-import { eq } from 'drizzle-orm';
-import { getDb, schema } from '$lib/server/db.js';
+import { redirect } from '@sveltejs/kit';
+import type { PageServerLoad } from './$types';
 
-export async function load({ url }) {
-  const db = getDb();
-  const platforms = await db
-    .select({ slug: schema.platforms.slug })
-    .from(schema.platforms)
-    .where(eq(schema.platforms.enabled, true));
-  const quota: Record<string, Awaited<ReturnType<typeof loadQuotaLimits>>> = {};
-  for (const p of platforms) {
-    quota[p.slug] = await loadQuotaLimits(db, p.slug);
-  }
-
-  const detections = await detectAllRunners();
-  const runnerConfigs = await loadRunnerConfigs(db);
-  const runners = AGENT_RUNNER_META.map((m) => ({
-    slug: m.slug,
-    label: m.label,
-    implemented: m.implemented,
-    available: m.implemented && detections[m.slug].available,
-    version: detections[m.slug].version,
-    path: detections[m.slug].path,
-    error: m.implemented ? detections[m.slug].error : 'Runner adapter not implemented yet',
-    detectedAt: detections[m.slug].detectedAt,
-    config: runnerConfigs[m.slug],
-  }));
-
-  const defaultRunner = await loadDefaultRunnerSlug(db);
-
-  return {
-    extension: {
-      // What the user should point the extension at: an explicit override if
-      // set, otherwise this dashboard's own public origin (which is exactly
-      // the backend the extension auto-pairs against and what you type into
-      // its "Add connection" form). See docs/extension-connection-design.md.
-      backendUrl: process.env.PITCHBOX_BACKEND_URL ?? url.origin,
-    },
-    quota,
-    runners,
-    defaultRunner,
-  };
-}
+// #254: the General page (with Status/Runners/Integrations/Quota tabs) was
+// flattened into seven top-level routes. `/settings` itself is no longer a
+// page - it redirects to the first entry of the new rail. Status is always
+// visible regardless of role (see settings/status/+page.svelte), so it is a
+// safe landing spot for every old `/settings` link in the app.
+export const load: PageServerLoad = async () => {
+  throw redirect(307, '/settings/status');
+};

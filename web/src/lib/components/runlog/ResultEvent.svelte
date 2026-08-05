@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { CheckCircle2, XCircle } from '@lucide/svelte';
 	import { formatDuration } from '$lib/utils/time';
+	import { TONE_TEXT_CLASS } from '$lib/config/status-badges';
 	import Markdown from '$lib/components/Markdown.svelte';
 
 	let {
@@ -32,8 +33,8 @@
 	<!-- Title -->
 	<div class="flex items-center gap-2 mb-2">
 		{#if data.success}
-			<CheckCircle2 class="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-			<span class="text-sm font-semibold text-emerald-600 dark:text-emerald-400">Run succeeded</span>
+			<CheckCircle2 class="size-4 {TONE_TEXT_CLASS.emerald} shrink-0" />
+			<span class="text-sm font-semibold {TONE_TEXT_CLASS.emerald}">Run succeeded</span>
 		{:else}
 			<XCircle class="size-4 text-destructive shrink-0" />
 			<span class="text-sm font-semibold text-destructive">Run failed</span>

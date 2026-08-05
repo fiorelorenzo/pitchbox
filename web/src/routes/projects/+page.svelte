@@ -5,11 +5,13 @@
   import EmptyState from '$lib/components/EmptyState.svelte';
   import { Button } from '$lib/components/ui/button';
   import { FolderKanban } from '@lucide/svelte';
+  import PageContainer from '$lib/components/PageContainer.svelte';
 
   let { data }: { data: PageData } = $props();
   const isAdmin = $derived(data.isAdmin ?? true);
 </script>
 
+<PageContainer size="default">
 <PageHeader title="Projects">
   {#snippet actions()}
     {#if isAdmin}
@@ -36,3 +38,4 @@
     {/each}
   </div>
 {/if}
+</PageContainer>

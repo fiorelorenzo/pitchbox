@@ -62,6 +62,18 @@ export const load: PageServerLoad = async (event) => {
     finishedAt: r.finishedAt ? new Date(r.finishedAt).toISOString() : r.finishedAt,
     params: r.params as Record<string, unknown> | null,
   }));
+  const watches = await db
+    .select()
+    .from(schema.keywordWatches)
+    .where(eq(schema.keywordWatches.campaignId, id))
+    .orderBy(desc(schema.keywordWatches.createdAt));
+  // Serialize date columns to ISO strings so prop types stay simple across the wire.
+  const enrichedWatches = watches.map((w) => ({
+    ...w,
+    lastSeenAt: w.lastSeenAt ? new Date(w.lastSeenAt).toISOString() : null,
+    nextAttemptAfter: w.nextAttemptAfter ? new Date(w.nextAttemptAfter).toISOString() : null,
+    createdAt: new Date(w.createdAt).toISOString(),
+  }));
   const readiness = await getCampaignReadiness(id);
   return {
     campaign,
@@ -70,6 +82,7 @@ export const load: PageServerLoad = async (event) => {
     runs: enrichedRuns,
     skillRuns,
     tuningRuns,
+    watches: enrichedWatches,
     readiness,
   };
 };

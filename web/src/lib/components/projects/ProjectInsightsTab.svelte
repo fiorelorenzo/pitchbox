@@ -25,13 +25,25 @@
     regenerating = true;
     try {
       const res = await fetch(`/api/projects/${projectId}/insights`, { method: 'POST' });
-      if (!res.ok && res.status !== 409) throw new Error(await res.text());
-      toast.success(
-        res.status === 409 ? 'Insights are already generating' : 'Generating insights (this takes a moment)',
-      );
+      if (res.status === 409) {
+        toast.success('Insights are already generating');
+        await invalidateAll();
+        return;
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+        if (res.status >= 500) {
+          console.error('failed to regenerate insights', projectId, res.status, body);
+          toast.error('Could not regenerate insights. Please try again.');
+        } else {
+          toast.error(body.error ?? body.message ?? 'Could not regenerate insights');
+        }
+        return;
+      }
+      toast.success('Generating insights (this takes a moment)');
       await invalidateAll();
-    } catch (e) {
-      toast.error('Could not regenerate insights', { description: (e as Error).message });
+    } catch {
+      toast.error('Could not regenerate insights, check your connection and try again.');
     } finally {
       regenerating = false;
     }

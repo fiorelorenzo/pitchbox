@@ -2,7 +2,11 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { sql } from 'drizzle-orm';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { load as loadConversations } from '../src/routes/conversations/+page.server.js';
+import {
+  load as loadPeople,
+  type PeoplePageData,
+  type ThreadsTabData,
+} from '../src/routes/people/+page.server.js';
 import { load as loadThread } from '../src/routes/conversations/[id]/+page.server.js';
 import { encodeThreadId } from '../src/routes/conversations/[id]/thread-id.js';
 
@@ -170,6 +174,14 @@ function fakeEvent(orgId: number, url: string, params: Record<string, string> = 
   } as unknown as RequestEvent;
 }
 
+// `/people`'s loader returns a discriminated union keyed on `tab`
+// (contacts-shaped vs. threads-shaped data - see +page.server.ts); narrow
+// on the real discriminant rather than asserting the whole result.
+function asThreadsTab(data: PeoplePageData): ThreadsTabData {
+  if (data.tab !== 'threads') throw new Error('expected the threads tab');
+  return data;
+}
+
 describe('conversations list is scoped to the active org', () => {
   beforeEach(reset);
 
@@ -177,7 +189,7 @@ describe('conversations list is scoped to the active org', () => {
     const a = await seedOrgConversation('conv-list-a');
     const b = await seedOrgConversation('conv-list-b');
 
-    const data = await loadConversations(fakeEvent(a.orgId, 'http://x/conversations'));
+    const data = asThreadsTab(await loadPeople(fakeEvent(a.orgId, 'http://x/people')));
     const rowA = data.conversations.find((c: { contactId: number }) => c.contactId === a.contactId);
     const rowB = data.conversations.find((c: { contactId: number }) => c.contactId === b.contactId);
 
@@ -196,7 +208,7 @@ describe('conversations list is scoped to the active org', () => {
     const a = await seedOrgConversation('conv-list-c');
     const b = await seedOrgConversation('conv-list-d');
 
-    const data = await loadConversations(fakeEvent(a.orgId, 'http://x/conversations'));
+    const data = asThreadsTab(await loadPeople(fakeEvent(a.orgId, 'http://x/people')));
     const rowA = data.conversations.find((c: { contactId: number }) => c.contactId === a.contactId);
     const rowB = data.conversations.find((c: { contactId: number }) => c.contactId === b.contactId);
 

@@ -4,6 +4,16 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { getPresenter } from '$lib/platforms/presenter';
 	import { scoreBand, DEFAULT_QUALITY_RUBRIC, type QualityRubric } from '@pitchbox/shared/quality-judge';
+	import { TONE_CLASS, type Tone } from '$lib/config/status-badges';
+
+	// scoreBand's band names are a shared-package contract (not the design
+	// registry's Tone names), so translate here rather than renaming the shared
+	// export.
+	const BAND_TONE: Record<'red' | 'amber' | 'green', Tone> = {
+		red: 'rose',
+		amber: 'amber',
+		green: 'emerald',
+	};
 
 	type Draft = {
 		id: number;
@@ -68,14 +78,7 @@
 			{/if}
 			{#if band !== 'none'}
 				<span
-					class={cn(
-						'inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium',
-						band === 'red' && 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200',
-						band === 'amber' &&
-							'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
-						band === 'green' &&
-							'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
-					)}
+					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium {TONE_CLASS[BAND_TONE[band as 'red' | 'amber' | 'green']]}"
 					title="Quality score (LLM judge)"
 				>
 					Q{draft.qualityScore}
@@ -83,7 +86,7 @@
 			{/if}
 			{#if draft.dedupWarning}
 				<span
-					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium {TONE_CLASS.amber}"
 					title={draft.dedupWarning}
 				>
 					dedup
@@ -91,7 +94,7 @@
 			{/if}
 			{#if scheduledUntil}
 				<span
-					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium {TONE_CLASS.amber}"
 					title="Scheduled until {scheduledUntil.toLocaleString()}"
 				>
 					scheduled
@@ -112,7 +115,9 @@
 	{/if}
 	<div class="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
 		<StatusBadge domain="draft-state" value={draft.state} />
-		<span>· fit {draft.fitScore ?? '?'}/5</span>
+		{#if draft.fitScore != null}
+			<span>· fit {draft.fitScore}/5</span>
+		{/if}
 	</div>
 	{#if runId != null || draft.createdAt}
 		<div class="text-[10px] text-muted-foreground/70 mt-0.5 flex items-center gap-1">

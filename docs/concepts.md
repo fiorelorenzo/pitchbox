@@ -33,7 +33,7 @@ A **draft** is the agent's proposed outreach - DM, post, post comment, or commen
 
 ## Contact history & conversations
 
-Once a draft is sent, the row in `contact_history` becomes the per-target source of truth. The Chrome extension picks up replies (DMs and comment-replies) and the **Conversations** page lists every thread; clicking a row opens `/conversations/<thread-id>`, a Matrix/iMessage-style transcript that renders the parent draft and every captured message, with outgoing bubbles right-aligned in the primary color and incoming bubbles left-aligned in muted styling. When an inbound reply lands, `enqueueReplyDraft` materialises an auto-drafted reply that surfaces at the bottom of the thread with Approve / Reject actions; a textarea lets reviewers edit or override the suggested body before sending.
+Once a draft is sent, the row in `contact_history` becomes the per-target source of truth. The Chrome extension picks up replies (DMs and comment-replies) and the **Threads** tab of the **People** page (`/people`, `?tab=contacts` for the **All contacts** tab) lists every thread; clicking a row opens `/conversations/<thread-id>`, a Matrix/iMessage-style transcript that renders the parent draft and every captured message, with outgoing bubbles right-aligned in the primary color and incoming bubbles left-aligned in muted styling. When an inbound reply lands, `enqueueReplyDraft` materialises an auto-drafted reply that surfaces at the bottom of the thread with Approve / Reject actions; a textarea lets reviewers edit or override the suggested body before sending.
 
 ## Audit feed
 
@@ -42,10 +42,6 @@ The `/audit` page surfaces a unified, time-ordered feed of every recorded event 
 ## Blocklist
 
 `blocklist` covers users, subreddits, and keywords. The dispatch path consults it before drafting; the send path consults it again before flipping a draft to `sent`. Scope is global or per-project.
-
-## i18n
-
-Pitchbox ships with a tiny hand-rolled i18n module at `web/src/lib/i18n/`. English (`dict-en.ts`) is the source of truth; other locales (today just `dict-it.ts`) mirror its keys and fall back to English when a key is missing. In Svelte components, use the reactive store: `import { t } from '$lib/i18n'` then `{$t('nav.inbox')}`. Templates support `{name}` placeholders interpolated by `t()`. To add a key, add it to `dict-en.ts` first, then mirror it in every other locale dictionary. To contribute a new locale, copy `dict-en.ts` to `dict-<code>.ts`, translate the values, register it in `index.ts`, and add the code to `LOCALES` in `types.ts`. The active locale is exposed via `setLocale()` / `getLocale()` and will eventually be persisted in `app_config.ui_locale`.
 
 ## Templates (few-shot examples)
 
@@ -117,4 +113,4 @@ Approving (or sending) one variant cascade-rejects every still-pending sibling i
 
 When the extension's dm-sync flips an outbound draft to `replied`, Pitchbox automatically enqueues a continuation draft via `shared/src/reply-drafter.ts:enqueueReplyDraft`. The new draft uses `kind = 'reply_dm'` (or `'reply_comment'`) and stores the inbound message's id on `drafts.parent_message_id` so the runner / reviewer can rebuild the full conversation history.
 
-`enqueueReplyDraft` inserts the reply draft and a `reply_drafting_enqueued` draft_event, then a `reply_drafting` agent run executes `playbooks/reply-drafter.md` to write (and score) the real body, replacing the placeholder. Until that run succeeds the draft carries a `drafting_run_id` flag so it cannot be approved or sent. The Conversations page surfaces the pending reply with Approve / Reject buttons, plus a Retry if the drafting run failed.
+`enqueueReplyDraft` inserts the reply draft and a `reply_drafting_enqueued` draft_event, then a `reply_drafting` agent run executes `playbooks/reply-drafter.md` to write (and score) the real body, replacing the placeholder. Until that run succeeds the draft carries a `drafting_run_id` flag so it cannot be approved or sent. The People page's Threads tab surfaces the pending reply with Approve / Reject buttons, plus a Retry if the drafting run failed.

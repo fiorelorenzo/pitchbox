@@ -4,10 +4,10 @@ import { listUserOrganizations } from '@pitchbox/shared/orgs';
 
 /**
  * Root layout loader. Exposes server-wide flags every page may need: `authOn`
- * (so the Sidebar can show Sign in vs Sign out), the active organization
- * (`event.locals.org`, set by the hook), the caller's organizations (for
- * the org switcher), and `isAdmin` (so the UI can hide admin-only controls).
- * `orgs` is empty when signed out or auth is off.
+ * (so the Sidebar can show Sign out only when it would actually work), the
+ * active organization (`event.locals.org`, set by the hook), the caller's
+ * organizations (for the org switcher), and `isAdmin` (so the UI can hide
+ * admin-only controls). `orgs` is empty when signed out or auth is off.
  */
 export const load: LayoutServerLoad = async (event) => {
   const user = event.locals.user;

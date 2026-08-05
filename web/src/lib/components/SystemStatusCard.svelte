@@ -3,7 +3,7 @@
   import { daemonStatus } from '$lib/stores/daemon';
   import { getSseManager, type SseStatus } from '$lib/realtime/sse';
   import { VERSION } from '$lib/shared/version';
-  import { t } from '$lib/i18n';
+  import { resolveBadge, resolveTone, PULSE_DOT_CLASS, TONE_TEXT_CLASS } from '$lib/config/status-badges';
 
   let sseState = $state<SseStatus>('connecting');
   let unsub: (() => void) | null = null;
@@ -17,45 +17,28 @@
 
   const daemonRow = $derived.by(() => {
     if ($daemonStatus.loading) {
-      return { tone: 'idle' as RowTone, label: $t('status.checking') };
+      return { tone: 'idle' as RowTone, label: 'checking' };
     }
     return $daemonStatus.alive
-      ? { tone: 'live' as RowTone, label: $t('nav.daemon.online') }
-      : { tone: 'down' as RowTone, label: $t('nav.daemon.offline') };
+      ? { tone: 'live' as RowTone, label: 'online' }
+      : { tone: 'down' as RowTone, label: 'offline' };
   });
 
   const sseRow = $derived.by(() => {
-    if (sseState === 'live') return { tone: 'live' as RowTone, label: $t('status.live') };
+    if (sseState === 'live') return { tone: 'live' as RowTone, label: 'live' };
     if (sseState === 'reconnecting')
-      return { tone: 'warn' as RowTone, label: $t('status.reconnecting') };
-    if (sseState === 'closed') return { tone: 'down' as RowTone, label: $t('status.offline') };
-    return { tone: 'idle' as RowTone, label: $t('status.connecting') };
+      return { tone: 'warn' as RowTone, label: 'reconnecting' };
+    if (sseState === 'closed') return { tone: 'down' as RowTone, label: 'offline' };
+    return { tone: 'idle' as RowTone, label: 'connecting' };
   });
 
   function dotClass(tone: RowTone) {
-    switch (tone) {
-      case 'live':
-        return 'bg-emerald-400 animate-pulse';
-      case 'warn':
-        return 'bg-amber-400 animate-pulse';
-      case 'down':
-        return 'bg-rose-400';
-      default:
-        return 'bg-muted-foreground/40';
-    }
+    const dot = PULSE_DOT_CLASS[resolveTone('connection-status', tone)];
+    return resolveBadge('connection-status', tone).pulse ? `${dot} animate-pulse` : dot;
   }
 
   function valueClass(tone: RowTone) {
-    switch (tone) {
-      case 'live':
-        return 'text-emerald-600 dark:text-emerald-400';
-      case 'warn':
-        return 'text-amber-600 dark:text-amber-400';
-      case 'down':
-        return 'text-rose-600 dark:text-rose-400';
-      default:
-        return 'text-muted-foreground';
-    }
+    return TONE_TEXT_CLASS[resolveTone('connection-status', tone)];
   }
 </script>
 
@@ -63,14 +46,14 @@
   <div class="flex items-center justify-between gap-2 py-0.5">
     <span class="flex items-center gap-2 text-muted-foreground">
       <span class="size-1.5 rounded-full shrink-0 {dotClass(daemonRow.tone)}"></span>
-      {$t('nav.daemon')}
+      Daemon
     </span>
     <span class="font-medium {valueClass(daemonRow.tone)}">{daemonRow.label}</span>
   </div>
   <div class="flex items-center justify-between gap-2 py-0.5">
     <span class="flex items-center gap-2 text-muted-foreground">
       <span class="size-1.5 rounded-full shrink-0 {dotClass(sseRow.tone)}"></span>
-      {$t('status.liveStream')}
+      Live stream
     </span>
     <span class="font-medium {valueClass(sseRow.tone)}">{sseRow.label}</span>
   </div>
