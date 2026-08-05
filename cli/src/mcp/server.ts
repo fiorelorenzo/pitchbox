@@ -369,7 +369,7 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     {
       title: 'Create drafts',
       description:
-        'Persist drafts for the run. Applies blocklist + contact-dedup filters; blocklisted or recently-contacted targets are skipped. Returns { runId, inserted, skipped, dedupSkipped }.',
+        'Persist drafts for the run. Applies blocklist + contact-dedup filters; blocklisted or recently-contacted targets are skipped. On a Reddit run, "post" and "post_comment" drafts must carry a subreddit (top-level "subreddit" field or metadata.subreddit) or the whole call is rejected. Returns { runId, inserted, skipped, dedupSkipped }.',
       inputSchema: {
         drafts: Payload,
         runId: z

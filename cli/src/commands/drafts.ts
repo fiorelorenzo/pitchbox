@@ -18,26 +18,46 @@ import { getProjectOrgId } from '@pitchbox/shared/orgs';
 import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
 import { ok, fail } from '../lib/output.js';
 
+// Playbooks document their `drafts_create` payloads with an explicit `null`
+// for fields that do not apply to the kind being written: every commenter and
+// poster playbook on all three platforms shows `"targetUser": null` on a
+// `post`/`post_comment`, because the audience is the thread rather than one
+// user. Zod's `.optional()` accepts a missing key but NOT an explicit null,
+// so a literal, playbook-compliant payload was rejected whole with "invalid
+// payload" and the agent lost the entire batch. Treat null as absent, and
+// keep the parsed type `T | undefined` so no consumer has to learn a third
+// state. `cli/tests/commands/playbook-draft-payloads.test.ts` parses the real
+// JSON examples out of the playbooks so the two cannot drift again.
+function absentOrNull<T extends z.ZodTypeAny>(inner: T) {
+  return inner.nullish().transform((v) => (v == null ? undefined : v));
+}
+
 export const DraftInput = z.object({
   accountId: z.number().int(),
   kind: z.enum(['dm', 'post', 'post_comment', 'comment_reply']),
-  fitScore: z.number().int().min(1).max(5).optional(),
-  subreddit: z.string().optional(),
-  targetUser: z.string().optional(),
-  title: z.string().optional(),
+  fitScore: absentOrNull(z.number().int().min(1).max(5)),
+  subreddit: absentOrNull(z.string()),
+  targetUser: absentOrNull(z.string()),
+  title: absentOrNull(z.string()),
   body: z.string().min(1),
-  composeUrl: z.url().optional(),
-  reasoning: z.string().optional(),
-  sourceRef: z.record(z.string(), z.unknown()).default({}),
-  metadata: z.record(z.string(), z.unknown()).default({}),
+  composeUrl: absentOrNull(z.url()),
+  reasoning: absentOrNull(z.string()),
+  sourceRef: z
+    .record(z.string(), z.unknown())
+    .nullish()
+    .transform((v) => v ?? {}),
+  metadata: z
+    .record(z.string(), z.unknown())
+    .nullish()
+    .transform((v) => v ?? {}),
   // Optional A/B variant bodies (issue #20). When provided, `body` is treated
   // as the primary (variant A) and `variants` supplies B, C, ... Each entry
   // produces a sibling draft sharing a `variant_group_id`.
-  variants: z.array(z.string().min(1)).optional(),
+  variants: absentOrNull(z.array(z.string().min(1))),
   // Inline LLM-judge quality score (issue #41), supplied by the creating agent.
   // Lenient here (clamped at persistence) so one bad score never fails the batch.
-  qualityScore: z.number().optional(),
-  qualityReason: z.string().optional(),
+  qualityScore: absentOrNull(z.number()),
+  qualityReason: absentOrNull(z.string()),
 });
 
 export const Payload = z.array(DraftInput).min(1).max(200);
@@ -79,6 +99,31 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
       throw new Error(
         `account ${accountId} belongs to project ${account.projectId}, not campaign's project ${campaign.projectId}`,
       );
+    }
+  }
+
+  // Reddit-only guard (issue #258): a `post` or `post_comment` draft cannot
+  // be acted on without a subreddit, so refuse to write one rather than
+  // storing a row the inbox has to paper over (see the fallback in
+  // web/src/lib/platforms/reddit/presenter.ts). Accept the subreddit from
+  // either the top-level `subreddit` field or an inline `metadata.subreddit`
+  // (both are in active use by the poster/commenter playbooks).
+  const [platform] = await db
+    .select({ slug: schema.platforms.slug })
+    .from(schema.platforms)
+    .where(eq(schema.platforms.id, campaign.platformId));
+  if (platform?.slug === 'reddit') {
+    for (const d of draftsInput) {
+      if (d.kind !== 'post' && d.kind !== 'post_comment') continue;
+      const metaSubreddit = d.metadata.subreddit;
+      const hasSubreddit =
+        (typeof d.subreddit === 'string' && d.subreddit.trim() !== '') ||
+        (typeof metaSubreddit === 'string' && metaSubreddit.trim() !== '');
+      if (!hasSubreddit) {
+        throw new Error(
+          `Reddit "${d.kind}" draft is missing "subreddit": set the top-level "subreddit" field or metadata.subreddit (targetUser=${d.targetUser ?? 'none'})`,
+        );
+      }
     }
   }
 

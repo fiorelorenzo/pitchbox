@@ -496,6 +496,152 @@ describe('pitchbox drafts:create', () => {
     expect(draftsAfterSame).toHaveLength(1);
     expect(draftsAfterSame[0].accountId).toBe(accountA.id);
   });
+
+  it('rejects Reddit post/post_comment drafts with no subreddit, accepts them with one, and leaves dm untouched (issue #258)', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'sub-guard', name: 'Sub Guard' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({ projectId: project.id, platformId: platform.id, handle: 'carol', role: 'personal' })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c',
+        skillSlug: 'reddit-commenter',
+        config: {},
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    // Reject: no subreddit anywhere on a post_comment draft. The whole batch
+    // fails and nothing is persisted.
+    const missingPayload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'post_comment',
+        targetUser: null,
+        body: 'a comment about rpgs',
+        sourceRef: {},
+        metadata: {},
+      },
+    ]);
+
+    let threw = false;
+    try {
+      cli(`drafts:create --run=${run.id}`, missingPayload);
+    } catch (err) {
+      threw = true;
+      const stderr = String((err as { stderr?: unknown }).stderr ?? '');
+      const res = JSON.parse(stderr.trim().split('\n').at(-1)!);
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/subreddit/i);
+      expect(res.error).toMatch(/post_comment/);
+    }
+    expect(threw).toBe(true);
+    expect(await db.select().from(schema.drafts)).toHaveLength(0);
+
+    // Reject: same for a top-level "post" draft.
+    const missingPostPayload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'post',
+        targetUser: null,
+        title: 'A post with nowhere to go',
+        body: 'body text',
+        sourceRef: {},
+        metadata: {},
+      },
+    ]);
+    let postThrew = false;
+    try {
+      cli(`drafts:create --run=${run.id}`, missingPostPayload);
+    } catch (err) {
+      postThrew = true;
+      const stderr = String((err as { stderr?: unknown }).stderr ?? '');
+      const res = JSON.parse(stderr.trim().split('\n').at(-1)!);
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/subreddit/i);
+    }
+    expect(postThrew).toBe(true);
+    expect(await db.select().from(schema.drafts)).toHaveLength(0);
+
+    // Accept: subreddit supplied via the top-level field (reddit-commenter.md's convention).
+    const withTopLevelSubreddit = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'post_comment',
+        subreddit: 'rpg',
+        targetUser: null,
+        body: 'a comment about rpgs',
+        sourceRef: {},
+        metadata: {},
+      },
+    ]);
+    const out1 = cli(`drafts:create --run=${run.id}`, withTopLevelSubreddit);
+    const res1 = JSON.parse(out1.trim().split('\n').at(-1)!);
+    expect(res1.ok).toBe(true);
+    expect(res1.data.inserted).toBe(1);
+
+    // Accept: subreddit supplied inline in metadata (reddit-poster.md's convention).
+    const withMetadataSubreddit = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'post',
+        targetUser: null,
+        title: 'A post with somewhere to go',
+        body: 'body text',
+        sourceRef: {},
+        metadata: { subreddit: 'cryptocurrency' },
+      },
+    ]);
+    const out2 = cli(`drafts:create --run=${run.id}`, withMetadataSubreddit);
+    const res2 = JSON.parse(out2.trim().split('\n').at(-1)!);
+    expect(res2.ok).toBe(true);
+    expect(res2.data.inserted).toBe(1);
+
+    // Unaffected: dm drafts legitimately have no subreddit and are never
+    // subject to this guard even on the Reddit platform.
+    const dmPayload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'dm',
+        targetUser: 'dave',
+        body: 'hey dave, ...',
+        sourceRef: {},
+        metadata: {},
+      },
+    ]);
+    const out3 = cli(`drafts:create --run=${run.id}`, dmPayload);
+    const res3 = JSON.parse(out3.trim().split('\n').at(-1)!);
+    expect(res3.ok).toBe(true);
+    expect(res3.data.inserted).toBe(1);
+
+    const finalDrafts = await db.select().from(schema.drafts).orderBy(schema.drafts.id);
+    expect(finalDrafts).toHaveLength(3);
+    expect(finalDrafts[0].kind).toBe('post_comment');
+    expect(finalDrafts[0].metadata).toMatchObject({ subreddit: 'rpg' });
+    expect(finalDrafts[1].kind).toBe('post');
+    expect(finalDrafts[1].metadata).toMatchObject({ subreddit: 'cryptocurrency' });
+    expect(finalDrafts[2].kind).toBe('dm');
+    expect(finalDrafts[2].targetUser).toBe('dave');
+  });
 });
 
 afterAll(async () => {
