@@ -29,7 +29,17 @@ export const en = {
   'dashboard.connection.bad-url': 'Enter a valid backend URL',
   'dashboard.connection.code-required': 'Enter the pairing code',
   'dashboard.connection.perm-denied': 'Permission denied for {host}',
+  'dashboard.connection.perm-request-failed': 'Could not request permission for {host}. Try again.',
   'dashboard.connection.pair-failed': 'Pairing failed: {reason}',
+  'dashboard.connection.pairing': 'Pairing...',
+  'dashboard.connection.pair-error-unauthorized':
+    "You're not signed in to the dashboard in that tab. Sign in, then try again.",
+  'dashboard.connection.pair-error-no-dashboard':
+    'No Pitchbox dashboard found in that tab. Open your dashboard, then try again.',
+  'dashboard.connection.pair-error-network':
+    'Could not reach the dashboard. Check your connection, then try again.',
+  'dashboard.connection.pair-error-server':
+    'The dashboard returned an unexpected error. Try again in a moment.',
   'dashboard.connection.degraded': 'Needs attention',
   'dashboard.connection.sync-error': 'Sync error',
   'dashboard.connection.test': 'Test connection',
@@ -66,6 +76,8 @@ export const en = {
   'activity.actions.clear': 'Clear',
   'activity.actions.export': 'Export JSON',
   'activity.actions.export-done': 'Exported {n} events.',
+  'activity.retention-notice':
+    '{count} entries older than {oldest} were dropped to stay within the {cap}-entry limit.',
   'activity.clear.confirm-title': 'Clear activity log?',
   'activity.clear.confirm-body': 'All log entries will be removed. This cannot be undone.',
   'activity.clear.confirm-ok': 'Clear log',

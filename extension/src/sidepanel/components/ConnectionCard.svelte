@@ -19,6 +19,7 @@
   } from '$ext/storage';
   import { DEFAULT_BACKEND_URL, normalizeBackendUrl } from '$ext/backend';
   import { originStillNeeded } from '$ext/permissions';
+  import { autoPairOutcomeMessageKey, type AutoPairOutcome } from '$ext/auto-pair-outcome';
 
   let pairings = $state<Pairing[]>([]);
   let busy = $state(false);
@@ -123,6 +124,35 @@
     await refresh();
   }
 
+  // Injects the auto-pair content script into `target.tabId` and waits for
+  // it to report an AutoPairOutcome (see lib/auto-pair-outcome.ts and
+  // content/auto-pair.ts). Injection itself failing (restricted page, tab
+  // closed, ...) and nobody reporting back within the timeout both mean the
+  // same thing to the user: we could not reach a dashboard in that tab.
+  function runAutoPairInTab(target: { tabId: number; origin: string }): Promise<AutoPairOutcome> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (outcome: AutoPairOutcome) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        chrome.runtime.onMessage.removeListener(listener);
+        resolve(outcome);
+      };
+      const listener = (msg: unknown) => {
+        const m = msg as { type?: string; backendUrl?: string; outcome?: AutoPairOutcome };
+        if (m?.type === 'pitchbox:auto-pair-outcome' && m.backendUrl === target.origin && m.outcome) {
+          finish(m.outcome);
+        }
+      };
+      const timer = setTimeout(() => finish({ kind: 'no-dashboard' }), 4000);
+      chrome.runtime.onMessage.addListener(listener);
+      chrome.scripting
+        .executeScript({ target: { tabId: target.tabId }, files: ['src/content/auto-pair.ts'] })
+        .catch(() => finish({ kind: 'no-dashboard' }));
+    });
+  }
+
   // #186: gathering the target tab is synchronous with the "Pair with this
   // tab" click; the actual permission request + injection wait for explicit
   // confirmation in confirmPair() below, so nothing is persisted yet.
@@ -147,18 +177,28 @@
     try {
       // Must run in this click's user-gesture context, so request the host
       // permission before any other await resolves.
-      const granted = await chrome.permissions.request({ origins: [target.origin + '/*'] });
+      let granted: boolean;
+      try {
+        granted = await chrome.permissions.request({ origins: [target.origin + '/*'] });
+      } catch {
+        // Distinct from the user explicitly declining below: the request
+        // itself failed (e.g. not in a user-gesture context anymore, or the
+        // extension context was invalidated mid-click).
+        err = $t('dashboard.connection.perm-request-failed', { host: shortHost(target.origin) });
+        return;
+      }
       if (!granted) {
         err = $t('dashboard.connection.perm-denied', { host: shortHost(target.origin) });
         return;
       }
-      await chrome.scripting.executeScript({
-        target: { tabId: target.tabId },
-        files: ['src/content/auto-pair.ts'],
-      });
-      await new Promise((r) => setTimeout(r, 700));
-      // The user already confirmed what's shared, so mark whatever pairing
-      // the injected content script just created for this origin as
+      const outcome = await runAutoPairInTab(target);
+      const messageKey = autoPairOutcomeMessageKey(outcome);
+      if (messageKey) {
+        err = $t(messageKey);
+        return;
+      }
+      // 'paired' or 'already-paired': the user already confirmed what's
+      // shared, so mark whatever pairing exists for this origin as
       // acknowledged - it should not also show the post-hoc review banner.
       await patchPairing(target.origin, { consentAckAt: new Date().toISOString() });
       await refresh();
@@ -215,7 +255,16 @@
     try {
       // Must run in this click's user-gesture context, so request the host
       // permission before any other await resolves.
-      const granted = await chrome.permissions.request({ origins: [target.url + '/*'] });
+      let granted: boolean;
+      try {
+        granted = await chrome.permissions.request({ origins: [target.url + '/*'] });
+      } catch {
+        // Distinct from the user explicitly declining below: the request
+        // itself failed (e.g. not in a user-gesture context anymore, or the
+        // extension context was invalidated mid-click).
+        err = $t('dashboard.connection.perm-request-failed', { host: new URL(target.url).host });
+        return;
+      }
       if (!granted) {
         err = $t('dashboard.connection.perm-denied', { host: new URL(target.url).host });
         return;
@@ -267,7 +316,7 @@
         {$t('dashboard.connection.default-hint', { url: shortHost(DEFAULT_BACKEND_URL) })}
       </p>
       <Button disabled={busy} onclick={pair}>
-        {$t('dashboard.connection.pair')}
+        {busy ? $t('dashboard.connection.pairing') : $t('dashboard.connection.pair')}
       </Button>
     {:else}
       <div class="flex flex-col divide-y divide-border rounded-md border bg-muted/30">
@@ -351,7 +400,7 @@
         {/each}
       </div>
       <Button variant="outline" disabled={busy} onclick={pair}>
-        {$t('dashboard.connection.pair-another')}
+        {busy ? $t('dashboard.connection.pairing') : $t('dashboard.connection.pair-another')}
       </Button>
     {/if}
     <div class="flex flex-col gap-2 border-t pt-3">

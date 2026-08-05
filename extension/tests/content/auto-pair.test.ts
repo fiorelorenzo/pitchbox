@@ -80,6 +80,13 @@ describe('auto-pair content script', () => {
     await flush();
 
     expect(fetchMock).not.toHaveBeenCalled();
+    expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'pitchbox:auto-pair-outcome',
+        backendUrl,
+        outcome: { kind: 'already-paired' },
+      }),
+    );
   });
 
   it('does not skip after repeated reloads for the same already-paired backend', async () => {
@@ -119,6 +126,13 @@ describe('auto-pair content script', () => {
       expect.objectContaining({ method: 'POST', credentials: 'include' }),
     );
     expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalled();
+    expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'pitchbox:auto-pair-outcome',
+        backendUrl: `${location.protocol}//${location.host}`,
+        outcome: { kind: 'paired' },
+      }),
+    );
   });
 
   it('forwards orgName and deviceLabel from the auto-pair response (#200)', async () => {
@@ -166,6 +180,83 @@ describe('auto-pair content script', () => {
     expect(sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'pitchbox:auto-pair', token: 'w'.repeat(64) }),
       expect.any(Function),
+    );
+  });
+});
+
+describe('auto-pair outcome reporting (#257)', () => {
+  it('reports no-dashboard when the page has no pitchbox-pair beacon', async () => {
+    // beforeEach leaves document.head empty - no setBeacon() call here.
+    const backendUrl = `${location.protocol}//${location.host}`;
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importModule();
+    await flush();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'pitchbox:auto-pair-outcome',
+        backendUrl,
+        outcome: { kind: 'no-dashboard' },
+      }),
+    );
+  });
+
+  it('reports unauthorized when the dashboard responds 401 (not signed in)', async () => {
+    setBeacon();
+    const backendUrl = `${location.protocol}//${location.host}`;
+    const fetchMock = vi.fn(async () => new Response(null, { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importModule();
+    await flush();
+
+    expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'pitchbox:auto-pair-outcome',
+        backendUrl,
+        outcome: { kind: 'unauthorized' },
+      }),
+    );
+  });
+
+  it('reports network-error when the fetch itself throws', async () => {
+    setBeacon();
+    const backendUrl = `${location.protocol}//${location.host}`;
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importModule();
+    await flush();
+
+    expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'pitchbox:auto-pair-outcome',
+        backendUrl,
+        outcome: { kind: 'network-error' },
+      }),
+    );
+  });
+
+  it('reports server-error with the status for a non-200, non-401 response', async () => {
+    setBeacon();
+    const backendUrl = `${location.protocol}//${location.host}`;
+    const fetchMock = vi.fn(async () => new Response(null, { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await importModule();
+    await flush();
+
+    expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'pitchbox:auto-pair-outcome',
+        backendUrl,
+        outcome: { kind: 'server-error', httpStatus: 500 },
+      }),
     );
   });
 });

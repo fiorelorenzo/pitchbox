@@ -7,8 +7,10 @@
   import ActivityRow from '../components/ActivityRow.svelte';
   import {
     getActivity,
+    getActivityStats,
     clearActivity,
     exportActivityJSON,
+    ACTIVITY_LOG_CAP,
     type ActivityEvent,
     type ActivityLevel,
     type ActivitySource,
@@ -25,15 +27,25 @@
   // test-connection result).
   let exportedCount = $state<number | null>(null);
   let exportedTimer: ReturnType<typeof setTimeout> | undefined;
+  // Eviction accounting: how many entries have ever been dropped from the ring
+  // buffer. Persisted separately from the entries so it survives a reload.
+  let droppedCount = $state(0);
+  let oldestRetainedTs = $derived(events.length > 0 ? events[events.length - 1].ts : null);
 
   const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    if (area === 'local' && changes.activityLog) {
+    if (area !== 'local') return;
+    if (changes.activityLog) {
       events = (changes.activityLog.newValue as ActivityEvent[]) ?? [];
+    }
+    if (changes.activityLogMeta) {
+      const meta = changes.activityLogMeta.newValue as { droppedCount?: number } | undefined;
+      droppedCount = meta?.droppedCount ?? 0;
     }
   };
 
   onMount(async () => {
     events = await getActivity();
+    droppedCount = (await getActivityStats()).droppedCount;
     chrome.storage.onChanged.addListener(handler);
   });
   onDestroy(() => chrome.storage.onChanged.removeListener(handler));
@@ -86,6 +98,16 @@
       </p>
     {/if}
   </div>
+
+  {#if droppedCount > 0}
+    <p class="text-xs text-muted-foreground">
+      {$t('activity.retention-notice', {
+        count: droppedCount,
+        cap: ACTIVITY_LOG_CAP,
+        oldest: oldestRetainedTs ? new Date(oldestRetainedTs).toLocaleString() : '?',
+      })}
+    </p>
+  {/if}
 
   <AlertDialog.Root bind:open={confirmOpen}>
     <AlertDialog.Content>

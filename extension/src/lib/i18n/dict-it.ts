@@ -30,7 +30,18 @@ export const it = {
   'dashboard.connection.bad-url': 'Inserisci un URL backend valido',
   'dashboard.connection.code-required': 'Inserisci il codice di pairing',
   'dashboard.connection.perm-denied': 'Permesso negato per {host}',
+  'dashboard.connection.perm-request-failed':
+    'Impossibile richiedere il permesso per {host}. Riprova.',
   'dashboard.connection.pair-failed': 'Pairing fallito: {reason}',
+  'dashboard.connection.pairing': 'Abbinamento...',
+  'dashboard.connection.pair-error-unauthorized':
+    "Non hai eseguito l'accesso alla dashboard in quella scheda. Accedi, poi riprova.",
+  'dashboard.connection.pair-error-no-dashboard':
+    'Nessuna dashboard di Pitchbox trovata in quella scheda. Apri la dashboard, poi riprova.',
+  'dashboard.connection.pair-error-network':
+    'Impossibile raggiungere la dashboard. Controlla la connessione, poi riprova.',
+  'dashboard.connection.pair-error-server':
+    'La dashboard ha restituito un errore imprevisto. Riprova tra poco.',
   'dashboard.connection.degraded': 'Richiede attenzione',
   'dashboard.connection.sync-error': 'Errore di sincronizzazione',
   'dashboard.connection.test': 'Testa connessione',
@@ -68,6 +79,8 @@ export const it = {
   'activity.actions.clear': 'Svuota',
   'activity.actions.export': 'Esporta JSON',
   'activity.actions.export-done': 'Esportati {n} eventi.',
+  'activity.retention-notice':
+    '{count} voci precedenti a {oldest} sono state eliminate per rispettare il limite di {cap} voci.',
   'activity.clear.confirm-title': 'Svuotare il log?',
   'activity.clear.confirm-body':
     'Tutte le voci del log saranno rimosse. L’operazione non è reversibile.',
