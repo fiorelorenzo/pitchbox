@@ -74,7 +74,7 @@ change is genuinely repo-wide.
 db:up` starts one Postgres (`docker-compose.yml`'s fixed `container_name:
 pitchbox-postgres`, `127.0.0.1:5434`) meant to be shared by every worktree on
 this box - that part is fine to share. What isn't shared by default is the
-database *inside* it: `vitest.config.ts`'s `testDatabaseUrl()` and
+database _inside_ it: `vitest.config.ts`'s `testDatabaseUrl()` and
 `tests/global-setup.ts` both default to `pitchbox_test`, but honor a
 `DATABASE_URL` override only when it still names `pitchbox_test` or
 `pitchbox_test_<suffix>` - anything else is silently ignored, on purpose, so a
@@ -93,9 +93,9 @@ use it to locate the repo when an agent spawns them from elsewhere, and a stale
 value pointing at a sibling worktree silently operates on the wrong checkout.
 `WEB_PORT` (`web/vite.config.ts` sets `strictPort: true`, so a collision fails
 loudly instead of sliding to the next port) and the runner port `scripts/dev.sh`
-reads from `RUNNER_PORT` (which *does* auto-increment past a taken `8787`, unlike
+reads from `RUNNER_PORT` (which _does_ auto-increment past a taken `8787`, unlike
 the web server) both need to differ if two worktrees run `pnpm run dev` at once.
-`ENCRYPTION_KEY` can be shared as-is; it only needs to be *a* valid 32-byte hex,
+`ENCRYPTION_KEY` can be shared as-is; it only needs to be _a_ valid 32-byte hex,
 not one per worktree.
 
 **The two `cloud/*` submodules are optional for a fresh worktree.** `git
