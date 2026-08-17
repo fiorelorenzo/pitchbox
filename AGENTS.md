@@ -68,6 +68,75 @@ Run the full `pnpm run lint`, `pnpm run typecheck`, and `pnpm test` only for
 release-critical changes (migrations, auth, the runner protocol) or when the
 change is genuinely repo-wide.
 
+## Working in a worktree, next to other agents
+
+**Isolate a parallel test run by database name, not by container.** `pnpm run
+db:up` starts one Postgres (`docker-compose.yml`'s fixed `container_name:
+pitchbox-postgres`, `127.0.0.1:5434`) meant to be shared by every worktree on
+this box - that part is fine to share. What isn't shared by default is the
+database _inside_ it: `vitest.config.ts`'s `testDatabaseUrl()` and
+`tests/global-setup.ts` both default to `pitchbox_test`, but honor a
+`DATABASE_URL` override only when it still names `pitchbox_test` or
+`pitchbox_test_<suffix>` - anything else is silently ignored, on purpose, so a
+stray real-DB URL can never reach the test suite. Two worktrees running `pnpm
+test` against that default therefore share one `pitchbox_test` and do collide;
+`fileParallelism: false` only keeps files inside one run from colliding with each
+other, not one worktree from another. To isolate, create the database once
+(`psql postgres://pitchbox:pitchbox@127.0.0.1:5434/pitchbox -c "CREATE DATABASE
+pitchbox_test_<suffix>"`) and export `DATABASE_URL=postgres://pitchbox:pitchbox@
+127.0.0.1:5434/pitchbox_test_<suffix>` before `pnpm test` - nothing creates that
+database for you.
+
+**`.env` has three values a second worktree can't reuse as-is.** `PITCHBOX_ROOT`
+(`.env.example`) must be this worktree's own absolute path - the daemon and CLI
+use it to locate the repo when an agent spawns them from elsewhere, and a stale
+value pointing at a sibling worktree silently operates on the wrong checkout.
+`WEB_PORT` (`web/vite.config.ts` sets `strictPort: true`, so a collision fails
+loudly instead of sliding to the next port) and the runner port `scripts/dev.sh`
+reads from `RUNNER_PORT` (which _does_ auto-increment past a taken `8787`, unlike
+the web server) both need to differ if two worktrees run `pnpm run dev` at once.
+`ENCRYPTION_KEY` can be shared as-is; it only needs to be _a_ valid 32-byte hex,
+not one per worktree.
+
+**The two `cloud/*` submodules are optional for a fresh worktree.** `git
+worktree add` doesn't populate them - that needs its own `git submodule update
+--init`, against two private repos your credentials may not reach. Neither is
+required for most work: `cloud/adapter` and `cloud/runner` aren't in
+`pnpm-workspace.yaml`'s package list, and `web/vite.config.ts` only wires the
+adapter alias when `cloud/adapter/src/index.ts` actually exists on disk. `pnpm
+install`, `pnpm test`, `pnpm run dev:web`, and the local-runner edition of `pnpm
+run dev` described above all work with `cloud/` entirely absent. Only the
+default cloud-edition dev loop and `PITCHBOX_EDITION=cloud` need `cloud/runner`
+for real - `scripts/dev.sh` runs `pnpm install` inside it directly.
+
+**Migrations are drizzle-generated, so two migration-authoring issues in one
+wave collide.** `pnpm run migrate:generate` (`drizzle-kit generate`) numbers the
+next file sequentially under `shared/src/db/migrations/` and rewrites
+`shared/src/db/migrations/meta/_journal.json` alongside it. Two agents
+generating at the same time produce the same next number and both edit the
+journal - a rebase doesn't resolve that; the second one waits for the first to
+land, then regenerates rather than hand-renumbering.
+(`shared/src/db/migrations_archive/README.md` is the record of what happens when
+this drifts unrecovered: `generate` was unusable repo-wide for months until the
+schema was squashed into today's `0000_baseline.sql`.)
+
+**CI's `quality` job checks more than lint/typecheck/build; the two deploy
+workflows aren't reproducible here.** It also runs `pnpm run version:check`
+(workspace versions in lockstep, #207) - easy to miss since "Local verification"
+above only calls out lint/typecheck/test. `deploy-preview.yml` (on every CI
+success on `main`) and `deploy-prod.yml` (on a `v*` tag) both run on
+`[self-hosted, prodbox]` and rsync into `/opt/apps/pitchbox{-preview}/`: nothing
+local reproduces either, so don't report them as verified.
+
+**Merging requires a PR, squash-only, and cleans up after itself.** Two active
+rulesets (`gh api repos/fiorelorenzo/pitchbox/rulesets`) protect `main`:
+deletion and non-fast-forward pushes are blocked outright, and a pull request is
+required with `allowed_merge_methods: ["squash"]` - a direct `git push` to
+`main` is rejected, not just discouraged, and the other two merge buttons
+(`allow_merge_commit`, `allow_rebase_merge`) are off at the repo level too.
+`delete_branch_on_merge` is on, so a merged branch is gone from `origin` on its
+own - nothing to clean up by hand.
+
 ## Architecture
 
 pnpm workspaces monorepo (`pnpm-workspace.yaml`). All workspaces share a single version (`0.9.0`), and the dashboard sidebar reads that version from `web/package.json`.
