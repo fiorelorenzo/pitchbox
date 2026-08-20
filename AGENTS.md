@@ -222,6 +222,15 @@ agent CLIs to stay lean.
 - **Migrations.** Edit `shared/src/db/schema.ts`, run `pnpm run migrate:generate`, then `pnpm run migrate`. Never hand-edit generated SQL unless you also regenerate.
 - **English everywhere.** All in-code comments and user-facing UI strings are in English (even when the conversation is in another language). No em dashes in any text - use regular hyphens or colons.
 
+## Design and UI
+
+- **Dev target for `uishot`.** `pnpm run dev:web` puts the SvelteKit app on `127.0.0.1:5180` (or run the full `pnpm run dev`, which brings it up alongside everything else). Either way it needs Postgres up and migrated first (`pnpm run db:up && pnpm run migrate`) plus an `ENCRYPTION_KEY` in `.env` - screenshotting before that just hits a connection error. Shoot `/` first: `PITCHBOX_AUTH` is off by default, so the dashboard renders with no login.
+- **Token layer.** `web/src/app.css`: OKLCH `:root`/`.dark` custom properties (color, `--radius`) fed into an `@theme inline` block for Tailwind. It's the enforced rule in practice, not just declared - components carry no raw hex or arbitrary-color Tailwind classes today.
+- **No `/design` gallery route.** The shadcn-svelte primitives under `web/src/lib/components/ui/` have no single page that renders every one in every state; adding one is how that set gets reviewed in one `uishot` pass instead of hunting across real pages.
+- **Dark mode is real.** `.dark` class + `mode-watcher` (`ThemeToggle.svelte`, system/light/dark), so a light/dark `uishot` pair should genuinely differ, not come back identical.
+
+See the `ui-brief-first` / `ui-design-tokens` / `ui-visual-review` skills for the pipeline itself, and `uishot`/`uislop` for the tools.
+
 ## The GitHub Project is the source of truth
 
 Current state and future roadmap live on **Project #3 "Pitchbox roadmap"** (owner `fiorelorenzo`), not in this file and not in a chat transcript. Keeping it current is part of doing the work, not paperwork at the end: the board is how Lorenzo sees where the project stands without reading session logs, so a board that lags reality is worse than no board.
