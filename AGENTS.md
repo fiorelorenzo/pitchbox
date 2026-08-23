@@ -251,7 +251,17 @@ Current state and future roadmap live on **Project #3 "Pitchbox roadmap"** (owne
 - Labels follow one taxonomy, identical in every repo: exactly one `type:*` (`feature`, `fix`, `refactor`, `test`, `chore`, `ci`, `docs`, `design`, `security`, `spike`), exactly one of `priority:P0`-`priority:P3`, and one or more `area:*` naming the surfaces the change touches. `epic` and `flagship` (an epic, and headline work) are the only unprefixed labels. Priority is deliberately in two places, the `Priority` board field and the `priority:*` label, so set both.
 - `area:*` values here: `cli-mcp`, `cloud`, `daemon`, `deploy`, `docs`, `extension`, `playbooks`, `shared`, `tests`, `web`. Add one only when the surface really is new, and never reintroduce an unprefixed or differently shaped label.
 - Milestone: one of the `v0.10`/`v1.0`/`v1.1`/`v1.2`/`v1.3` milestones, when the work belongs to one.
-- **Every issue hangs off an epic.** Epics are titled `[Epic] Name` and carry the `epic` label. Look for an open one before creating another: `gh issue list -R fiorelorenzo/pitchbox --label epic --state open`. Keep them coarse, one per coherent theme or area (for example `[Epic] Cloud runner productionization`), and parent the issue to it. Close an epic only when every child is closed; if the work it named is done but follow-ups discovered along the way still hang off it, leave it open and say so in a comment. While you are in an unparented issue anyway, give it a parent too. An issue with no parent is a defect in the board.
+- **Every issue hangs off an epic, with no exceptions, and that includes an issue filed in the middle of an agent run.** Epics are titled `[Epic] Name` and carry the `epic` label. Look for an open one before creating another: `gh issue list -R fiorelorenzo/pitchbox --label epic --state open`. Keep them coarse, one per coherent theme or area (for example `[Epic] Cloud runner productionization`), and parent the issue to it. Close an epic only when every child is closed; if the work it named is done but follow-ups discovered along the way still hang off it, leave it open and say so in a comment. While you are in an unparented issue anyway, give it a parent too. An issue with no parent is a defect in the board, and it is a defect that accumulates in exactly one way: an agent files a real finding mid-run, sets its labels and its four fields, and forgets the one step that is a separate GraphQL mutation. On 2026-08-23 an audit found 58 of this repo's 228 issues orphaned, the worst of the six boards, every one of them filed that way. **So parent it in the same turn you create it**, and when a subagent files something on your behalf, parenting it is yours rather than theirs.
+
+  The audit, worth running at the end of any run that filed issues. It pages 100 at a time, so re-run it with `-f c=<endCursor>` until `hasNextPage` is false; empty output on every page is the passing state.
+
+  ```bash
+  gh api graphql -f query='query($c:String){repository(owner:"fiorelorenzo",name:"pitchbox"){
+    issues(first:100,after:$c,states:[OPEN,CLOSED]){pageInfo{hasNextPage endCursor}
+    nodes{number parent{number} labels(first:20){nodes{name}}}}}}' \
+    --jq '.data.repository.issues.nodes[] | select(.parent==null)
+          | select([.labels.nodes[].name] | index("epic") | not) | .number'
+  ```
 
 ```bash
 # Read the schema, never guess an option value
