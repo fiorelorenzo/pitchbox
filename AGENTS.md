@@ -40,6 +40,14 @@ pnpm exec vitest run -t "pattern"         # single test by name
 
 Tests share one Postgres DB (`pitchbox_test`) and run sequentially - do **not** re-enable `fileParallelism`. Global setup (`tests/global-setup.ts`) migrates + seeds core; teardown intentionally leaves data for inspection.
 
+**Fresh devbox: `pitchbox_test` doesn't exist until you create it.**
+`docker-compose.yml` only provisions `POSTGRES_DB=pitchbox` (the dev DB);
+global setup migrates `pitchbox_test` but never creates it, so a first run
+fails at `migrate` with an InitPostgres error. One-time fix: `docker exec
+pitchbox-postgres psql -U pitchbox -d pitchbox -c "CREATE DATABASE
+pitchbox_test OWNER pitchbox;"` - it then persists in the `pitchbox-pg-data`
+volume until `docker compose down -v`.
+
 ### Local verification: run the minimal covering subset
 
 CI (`.github/workflows/ci.yml`) runs the full lint + typecheck + build + test
@@ -176,6 +184,13 @@ The cloud runner lets the agent run on managed compute without a local agent CLI
 
 **Repo layout (umbrella).** This public repo is the umbrella. Private cloud code lives in **separate git repos under `cloud/`**: `cloud/runner` and `cloud/adapter` are tracked as **git submodules** of this umbrella (see `.gitmodules`; their content lives in the private `pitchbox-runner-service` / `pitchbox-cloud-adapter` repos, and `.gitignore` keeps any other `cloud/*` path and `private/` untracked). The runner service is at `cloud/runner/`. To land a change: commit inside the submodule and push its own remote, then bump the umbrella's submodule pointer with `git add cloud/<x>` and commit that here (never `git add` submodule content from the umbrella). Always launch agents from this repo directory: chat history is keyed by the launch path (Claude Code + Emdash), so launching from a parent/other folder loses it. The submodules use pnpm standalone and import the OSS protocol contract by relative path.
 
+**A submodule often sits in detached HEAD at the recorded gitlink.** Before
+branching inside `cloud/runner` or `cloud/adapter`, `git -C cloud/<x> checkout
+main` and verify it matches `origin/main` and the umbrella's gitlink first -
+if it looks stale, `git -C cloud/<x> reset --hard origin/main`. Regenerating
+the vendored protocol copy and the rest of the submodule workflow:
+`.claude/skills/pitchbox-cloud-submodules/SKILL.md`.
+
 ## Docker (cloud-edition deployment)
 
 The client stack (web + daemon + Postgres) ships as Docker via `Dockerfile.app`
@@ -219,7 +234,8 @@ agent CLIs to stay lean.
 - **`PITCHBOX_ROOT`** in `.env` must be an absolute path; the daemon and CLI use it to locate the repo when spawned by an agent from a different cwd.
 - **Secrets.** Account credentials are encrypted with `ENCRYPTION_KEY` via `shared/src/crypto.ts`. Never log decrypted secrets or commit `.env`.
 - **Do not run tests against the dev DB.** Vitest pins `DATABASE_URL` to `pitchbox_test` in `vitest.config.ts`; if you override it, match that pattern.
-- **Migrations.** Edit `shared/src/db/schema.ts`, run `pnpm run migrate:generate`, then `pnpm run migrate`. Never hand-edit generated SQL unless you also regenerate.
+- **Migrations.** Edit `shared/src/db/schema.ts`, run `pnpm run migrate:generate`, then `pnpm run migrate`. Never hand-edit generated SQL unless you also regenerate. The baseline (`migrations/0000_baseline.sql`) preserves the live DB's historical constraint names (`_fkey`/`_key`), not drizzle-canonical ones - a generated migration that drops or renames an existing constraint may emit a name that doesn't exist in the DB; use the real historical name instead.
+- **Security disclosure.** This repo is public with a live prod deploy (`pitchbox.app`). Never put unpatched-vulnerability repro detail (steps, `file:line`) in a public issue, PR, or committed doc - file a private GitHub security advisory instead and leave a neutral `[security]` stub issue pointing to it.
 - **English everywhere.** All in-code comments and user-facing UI strings are in English (even when the conversation is in another language). No em dashes in any text - use regular hyphens or colons.
 
 ## Design and UI
