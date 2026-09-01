@@ -177,6 +177,9 @@ export const DAEMON_STATUS: Record<string, BadgeStyle> = {
   online: { label: 'Online', tone: 'emerald' },
   offline: { label: 'Offline', tone: 'slate' },
   checking: { label: 'Checking…', tone: 'muted' },
+  // The status poll itself could not be read (a lapsed session, a 5xx, a
+  // dropped connection). That is not evidence the daemon is down.
+  unknown: { label: 'Unknown', tone: 'muted' },
 };
 
 // The 8 timeline event kinds in the run log (runlog/EventRow.svelte and

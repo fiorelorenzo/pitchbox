@@ -9,7 +9,18 @@
 	import { Menu, X } from '@lucide/svelte';
 	import { page } from '$app/stores';
 
-	let { children } = $props();
+	let { children, data } = $props();
+
+	// The app shell (navigation, sign-out, notification polling, daemon health,
+	// the SSE stream, the command palette) is for someone who is signed in. On
+	// /login and /invite with auth on it used to render anyway, which meant a
+	// logged-out visitor saw a full sidebar whose every link bounced back to
+	// /login, a "Sign out" link, an "unauthenticated" error toast raised by the
+	// notification poll's own 401, and a "Daemon offline" indicator that was
+	// simply false (the daemon polls 401 too, and the store reads any non-ok as
+	// dead). Self-hosting with auth off has no session and full access, so the
+	// shell stays in that case.
+	const showShell = $derived(!data.authOn || data.signedIn);
 
 	// Off-canvas sidebar state for < md viewports.
 	let sidebarOpen = $state(false);
@@ -49,67 +60,78 @@
 -->
 <Toaster />
 
-<div class="h-screen overflow-hidden bg-background text-foreground flex">
-	<!-- Mobile hamburger: visible only below md. Fixed top-left so it floats above content. -->
-	<button
-		type="button"
-		onclick={() => (sidebarOpen = true)}
-		class="md:hidden fixed top-3 left-3 z-40 inline-flex items-center justify-center size-9 rounded-md border border-border bg-background/90 backdrop-blur shadow-sm hover:bg-accent/60 transition-colors"
-		aria-label="Open navigation"
-		aria-expanded={sidebarOpen}
-	>
-		<Menu class="size-4" />
-	</button>
-
-	<!--
-	  Mobile connection indicator: the sidebar (and SystemStatusCard inside it)
-	  is off-canvas below md, so without this there is no way to see stream
-	  health on a phone short of opening the drawer.
-	-->
-	<div
-		class="md:hidden fixed top-3 right-3 z-40 rounded-md border border-border bg-background/90 backdrop-blur shadow-sm px-2 py-1.5"
-	>
-		<SseIndicator />
-	</div>
-
-	<!-- Backdrop for mobile drawer -->
-	{#if sidebarOpen}
+{#if showShell}
+	<div class="h-screen overflow-hidden bg-background text-foreground flex">
+		<!-- Mobile hamburger: visible only below md. Fixed top-left so it floats above content. -->
 		<button
 			type="button"
-			aria-label="Close navigation"
-			onclick={() => (sidebarOpen = false)}
-			class="md:hidden fixed inset-0 z-40 bg-overlay/50 backdrop-blur-sm"
-		></button>
-	{/if}
+			onclick={() => (sidebarOpen = true)}
+			class="md:hidden fixed top-3 left-3 z-40 inline-flex items-center justify-center size-9 rounded-md border border-border bg-background/90 backdrop-blur shadow-sm hover:bg-accent/60 transition-colors"
+			aria-label="Open navigation"
+			aria-expanded={sidebarOpen}
+		>
+			<Menu class="size-4" />
+		</button>
 
-	<!--
-	  Sidebar: static column on md+, off-canvas drawer below md.
-	  The drawer slides in from the left when sidebarOpen is true.
-	-->
-	<div
-		class={[
-			'z-50 transition-transform duration-200 md:transition-none',
-			'md:static md:translate-x-0 md:z-auto',
-			'fixed inset-y-0 left-0',
-			sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
-		].join(' ')}
-	>
-		<!-- Close button shown only inside the drawer on small screens -->
+		<!--
+		  Mobile connection indicator: the sidebar (and SystemStatusCard inside it)
+		  is off-canvas below md, so without this there is no way to see stream
+		  health on a phone short of opening the drawer.
+		-->
+		<div
+			class="md:hidden fixed top-3 right-3 z-40 rounded-md border border-border bg-background/90 backdrop-blur shadow-sm px-2 py-1.5"
+		>
+			<SseIndicator />
+		</div>
+
+		<!-- Backdrop for mobile drawer -->
 		{#if sidebarOpen}
 			<button
 				type="button"
-				onclick={() => (sidebarOpen = false)}
-				class="md:hidden absolute top-3 right-3 z-10 inline-flex items-center justify-center size-8 rounded-md hover:bg-accent/60 transition-colors"
 				aria-label="Close navigation"
-			>
-				<X class="size-4" />
-			</button>
+				onclick={() => (sidebarOpen = false)}
+				class="md:hidden fixed inset-0 z-40 bg-overlay/50 backdrop-blur-sm"
+			></button>
 		{/if}
-		<Sidebar />
+
+		<!--
+		  Sidebar: static column on md+, off-canvas drawer below md.
+		  The drawer slides in from the left when sidebarOpen is true.
+		-->
+		<div
+			class={[
+				'z-50 transition-transform duration-200 md:transition-none',
+				'md:static md:translate-x-0 md:z-auto',
+				'fixed inset-y-0 left-0',
+				sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+			].join(' ')}
+		>
+			<!-- Close button shown only inside the drawer on small screens -->
+			{#if sidebarOpen}
+				<button
+					type="button"
+					onclick={() => (sidebarOpen = false)}
+					class="md:hidden absolute top-3 right-3 z-10 inline-flex items-center justify-center size-8 rounded-md hover:bg-accent/60 transition-colors"
+					aria-label="Close navigation"
+				>
+					<X class="size-4" />
+				</button>
+			{/if}
+			<Sidebar />
+		</div>
+
+		<main class="flex-1 overflow-auto p-4 sm:p-6 pt-14 md:pt-6 min-w-0">{@render children()}</main>
 	</div>
 
-	<main class="flex-1 overflow-auto p-4 sm:p-6 pt-14 md:pt-6 min-w-0">{@render children()}</main>
-</div>
-
-<!-- Global Cmd/Ctrl-K command palette: single instance for the whole app. -->
-<CommandPalette />
+	<!-- Global Cmd/Ctrl-K command palette: single instance for the whole app. -->
+	<CommandPalette />
+{:else}
+	<!--
+		Unauthenticated routes with auth on (/login, /invite): the page and nothing
+		else. No navigation to bounce off the auth guard, no notification or daemon
+		polling to 401, no SSE stream to reconnect at, no command palette.
+	-->
+	<div class="h-screen overflow-hidden bg-background text-foreground">
+		<main class="h-full overflow-auto p-4 sm:p-6">{@render children()}</main>
+	</div>
+{/if}

@@ -12,9 +12,16 @@ export type DaemonStatus = {
   alive: boolean;
   modules: DaemonModuleStatus[];
   loading: boolean;
+  /**
+   * False when the last poll could not be read at all (401 after a session
+   * lapsed, a 5xx, a dropped connection). `alive: false` then means "we do not
+   * know", not "the daemon is down", and a caller must render it as such: a
+   * failed poll is not evidence about the daemon.
+   */
+  reachable: boolean;
 };
 
-const initial: DaemonStatus = { alive: false, modules: [], loading: true };
+const initial: DaemonStatus = { alive: false, modules: [], loading: true, reachable: true };
 
 /**
  * Polls the daemon status endpoint. We use a small interval (15s) - the daemon
@@ -30,10 +37,10 @@ export const daemonStatus: Readable<DaemonStatus> = readable(initial, (set) => {
     try {
       const res = await fetch('/api/daemon/status');
       if (!res.ok) throw new Error(`${res.status}`);
-      const body = (await res.json()) as Omit<DaemonStatus, 'loading'>;
-      if (!cancelled) set({ ...body, loading: false });
+      const body = (await res.json()) as Omit<DaemonStatus, 'loading' | 'reachable'>;
+      if (!cancelled) set({ ...body, loading: false, reachable: true });
     } catch {
-      if (!cancelled) set({ alive: false, modules: [], loading: false });
+      if (!cancelled) set({ alive: false, modules: [], loading: false, reachable: false });
     }
   }
 

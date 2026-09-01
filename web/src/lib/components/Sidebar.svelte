@@ -98,8 +98,11 @@
 			if (!res.ok) {
 				const body = await res.json().catch(() => ({}));
 				if (res.status >= 500) console.error('failed to refresh notification count', res.status, body);
-				// Toast only on the transition into failure, not on every 30s poll.
-				if (!unreadStale) toast.error(body.error ?? 'Could not refresh notification count');
+				// A 401 here means the session lapsed while the page stayed open, not
+				// a failure the user can act on: the next navigation lands on /login.
+				// Never surface the API's own error string either - it reaches the
+				// user as raw wire text ("unauthenticated") instead of a sentence.
+				if (!unreadStale && res.status !== 401) toast.error('Could not refresh notification count');
 				unreadStale = true;
 				return;
 			}

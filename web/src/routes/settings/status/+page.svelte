@@ -30,7 +30,13 @@
 				<StatusBadge
 					class="shrink-0"
 					domain="daemon-status"
-					value={$daemonStatus.loading ? 'checking' : $daemonStatus.alive ? 'online' : 'offline'}
+					value={$daemonStatus.loading
+						? 'checking'
+						: !$daemonStatus.reachable
+							? 'unknown'
+							: $daemonStatus.alive
+								? 'online'
+								: 'offline'}
 				/>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-3">
@@ -38,7 +44,16 @@
 					The daemon wakes up on schedule, triggers campaigns that have a cron expression, and
 					polls sent DMs for replies.
 				</p>
-				{#if $daemonStatus.modules.length === 0 && !$daemonStatus.loading}
+				{#if !$daemonStatus.reachable && !$daemonStatus.loading}
+					<Alert.Root>
+						<Info class="size-4" />
+						<Alert.Title>Status unavailable</Alert.Title>
+						<Alert.Description>
+							The status endpoint could not be read, so this says nothing about the daemon
+							itself. If your session expired, sign in again and reload.
+						</Alert.Description>
+					</Alert.Root>
+				{:else if $daemonStatus.modules.length === 0 && !$daemonStatus.loading}
 					<Alert.Root>
 						<Info class="size-4" />
 						<Alert.Title>Not running</Alert.Title>
