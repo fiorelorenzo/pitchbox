@@ -19,6 +19,11 @@
     if ($daemonStatus.loading) {
       return { tone: 'idle' as RowTone, label: 'checking' };
     }
+    // A poll we could not read says nothing about the daemon, so it must not
+    // read as "offline" - that indicator is only worth having while it is true.
+    if (!$daemonStatus.reachable) {
+      return { tone: 'idle' as RowTone, label: 'unknown' };
+    }
     return $daemonStatus.alive
       ? { tone: 'live' as RowTone, label: 'online' }
       : { tone: 'down' as RowTone, label: 'offline' };

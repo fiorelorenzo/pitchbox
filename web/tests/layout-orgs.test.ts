@@ -9,6 +9,7 @@ type LoadEvent = Parameters<typeof load>[0];
 // shape the loader actually returns so property access below type-checks.
 type LoadResult = {
   authOn: boolean;
+  signedIn: boolean;
   org?: { id: number; slug: string; role: string };
   orgs: { id: number; slug: string; name: string; role: string }[];
 };
@@ -60,6 +61,9 @@ describe('root layout loader - org data', () => {
     );
     expect(result.orgs.find((o) => o.id === orgA.id)?.role).toBe('owner');
     expect(result.orgs.find((o) => o.id === orgB.id)?.role).toBe('member');
+    // The root layout gates the whole app shell on this flag, so a signed-in
+    // caller reporting false would hide the navigation from a real session.
+    expect(result.signedIn).toBe(true);
   });
 
   it('returns no active org and an empty membership list when signed out', async () => {
@@ -67,5 +71,8 @@ describe('root layout loader - org data', () => {
 
     expect(result.org).toBeUndefined();
     expect(result.orgs).toEqual([]);
+    // False is what keeps /login from rendering navigation, a Sign out link and
+    // polling that can only 401 (#289).
+    expect(result.signedIn).toBe(false);
   });
 });
