@@ -26,6 +26,17 @@ REF="${2:-manual}"
 ROLLBACK=0
 [ "${3:-}" = "--rollback" ] && ROLLBACK=1
 
+# Host ports on prodbox are a shared resource: every app on that box binds
+# 127.0.0.1:<port> and host Caddy fronts them, so a port is only ours because
+# nothing else took it yet. Pitchbox owns the contiguous block 5180-5183 -
+# prod blue/green 5180/5181, preview blue/green 5182/5183 - and step 2b below
+# refuses to deploy into a slot some other app has taken.
+#
+# Preview has now been moved twice for exactly that reason, both times found
+# only after a deploy failed: 5190 collided with loombox-landing, then 5192
+# (picked as "free" on 2026-08-05) was taken by mastro-prod two days later,
+# which silently broke every preview deploy from 2026-08-07 to 2026-09-01 while
+# a stale image kept serving preview.pitchbox.app behind a green health check.
 case "$ENV" in
   prod)
     DIR=/opt/apps/pitchbox; PROJECT=pitchbox; DOMAIN=pitchbox.app
@@ -34,11 +45,7 @@ case "$ENV" in
     ;;
   preview)
     DIR=/opt/apps/pitchbox-preview; PROJECT=pitchbox-preview; DOMAIN=preview.pitchbox.app
-    # Blue is 5192, not 5190: another app on this host (loombox-landing) binds
-    # 127.0.0.1:5190, so the old 5190 blue slot collided with it and every
-    # blue-green swap into blue failed with "port is already allocated". Green
-    # keeps 5191; preview now owns the free 5191/5192 pair.
-    BLUE_PORT=5192; GREEN_PORT=5191
+    BLUE_PORT=5182; GREEN_PORT=5183
     UPSTREAM=/etc/caddy/upstreams/pitchbox-preview.conf; EXTRA=(-f docker-compose.preview.yml)
     ;;
   *) echo "unknown env: $ENV" >&2; exit 2 ;;
@@ -152,12 +159,43 @@ log "ensuring postgres + runner up..."
 
 # 2. active/idle from the caddy upstream file
 active_port="$(grep -oE '127\.0\.0\.1:[0-9]+' "$UPSTREAM" 2>/dev/null | head -1 | cut -d: -f2 || true)"
-if [ "$active_port" = "$GREEN_PORT" ]; then
-  active=green; idle=blue; idle_port=$BLUE_PORT
+case "$active_port" in
+  "$GREEN_PORT") active=green ;;
+  "$BLUE_PORT") active=blue ;;
+  '') active=blue ;;  # first run: nothing is serving yet
+  *)
+    # Caddy points at a port that is neither of this env's slots, which is
+    # exactly what a port reallocation (see the block at the top) leaves behind.
+    # Ask docker which color is actually serving it rather than assuming blue:
+    # guessing wrong recreates the live container and leaves the other running.
+    active="$(docker ps --filter "publish=$active_port" \
+      --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}}' \
+      | sed -n 's/.*-web-\(blue\|green\)$/\1/p' | head -1)"
+    active="${active:-blue}"
+    log "upstream :$active_port is not a current slot; docker says the live color is $active"
+    ;;
+esac
+if [ "$active" = green ]; then
+  idle=blue; idle_port=$BLUE_PORT
 else
-  active=blue; idle=green; idle_port=$GREEN_PORT   # default / first run
+  idle=green; idle_port=$GREEN_PORT
 fi
 log "active=$active(:${active_port:-none}) -> deploying idle=$idle(:$idle_port)"
+
+# 2b. the idle slot must be free before we build anything. Another app on this
+#     host can take a port we thought was ours at any time, and when it does
+#     `compose up` fails with a bare "Bind for 127.0.0.1:<port> failed: port is
+#     already allocated" that reads like a leaked docker-proxy. Name the real
+#     owner and stop: the fix is a free port in the block above, never killing
+#     the other app's docker-proxy (that takes a live, unrelated app offline).
+squatters="$(docker ps --filter "publish=$idle_port" \
+  --format '{{.Names}}	{{.Label "com.docker.compose.project"}}' \
+  | awk -F'\t' -v proj="$PROJECT" '$2!=proj{print $1}' | tr '\n' ' ')"
+if [ -n "${squatters// /}" ]; then
+  log "FATAL: idle slot 127.0.0.1:$idle_port is already published by: $squatters"
+  log "Reassign $ENV to a free host port in scripts/deploy.sh, then redeploy."
+  exit 1
+fi
 
 # 3. build the new images (skipped in --rollback: APP_IMAGE already points at a
 #    previously built, still-local image). Build the RUNNER too: it is a separate
