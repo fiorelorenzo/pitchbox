@@ -79,3 +79,76 @@ describe('seedCore (mastodon quota defaults + scenarios)', () => {
     });
   });
 });
+
+// Covers LI-2's seed-core contract: linkedin quota defaults are seeded
+// deliberately tighter than every other platform (dm at zero - no
+// linkedin-scout scenario exists), the linkedin platform row seeds
+// idempotently, and the two linkedin scenario slugs are registered so a
+// sibling playbook-writing agent's .md files get picked up (#305).
+describe('seedCore (linkedin platform row + quota defaults + scenarios)', () => {
+  it('defines a linkedin quota tighter than every other platform, with dm at zero', () => {
+    expect(QUOTA_DEFAULTS.linkedin).toBeDefined();
+    const l = QUOTA_DEFAULTS.linkedin;
+    const r = QUOTA_DEFAULTS.reddit;
+    const m = QUOTA_DEFAULTS.mastodon;
+    expect(l.dm.perDay).toBe(0);
+    expect(l.dm.perWeek).toBe(0);
+    expect(l.comment.perDay).toBeLessThan(m.comment.perDay);
+    expect(l.comment.perWeek).toBeLessThan(m.comment.perWeek);
+    expect(l.post.perDay).toBeLessThan(m.post.perDay);
+    expect(l.post.perWeek).toBeLessThan(m.post.perWeek);
+    expect(l.comment.perDay).toBeLessThan(r.comment.perDay);
+    expect(l.post.perDay).toBeLessThan(r.post.perDay);
+  });
+
+  it('seeds the linkedin platform row idempotently: seeding twice still leaves exactly one row', async () => {
+    const db = getDb();
+    await seedCore();
+    await seedCore();
+    const rows = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'linkedin'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.enabled).toBe(true);
+  });
+
+  describe('linkedin scenario registration', () => {
+    const LINKEDIN_SLUGS = ['linkedin-commenter', 'linkedin-poster'];
+    let root: string;
+    let originalRoot: string | undefined;
+
+    afterEach(() => {
+      process.env.PITCHBOX_ROOT = originalRoot;
+      if (root) rmSync(root, { recursive: true, force: true });
+    });
+
+    it('registers the two linkedin scenario slugs as built-in playbooks (contract for the sibling playbook agent, #305)', async () => {
+      // #305 owns the actual playbooks/*.md bodies and this worktree's own
+      // playbooks/ dir may not have those files yet - point PITCHBOX_ROOT at a
+      // temp dir with fixture bodies so this exercises the real
+      // readPlaybookBody + seedCore path end to end, proving the slugs
+      // seed-core knows about are exactly the two #305 will reference.
+      originalRoot = process.env.PITCHBOX_ROOT;
+      root = mkdtempSync(join(tmpdir(), 'pitchbox-seed-core-'));
+      mkdirSync(join(root, 'playbooks'), { recursive: true });
+      for (const slug of LINKEDIN_SLUGS) {
+        writeFileSync(join(root, 'playbooks', `${slug}.md`), `# ${slug}\n\nfixture body\n`);
+      }
+      process.env.PITCHBOX_ROOT = root;
+
+      const db = getDb();
+      const out = await seedCore();
+      expect(out.playbooks).toBeGreaterThanOrEqual(LINKEDIN_SLUGS.length);
+
+      const rows = await db
+        .select({ slug: schema.playbooks.slug, isBuiltin: schema.playbooks.isBuiltin })
+        .from(schema.playbooks)
+        .where(eq(schema.playbooks.isBuiltin, true));
+      const slugs = rows.map((r) => r.slug);
+      for (const slug of LINKEDIN_SLUGS) {
+        expect(slugs).toContain(slug);
+      }
+    });
+  });
+});

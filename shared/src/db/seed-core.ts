@@ -19,6 +19,17 @@ export const QUOTA_DEFAULTS = {
     comment: { perDay: 20, perWeek: 80 },
     post: { perDay: 3, perWeek: 10 },
   },
+  // LinkedIn (LI-2): deliberately tighter than every other platform, because
+  // the constraint here is reputational rather than technical - LinkedIn's
+  // velocity monitoring treats a high-volume account as a bot regardless of
+  // whether a human approved every draft (see
+  // docs/linkedin-integration-design.md "Quota and blocklist"). dm is zero:
+  // there is no linkedin-scout scenario and cold DM is out of scope for v1.
+  linkedin: {
+    dm: { perDay: 0, perWeek: 0 },
+    comment: { perDay: 8, perWeek: 30 },
+    post: { perDay: 1, perWeek: 4 },
+  },
 } as const;
 
 const BUILTIN_PLAYBOOKS = [
@@ -63,6 +74,17 @@ const BUILTIN_PLAYBOOKS = [
     name: 'Mastodon poster',
     description: 'Draft proactive top-level statuses (toots) for the project.',
   },
+  {
+    slug: 'linkedin-commenter',
+    name: 'LinkedIn commenter',
+    description:
+      'Draft helpful comments on LinkedIn posts the human has already observed in their own browser.',
+  },
+  {
+    slug: 'linkedin-poster',
+    name: 'LinkedIn poster',
+    description: 'Draft proactive top-level LinkedIn posts for the connected profile.',
+  },
 ];
 
 function repoRoot(): string {
@@ -92,6 +114,10 @@ export async function seedCore() {
   await db
     .insert(schema.platforms)
     .values({ slug: 'mastodon', enabled: true })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.platforms)
+    .values({ slug: 'linkedin', enabled: true })
     .onConflictDoNothing();
   await db
     .insert(schema.organizations)
