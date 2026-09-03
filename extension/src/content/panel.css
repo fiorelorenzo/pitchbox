@@ -1,0 +1,206 @@
+/* Stylesheet for the in-page panel, adopted into a shadow root rather than
+ * injected into the host document. Imported with `?inline` by
+ * `shared/panel-host.ts`, which hands the compiled text to a
+ * `CSSStyleSheet` and adopts it, so nothing here ever reaches linkedin.com's
+ * own document.
+ *
+ * Two things are deliberately absent.
+ *
+ * No `@fontsource-variable/inter`. An `@font-face` declared inside a shadow
+ * root is ignored by the browser: font faces resolve against the document, not
+ * the shadow tree. `shared/panel-fonts.ts` registers Inter through the FontFace
+ * API against the extension's own packaged file instead, which adds a font to
+ * the host document's font set without adding a single style rule to it.
+ *
+ * No `html`/`body` rules. There is no `html` or `body` in a shadow root, so the
+ * panel's ground colour and font family sit on `.pitchbox-panel` below.
+ */
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn-svelte/tailwind.css';
+@import '../lib/tokens.css';
+
+/* Tailwind v4 scans the project for class names. Without these the panel's
+ * stylesheet would carry every utility used anywhere in the extension,
+ * including the whole side panel, for a bundle that ships into a page we do
+ * not own. Keep the panel's own sources listed here and nothing else. */
+@source './panel.svelte';
+@source './shared/panel-host.ts';
+
+@custom-variant dark (&:is(.dark *));
+
+/* The host element is reset to nothing so no inherited LinkedIn rule (font,
+ * line-height, colour, direction, letter-spacing) reaches the panel, and so
+ * the panel contributes no layout of its own to LinkedIn's flow. `display` has
+ * to be restored after `all: initial`, which resets it to `inline`. */
+:host {
+  all: initial;
+  display: block;
+  /* Anchored to a post (docs/design/DECISIONS.md D11), so the host is
+   * positioned by the anchor and never floats over unrelated content. */
+  position: relative;
+  z-index: 1;
+  contain: layout style;
+  /* `all: initial` deliberately does not reset custom properties, so the token
+   * values tokens.css puts on `:host` survive it and inherit into the shadow
+   * tree. Inter is registered by `shared/panel-fonts.ts`; the fallbacks are
+   * what the panel renders in for the moment before it loads, and on a machine
+   * where it fails to. */
+  --panel-font-stack:
+    'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
+
+/* The panel root, and the real isolation boundary.
+ *
+ * `:host { all: initial }` alone is not enough, and this was measured rather
+ * than assumed: the host element lives in the outer document, so a document
+ * rule like `* { text-transform: uppercase }` matches it, and in the
+ * shadow-including cascade a declaration from the outer tree beats a `:host`
+ * declaration from the shadow tree. Every inherited property the host page sets
+ * that way (text-transform, letter-spacing, word-spacing, text-indent,
+ * font-variant, white-space, direction) therefore reaches into the shadow tree
+ * through the host. A smoke run against a deliberately hostile fixture page
+ * showed the panel rendering in caps because of exactly that.
+ *
+ * `all: initial` here is inside the shadow tree, where no outer rule can
+ * outrank it, so it stops the leak at the panel's own root. It does not touch
+ * custom properties (`all` never does), so the tokens tokens.css puts on
+ * `:host` still inherit through. Everything the panel needs is re-declared
+ * after it, in the same rule, so the later declarations win.
+ *
+ * The class also carries `.dark` in the markup, which selects the dark token
+ * values and makes Tailwind's `dark:` variant work for everything inside (a
+ * shadow descendant cannot match `.dark *` when the `.dark` element is the
+ * host, so the wrapper has to be inside). */
+.pitchbox-panel {
+  all: initial;
+
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: var(--card);
+  color: var(--card-foreground);
+  /* Flat and drawn: hairline and background tint, never a shadow. */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--panel-font-stack);
+  /* Middle density, one step down from the dashboard's airy default, because
+   * the panel sits in a layout it does not own. See
+   * docs/design/linkedin-assistant-brief.md. */
+  font-size: 15px;
+  line-height: 1.5;
+  text-align: start;
+}
+
+.pitchbox-panel *,
+.pitchbox-panel *::before,
+.pitchbox-panel *::after {
+  box-sizing: border-box;
+}
+
+/* The frame's chrome.
+ *
+ * These live here rather than in a `<style>` block inside
+ * `panel-frame.svelte`, and that is not a preference. Vite extracts a Svelte
+ * component's `<style>` into a separate stylesheet that gets loaded by the
+ * document, and a document stylesheet cannot style anything inside a shadow
+ * root. Measured on the smoke fixture: the frame rendered with its scoped
+ * `svelte-*` classes present and none of their rules applied, so the wordmark
+ * came out at the panel's body weight instead of 600. Inside a shadow root the
+ * boundary already provides the scoping a component `<style>` block would, so
+ * nothing is lost by putting them in the one sheet that is actually adopted.
+ *
+ * Rule for anything mounted into this shadow root: no `<style>` blocks. Its
+ * CSS belongs in this file. */
+.frame {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.frame .head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.frame .mark {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--foreground);
+}
+
+.frame .subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.frame .close {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.frame .close:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.frame .close:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .frame .close {
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+}
+
+.frame .body {
+  padding: 0.75rem;
+}
+
+@theme inline {
+  --font-sans: var(--panel-font-stack);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-link: var(--link);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+}

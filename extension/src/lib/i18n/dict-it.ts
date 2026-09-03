@@ -188,6 +188,11 @@ export const it = {
 
   'dashboard.connection.no-active-tab': 'Nessuna scheda attiva',
 
+  // In-page panel chrome. The wordmark is the product name, so it is not
+  // translated; everything else on this surface is.
+  'panel.title': 'Pitchbox',
+  'panel.close': 'Chiudi',
+
   // Language names are endonyms, see the comment in dict-en.ts.
   'settings.language.option.en': 'English',
   'settings.language.option.it': 'Italiano',
