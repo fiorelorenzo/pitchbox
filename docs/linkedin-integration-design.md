@@ -1,6 +1,6 @@
 # LinkedIn platform integration - design
 
-Status: approved 2026-09-03. Tracks the two epics "LinkedIn as an extension-mediated platform" and "In-page LinkedIn assistant" (fourth outreach platform, chosen after Reddit + Hacker News + Mastodon).
+Status: approved 2026-09-03. Tracks epics #296 and #297, milestone `v1.5 - LinkedIn`. The two epics are "LinkedIn as an extension-mediated platform" and "In-page LinkedIn assistant" (fourth outreach platform, chosen after Reddit + Hacker News + Mastodon).
 
 ## Summary
 
@@ -124,32 +124,33 @@ No server-side HTTP client, no Playwright, no stealth stack, no credential stora
 
 Two epics. Everything in the first is blocked on #288: no campaign run has ever produced a draft in a deployed environment, and a fourth platform on top of an unproven loop multiplies what has to be debugged at once. The second epic is not blocked, because in-page assistance does not use the campaign loop at all.
 
-**Epic A - LinkedIn as an extension-mediated platform**
+**Epic A - LinkedIn as an extension-mediated platform** (#296)
 
-- **LI-1** design: this document.
-- **LI-2** foundation: `linkedin` platform row, scenario registry (`SCENARIO_SLUGS`, `ScenarioPlatformSlug`, `SCENARIO_META`), quota defaults, web presenter, credential-free account model, connect UI. Single owner, because it is one edit across the enumerations.
-- **LI-3** `observed_targets` table plus ingest service. Owns the migration, so it does not run concurrently with any other migration-authoring issue.
-- **LI-4** `POST /api/extension/observations`. Depends on LI-3.
-- **LI-5** the passive observation collector content script.
-- **LI-6** `linkedin-dom.ts` plus selector-health reporting.
-- **LI-7** `linkedin_candidates` MCP tool. Depends on LI-3.
-- **LI-8** the `linkedin-commenter` and `linkedin-poster` playbooks.
-- **LI-9** send detection on LinkedIn, reusing `armed`/`sent`.
-- **LI-10** passive reply and message ingest through `dm-sync`.
-- **LI-11** the compliance boundary, enforced in CI.
-- **LI-12** docs page.
+- **LI-1** (#298) design: this document.
+- **LI-2** (#299) foundation: `linkedin` platform row, scenario registry (`SCENARIO_SLUGS`, `ScenarioPlatformSlug`, `SCENARIO_META`), quota defaults, web presenter, credential-free account model, connect UI. Single owner, because it is one edit across the enumerations.
+- **LI-3** (#300) `observed_targets` table plus ingest service. Owns the migration, so it does not run concurrently with any other migration-authoring issue.
+- **LI-4** (#301) `POST /api/extension/observations`. Depends on LI-3.
+- **LI-5** (#302) the passive observation collector content script.
+- **LI-6** (#303) `linkedin-dom.ts` plus selector-health reporting.
+- **LI-7** (#304) `linkedin_candidates` MCP tool. Depends on LI-3.
+- **LI-8** (#305) the `linkedin-commenter` and `linkedin-poster` playbooks.
+- **LI-9** (#306) send detection on LinkedIn, reusing `armed`/`sent`.
+- **LI-10** (#307) passive reply and message ingest through `dm-sync`.
+- **LI-11** (#308) the compliance boundary, enforced in CI.
+- **LI-12** (#309) docs page.
+- **LI-22** (#319) spike: the official `w_member_social` API for own-profile posting. Recorded, deliberately not built in v1.
 
-**Epic B - In-page LinkedIn assistant**
+**Epic B - In-page LinkedIn assistant** (#297)
 
-- **LI-13** the brief for the in-page surface, through the brief gate.
-- **LI-14** the shadow-DOM panel host: Svelte mount, tokens, i18n.
-- **LI-15** `POST /api/extension/suggest`: dedicated, synchronous, streamed.
-- **LI-16** materialising an accepted suggestion into the ledger: the `assist` run kind, quota, contact history.
-- **LI-17** in-page comment assist on the feed and on a post page.
-- **LI-18** in-page post composer assist.
-- **LI-19** assist settings: per-project binding, daily caps, kill switch.
-- **LI-20** on-demand host permission grant.
-- **LI-21** warm the assist session pool, if and only if first-suggestion latency proves to be a real problem.
+- **LI-13** (#310) the brief for the in-page surface, through the brief gate.
+- **LI-14** (#311) the shadow-DOM panel host: Svelte mount, tokens, i18n.
+- **LI-15** (#312) `POST /api/extension/suggest`: dedicated, synchronous, streamed.
+- **LI-16** (#313) materialising an accepted suggestion into the ledger: the `assist` run kind, quota, contact history.
+- **LI-17** (#314) in-page comment assist on the feed and on a post page.
+- **LI-18** (#315) in-page post composer assist.
+- **LI-19** (#316) assist settings: per-project binding, daily caps, kill switch.
+- **LI-20** (#317) on-demand host permission grant.
+- **LI-21** (#318) warm the assist session pool, if and only if first-suggestion latency proves to be a real problem.
 
 Waves: LI-1 and LI-13 first. Then LI-2, LI-3, LI-14. Then LI-4, LI-5, LI-6, LI-15. Then LI-7, LI-8, LI-9, LI-10, LI-11, LI-16, LI-17, LI-20. Then LI-12, LI-18, LI-19, LI-21.
 
