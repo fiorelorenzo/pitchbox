@@ -76,8 +76,16 @@ export class AcpRunner implements AgentRunner {
       const logPath = join(this.logDir, `run-${Date.now()}-${opts.slug}.log`);
       writeFileSync(logPath, `# run ${opts.slug} started ${new Date().toISOString()}\n`, 'utf8');
 
-      const playbook = await readFile(opts.playbookPath, 'utf8');
-      const promptText = buildPrompt(opts, playbook);
+      // A direct `prompt` wins over `playbookPath`; one of the two is required,
+      // because prompting with an empty string burns a spawn and returns nothing.
+      let promptText: string;
+      if (opts.prompt != null) {
+        promptText = opts.prompt;
+      } else if (opts.playbookPath) {
+        promptText = buildPrompt(opts, await readFile(opts.playbookPath, 'utf8'));
+      } else {
+        throw new Error('AcpRunner.run needs either a prompt or a playbookPath');
+      }
 
       const envPass: Record<string, string | undefined> = {};
       for (const key of this.spec.envPassthrough ?? []) {
@@ -217,9 +225,12 @@ export class AcpRunner implements AgentRunner {
           const params = msg.params as { sessionId?: string; update?: unknown } | undefined;
           const updateKind = (params?.update as { sessionUpdate?: string } | null)?.sessionUpdate;
 
-          // Coalesce streamed text chunks into a single rendered event.
+          // Coalesce streamed text chunks into a single rendered event for the
+          // runlog, and hand each chunk straight to a streaming caller.
           if (updateKind === 'agent_message_chunk') {
-            pendingAssistantText += extractChunkText(params?.update);
+            const text = extractChunkText(params?.update);
+            pendingAssistantText += text;
+            if (text) opts.onTextChunk?.(text);
             return;
           }
           if (updateKind === 'agent_thought_chunk') {
@@ -327,7 +338,10 @@ export class AcpRunner implements AgentRunner {
         // into the Agent SDK query). Other backends keep their own defaults today.
         const sessionParams: Record<string, unknown> = {
           cwd: opts.cwd,
-          mcpServers: [buildPitchboxMcpServer(opts)],
+          // `attachMcp: false` opens a session with no tools at all, which is
+          // what a single-turn suggestion wants: nothing to write, and a tool
+          // loop is what a real-time path cannot afford.
+          mcpServers: opts.attachMcp === false ? [] : [buildPitchboxMcpServer(opts)],
         };
         const claudeMeta = buildClaudeCodeMeta(this.slug, this.config);
         if (claudeMeta) sessionParams._meta = claudeMeta;

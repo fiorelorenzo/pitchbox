@@ -1,7 +1,27 @@
 import type { ParsedEvent } from '../runlog/types.js';
 
 export interface AgentRunOptions {
-  playbookPath: string;
+  /**
+   * Path to the markdown the agent executes. Optional only because a
+   * playbook-less invocation exists (see `prompt`); every campaign run still
+   * passes it. A runner given neither must fail loudly rather than prompt with
+   * an empty string.
+   */
+  playbookPath?: string;
+  /**
+   * Prompt text supplied directly instead of read from `playbookPath`. Used by
+   * the in-page assistant's suggestion endpoint, which has no playbook and no
+   * `runs` row: one prompt, one turn, streamed back. Wins over `playbookPath`
+   * when both are set.
+   */
+  prompt?: string;
+  /**
+   * Whether to attach the Pitchbox MCP server to the session. Defaults to true,
+   * which is every campaign run: all state is read and written through it. A
+   * suggestion sets this false, because there is nothing for it to write and a
+   * tool loop is exactly what a real-time path cannot afford.
+   */
+  attachMcp?: boolean;
   slug: string;
   env: Record<string, string>;
   cwd: string;
@@ -16,6 +36,14 @@ export interface AgentRunOptions {
   onRawLine?: (line: string) => void;
   /** Called with one or more normalized ParsedEvents extracted from that line. */
   onParsedEvents?: (events: ParsedEvent[]) => void | Promise<void>;
+  /**
+   * Called with each assistant text chunk as it arrives, before any
+   * coalescing. `onParsedEvents` deliberately batches chunks into one event per
+   * message, which is right for a runlog row and useless for a stream: a reader
+   * would get the whole answer at once. A caller that streams to a client uses
+   * this instead.
+   */
+  onTextChunk?: (text: string) => void;
 }
 
 export interface AgentRunResult {
