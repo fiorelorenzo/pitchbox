@@ -107,6 +107,24 @@ LinkedIn ships obfuscated class names and runs layout experiments, so any select
 - Anchor on the attributes LinkedIn uses for its own instrumentation (`data-urn`, `data-id`, `data-view-name`, `data-control-name`), never on generated class names.
 - A selector-health self-check that reports, per selector, whether it matched on pages where it should have, into the extension activity log and up to the dashboard. The failure mode to prevent is not breakage, which is certain, but silent breakage: an assistant that quietly stops finding posts looks identical to a quiet week.
 
+### Two frontends, one identifier (measured 2026-09-03, corrects the above)
+
+The bullets above assume one LinkedIn. There are two, and the difference decides what passive observation can do.
+
+The feed (`/feed/`) is now server-driven UI: `data-sdui-screen="com.linkedin.sdui.flagshipnav.feed.MainFeed"`, React underneath, and a post is addressed only by `data-sdui-anchor-id="feed-header-<opaque>-<uuid>"`. That token changes on reload, so it is a render address and not an identifier. None of `data-urn`, `data-id` or `data-view-name` exists on the feed at all. Measured against a real signed-in session: the activity URN is not in the feed DOM, not inside its shadow roots, not in any inline script, and not reachable through React's fiber or memoized props (twelve fiber levels up, seven object levels deep). It leaks in exactly one place, inside a rendered comment's `urn:li:comment:(activity:<id>,<id>)`, so only for a post that already has a comment on screen.
+
+A post detail page (`/feed/update/urn:li:activity:<id>/`) is still the older Ember stack and behaves as the bullets assume: `div[data-urn]` carries the activity URN, `data-id` carries comment URNs, `data-view-name` is present, and the comment composer is a `contenteditable` with `role="textbox"`. The URN is also in the URL.
+
+Both pages are captured as anonymised fixtures in `extension/tests/content/fixtures/linkedin/`, regenerable with `scripts/capture-linkedin-fixtures.mjs`.
+
+**What this changes.** `observed_targets` dedupes on `(platform_id, external_id)`, and on the feed there is no `external_id` to dedupe on. Three ways out, and only one is acceptable:
+
+1. Click each post's control menu to copy its permalink. That is no longer passive observation, it is synthesising clicks on LinkedIn, which the compliance boundary forbids outright.
+2. Patch `window.fetch` in the main world and read LinkedIn's own SDUI payloads. Technically available and worse than the first: it is instrumenting their traffic rather than reading what the human is looking at, and the defensibility of this whole feature rests on the opposite.
+3. Observe with an identifier only where one exists, which is the post the human opened.
+
+Take the third. It is also what `docs/design/DECISIONS.md` D11 already decided for the panel, which anchors to the post the human acted on and nowhere else, so the two planes agree rather than fight. The practical shape: a feed sighting can still record author, text and timestamp for context, but it is not a dedupable target and must not create an `observed_targets` row; a post the human opens produces the row, with the URN as its `external_id`. The follow-up cost is that the candidate pool fills more slowly than a feed scrape would fill it, which is the correct trade given the alternative is one of the first two options.
+
 ## What is NOT needed (vs Reddit and Mastodon)
 
 No server-side HTTP client, no Playwright, no stealth stack, no credential storage, no encryption, no OAuth, no reply poller, no scout tool that fetches anything.
