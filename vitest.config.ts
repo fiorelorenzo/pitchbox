@@ -17,6 +17,15 @@ export default defineConfig({
     alias: {
       $lib: fileURLToPath(new URL('./web/src/lib', import.meta.url)),
     },
+    // Svelte's package exports hand back its *server* build unless the
+    // `browser` condition is set, and its server build throws
+    // `mount(...) is not available on the server`. The extension's in-page
+    // panel host (`extension/src/content/shared/panel-host.ts`) calls `mount`
+    // for real in a jsdom test, so the condition has to be on. Only DOM tests
+    // import `svelte` at all, and the node-environment suites (DB, CLI, server
+    // routes) resolve nothing differently under it - the full suite is the
+    // check that this stays true.
+    conditions: ['browser'],
   },
   test: {
     include: ['**/tests/**/*.test.ts'],

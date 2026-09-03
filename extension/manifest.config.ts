@@ -77,6 +77,19 @@ export default defineManifest({
       run_at: 'document_idle',
     },
   ],
+  // The in-page panel lives in a shadow root, where an `@font-face` rule is
+  // ignored (font faces resolve against the document, not the shadow tree), so
+  // `src/content/shared/panel-fonts.ts` registers Inter through the FontFace
+  // API against the extension's own packaged file. A content script can only
+  // read that URL when the file is web-accessible, and the grant is narrowed to
+  // the emitted font assets rather than the whole extension. See
+  // docs/design/linkedin-assistant-brief.md.
+  web_accessible_resources: [
+    {
+      resources: ['assets/*.woff2'],
+      matches: ['https://www.linkedin.com/*'],
+    },
+  ],
   permissions: ['storage', 'alarms', 'tabs', 'scripting', 'sidePanel'],
   optional_host_permissions: ['<all_urls>'],
   host_permissions: [
