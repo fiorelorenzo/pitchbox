@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { HOUSE_STYLE_HEADING, HOUSE_STYLE_SECTION } from '../src/house-style.js';
 
 // Every playbook carries the same verbatim "House style" section: the rules that
 // keep drafted outreach reading like a person wrote it. The section is duplicated
@@ -46,19 +47,33 @@ describe('playbooks house style', () => {
     expect(bodies.get(file)).toContain(HEADING);
   });
 
-  it('keeps the section byte-identical across every playbook', () => {
-    const reference = houseStyleSection(bodies.get(files[0]!)!);
-    expect(reference.length).toBeGreaterThan(500);
+  it('keeps the section byte-identical across every playbook, and equal to the shared constant', () => {
+    // The constant is what non-playbook prompts use (the in-page assistant's
+    // suggestion endpoint), so a playbook that drifts from it means a suggestion
+    // and a drafted comment are held to different rules.
+    expect(HOUSE_STYLE_SECTION.length).toBeGreaterThan(500);
     for (const file of files) {
-      expect(houseStyleSection(bodies.get(file)!), `${file} diverged from ${files[0]}`).toBe(
-        reference,
-      );
+      expect(
+        houseStyleSection(bodies.get(file)!),
+        `${file} diverged from the shared constant`,
+      ).toBe(HOUSE_STYLE_SECTION);
     }
   });
 
+  it('uses the same heading as the playbooks', () => {
+    expect(HOUSE_STYLE_HEADING).toBe(HEADING);
+  });
+
   it('states the rule outranks campaign config', () => {
-    const reference = houseStyleSection(bodies.get(files[0]!)!);
-    expect(reference).toMatch(/campaign config can only tighten these rules, never relax them/);
+    expect(HOUSE_STYLE_SECTION).toMatch(
+      /campaign config can only tighten these rules, never relax them/,
+    );
+  });
+
+  it('the shared constant contains no AI typography either', () => {
+    for (const [char, name] of BANNED_CHARS) {
+      expect(HOUSE_STYLE_SECTION.indexOf(char), `shared constant contains ${name}`).toBe(-1);
+    }
   });
 
   it.each(files)('%s contains no AI typography', (file) => {
