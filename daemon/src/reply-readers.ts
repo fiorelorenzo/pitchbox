@@ -37,6 +37,16 @@ export async function resolveMastodonClient(accountHandle: string): Promise<Mast
 const readers = new Map<string, ReplyReader>([
   ['reddit', new NullReplyReader('reddit')],
   ['mastodon', new MastodonReplyReader(resolveMastodonClient)],
+  // Unlike reddit's NullReplyReader above, which is a placeholder "until a
+  // real implementation lands" per the doc comment on `readers`, this one is
+  // permanent - there will never be a real LinkedIn reply reader. LinkedIn's
+  // User Agreement prohibits automated engagement and scraping (see
+  // docs/linkedin-integration-design.md "The compliance boundary"), so
+  // server-side reply polling against linkedin.com is both technically
+  // unavailable and against the rules even if it were possible. Replies are
+  // ingested passively instead, through the extension reading whatever the
+  // human's own browsing already rendered (LI-10, #307).
+  ['linkedin', new NullReplyReader('linkedin')],
 ]);
 
 export function getReplyReader(platformSlug: string): ReplyReader | null {

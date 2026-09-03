@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { getPresenter, isExtensionAutomated } from '../../src/lib/platforms/presenter';
 import '../../src/lib/platforms/reddit/presenter';
 import '../../src/lib/platforms/mastodon/presenter';
+import '../../src/lib/platforms/linkedin/presenter';
 
 describe('presenter registry', () => {
   it('returns Reddit presenter with r/ and u/ semantics', () => {
@@ -56,6 +57,19 @@ describe('presenter registry', () => {
     expect(p.eventLabel('armed')).toBe('Send clicked on Mastodon');
   });
 
+  it('returns LinkedIn presenter with the vanity slug rendered as a profile path, not @handle', () => {
+    const p = getPresenter('linkedin');
+    expect(p.primaryLabel({ kind: 'post_comment', targetUser: 'jane-doe', metadata: {} })).toBe(
+      'linkedin.com/in/jane-doe',
+    );
+    expect(p.primaryLabel({ kind: 'comment_reply', targetUser: 'jane-doe', metadata: {} })).toBe(
+      'linkedin.com/in/jane-doe',
+    );
+    expect(p.primaryLabel({ kind: 'post', targetUser: null, metadata: {} })).toBe('LinkedIn post');
+    expect(p.userLabel('jane-doe')).toBe('linkedin.com/in/jane-doe');
+    expect(p.eventLabel('armed')).toBe('Send clicked on LinkedIn');
+  });
+
   it('falls back to a generic presenter for unknown slugs', () => {
     const p = getPresenter('mystery');
     expect(p.primaryLabel({ kind: 'dm', targetUser: 'bob', metadata: {} })).toBe('@bob');
@@ -72,6 +86,11 @@ describe('isExtensionAutomated', () => {
   it('is false for platforms without a content script (manual send)', () => {
     expect(isExtensionAutomated('hackernews')).toBe(false);
     expect(isExtensionAutomated('mastodon')).toBe(false);
+    // LinkedIn has no content script that arms a send in v1 (#299) - the
+    // extension only offers a drafted comment for the human to send
+    // themselves, it never automates the click (see the compliance boundary
+    // in docs/linkedin-integration-design.md).
+    expect(isExtensionAutomated('linkedin')).toBe(false);
     expect(isExtensionAutomated('mystery')).toBe(false);
   });
 

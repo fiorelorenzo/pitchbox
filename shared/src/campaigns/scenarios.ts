@@ -13,11 +13,13 @@ export const SCENARIO_SLUGS = [
   'mastodon-scout',
   'mastodon-commenter',
   'mastodon-poster',
+  'linkedin-commenter',
+  'linkedin-poster',
 ] as const;
 
 export type ScenarioSlug = (typeof SCENARIO_SLUGS)[number];
 
-export type ScenarioPlatformSlug = 'reddit' | 'hackernews' | 'mastodon';
+export type ScenarioPlatformSlug = 'reddit' | 'hackernews' | 'mastodon' | 'linkedin';
 
 // Platforms whose account API can post on the caller's behalf, so a campaign on
 // that platform can opt into `campaigns.auto_post` (an approved draft is sent
@@ -100,6 +102,22 @@ export const SCENARIO_META: ScenarioMeta[] = [
     description: 'Draft proactive top-level statuses (toots) for the project.',
     platformSlug: 'mastodon',
     playbookFile: 'mastodon-poster.md',
+  },
+  {
+    slug: 'linkedin-commenter',
+    label: 'LinkedIn Commenter',
+    description:
+      'Draft a helpful comment on a LinkedIn post the human has already seen, using only what the extension observed in the browser. No discovery, no scraping.',
+    platformSlug: 'linkedin',
+    playbookFile: 'linkedin-commenter.md',
+  },
+  {
+    slug: 'linkedin-poster',
+    label: 'LinkedIn Poster',
+    description:
+      'Draft a proactive top-level LinkedIn post for the connected profile. Human reviews and posts manually - there is no auto-post API for LinkedIn in v1.',
+    platformSlug: 'linkedin',
+    playbookFile: 'linkedin-poster.md',
   },
 ];
 
