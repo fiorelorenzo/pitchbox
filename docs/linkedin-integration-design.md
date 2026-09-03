@@ -12,13 +12,13 @@ So the Chrome extension is not a complement to LinkedIn support. **The extension
 
 ## Why LinkedIn is neither Reddit nor Mastodon
 
-| Capability | Reddit | Mastodon | LinkedIn |
-|---|---|---|---|
-| Target discovery | Playwright scrape | `GET /api/v1/timelines/tag` | No API at any tier |
-| Comment on a third party's post | scrape + extension | `POST /api/v1/statuses` | Not available: `r_member_social` is "granted to select developers only", `w_organization_social` only covers pages the member administers |
-| Direct message | extension | `direct` visibility status | Partner programs only |
-| Post to own profile | scrape | `POST /api/v1/statuses` | `w_member_social`, self-serve via the "Share on LinkedIn" product, about 100 calls per day per member |
-| Read own notifications | extension poll | `GET /api/v1/notifications` | No API at any self-serve tier |
+| Capability                      | Reddit             | Mastodon                    | LinkedIn                                                                                                                                  |
+| ------------------------------- | ------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Target discovery                | Playwright scrape  | `GET /api/v1/timelines/tag` | No API at any tier                                                                                                                        |
+| Comment on a third party's post | scrape + extension | `POST /api/v1/statuses`     | Not available: `r_member_social` is "granted to select developers only", `w_organization_social` only covers pages the member administers |
+| Direct message                  | extension          | `direct` visibility status  | Partner programs only                                                                                                                     |
+| Post to own profile             | scrape             | `POST /api/v1/statuses`     | `w_member_social`, self-serve via the "Share on LinkedIn" product, about 100 calls per day per member                                     |
+| Read own notifications          | extension poll     | `GET /api/v1/notifications` | No API at any self-serve tier                                                                                                             |
 
 Sources: LinkedIn's own developer docs for [getting access](https://learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access), [Share on LinkedIn](https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/share-on-linkedin) and the [Comments API](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/comments-api), plus LinkedIn Help on [prohibited software and extensions](https://www.linkedin.com/help/linkedin/answer/a1341387).
 
