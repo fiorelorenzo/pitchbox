@@ -34,9 +34,11 @@
   let newPlatform = $state(platforms[0]?.slug ?? 'reddit');
   let newInstanceUrl = $state('');
   let newAccessToken = $state('');
+  let newDisplayName = $state('');
   let busy = $state(false);
 
   let isMastodon = $derived(newPlatform === 'mastodon');
+  let isLinkedin = $derived(newPlatform === 'linkedin');
 
   function platformSlug(id: number) {
     return platforms.find((p) => p.id === id)?.slug ?? `#${id}`;
@@ -58,7 +60,12 @@
         : await fetch(`/api/projects/${projectId}/accounts`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ handle: newHandle, role: newRole, platformSlug: newPlatform }),
+            body: JSON.stringify({
+              handle: newHandle,
+              role: newRole,
+              platformSlug: newPlatform,
+              displayName: newDisplayName.trim() || undefined,
+            }),
           });
       if (!res.ok) {
         if (res.status === 403) {
@@ -74,6 +81,7 @@
       newHandle = '';
       newInstanceUrl = '';
       newAccessToken = '';
+      newDisplayName = '';
       addOpen = false;
       await invalidateAll();
     } finally {
@@ -178,6 +186,20 @@
           <p class="text-xs text-muted-foreground">
             Create a token in that instance's Preferences &gt; Development &gt; New application
             (scopes: read + write). Pitchbox verifies it before saving.
+          </p>
+        {:else if isLinkedin}
+          <label class="flex flex-col gap-1 text-xs">
+            Vanity slug
+            <Input bind:value={newHandle} placeholder="linkedin.com/in/your-slug" />
+          </label>
+          <label class="flex flex-col gap-1 text-xs">
+            Display name
+            <Input bind:value={newDisplayName} placeholder="Jane Doe" />
+          </label>
+          <p class="text-xs text-muted-foreground">
+            Pitchbox stores no LinkedIn credential: it never sees your password or session, and it
+            cannot post, comment or message on LinkedIn by itself either. Drafts land in your Inbox
+            and you open LinkedIn and send them yourself.
           </p>
         {:else}
           <label class="flex flex-col gap-1 text-xs">Handle<Input bind:value={newHandle} /></label>

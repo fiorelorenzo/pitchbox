@@ -10,6 +10,10 @@ const PostBody = z.object({
   handle: z.string().min(1).max(64),
   role: z.enum(['personal', 'brand']),
   platformSlug: z.string().min(1),
+  // Only meaningful for platforms with no credential to derive an identity
+  // from (LinkedIn: the vanity slug alone isn't the name a human recognizes).
+  // Ignored by platforms that don't collect it in the connect form.
+  displayName: z.string().max(128).optional(),
 });
 
 function parseId(p: string | undefined): number | null {
@@ -57,6 +61,7 @@ export async function POST(event: RequestEvent) {
       platformId: platform.id,
       handle: parsed.data.handle,
       role: parsed.data.role,
+      displayName: parsed.data.displayName ?? null,
     })
     .returning();
   return json({ account: row }, { status: 201 });
