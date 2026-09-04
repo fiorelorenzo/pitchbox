@@ -6,7 +6,7 @@ LinkedIn is Pitchbox's fourth outreach platform, and it is shaped differently fr
 
 LinkedIn has no discovery API, no third-party comment API and no self-serve messaging API at any developer tier. Reading a third party's post well enough to comment on it (`r_member_social`) is "granted to select developers only"; `w_organization_social` only covers pages a member administers; a self-serve message API does not exist outside partner programs.
 
-So there is nothing on linkedin.com for a Pitchbox server to call or scrape. The only legitimate source of a LinkedIn candidate is the human's own logged-in browser, while the human is already looking at LinkedIn. The Chrome extension is not an add-on to LinkedIn support, it is the adapter: a content script watches the feed and post pages the human is already scrolling and records what LinkedIn already rendered there. It initiates nothing.
+So there is nothing on linkedin.com for a Pitchbox server to call or scrape. The only legitimate source of a LinkedIn candidate is the human's own logged-in browser, while the human is already looking at LinkedIn. The Chrome extension is not an add-on to LinkedIn support, it is the adapter: a content script watches the pages the human is already on and records what LinkedIn already rendered there. It initiates nothing. (Which pages actually yield a candidate is narrower than it sounds: see the tradeoff section below.)
 
 ## What Pitchbox never does on LinkedIn
 
@@ -34,6 +34,8 @@ Reddit's own rules tolerate server-side scraping, so Pitchbox scrapes it server-
 ## The tradeoff: a slower-filling candidate pool
 
 Because nothing is fetched or scraped, a LinkedIn candidate only arrives while a human is actually browsing LinkedIn with the extension installed and turned on. That candidate pool fills more slowly than a feed scrape would fill it. That is the correct trade given the alternative: the only ways to fill it faster are synthesizing a click to read a post's permalink, or patching the page's own network calls to read LinkedIn's internal payloads underneath it, and both sit on the wrong side of the boundary above.
+
+It is also narrower than "while a human browses". Measured against real captured markup on 2026-09-04: the feed LinkedIn serves today is a server-driven UI where a post has no stable identifier at all, only a token that changes on reload, so a feed card cannot be recorded as a candidate. What can is a post the human actually opens, and a post in a profile's recent-activity list, which still carry the activity URN. So scrolling contributes nothing to the pool; opening a post does.
 
 ## LinkedIn's own posting API, deliberately not used
 
