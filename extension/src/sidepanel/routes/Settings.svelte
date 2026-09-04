@@ -3,6 +3,7 @@
   import AppearanceCard from '../components/AppearanceCard.svelte';
   import LanguageCard from '../components/LanguageCard.svelte';
   import SyncSettingsCard from '../components/SyncSettingsCard.svelte';
+  import LinkedInAccessCard from '../components/LinkedInAccessCard.svelte';
   import DataCard from '../components/DataCard.svelte';
   import AboutCard from '../components/AboutCard.svelte';
 </script>
@@ -11,6 +12,7 @@
   <AppearanceCard />
   <LanguageCard />
   <SyncSettingsCard />
+  <LinkedInAccessCard />
   <DataCard />
   <AboutCard />
 </div>
