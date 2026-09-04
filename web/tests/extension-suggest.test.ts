@@ -58,9 +58,13 @@ vi.mock('@pitchbox/shared/agents/registry', () => ({
           exitCode: 0,
           logPath: '/dev/null',
           usage: {
-            inputTokens: 1200,
+            // Modelled on the real measurement in #313's comment: the prompt
+            // is served from the provider's cache, so almost none of it shows
+            // up as `inputTokens` and the rest arrives as the two cache
+            // counts instead.
+            inputTokens: 2,
             outputTokens: 40,
-            cacheReadTokens: 0,
+            cacheReadTokens: 780,
             cacheCreationTokens: 0,
             costUsd: 0.004,
             costReported: true,
@@ -194,9 +198,17 @@ describe('POST /api/extension/suggest', () => {
     expect(kinds).toContain('status');
     expect(kinds[kinds.length - 1]).toBe('done');
 
-    const done = events.at(-1)!.data as { text: string; usage?: { outputTokens: number } };
+    const done = events.at(-1)!.data as {
+      text: string;
+      usage?: { outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number };
+    };
     expect(done.text).toBe(chunks.join(''));
     expect(done.usage?.outputTokens).toBe(40);
+    // #313 comment: `inputTokens` alone reads as ~2 tokens for a cached
+    // prompt, so the cache counts have to reach the caller for the accept
+    // path's `runs` row to not read as broken accounting.
+    expect(done.usage?.cacheReadTokens).toBe(780);
+    expect(done.usage?.cacheCreationTokens).toBe(0);
   });
 
   it('attaches no MCP server and passes a prompt rather than a playbook', async () => {

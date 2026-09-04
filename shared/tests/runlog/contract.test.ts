@@ -130,6 +130,21 @@ describe('playbookContractError', () => {
     const { db } = await fixtures();
     expect(await playbookContractError(db, { id: 1, kind: 'something_else' })).toBeNull();
   });
+
+  // #313: an assist run has no playbook and no agent that could call a finish
+  // tool at all, unlike every other kind above. It is deliberately absent
+  // from PLAYBOOK_FINISH_TOOL rather than mapped to one, so this exercises the
+  // real row shape (kind: 'assist', a bare project, no campaign) rather than
+  // the synthetic 'something_else' case above.
+  it('an assist run is never classified playbook_incomplete', async () => {
+    const { db, project } = await fixtures();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ kind: 'assist', projectId: project.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    expect(await playbookContractError(db, run)).toBeNull();
+  });
 });
 
 afterAll(async () => {
