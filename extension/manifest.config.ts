@@ -60,6 +60,14 @@ export default defineManifest({
       run_at: 'document_idle',
     },
     {
+      // Post-detail is the only LinkedIn page kind with a comment composer
+      // and a submit control (see linkedin-dom.ts's "Two frontends, one
+      // identifier" - the feed's SDUI frontend renders neither).
+      matches: ['https://www.linkedin.com/feed/update/*'],
+      js: ['src/content/linkedin-comment.ts'],
+      run_at: 'document_idle',
+    },
+    {
       // Auto-pair on the cloud edition. Self-hosted instances trigger the
       // same script on demand via the popup's "Pair with this tab" button,
       // which uses chrome.scripting.executeScript after a one-shot
@@ -94,6 +102,7 @@ export default defineManifest({
   optional_host_permissions: ['<all_urls>'],
   host_permissions: [
     'https://www.reddit.com/*',
+    'https://www.linkedin.com/*',
     'https://old.reddit.com/*',
     'https://matrix.redditspace.com/*',
     'https://pitchbox.app/*',
