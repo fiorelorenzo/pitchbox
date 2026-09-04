@@ -80,13 +80,7 @@ Write like this instead:
 
 6. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` - no secret. Record `accountId`.
 
-7. **Build the compose URL.** The HN submit form does not honour query-string prefill, so the user pastes title and body manually. Always emit the plain submit URL plus `pitchbox_draft=<draftId>` so the extension's content script can attach:
-
-   ```
-   https://news.ycombinator.com/submit
-   ```
-
-8. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+7. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft:
 
@@ -98,7 +92,6 @@ Write like this instead:
      "targetUser": null,
      "title": "<post title>",
      "body": "<plain-text body, including disclosure where applicable>",
-     "composeUrl": "https://news.ycombinator.com/submit",
      "reasoning": "<one sentence: which format + why this angle now>",
      "sourceRef": { "format": "show-hn | ask-hn | text" },
      "metadata": { "format": "show-hn", "url": "<productUrl when format=show-hn>" },
@@ -107,7 +100,7 @@ Write like this instead:
    }
    ```
 
-9. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
+8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
 
 ## Hard rules
 

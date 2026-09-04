@@ -75,15 +75,7 @@ Write like this instead:
 
 6. **Pick the account.** Use the first account with `role === 'personal'`. Record `accountId`.
 
-7. **Build the compose URL.**
-
-   ```
-   ${account.instanceUrl}/share?text=<urlencoded body>
-   ```
-
-   This opens Mastodon's compose intent prefilled with the text, defaulting to public visibility (correct for a top-level post - no manual visibility fix needed here, unlike a `dm` draft).
-
-8. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+7. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft (sent later as a public status, on human approval):
 
@@ -94,7 +86,6 @@ Write like this instead:
      "fitScore": 4,
      "targetUser": null,
      "body": "<plain-text status, including disclosure and hashtags>",
-     "composeUrl": "https://mastodon.social/share?text=...",
      "reasoning": "<one sentence: which angle + why now>",
      "sourceRef": { "postAngle": "<angle>" },
      "metadata": { "hashtags": ["selfhosted", "indiehackers"] },
@@ -103,7 +94,7 @@ Write like this instead:
    }
    ```
 
-9. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
+8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
 
 ## Hard rules
 

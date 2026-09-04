@@ -85,14 +85,13 @@ Write like this instead:
    - Apply the House style section above literally: it outranks every default here and holds even when the campaign voice says nothing about it.
    - Never open with a pitch. Lead with the genuine reason you're mentioning them; the offer (if any) comes last, briefly.
    - The offer text comes from `campaign.config.offer.text` and the product URL from `campaign.config.offer.productUrl`. Never invent an offer. If `campaign.config.offer` is absent, do not draft any DMs this run - there is nothing honest to offer.
+   - The compose window Pitchbox opens for this draft defaults to public visibility, not direct - mention that in `reasoning` so the reviewer remembers to switch the visibility picker to "Only people I mention" before sending.
 
 8. **Pick the account.** Use the first account from `accounts` whose `role === 'personal'`. Record its `id` as `accountId`.
 
-9. **Build the compose URL.** `${account.instanceUrl}/share?text=<urlencoded body>`. This opens Mastodon's compose intent prefilled with the text but defaults to public visibility - the human must manually switch the visibility picker to "Only people I mention" (direct) before sending. Note this explicitly in `reasoning` so the reviewer doesn't miss it.
+9. **Score each draft.** Using `rubricTemplate` from the run context, score the DM 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, well-justified mentions and give low scores to anything that reads generic or pitchy. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
 
-10. **Score each draft.** Using `rubricTemplate` from the run context, score the DM 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, well-justified mentions and give low scores to anything that reads generic or pitchy. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
-
-11. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`, one draft object per candidate that survived step 6.
+10. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`, one draft object per candidate that survived step 6.
 
     > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
 
@@ -105,8 +104,7 @@ Write like this instead:
       "fitScore": 4,
       "targetUser": "alice@mastodon.social",
       "body": "@alice@mastodon.social <mention body>",
-      "composeUrl": "https://mastodon.social/share?text=%40alice%40mastodon.social%20...",
-      "reasoning": "Why this candidate cleared the outreach gate in step 6, plus the visibility reminder from step 9.",
+      "reasoning": "Why this candidate cleared the outreach gate in step 6, plus the visibility reminder from step 7.",
       "sourceRef": {
         "statusUrl": "https://mastodon.social/@alice/109...",
         "matchedHashtag": "selfhosted"
@@ -117,11 +115,11 @@ Write like this instead:
     }
     ```
 
-12. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+11. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 
-- Never post or send the mention. The human reviews and sends from the Pitchbox dashboard, and must still fix the visibility manually (step 9).
+- Never post or send the mention. The human reviews and sends from the Pitchbox dashboard, and must still fix the visibility manually (step 7).
 - Cold DMs are off by default. Only draft one when step 6's gate is satisfied; when in doubt, skip.
 - `#nobot` is a hard, non-negotiable skip - never draft to a candidate flagged by it, even if the filter looks over-eager.
 - No generic openers, no pitch-first bodies. If you catch yourself writing a mention that could be sent unchanged to any of the candidates, stop and rewrite or drop it.

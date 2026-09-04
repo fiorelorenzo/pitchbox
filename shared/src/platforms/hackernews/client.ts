@@ -92,6 +92,10 @@ export function replyUrl(id: number): string {
   return `${SITE_BASE}/reply?id=${id}`;
 }
 
+export function submitUrl(): string {
+  return `${SITE_BASE}/submit`;
+}
+
 export function profileUrl(username: string): string {
   return `${SITE_BASE}/user?id=${encodeURIComponent(username)}`;
 }

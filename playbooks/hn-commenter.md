@@ -72,15 +72,9 @@ Write like this instead:
 
 5. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` - no secret. Record `accountId`.
 
-6. **Build the URL.** The compose URL is HN's reply page for the story:
+6. **Score each draft.** Using `rubricTemplate` from the run context, score the comment 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted comments and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
 
-   ```
-   https://news.ycombinator.com/reply?id=<itemId>&pitchbox_draft=<draftId>
-   ```
-
-7. **Score each draft.** Using `rubricTemplate` from the run context, score the comment 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted comments and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
-
-8. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+7. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft:
 
@@ -91,7 +85,6 @@ Write like this instead:
      "fitScore": 4,
      "targetUser": null,
      "body": "<comment text>",
-     "composeUrl": "https://news.ycombinator.com/reply?id=12345",
      "reasoning": "Why this story, what angle, what value you're adding.",
      "sourceRef": { "itemUrl": "https://news.ycombinator.com/item?id=12345", "title": "..." },
      "metadata": { "itemId": 12345, "listing": "top", "score": 142 },
@@ -102,7 +95,7 @@ Write like this instead:
 
    `targetUser` is null for `post_comment` - the audience is the thread.
 
-9. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 

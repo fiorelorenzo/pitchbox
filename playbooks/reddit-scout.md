@@ -82,8 +82,6 @@ Write like this instead:
 
    The offer text comes from `campaign.config.offer.text` and the product URL from `campaign.config.offer.productUrl`. Never invent an offer.
 
-   **c. Build the compose URL.** Take `composeUrlBase` from the candidate, append `&subject=<urlencoded>&message=<urlencoded>`. Subject comes from `campaign.config.offer.subject`.
-
 5. **Pick the account.** Use the first account from `accounts` whose `role === 'personal'`. Record its `id` as `accountId`.
 
 6. **Score each draft.** Using `rubricTemplate` from the run context, score the DM 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted DMs and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
@@ -102,7 +100,6 @@ Write like this instead:
      "subreddit": "rpg",
      "targetUser": "alice",
      "body": "<DM markdown>",
-     "composeUrl": "https://www.reddit.com/message/compose?to=alice&subject=...&message=...",
      "reasoning": "2-4 sentences citing specific words from their post.",
      "sourceRef": { "permalink": "/r/rpg/comments/abc/.../" },
      "metadata": { "matchedBy": "search" },

@@ -16,7 +16,55 @@ import {
 import { notify } from '@pitchbox/shared/notifications';
 import { getProjectOrgId } from '@pitchbox/shared/orgs';
 import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
+import { buildRedditComposeUrl } from '@pitchbox/shared/platforms/reddit';
+import { buildHackernewsComposeUrl } from '@pitchbox/shared/platforms/hackernews';
+import { buildMastodonComposeUrl } from '@pitchbox/shared/platforms/mastodon';
+import type { DraftKind } from '@pitchbox/shared/quota-types';
 import { ok, fail } from '../lib/output.js';
+
+// The compose URL is built here, server-side, from fields the caller already
+// supplies (platform, target, subject, body) rather than accepted as agent
+// input (issue #325): an agent-supplied URL and `body` are two independent
+// arguments with nothing enforcing that the URL's prefilled text is the body
+// a human reviews in the Inbox. Each platform owns its own URL shape
+// (shared/src/platforms/*/compose-url.ts); this only routes by slug.
+function buildComposeUrl(
+  platformSlug: string | null,
+  input: {
+    kind: DraftKind;
+    targetUser: string | null;
+    subreddit: string | null;
+    title: string | null;
+    body: string;
+    subject: string | null;
+    instanceUrl: string | null;
+    sourceRef: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  },
+): string | null {
+  switch (platformSlug) {
+    case 'reddit':
+      return buildRedditComposeUrl(input);
+    case 'hackernews':
+      return buildHackernewsComposeUrl(input);
+    case 'mastodon':
+      return buildMastodonComposeUrl(input);
+    default:
+      return null;
+  }
+}
+
+/** Pulls `campaign.config.offer.subject` out of jsonb config, if present. The
+ * Reddit DM compose URL is the only consumer (issue #325); other scenarios
+ * either have no subject field or build their compose URL from the body
+ * alone. */
+function extractOfferSubject(config: unknown): string | null {
+  if (config == null || typeof config !== 'object') return null;
+  const offer = (config as Record<string, unknown>).offer;
+  if (offer == null || typeof offer !== 'object') return null;
+  const subject = (offer as Record<string, unknown>).subject;
+  return typeof subject === 'string' && subject.trim() !== '' ? subject : null;
+}
 
 // Playbooks document their `drafts_create` payloads with an explicit `null`
 // for fields that do not apply to the kind being written: every commenter and
@@ -40,7 +88,6 @@ export const DraftInput = z.object({
   targetUser: absentOrNull(z.string()),
   title: absentOrNull(z.string()),
   body: z.string().min(1),
-  composeUrl: absentOrNull(z.url()),
   reasoning: absentOrNull(z.string()),
   sourceRef: z
     .record(z.string(), z.unknown())
@@ -97,7 +144,11 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
   // misattribute the draft's platform identity.
   const accountIds = [...new Set(draftsInput.map((d) => d.accountId))];
   const accountRows = await db
-    .select({ id: schema.accounts.id, projectId: schema.accounts.projectId })
+    .select({
+      id: schema.accounts.id,
+      projectId: schema.accounts.projectId,
+      instanceUrl: schema.accounts.instanceUrl,
+    })
     .from(schema.accounts)
     .where(inArray(schema.accounts.id, accountIds));
   const accountsById = new Map(accountRows.map((a) => [a.id, a]));
@@ -111,12 +162,14 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
     }
   }
 
-  // Reddit-only guard (issue #258): a `post` or `post_comment` draft cannot
-  // be acted on without a subreddit, so refuse to write one rather than
-  // storing a row the inbox has to paper over (see the fallback in
-  // web/src/lib/platforms/reddit/presenter.ts). Accept the subreddit from
-  // either the top-level `subreddit` field or an inline `metadata.subreddit`
-  // (both are in active use by the poster/commenter playbooks).
+  // `platform.slug` gates the Reddit-only subreddit guard below and also
+  // drives server-side compose URL construction further down (issue #325):
+  // a `post`/`post_comment` draft cannot be acted on without a subreddit, so
+  // refuse to write one rather than storing a row the inbox has to paper
+  // over (see the fallback in web/src/lib/platforms/reddit/presenter.ts).
+  // Accept the subreddit from either the top-level `subreddit` field or an
+  // inline `metadata.subreddit` (both are in active use by the
+  // poster/commenter playbooks).
   const [platform] = await db
     .select({ slug: schema.platforms.slug })
     .from(schema.platforms)
@@ -135,6 +188,11 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
       }
     }
   }
+
+  // Reddit DM compose URLs carry the subject from campaign.config.offer.subject
+  // (issue #325); every other scenario either has no subject or builds its
+  // compose URL from the body alone.
+  const offerSubject = extractOfferSubject(campaign.config);
 
   // Load dedup policy from app_config.dedup_policy. Defaults to a 90-day
   // warn-only window when unset.
@@ -230,7 +288,17 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
           targetUser: d.targetUser ?? null,
           title: d.title ?? null,
           body: d.body,
-          composeUrl: d.composeUrl ?? null,
+          composeUrl: buildComposeUrl(platform?.slug ?? null, {
+            kind: d.kind,
+            targetUser: d.targetUser ?? null,
+            subreddit: d.subreddit ?? null,
+            title: d.title ?? null,
+            body: d.body,
+            subject: offerSubject,
+            instanceUrl: accountsById.get(d.accountId)?.instanceUrl ?? null,
+            sourceRef: d.sourceRef,
+            metadata: baseMeta,
+          }),
           reasoning: d.reasoning ?? null,
           sourceRef: d.sourceRef,
           metadata: baseMeta,
@@ -256,7 +324,17 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
       targetUser: d.targetUser ?? null,
       title: d.title ?? null,
       body: r.body,
-      composeUrl: d.composeUrl ?? null,
+      composeUrl: buildComposeUrl(platform?.slug ?? null, {
+        kind: d.kind,
+        targetUser: d.targetUser ?? null,
+        subreddit: d.subreddit ?? null,
+        title: d.title ?? null,
+        body: r.body,
+        subject: offerSubject,
+        instanceUrl: accountsById.get(d.accountId)?.instanceUrl ?? null,
+        sourceRef: d.sourceRef,
+        metadata: baseMeta,
+      }),
       reasoning: d.reasoning ?? null,
       sourceRef: d.sourceRef,
       metadata: baseMeta,
