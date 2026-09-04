@@ -192,10 +192,29 @@ async function loadManifest(manifestPath: string): Promise<ManifestShape> {
   return mod.default;
 }
 
-/** The LinkedIn content-script file set, derived from manifest.config.ts
- * (never hardcoded): every `js` entry of every content_scripts block whose
- * `matches` mentions a linkedin.com/licdn.com origin. */
-export async function linkedinContentScriptFiles(manifestPath: string): Promise<string[]> {
+/**
+ * The LinkedIn content-script file set. Derived, never hardcoded, from the two
+ * ways a script can actually reach linkedin.com:
+ *
+ * 1. a static `content_scripts` block in manifest.config.ts whose `matches`
+ *    mention a linkedin/licdn origin;
+ * 2. a `chrome.scripting.registerContentScripts` call whose `matches` mention
+ *    one, with each `js` entry resolved back through the import that produced
+ *    it (crxjs hands the built path over a `?script` import, so the array holds
+ *    an identifier rather than a literal).
+ *
+ * The second source exists because of a hole this rule shipped with. #348
+ * registered the first real LinkedIn content script dynamically, precisely so
+ * the LinkedIn grant stays optional (#317), which took it out of the static
+ * array this function used to be the whole of - so the rule scanned nothing and
+ * passed by omission, on exactly the file it exists for. #308 says the check
+ * must never be skippable on some inputs; a scan set that silently empties is
+ * that, in a slower form.
+ */
+export async function linkedinContentScriptFiles(
+  manifestPath: string,
+  sourceRoot?: string,
+): Promise<string[]> {
   const manifest = await loadManifest(manifestPath);
   const dir = path.dirname(manifestPath);
   const files = new Set<string>();
@@ -204,12 +223,118 @@ export async function linkedinContentScriptFiles(manifestPath: string): Promise<
     if (!isLinkedIn) continue;
     for (const js of entry.js ?? []) files.add(path.resolve(dir, js));
   }
+  for (const file of dynamicallyRegisteredLinkedinScripts(sourceRoot ?? path.join(dir, 'src'))) {
+    files.add(file);
+  }
   return [...files];
 }
 
-export async function checkContentScriptStorageReads(manifestPath: string): Promise<Violation[]> {
+/** Every file a `chrome.scripting.registerContentScripts` call registers against
+ * a linkedin/licdn match, anywhere under `sourceRoot`. */
+function dynamicallyRegisteredLinkedinScripts(sourceRoot: string): string[] {
+  const found = new Set<string>();
+  if (!fs.existsSync(sourceRoot)) return [];
+  for (const file of walkFiles(sourceRoot, ['.ts'])) {
+    const sf = parseSource(file);
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        /registerContentScripts$/.test(unwrap(node.expression).getText(sf)) &&
+        node.arguments.length > 0
+      ) {
+        const arg = unwrap(node.arguments[0]);
+        const entries = ts.isArrayLiteralExpression(arg) ? arg.elements : [arg];
+        for (const entry of entries) {
+          const obj = unwrap(entry);
+          if (!ts.isObjectLiteralExpression(obj)) continue;
+          const prop = (name: string) =>
+            obj.properties.find(
+              (p): p is ts.PropertyAssignment =>
+                ts.isPropertyAssignment(p) && p.name.getText(sf) === name,
+            );
+          const matches = prop('matches');
+          if (!matches || !NETWORK_TARGET_RE.test(matches.initializer.getText(sf))) continue;
+          const js = prop('js');
+          if (!js) continue;
+          const jsArr = unwrap(js.initializer);
+          const elements = ts.isArrayLiteralExpression(jsArr) ? jsArr.elements : [jsArr];
+          for (const el of elements) {
+            const resolved = resolveScriptReference(sf, file, unwrap(el));
+            if (resolved) found.add(resolved);
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
+  return [...found];
+}
+
+/** Resolve a `js: [x]` entry to a source file: a string literal relative to the
+ * extension root, or an identifier whose import specifier names one (crxjs's
+ * `./content/foo.ts?script`). */
+function resolveScriptReference(
+  sf: ts.SourceFile,
+  file: string,
+  expr: ts.Expression,
+): string | null {
+  const fromSpecifier = (spec: string): string | null => {
+    const clean = spec.replace(/\?(script|iife|worker).*$/, '');
+    const candidate = path.resolve(path.dirname(file), clean);
+    for (const p of [candidate, `${candidate}.ts`, candidate.replace(/\.js$/, '.ts')]) {
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) return p;
+    }
+    return null;
+  };
+  if (ts.isStringLiteral(expr)) return fromSpecifier(expr.text);
+  if (!ts.isIdentifier(expr)) return null;
+  let resolved: string | null = null;
+  ts.forEachChild(sf, (node) => {
+    if (resolved || !ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) {
+      return;
+    }
+    const clause = node.importClause;
+    const namedHere =
+      clause?.name?.text === expr.text ||
+      (clause?.namedBindings &&
+        ts.isNamedImports(clause.namedBindings) &&
+        clause.namedBindings.elements.some((e) => e.name.text === expr.text));
+    if (namedHere) resolved = fromSpecifier(node.moduleSpecifier.text);
+  });
+  return resolved;
+}
+
+export async function checkContentScriptStorageReads(
+  manifestPath: string,
+  sourceRoot?: string,
+): Promise<Violation[]> {
   const violations: Violation[] = [];
-  const files = await linkedinContentScriptFiles(manifestPath);
+  const root = sourceRoot ?? path.join(path.dirname(manifestPath), 'src');
+  const files = await linkedinContentScriptFiles(manifestPath, root);
+
+  // The net under the derivation above. A file whose own name says LinkedIn but
+  // which neither the manifest nor a dynamic registration accounts for is not a
+  // file this rule may pass over in silence: either it reaches linkedin.com by a
+  // third route nobody has told this checker about, or it is dead code claiming
+  // to be a content script. Both are worth a red build, and the alternative is
+  // the hole #348 walked into - a scan set that quietly went empty.
+  if (fs.existsSync(root)) {
+    const accounted = new Set(files.map((f) => path.resolve(f)));
+    for (const file of walkFiles(path.join(root, 'content'), ['.ts'])) {
+      if (!/linkedin/i.test(path.basename(file))) continue;
+      if (path.basename(file) === 'linkedin-dom.ts') continue; // selectors, not a script
+      if (accounted.has(path.resolve(file))) continue;
+      violations.push(
+        makeViolation(
+          2,
+          file,
+          `looks like a LinkedIn content script but is neither in manifest.config.ts's content_scripts nor registered by a chrome.scripting.registerContentScripts call this checker can see, so rule 2 would never scan it`,
+        ),
+      );
+    }
+  }
+
   for (const file of files) {
     if (!fs.existsSync(file)) {
       violations.push(
@@ -229,6 +354,17 @@ export async function checkContentScriptStorageReads(manifestPath: string): Prom
           violations.push(makeViolation(2, file, `reads document.cookie (${trim(chain)})`));
         } else if (/\bchrome\s*\.\s*cookies\b/.test(chain)) {
           violations.push(makeViolation(2, file, `uses chrome.cookies (${trim(chain)})`));
+        } else if (
+          // `localStorage.getItem('li_at')` is the form this violation actually
+          // takes, and it used to fall through every branch: the identifier
+          // check below skips anything whose parent is a property access, and
+          // the two patterns above only name cookies. A rule that catches a
+          // bare `localStorage` but not `localStorage.getItem` catches the
+          // spelling nobody writes.
+          ts.isIdentifier(node.expression) &&
+          (node.expression.text === 'localStorage' || node.expression.text === 'sessionStorage')
+        ) {
+          violations.push(makeViolation(2, file, `reads ${node.expression.text} (${trim(chain)})`));
         }
       } else if (ts.isIdentifier(node) && !ts.isPropertyAccessExpression(node.parent)) {
         if (node.text === 'localStorage' || node.text === 'sessionStorage') {
@@ -639,7 +775,7 @@ export function defaultRepoPaths(repoRoot: string): RepoPaths {
 export async function checkAll(paths: RepoPaths): Promise<Violation[]> {
   return [
     ...checkNetworkTargets(paths.extensionSrcDir),
-    ...(await checkContentScriptStorageReads(paths.manifestPath)),
+    ...(await checkContentScriptStorageReads(paths.manifestPath, paths.extensionSrcDir)),
     ...checkSyntheticInteractions(paths.extensionSrcDir, paths.linkedinDomPath),
     ...checkAlarmsReachability(paths.extensionSrcDir),
     ...checkLinkedinPlatformNetworkCalls(paths.linkedinPlatformDir),
