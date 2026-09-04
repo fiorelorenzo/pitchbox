@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { getDb } from './db.js';
 import { createAgentRunner } from '@pitchbox/shared/agents/registry';
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
-import { loadRunnerConfig } from '@pitchbox/shared/agents/config';
+import { loadRunnerConfig, type RunnerConfig } from '@pitchbox/shared/agents/config';
 import {
   buildSuggestionPrompt,
   type ObservedPost,
@@ -46,6 +46,34 @@ export interface SuggestionHandle {
 /** A suggestion the human is waiting on has a much shorter patience than a
  * campaign run. Past this the answer is not worth having. */
 const SUGGESTION_TIMEOUT_MS = 90_000;
+
+/**
+ * The model a suggestion asks for when an operator has not pinned one for
+ * this runner. A campaign run is unattended and can afford the most capable
+ * model; a suggestion has a human staring at an empty panel, and the wait is
+ * dominated by how long the model deliberates before its first text token,
+ * not by the spawn.
+ *
+ * Measured on an idle devbox, same prompt (3043 chars), claude-code, n=3 each
+ * (see #360 for the full table):
+ *
+ *   unpinned (session default)  median 16.8s to first token, 19.8s total
+ *   sonnet                      median 10.4s to first token, 12.9s total
+ *
+ * Spawn plus `session/new` is 2.2s of either, which is why this is the lever
+ * and a pool of warm processes is not (#318).
+ */
+export const ASSIST_DEFAULT_MODEL = 'sonnet';
+
+/**
+ * An explicit runner config wins: an operator who pinned a model for this
+ * runner meant it, including for suggestions. Everything else, including an
+ * empty string from a cleared form field, falls back to the fast default.
+ */
+export function resolveAssistRunnerConfig(config: RunnerConfig): RunnerConfig {
+  const pinned = config.model?.trim();
+  return pinned ? config : { ...config, model: ASSIST_DEFAULT_MODEL };
+}
 
 export function runSuggestion(args: {
   kind: SuggestionKind;
@@ -90,7 +118,7 @@ export function runSuggestion(args: {
     if (cancelled) throw new Cancelled();
     const config = await loadRunnerConfig(db, args.runnerSlug as AgentRunnerSlug);
     if (cancelled) throw new Cancelled();
-    const runner = createAgentRunner(args.runnerSlug, config);
+    const runner = createAgentRunner(args.runnerSlug, resolveAssistRunnerConfig(config));
 
     // The agent still gets a working directory, and it must not be the repo:
     // this session has no tools attached, but a cwd it could read is a cwd it

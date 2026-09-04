@@ -3,6 +3,7 @@ import { sql, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
 import type { AgentRunHandle, AgentRunOptions, AgentRunner } from '@pitchbox/shared/agents';
+import { saveRunnerConfig, type RunnerConfig } from '@pitchbox/shared/agents/config';
 import {
   defaultLinkedInAssistSettings,
   saveLinkedInAssistSettings,
@@ -21,15 +22,20 @@ import {
 
 const chunks = ['A specific ', 'thing that ', 'happened.'];
 let lastOptions: AgentRunOptions | null = null;
+/** The runner config the route actually handed to the registry, so a test can
+ * assert which model a suggestion asks for rather than trusting the resolver
+ * in isolation. */
+let lastConfig: RunnerConfig | null = null;
 let cancelCalls = 0;
 /** Set by a test to hold the fake agent open so a disconnect can be observed. */
 let hangForever = false;
 
 vi.mock('@pitchbox/shared/agents/registry', () => ({
-  createAgentRunner: (): AgentRunner => ({
+  createAgentRunner: (_slug: string, config: RunnerConfig): AgentRunner => ({
     slug: 'fake',
     run(opts: AgentRunOptions): AgentRunHandle {
       lastOptions = opts;
+      lastConfig = config;
       let stop: (() => void) | null = null;
       const result = new Promise<never>((_resolve, reject) => {
         stop = () => reject(new Error('cancelled'));
@@ -69,7 +75,8 @@ vi.mock('@pitchbox/shared/agents/registry', () => ({
 }));
 
 const { POST: suggest } = await import('../src/routes/api/extension/suggest/+server.js');
-const { runSuggestion } = await import('../src/lib/server/suggest.js');
+const { runSuggestion, resolveAssistRunnerConfig, ASSIST_DEFAULT_MODEL } =
+  await import('../src/lib/server/suggest.js');
 
 function tokenHash(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -81,7 +88,9 @@ async function reset() {
   );
   await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
   await getDb().execute(sql`DELETE FROM app_config WHERE key = 'linkedin_assist'`);
+  await getDb().execute(sql`DELETE FROM app_config WHERE key = 'runner_configs'`);
   lastOptions = null;
+  lastConfig = null;
   cancelCalls = 0;
   hangForever = false;
 }
@@ -348,5 +357,55 @@ describe('POST /api/extension/suggest', () => {
     } as never);
     expect(ok.headers.get('content-type')).toContain('text/event-stream');
     await ok.text();
+  });
+
+  // #360: the wait a human sees is dominated by how long the model deliberates
+  // before its first text token, so this path asks for a fast model unless an
+  // operator pinned one. Asserted against the config the route actually handed
+  // the registry, not against the resolver in isolation: the resolver being
+  // correct and never called is the failure mode worth catching.
+  it('asks for the fast assist model when no operator pinned one', async () => {
+    const { org, project } = await seedOrgProject('org-model-default');
+    await mintDevice(org.id, 'tokModel');
+
+    const res = await suggest({
+      request: request('tokModel', { ...POST_BODY, projectId: project.id }),
+    } as never);
+    await res.text();
+    expect(lastConfig).toMatchObject({ model: ASSIST_DEFAULT_MODEL });
+  });
+
+  it('leaves an operator-pinned model alone, including for suggestions', async () => {
+    const { org, project } = await seedOrgProject('org-model-pinned');
+    await mintDevice(org.id, 'tokPinned');
+    await saveRunnerConfig(getDb(), 'claude-code', { model: 'opus', maxTurns: 3 });
+
+    const res = await suggest({
+      request: request('tokPinned', { ...POST_BODY, projectId: project.id }),
+    } as never);
+    await res.text();
+    expect(lastConfig).toMatchObject({ model: 'opus', maxTurns: 3 });
+  });
+});
+
+describe('resolveAssistRunnerConfig', () => {
+  it('defaults an unpinned config to the fast model', () => {
+    expect(resolveAssistRunnerConfig({})).toEqual({ model: ASSIST_DEFAULT_MODEL });
+  });
+
+  it('keeps every other setting while defaulting the model', () => {
+    expect(resolveAssistRunnerConfig({ maxTurns: 2, extraArgs: ['--x'] })).toEqual({
+      maxTurns: 2,
+      extraArgs: ['--x'],
+      model: ASSIST_DEFAULT_MODEL,
+    });
+  });
+
+  it('treats a blank pinned model as unpinned, since a cleared form field is not a choice', () => {
+    expect(resolveAssistRunnerConfig({ model: '   ' })).toEqual({ model: ASSIST_DEFAULT_MODEL });
+  });
+
+  it('respects an explicit pin', () => {
+    expect(resolveAssistRunnerConfig({ model: 'haiku' })).toEqual({ model: 'haiku' });
   });
 });
