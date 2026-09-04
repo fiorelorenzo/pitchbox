@@ -1,5 +1,6 @@
 import { runInboxSync } from './background/inbox-sync.js';
 import { runChatSync } from './background/chat-sync.js';
+import { registerLinkedInReplyIngestScript } from './background/linkedin-reply-ingest-registration.js';
 import {
   getSettings,
   patchPairing,
@@ -302,11 +303,16 @@ export async function syncLinkedInObserveContentScript(): Promise<void> {
  * gated on the same on-demand host permission (#317). One wrapper instead
  * of a growing list of individual calls at each of the four trigger sites
  * below (onInstalled, onStartup, permissions.onAdded/onRemoved) - a future
- * LinkedIn content script (see #307's reply/DM ingest, landing separately)
- * has exactly one place to add its own sync call.
+ * LinkedIn content script has exactly one place to add its own sync call.
  */
 export async function syncLinkedInContentScripts(): Promise<void> {
-  await Promise.all([syncLinkedInContentScript(), syncLinkedInObserveContentScript()]);
+  await Promise.all([
+    syncLinkedInContentScript(),
+    syncLinkedInObserveContentScript(),
+    // #307's reply/DM ingest keeps its registration in its own module so two
+    // parallel branches did not both edit this file; the call belongs here.
+    registerLinkedInReplyIngestScript(),
+  ]);
 }
 
 // #203: exported so tests can drive the install/update branch directly

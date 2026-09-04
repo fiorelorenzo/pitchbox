@@ -23,7 +23,11 @@ export default defineConfig({
       // https://crxjs.dev/concepts/content and the `contentScripts` option
       // in @crxjs/vite-plugin).
       contentScripts: {
-        standaloneFiles: ['src/content/linkedin-comment.ts', 'src/content/linkedin-observe.ts'],
+        standaloneFiles: [
+          'src/content/linkedin-comment.ts',
+          'src/content/linkedin-observe.ts',
+          'src/content/linkedin-reply-ingest.ts',
+        ],
       },
     }),
   ],
