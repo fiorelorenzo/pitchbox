@@ -8,6 +8,7 @@ import {
   ingestObservedTargets,
   MAX_OBSERVED_TARGETS_BATCH,
 } from '@pitchbox/shared/observed-targets';
+import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist';
 
 // Server side of the observation buffer (#301): the extension's content
 // script watches linkedin.com passively and posts what it saw here, on a
@@ -72,6 +73,26 @@ export async function POST({ request }: { request: Request }) {
     .where(eq(schema.platforms.slug, body.platform))
     .limit(1);
   if (!platform) throw error(404, 'unknown platform');
+
+  // Same reason as the suggest route: #316 shipped the collector switch and
+  // the kill switch, and the collector is supposed to be off by default, but
+  // nothing here refused a post that ignored either. An extension build that
+  // never polls the read path, or a tab whose content script predates the
+  // flip, would keep filling the buffer with third-party post text an admin
+  // has explicitly said not to collect. Gated on the LinkedIn switch only,
+  // since `linkedin_assist` is what the setting names.
+  if (platform.slug === 'linkedin') {
+    const assist = await loadLinkedInAssistDeviceState(db, project.organizationId);
+    if (!assist.collectorEnabled) {
+      // 403 rather than the suggest route's renderable 200: this caller is a
+      // background collector with no human waiting on a rendered answer, and
+      // a hard refusal is what makes it stop.
+      throw error(403, assist.killSwitch ? 'kill_switch' : 'collector_disabled');
+    }
+    if (assist.projectId !== project.id) {
+      throw error(403, 'project_not_bound');
+    }
+  }
 
   // Delegate the write and the dedup entirely to LI-3's ingest service - no
   // hand-rolled insert here. `body.items` is passed through unvalidated:
