@@ -3,7 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // #203: minimal chrome mock covering everything background.ts touches at
 // import time (listener registration) plus what handleInstalled/applyAlarms
 // exercise: storage.local get/set, alarms clear/create, and runtime.getManifest
-// for the upgrade message's `to` version.
+// for the upgrade message's `to` version. `permissions`/`scripting` cover
+// syncLinkedInContentScript (#306's fix for the linkedin-compliance rule 6
+// finding): `contains` defaults to false so these existing tests exercise it
+// as a no-op, same as a fresh install with the LinkedIn permission never granted.
 (globalThis as any).chrome = {
   storage: {
     local: {
@@ -27,6 +30,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
     clear: vi.fn(async () => true),
     create: vi.fn(),
     onAlarm: { addListener: vi.fn() },
+  },
+  permissions: {
+    contains: vi.fn(async () => false),
+    request: vi.fn(async () => true),
+    remove: vi.fn(async () => true),
+    onAdded: { addListener: vi.fn() },
+    onRemoved: { addListener: vi.fn() },
+  },
+  scripting: {
+    getRegisteredContentScripts: vi.fn(async () => []),
+    registerContentScripts: vi.fn(async () => undefined),
+    unregisterContentScripts: vi.fn(async () => undefined),
   },
   runtime: {
     onInstalled: { addListener: vi.fn() },

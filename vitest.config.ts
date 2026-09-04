@@ -11,6 +11,35 @@ function testDatabaseUrl() {
 }
 
 export default defineConfig({
+  // @crxjs/vite-plugin's `?script`/`?iife` import suffix (used by
+  // extension/src/background.ts to resolve the built path of a dynamically
+  // registered content script, e.g. linkedin-comment.ts - see #308's
+  // linkedin-compliance rule 6 and syncLinkedInContentScript's doc comment)
+  // is only understood by the crx() plugin wired into
+  // extension/vite.config.ts for the real build. This suite runs under this
+  // root config instead (no crx plugin), so without a stub, Vite falls back
+  // to its default handling of an unrecognised query string: load and
+  // evaluate the referenced module for real. For a content script that runs
+  // top-level browser-only code (e.g. `location.href`), that throws under
+  // Node - and it would run on every test that merely imports background.ts,
+  // whether or not the resolved path is ever used. Stub it to an inert path
+  // string instead, mirroring the shape crx's own transform returns.
+  plugins: [
+    {
+      name: 'stub-crx-dynamic-script-imports',
+      enforce: 'pre' as const,
+      resolveId(source: string) {
+        if (source.endsWith('?script') || source.endsWith('?iife')) return `\0${source}`;
+        return null;
+      },
+      load(id: string) {
+        if (id.startsWith('\0') && (id.endsWith('?script') || id.endsWith('?iife'))) {
+          return 'export default "stub-content-script.js";';
+        }
+        return null;
+      },
+    },
+  ],
   // SvelteKit's `$lib` alias so tests can import server route handlers
   // (`web/src/routes/**/+server.ts`) that resolve `$lib/server/...` at module load.
   resolve: {

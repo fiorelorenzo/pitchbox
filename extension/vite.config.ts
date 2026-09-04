@@ -7,7 +7,26 @@ import manifest from './manifest.config';
 import pkg from './package.json' with { type: 'json' };
 
 export default defineConfig({
-  plugins: [svelte(), tailwindcss(), crx({ manifest })],
+  plugins: [
+    svelte(),
+    tailwindcss(),
+    crx({
+      manifest,
+      // linkedin-comment.ts is never declared in manifest.config.ts's static
+      // content_scripts (that would grant the LinkedIn host permission at
+      // install, exactly what #317's optional-permission model avoids) - it
+      // is registered dynamically instead, once the user grants the LinkedIn
+      // permission (see background.ts's syncLinkedInContentScript). A
+      // dynamically-registered MV3 content script can't be an ES module, so
+      // this forces it to build as a standalone IIFE, resolved at runtime
+      // through the `?script` import in background.ts (see
+      // https://crxjs.dev/concepts/content and the `contentScripts` option
+      // in @crxjs/vite-plugin).
+      contentScripts: {
+        standaloneFiles: ['src/content/linkedin-comment.ts'],
+      },
+    }),
+  ],
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
     // The backend the extension defaults to on a fresh install. Overridable at
