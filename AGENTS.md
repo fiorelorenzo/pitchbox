@@ -48,6 +48,33 @@ pitchbox-postgres psql -U pitchbox -d pitchbox -c "CREATE DATABASE
 pitchbox_test OWNER pitchbox;"` - it then persists in the `pitchbox-pg-data`
 volume until `docker compose down -v`.
 
+**There are two vitest configs, and a third one for compliance.** The root
+`vitest.config.ts` is what CI runs and what a `pnpm exec vitest run` from the
+repo root uses. `extension/vitest.config.ts` exists so a workspace-scoped
+`pnpm -F @pitchbox/extension exec vitest run` resolves the same Svelte the root
+config does: it merges `extension/vite.config.ts` (which is also the crxjs
+build config, so the fix does not belong there) with
+`resolve.conditions: ['browser']`. Without it, Svelte resolves to its server
+build and every `mount()` test fails in the workspace run while passing in CI,
+which cost a bisect against `main` before #339 fixed it. Both entry points now
+report the same 239 tests.
+
+`pnpm run test:linkedin-compliance` is a **third** config
+(`vitest.compliance.config.ts`) and a required CI check. It is not a unit suite:
+it parses the real extension source and manifest and fails the build on six
+prohibitions (no request toward linkedin.com or licdn, no cookie or storage read
+inside a LinkedIn content script, no synthetic click or submit on a
+`linkedin-dom.ts` node, no alarm reachable from LinkedIn code, no network call
+in the LinkedIn platform directory, and `https://www.linkedin.com/*` staying an
+optional host permission rather than a blanket grant). Run it before touching
+anything under `extension/src/content/linkedin-*` or the manifest. Rule 2
+derives its scan set from the static `content_scripts` **and** from any
+`chrome.scripting.registerContentScripts` call whose matches mention LinkedIn,
+because the LinkedIn grant is optional and its scripts register at runtime; a
+LinkedIn-looking script under `content/` that no registration accounts for is
+itself a violation, so wire the registration rather than working around the
+checker (#350).
+
 ### Local verification: run the minimal covering subset
 
 CI (`.github/workflows/ci.yml`) runs the full lint + typecheck + build + test
@@ -244,6 +271,29 @@ agent CLIs to stay lean.
 - **DB access is centralised in `shared/`.** CLI, web server routes, and daemon all import from `@pitchbox/shared/db` (and subpaths). Never spin up an ad-hoc `pg` client.
 - **Runner indirection.** Each campaign snapshots its runner at creation, each run snapshots it again. Code that dispatches a run reads the snapshot - do not hardcode `claude-code`.
 - **Platform indirection.** Same for `ReplyReader` - the null reader is the current default for Reddit until a real DM reader lands (M3).
+- **A switch is enforced where the effect happens, not where it is read.** The
+  org-level LinkedIn assist switch, the collector switch and the kill switch
+  (`shared/src/linkedin-assist.ts`, settings at `/settings/linkedin-assist`) are
+  checked inside `POST /api/extension/suggest` and `POST /api/extension/observations`,
+  not only served to the extension by `GET /api/extension/linkedin-assist`. They
+  shipped enforced only client-side, and both routes happily streamed
+  suggestions and wrote observations for an org whose assistant was off (#358).
+  Any new route on that plane loads `loadLinkedInAssistDeviceState` and refuses:
+  a stolen device token, an extension build that never polls, and a tab left
+  open across the flip all arrive as an ordinary authenticated request. The
+  refusal shapes differ on purpose: `suggest` answers a renderable `200
+{refused}` like its quota refusal, the collector gets a `403`, and
+  `kill_switch` is named distinctly from `assist_disabled` so the panel can say
+  who stopped it. A test for one of these routes that passes with the assistant
+  switched off is not testing the gate.
+- **The assist plane and the campaign plane want different models.** A campaign
+  run is unattended; a suggestion has a human watching an empty panel, and the
+  wait is the model deliberating before its first text token, not the spawn
+  (measured: 2.2s spawn plus session, 10 to 14s of thinking, #360). So
+  `resolveAssistRunnerConfig` in `web/src/lib/server/suggest.ts` asks for a fast
+  model unless an operator pinned one in `runner_configs`, which still wins.
+  Before optimising this path again, measure it on an idle box: a six-agent
+  wave running here inflated the same measurement by nearly 4x.
 - **`PITCHBOX_ROOT`** in `.env` must be an absolute path; the daemon and CLI use it to locate the repo when spawned by an agent from a different cwd.
 - **Secrets.** Account credentials are encrypted with `ENCRYPTION_KEY` via `shared/src/crypto.ts`. Never log decrypted secrets or commit `.env`.
 - **Do not run tests against the dev DB.** Vitest pins `DATABASE_URL` to `pitchbox_test` in `vitest.config.ts`; if you override it, match that pattern.
