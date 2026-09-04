@@ -32,7 +32,10 @@ export const QUOTA_DEFAULTS = {
   },
 } as const;
 
-const BUILTIN_PLAYBOOKS = [
+// Single source of truth for the built-in playbook slugs, mirrored by
+// SCENARIO_SLUGS in shared/src/campaigns/scenarios.ts. Exported so a test can
+// assert the two agree with each other and with playbooks/*.md on disk (#351).
+export const BUILTIN_PLAYBOOKS = [
   {
     slug: 'reddit-scout',
     name: 'Reddit scout',
@@ -130,10 +133,14 @@ export async function seedCore() {
     .values({ key: 'quota_defaults', value: QUOTA_DEFAULTS })
     .onConflictDoNothing();
 
+  const missingSlugs: string[] = [];
   let playbookCount = 0;
   for (const pb of BUILTIN_PLAYBOOKS) {
     const body = readPlaybookBody(pb.slug);
-    if (!body) continue;
+    if (!body) {
+      missingSlugs.push(pb.slug);
+      continue;
+    }
     const [existing] = await db
       .select()
       .from(schema.playbooks)
@@ -156,6 +163,17 @@ export async function seedCore() {
       });
     }
     playbookCount += 1;
+  }
+
+  // A registered slug with no markdown on disk is not a warning, it is a
+  // scenario the campaign form offers that no playbook can serve (#351): this
+  // is a setup-time script run by a human or CI, so failing loudly and naming
+  // every missing slug is correct - the alternative is a healthy-looking
+  // "playbooks seeded: N" count that hides exactly which N it dropped.
+  if (missingSlugs.length > 0) {
+    throw new Error(
+      `seedCore: missing playbooks/<slug>.md for registered slug(s): ${missingSlugs.join(', ')}`,
+    );
   }
 
   const result = await db.execute<{ count: number }>(
