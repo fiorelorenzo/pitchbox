@@ -43,9 +43,10 @@ describe('rule 1: no fetch/XMLHttpRequest/sendBeacon toward linkedin/licdn', () 
 
 describe('rule 2: no cookie/storage read in a LinkedIn content script', () => {
   const manifestPath = path.join(FIXTURES, 'rule2-content-script-storage', 'manifest.config.ts');
+  const noExtensionSrcDir = path.join(FIXTURES, 'rule2-content-script-storage', 'src');
 
   it('flags document.cookie in a file the fixture manifest registers as a LinkedIn content script', async () => {
-    const violations = await checkContentScriptStorageReads(manifestPath);
+    const violations = await checkContentScriptStorageReads(manifestPath, noExtensionSrcDir);
     expect(violations).toHaveLength(1);
     expect(violations[0].rule).toBe(2);
     expect(violations[0].file).toContain('bad-cookie-read.ts');
@@ -54,8 +55,26 @@ describe('rule 2: no cookie/storage read in a LinkedIn content script', () => {
     );
   });
 
-  it('passes on the real manifest, which registers no LinkedIn content script yet', async () => {
-    expect(await checkContentScriptStorageReads(REPO_PATHS.manifestPath)).toEqual([]);
+  it('flags document.cookie in a file registered dynamically via chrome.scripting.registerContentScripts (#348), not manifest.config.ts', async () => {
+    const dynamicManifestPath = path.join(
+      FIXTURES,
+      'rule2-dynamic-registration',
+      'manifest.config.ts',
+    );
+    const dynamicSrcDir = path.join(FIXTURES, 'rule2-dynamic-registration', 'src');
+    const violations = await checkContentScriptStorageReads(dynamicManifestPath, dynamicSrcDir);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].rule).toBe(2);
+    expect(violations[0].file).toContain('bad-cookie-read.ts');
+    expect(violations[0].message).toBe(
+      'linkedin-compliance rule 2: tests/compliance/fixtures/rule2-dynamic-registration/src/content/bad-cookie-read.ts reads document.cookie (document.cookie)',
+    );
+  });
+
+  it('passes on the real manifest and extension source, which register no LinkedIn content script yet', async () => {
+    expect(
+      await checkContentScriptStorageReads(REPO_PATHS.manifestPath, REPO_PATHS.extensionSrcDir),
+    ).toEqual([]);
   });
 });
 

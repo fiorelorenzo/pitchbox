@@ -95,10 +95,14 @@ function unwrap(expr: ts.Expression): ts.Expression {
 }
 
 /** Resolves a relative import specifier to a file on disk. Bare specifiers
- * (packages, `chrome`, `vitest`, ...) are intentionally not resolved. */
+ * (packages, `chrome`, `vitest`, ...) are intentionally not resolved. A
+ * trailing Vite query (`./foo.ts?script`, `?raw`, ...) is stripped first -
+ * background.ts imports a content script's built path with `?script`
+ * (see #348) and the module underneath is still the plain `.ts` file. */
 export function resolveModuleFile(fromFile: string, specifier: string): string | null {
-  if (!specifier.startsWith('.')) return null;
-  const base = path.resolve(path.dirname(fromFile), specifier);
+  const withoutQuery = specifier.replace(/\?.*$/, '');
+  if (!withoutQuery.startsWith('.')) return null;
+  const base = path.resolve(path.dirname(fromFile), withoutQuery);
   const stripped = base.replace(/\.(js|jsx|ts|tsx)$/, '');
   const candidates = [
     `${stripped}.ts`,
@@ -192,10 +196,84 @@ async function loadManifest(manifestPath: string): Promise<ManifestShape> {
   return mod.default;
 }
 
-/** The LinkedIn content-script file set, derived from manifest.config.ts
- * (never hardcoded): every `js` entry of every content_scripts block whose
- * `matches` mentions a linkedin.com/licdn.com origin. */
-export async function linkedinContentScriptFiles(manifestPath: string): Promise<string[]> {
+function findObjectProperty(
+  obj: ts.ObjectLiteralExpression,
+  name: string,
+): ts.Expression | undefined {
+  for (const prop of obj.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === name) {
+      return prop.initializer;
+    }
+  }
+  return undefined;
+}
+
+/** The content-script file set registered at runtime via
+ * `chrome.scripting.registerContentScripts([{ matches, js }])` rather than
+ * manifest.config.ts's static array - #348 moved LinkedIn's content script
+ * here specifically because a static content_scripts match is its own
+ * install-time permission grant, the same problem #317 solved for
+ * host_permissions. `js` entries are either string literals or an
+ * identifier imported with a Vite `?script` suffix; both resolve to the
+ * same underlying file. */
+function scriptingRegisteredLinkedinFiles(scanDir: string): string[] {
+  const files = new Set<string>();
+  for (const file of walkFiles(scanDir, ['.ts'])) {
+    const sf = parseSource(file);
+    const importSpecifierByLocalName = new Map<string, string>();
+    ts.forEachChild(sf, (node) => {
+      if (
+        ts.isImportDeclaration(node) &&
+        ts.isStringLiteral(node.moduleSpecifier) &&
+        node.importClause?.name
+      ) {
+        importSpecifierByLocalName.set(node.importClause.name.text, node.moduleSpecifier.text);
+      }
+    });
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+        const chain = node.expression.getText(sf);
+        const arg0 = node.arguments[0];
+        if (
+          /\bscripting\s*\.\s*registerContentScripts\b/.test(chain) &&
+          arg0 &&
+          ts.isArrayLiteralExpression(arg0)
+        ) {
+          for (const entry of arg0.elements) {
+            if (!ts.isObjectLiteralExpression(entry)) continue;
+            const matchesExpr = findObjectProperty(entry, 'matches');
+            const jsExpr = findObjectProperty(entry, 'js');
+            const isLinkedIn =
+              matchesExpr &&
+              ts.isArrayLiteralExpression(matchesExpr) &&
+              matchesExpr.elements.some(
+                (m) => ts.isStringLiteral(m) && NETWORK_TARGET_RE.test(m.text),
+              );
+            if (!isLinkedIn || !jsExpr || !ts.isArrayLiteralExpression(jsExpr)) continue;
+            for (const jsEl of jsExpr.elements) {
+              let specifier: string | undefined;
+              if (ts.isStringLiteral(jsEl)) specifier = jsEl.text;
+              else if (ts.isIdentifier(jsEl)) specifier = importSpecifierByLocalName.get(jsEl.text);
+              const resolved = specifier ? resolveModuleFile(file, specifier) : null;
+              if (resolved) files.add(resolved);
+            }
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
+  return [...files];
+}
+
+/** The LinkedIn content-script file set, derived from manifest.config.ts's
+ * static content_scripts array plus any chrome.scripting.registerContentScripts
+ * runtime registration in extensionSrcDir (never hardcoded filenames). */
+export async function linkedinContentScriptFiles(
+  manifestPath: string,
+  extensionSrcDir: string,
+): Promise<string[]> {
   const manifest = await loadManifest(manifestPath);
   const dir = path.dirname(manifestPath);
   const files = new Set<string>();
@@ -204,12 +282,16 @@ export async function linkedinContentScriptFiles(manifestPath: string): Promise<
     if (!isLinkedIn) continue;
     for (const js of entry.js ?? []) files.add(path.resolve(dir, js));
   }
+  for (const file of scriptingRegisteredLinkedinFiles(extensionSrcDir)) files.add(file);
   return [...files];
 }
 
-export async function checkContentScriptStorageReads(manifestPath: string): Promise<Violation[]> {
+export async function checkContentScriptStorageReads(
+  manifestPath: string,
+  extensionSrcDir: string,
+): Promise<Violation[]> {
   const violations: Violation[] = [];
-  const files = await linkedinContentScriptFiles(manifestPath);
+  const files = await linkedinContentScriptFiles(manifestPath, extensionSrcDir);
   for (const file of files) {
     if (!fs.existsSync(file)) {
       violations.push(
@@ -639,7 +721,7 @@ export function defaultRepoPaths(repoRoot: string): RepoPaths {
 export async function checkAll(paths: RepoPaths): Promise<Violation[]> {
   return [
     ...checkNetworkTargets(paths.extensionSrcDir),
-    ...(await checkContentScriptStorageReads(paths.manifestPath)),
+    ...(await checkContentScriptStorageReads(paths.manifestPath, paths.extensionSrcDir)),
     ...checkSyntheticInteractions(paths.extensionSrcDir, paths.linkedinDomPath),
     ...checkAlarmsReachability(paths.extensionSrcDir),
     ...checkLinkedinPlatformNetworkCalls(paths.linkedinPlatformDir),
