@@ -4,7 +4,7 @@ import { crx } from '@crxjs/vite-plugin';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import manifest from './manifest.config';
-import { panelContentScripts } from './build/panel-content-scripts';
+import { panelContentScripts } from './vite-plugins/panel-content-scripts';
 import pkg from './package.json' with { type: 'json' };
 
 export default defineConfig({
