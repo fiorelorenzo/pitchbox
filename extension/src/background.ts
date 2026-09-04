@@ -1,6 +1,7 @@
 import { runInboxSync } from './background/inbox-sync.js';
 import { runChatSync } from './background/chat-sync.js';
 import { registerLinkedInReplyIngestScript } from './background/linkedin-reply-ingest-registration.js';
+import { registerLinkedInCommentAssistScript } from './background/linkedin-comment-assist-registration.js';
 import {
   getSettings,
   patchPairing,
@@ -312,6 +313,8 @@ export async function syncLinkedInContentScripts(): Promise<void> {
     // #307's reply/DM ingest keeps its registration in its own module so two
     // parallel branches did not both edit this file; the call belongs here.
     registerLinkedInReplyIngestScript(),
+    // #314's in-page comment assist, same pattern for the same reason.
+    registerLinkedInCommentAssistScript(),
   ]);
 }
 

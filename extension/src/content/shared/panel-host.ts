@@ -24,6 +24,7 @@
  */
 
 import { mount, unmount, type Component } from 'svelte';
+import { reactiveProps } from './panel-props.svelte.js';
 // `?inline` hands back the compiled stylesheet as a string instead of having
 // Vite inject a <style> into the host document, which is the whole point: the
 // text goes into the shadow root and linkedin.com's <head> is never touched.
@@ -141,7 +142,12 @@ export function mountPanel<Props extends Record<string, unknown>>(
   };
   syncWidth();
 
-  const view = mount(component, { target: root, props });
+  // Reactive, not the caller's plain object: `mount()` does not make props
+  // reactive, so assigning onto a plain object re-renders nothing. The panel's
+  // entire state machine arrives through `update()` below, so this is what
+  // makes the panel able to show anything other than its first frame (#369).
+  const live = reactiveProps({ ...props });
+  const view = mount(component, { target: root, props: live });
 
   let alive = true;
   let observer: MutationObserver | null = null;
@@ -155,9 +161,7 @@ export function mountPanel<Props extends Record<string, unknown>>(
   const handle: PanelHandle<Props> = {
     update(next) {
       if (!alive) return;
-      Object.assign(props, next);
-      // Svelte 5 reads props reactively from the object it was handed, so
-      // assigning onto it is the update path; there is no `$set` any more.
+      Object.assign(live, next);
     },
     destroy() {
       if (!alive) return;

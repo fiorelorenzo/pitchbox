@@ -4,6 +4,7 @@ import { crx } from '@crxjs/vite-plugin';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import manifest from './manifest.config';
+import { panelContentScripts } from './vite-plugins/panel-content-scripts';
 import pkg from './package.json' with { type: 'json' };
 
 export default defineConfig({
@@ -30,6 +31,12 @@ export default defineConfig({
         ],
       },
     }),
+    // The panel-bearing scripts cannot go in the list above: crxjs builds
+    // those with `plugins: []`, so a Svelte component in one fails to parse
+    // (#369). They are built with the same IIFE shape by this plugin instead,
+    // which does run svelte(). PANEL_CONTENT_SCRIPTS is the single list it and
+    // background.ts's registration both read.
+    panelContentScripts(),
   ],
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
