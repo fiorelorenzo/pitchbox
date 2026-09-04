@@ -265,12 +265,6 @@ export const api = {
     });
   },
 
-  dmSyncStatus: async (backendUrl?: string): Promise<ApiResult<{ lastSyncAt: string | null }>> => {
-    const p = await pickPairing(backendUrl);
-    if (!p) return { ok: false, status: 0, error: 'not configured' };
-    return getJson(p, '/api/extension/dm-sync/status');
-  },
-
   /**
    * Redeem a short-lived pairing code against a backend to mint a device
    * token. Unlike every other call this needs no existing pairing and no

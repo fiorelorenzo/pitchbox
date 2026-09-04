@@ -50,10 +50,19 @@ function worseHealth(a: PairingHealth, b: PairingHealth): PairingHealth {
   return HEALTH_RANK[b] > HEALTH_RANK[a] ? b : a;
 }
 
+// #341: `unauthorized` (a revoked/broken token) and `unknown` (an optional
+// channel - Reddit Chat - that was simply never set up yet) must not read
+// the same. `unknown` is the default state of every fresh install, so
+// treating it as a problem would flag every freshly-paired, working device
+// as "needs attention". The dedicated RedditTokenCard already explains the
+// unconfigured-chat gap on its own, so an unknown channel here contributes
+// no warning of its own - only a genuinely broken (`unauthorized`/`error`)
+// channel, or the other channel's own status, can still push the pairing
+// into warn/error via worseHealth below.
 function channelHealth(status: SyncChannelStatus): PairingHealth {
-  if (status === 'ok') return 'ok';
   if (status === 'error') return 'error';
-  return 'warn'; // unauthorized or unknown
+  if (status === 'unauthorized') return 'warn';
+  return 'ok'; // ok or unknown
 }
 
 /**

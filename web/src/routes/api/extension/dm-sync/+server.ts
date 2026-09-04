@@ -81,20 +81,6 @@ function normaliseChannel(value: unknown): SyncChannelStatus {
     : 'unknown';
 }
 
-// The extension_last_dm_sync_at heartbeat used to be a single global
-// app_config row: any org's sync overwrote the value every other org read
-// back, and any org's device could read another org's last-sync time (#197).
-// Scope it by widening the key space to one row per organization instead of
-// adding a column/table - lower risk than a schema migration, since
-// app_config is already a free-form key/value store. A null organizationId
-// (self-host / auth-off, where requireExtensionAuth never resolves an org)
-// keeps today's single global key.
-function dmSyncHeartbeatKey(organizationId: number | null): string {
-  return organizationId != null
-    ? `extension_last_dm_sync_at:org:${organizationId}`
-    : 'extension_last_dm_sync_at';
-}
-
 async function persistDeviceSyncStatus(
   db: ReturnType<typeof getDb>,
   deviceId: number,
@@ -285,21 +271,7 @@ export async function POST({ request }: { request: Request }) {
 
   const commentMatch = matchIncomingCommentReplies(comments, commentDrafts, commentExisting);
 
-  // Record this device's last successful sync (#197): the device polled Reddit
-  // and reached us, so its last-sync must advance even when nothing new matched
-  // - otherwise the stale-device nudge (#202) would fire on an actively-syncing
-  // extension. We only advance it after a SUCCESSFUL persist, though: on the
-  // no-match path there is nothing to persist so we write it here; on the match
-  // path it is the final statement inside the transaction below, so a failed
-  // persist (rollback -> 500) leaves last-sync untouched and the device retries.
-  const nowIso = new Date().toISOString();
-  const lastSyncRow = { key: dmSyncHeartbeatKey(auth.organizationId), value: nowIso };
-
   if (inserts.length === 0 && commentMatch.messageInserts.length === 0) {
-    await db
-      .insert(schema.appConfig)
-      .values(lastSyncRow)
-      .onConflictDoUpdate({ target: schema.appConfig.key, set: { value: nowIso } });
     return json({ ok: true, inserted: 0, replied: 0, commentsInserted: 0, commentsReplied: 0 });
   }
 
@@ -405,13 +377,6 @@ export async function POST({ request }: { request: Request }) {
         details: { at: ev.repliedAt.toISOString() },
       });
     }
-
-    // #197: advance last-sync atomically with the replies we just persisted, so
-    // a rolled-back transaction never leaves last-sync ahead of the data.
-    await tx
-      .insert(schema.appConfig)
-      .values(lastSyncRow)
-      .onConflictDoUpdate({ target: schema.appConfig.key, set: { value: nowIso } });
   });
 
   // Tally replies per org as we go (a single sync batch could in principle

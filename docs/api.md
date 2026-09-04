@@ -56,7 +56,6 @@ POST /api/extension/draft/[id]/sent          # flip to 'sent' (user submitted on
 
 # Extension - reply sync (bearer-auth, per-device)
 POST /api/extension/dm-sync                  # inbox + chat poll → match drafts + status heartbeat
-GET  /api/extension/dm-sync/status           # last sync stamp + per-channel liveness
 
 # Export
 GET /api/export/[resource]?format=csv        # resource ∈ { drafts, contacts, conversations }
