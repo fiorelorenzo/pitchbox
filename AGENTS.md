@@ -95,6 +95,19 @@ pitchbox_test_<suffix>"`) and export `DATABASE_URL=postgres://pitchbox:pitchbox@
 127.0.0.1:5434/pitchbox_test_<suffix>` before `pnpm test` - nothing creates that
 database for you.
 
+**And it has to be exported, not written into the worktree's `.env`.** That
+distinction cost a wave of parallel agents a round of results on 2026-09-04.
+`vitest.config.ts`'s `testDatabaseUrl()` and `tests/global-setup.ts` both read
+`process.env.DATABASE_URL` at config-load time, while dotenv only loads much
+later, inside `shared/src/db/client.ts`. So a `DATABASE_URL` that exists only in
+`.env` is not visible when the decision is made: `pnpm test` and `pnpm run
+migrate` fall back to the shared `pitchbox_test`, four worktrees truncate the
+same tables in each other's `beforeEach`, and the failures read like flaky tests
+rather than like a collision. `set -a && source .env && set +a` in the shell that
+runs the command works; putting the value in `.env` alone does not. Confirm it
+rather than assuming, since the fallback is silent:
+`psql "$DATABASE_URL" -c 'select current_database()'`.
+
 **`.env` has three values a second worktree can't reuse as-is.** `PITCHBOX_ROOT`
 (`.env.example`) must be this worktree's own absolute path - the daemon and CLI
 use it to locate the repo when an agent spawns them from elsewhere, and a stale
