@@ -5,6 +5,7 @@ import {
   checkAll,
   checkAlarmsReachability,
   checkContentScriptStorageReads,
+  linkedinContentScriptFiles,
   checkHostPermissions,
   checkLinkedinPlatformNetworkCalls,
   checkNetworkTargets,
@@ -54,8 +55,44 @@ describe('rule 2: no cookie/storage read in a LinkedIn content script', () => {
     );
   });
 
-  it('passes on the real manifest, which registers no LinkedIn content script yet', async () => {
-    expect(await checkContentScriptStorageReads(REPO_PATHS.manifestPath)).toEqual([]);
+  it('follows a dynamic chrome.scripting.registerContentScripts registration to the file it registers', async () => {
+    // The hole this rule shipped with: #348 registered the first real LinkedIn
+    // content script at runtime rather than in the manifest (so the LinkedIn
+    // grant stays optional, #317), which took it out of the static array this
+    // rule derived its scan set from. A planted `document.cookie` in
+    // extension/src/content/linkedin-comment.ts then passed 13/13, measured.
+    const manifestPath = path.join(FIXTURES, 'rule2-dynamic-registration', 'manifest.config.ts');
+    const sourceRoot = path.join(FIXTURES, 'rule2-dynamic-registration', 'src');
+    const violations = await checkContentScriptStorageReads(manifestPath, sourceRoot);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].rule).toBe(2);
+    expect(violations[0].file).toContain('linkedin-comment.ts');
+    expect(violations[0].message).toContain('reads localStorage');
+  });
+
+  it('refuses to pass over a LinkedIn-looking script that no registration accounts for', async () => {
+    // A scan set that silently empties is the skippable check #308 forbids, in
+    // a slower form: it reports green on exactly the file it exists for.
+    const manifestPath = path.join(FIXTURES, 'rule2-unaccounted-script', 'manifest.config.ts');
+    const sourceRoot = path.join(FIXTURES, 'rule2-unaccounted-script', 'src');
+    const violations = await checkContentScriptStorageReads(manifestPath, sourceRoot);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].file).toContain('linkedin-orphan.ts');
+    expect(violations[0].message).toContain('would never scan it');
+  });
+
+  it('scans the real repo, and the file it scans is the dynamically registered one', async () => {
+    const files = await linkedinContentScriptFiles(
+      REPO_PATHS.manifestPath,
+      REPO_PATHS.extensionSrcDir,
+    );
+    // Asserting the set is non-empty and names the real script is the assertion
+    // that would have caught the hole above; `toEqual([])` on the violations
+    // alone passes just as well when nothing was scanned at all.
+    expect(files.some((f) => f.endsWith('content/linkedin-comment.ts'))).toBe(true);
+    expect(
+      await checkContentScriptStorageReads(REPO_PATHS.manifestPath, REPO_PATHS.extensionSrcDir),
+    ).toEqual([]);
   });
 });
 
