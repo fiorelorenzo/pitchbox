@@ -122,6 +122,8 @@ export const en = {
     'Could not find the DM compose box for draft {draftId}.',
   'activity.reddit-action.account-handle-unresolved':
     'Could not determine your Reddit account for draft {draftId}; reply matching may be less accurate.',
+  'activity.reddit-action.comment-id-unresolved':
+    'Could not read the id of the comment posted for draft {draftId}; replies to it will not be detected.',
   'activity.settings.changed': 'Settings updated.',
   'activity.system.boot': 'Service worker started.',
   'activity.system.alarms-applied': 'Alarms re-applied ({interval} min).',

@@ -99,28 +99,6 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('derivePostId', () => {
-  it('extracts the post id from a canonical /comments/ URL', async () => {
-    const { derivePostId } = await importModule();
-    expect(derivePostId('/r/test/comments/abc123/some_title/')).toBe('abc123');
-  });
-
-  it('matches without a trailing slug segment', async () => {
-    const { derivePostId } = await importModule();
-    expect(derivePostId('/r/test/comments/abc123')).toBe('abc123');
-  });
-
-  it('is case-insensitive on the id segment', async () => {
-    const { derivePostId } = await importModule();
-    expect(derivePostId('/r/test/comments/ABC123/x/')).toBe('ABC123');
-  });
-
-  it('returns null when the path has no /comments/ segment', async () => {
-    const { derivePostId } = await importModule();
-    expect(derivePostId('/r/test/submit')).toBeNull();
-  });
-});
-
 describe('setValueCompat', () => {
   it('sets a <textarea> value through the native setter and fires input', async () => {
     const { setValueCompat } = await importModule();

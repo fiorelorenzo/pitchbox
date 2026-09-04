@@ -12,12 +12,14 @@
  * those by spec, so there is nothing this fallback can pierce there, and it
  * does not attempt to.
  *
- * NOTE: no browser is available in this environment, so this fallback could
- * not be checked against a live Reddit page. The jsdom fixtures in
- * `tests/content/reddit-dom.test.ts` use synthetic shadow-DOM markup modeled
- * on public knowledge of Reddit's web components, not a captured snapshot.
- * Follow-up: capture a real www.reddit.com DOM snapshot once a browser
- * environment is available and replay it as a fixture here.
+ * Checked against a real www.reddit.com thread on 2026-09-04 from a signed-in
+ * session, which settled what the fixtures used to only guess at: a comment is a
+ * light-DOM `shreddit-comment` element carrying `thingid`, `author`, `created`
+ * and `permalink` attributes, and old.reddit.com's `.thing[data-fullname]`
+ * markup is gone - that host now serves the same frontend, so there were zero
+ * `[data-fullname]` nodes on the page. The compose controls do sit behind
+ * shadow boundaries, so the fallback below stays. Regenerate the captured
+ * fixture with `node scripts/capture-reddit-fixtures.mjs --cdp <endpoint>`.
  */
 
 /**
@@ -100,4 +102,38 @@ export function findCommentSubmitButton(root: ParentNode = document): HTMLButton
       /comment|reply|post/i.test(b.textContent?.trim() ?? ''),
     ) ?? null
   );
+}
+
+/**
+ * The `t1_...` thing id of the newest comment on this page authored by
+ * `handle`, or null when there is none. This is how a sent comment draft learns
+ * its own id: the page the human just commented on is the only place that id
+ * exists for us, since Reddit's public JSON answers 403 to any server-side
+ * fetch (#337).
+ *
+ * `notBeforeMs` guards the case that actually goes wrong: the account has
+ * commented on this thread before, so "newest by us" is only our comment if it
+ * is also newer than the moment we armed the send. Without it, an old comment
+ * of ours would be recorded as the one just posted, and every reply to that old
+ * comment would be attributed to this draft.
+ */
+export function findOurCommentId(
+  handle: string,
+  opts: { notBeforeMs?: number } = {},
+): string | null {
+  const wanted = handle.toLowerCase();
+  let best: { id: string; createdMs: number } | null = null;
+  for (const el of queryDeepAll<Element>('[thingid^="t1_"]')) {
+    if ((el.getAttribute('author') ?? '').toLowerCase() !== wanted) continue;
+    const id = el.getAttribute('thingid');
+    if (!id) continue;
+    // Reddit renders `created` as an ISO timestamp; treat an unparseable one as
+    // "no evidence of when", which the notBeforeMs gate then rejects.
+    const createdMs = Date.parse(el.getAttribute('created') ?? '');
+    if (opts.notBeforeMs != null && !(createdMs >= opts.notBeforeMs)) continue;
+    if (!best || (Number.isFinite(createdMs) && createdMs > best.createdMs)) {
+      best = { id, createdMs: Number.isFinite(createdMs) ? createdMs : -Infinity };
+    }
+  }
+  return best?.id ?? null;
 }

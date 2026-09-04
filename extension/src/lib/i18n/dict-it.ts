@@ -127,6 +127,8 @@ export const it = {
     'Impossibile trovare il box di composizione del DM per il draft {draftId}.',
   'activity.reddit-action.account-handle-unresolved':
     'Impossibile determinare il tuo account Reddit per il draft {draftId}; la corrispondenza delle risposte potrebbe essere meno precisa.',
+  'activity.reddit-action.comment-id-unresolved':
+    "Impossibile leggere l'id del commento pubblicato per il draft {draftId}; le risposte non verranno rilevate.",
   'activity.settings.changed': 'Impostazioni aggiornate.',
   'activity.system.boot': 'Service worker avviato.',
   'activity.system.alarms-applied': 'Alarms riapplicati ({interval} min).',
