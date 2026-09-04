@@ -8,7 +8,7 @@ import { HOUSE_STYLE_HEADING, HOUSE_STYLE_SECTION } from '../src/house-style.js'
 // keep drafted outreach reading like a person wrote it. The section is duplicated
 // on purpose (a playbook body is shipped standalone - seeded into `playbooks.body`
 // and handed to the agent as the whole prompt, with no include mechanism), so the
-// only thing keeping the 13 copies from drifting is this test.
+// only thing keeping the 15 copies from drifting is this test.
 const PLAYBOOKS_DIR = fileURLToPath(new URL('../../playbooks', import.meta.url));
 const HEADING = '## House style: write like a human';
 
@@ -40,7 +40,7 @@ const bodies = new Map(files.map((f) => [f, readFileSync(join(PLAYBOOKS_DIR, f),
 
 describe('playbooks house style', () => {
   it('finds the playbook corpus', () => {
-    expect(files.length).toBeGreaterThanOrEqual(13);
+    expect(files.length).toBeGreaterThanOrEqual(15);
   });
 
   it.each(files)('%s carries the House style section', (file) => {
