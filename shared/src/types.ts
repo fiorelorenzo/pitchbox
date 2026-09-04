@@ -1,5 +1,13 @@
 export type DraftState =
-  'pending_review' | 'approved' | 'rejected' | 'sent' | 'not_sent' | 'replied' | 'dead';
+  | 'pending_review'
+  | 'approved'
+  | 'rejected'
+  | 'sent'
+  | 'not_sent'
+  | 'replied'
+  | 'dead'
+  // Issue #335: terminal, non-punitive - the platform refused delivery, distinct from a human rejection.
+  | 'undeliverable';
 
 export type DraftKind = 'dm' | 'post' | 'post_comment' | 'comment_reply';
 

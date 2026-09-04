@@ -16,9 +16,16 @@
 // Usage:
 //   node scripts/capture-reddit-fixtures.mjs --cdp http://127.0.0.1:9391
 //   node scripts/capture-reddit-fixtures.mjs --cdp <endpoint> --thread <permalink>
+//   node scripts/capture-reddit-fixtures.mjs --cdp <endpoint> --target compose --recipient <handle>
 //
 // The endpoint is any Chrome with an open CDP port signed in to Reddit. On Lorenzo's
 // devbox that is `omp-chrome up personal`, which prints the endpoint.
+//
+// `--target compose` (issue #335) captures the DM-compose page instead of a comment
+// thread, into compose-undeliverable.html. Point `--recipient` at an account the
+// signed-in session already knows declines message requests (Reddit's own async
+// validation is what renders "unable to send a message request to this account" - this
+// does not fabricate that state, it only waits for and records it).
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -42,6 +49,12 @@ const THREAD = arg(
   'thread',
   '/r/forgottenrealms/comments/1vst5rd/which_forgotten_realms_historical_event_deserves/',
 );
+const TARGET = arg('target', 'comment');
+const RECIPIENT = arg('recipient');
+if (TARGET === 'compose' && !RECIPIENT) {
+  console.error('--recipient <handle> is required with --target compose');
+  process.exit(1);
+}
 
 async function attach(cdpUrl) {
   const ver = await (await fetch(new URL('/json/version', cdpUrl))).json();
@@ -263,26 +276,63 @@ async function whoami(page) {
 }
 
 const page = await attach(CDP);
-await page.goto(`https://www.reddit.com${THREAD}`);
-const handle = await whoami(page);
-if (!handle) {
-  console.error('not signed in to Reddit on this endpoint (api/me.json gave no name)');
+
+if (TARGET === 'compose') {
+  await page.goto(`https://www.reddit.com/message/compose?to=${encodeURIComponent(RECIPIENT)}`);
+  const handle = await whoami(page);
+  if (!handle) {
+    console.error('not signed in to Reddit on this endpoint (api/me.json gave no name)');
+    page.close();
+    process.exit(1);
+  }
+  // The "unable to send a message request" validation is async (#335) - poll for the
+  // helper text or Send going disabled instead of a fixed sleep, up to 10s.
+  const settled = await page.eval(async () => {
+    for (let i = 0; i < 20; i++) {
+      const helper = document.querySelector('faceplate-form-helper-text');
+      if (helper && /unable to send a message request/i.test(helper.textContent || '')) return true;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    return false;
+  });
+  if (!settled) {
+    console.error(
+      `validation never resolved to "unable to send a message request" for ${RECIPIENT} within 10s - ` +
+        'pick a recipient known to decline message requests, or this account may accept them',
+    );
+    page.close();
+    process.exit(1);
+  }
+  const html = await page.eval(extractAnonymised, 'shreddit-app, main, body', handle, '');
+  mkdirSync(OUT_DIR, { recursive: true });
+  const out = join(OUT_DIR, 'compose-undeliverable.html');
+  writeFileSync(out, `${html}\n`);
+  console.log(
+    `compose-undeliverable.html: ${html.length} bytes (captured as ${handle} -> fixture_owner)`,
+  );
   page.close();
-  process.exit(1);
+} else {
+  await page.goto(`https://www.reddit.com${THREAD}`);
+  const handle = await whoami(page);
+  if (!handle) {
+    console.error('not signed in to Reddit on this endpoint (api/me.json gave no name)');
+    page.close();
+    process.exit(1);
+  }
+  await page.eval(async () => {
+    window.scrollBy(0, 1600);
+    await new Promise((r) => setTimeout(r, 2500));
+    window.scrollTo(0, 0);
+  });
+  const html = await page.eval(
+    extractAnonymised,
+    'shreddit-app, main, body',
+    handle,
+    /\/r\/([^/]+)/.exec(THREAD)?.[1] ?? '',
+  );
+  mkdirSync(OUT_DIR, { recursive: true });
+  const out = join(OUT_DIR, 'comment-thread.html');
+  writeFileSync(out, `${html}\n`);
+  console.log(`comment-thread.html: ${html.length} bytes (captured as ${handle} -> fixture_owner)`);
+  page.close();
 }
-await page.eval(async () => {
-  window.scrollBy(0, 1600);
-  await new Promise((r) => setTimeout(r, 2500));
-  window.scrollTo(0, 0);
-});
-const html = await page.eval(
-  extractAnonymised,
-  'shreddit-app, main, body',
-  handle,
-  /\/r\/([^/]+)/.exec(THREAD)?.[1] ?? '',
-);
-mkdirSync(OUT_DIR, { recursive: true });
-const out = join(OUT_DIR, 'comment-thread.html');
-writeFileSync(out, `${html}\n`);
-console.log(`comment-thread.html: ${html.length} bytes (captured as ${handle} -> fixture_owner)`);
-page.close();

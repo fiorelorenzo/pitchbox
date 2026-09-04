@@ -230,6 +230,20 @@ export const api = {
     });
   },
 
+  undeliverable: async (
+    draftId: number,
+    /** Kept verbatim - the platform's own reason string, read from the page. */
+    reason: string,
+    backendUrl?: string,
+  ): Promise<ApiResult<{ ok: true }>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    return postJson(p, `/api/extension/draft/${draftId}/undeliverable`, {
+      reason,
+      detectedAt: new Date().toISOString(),
+    });
+  },
+
   sent: async (
     draftId: number,
     sentContent?: string,

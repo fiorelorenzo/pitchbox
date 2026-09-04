@@ -443,6 +443,11 @@ export const drafts = pgTable(
     // triggered drafting. `drafts.kind` accepts 'reply_dm' / 'reply_comment'
     // alongside the existing outbound kinds.
     parentMessageId: bigint('parent_message_id', { mode: 'number' }),
+    // Issue #335: the platform's own reason string, kept verbatim, once a
+    // DM draft turns out to be undeliverable (Reddit disabling Send with
+    // "unable to send a message request to this account" is the first
+    // case). Set only when state flips to 'undeliverable'.
+    undeliverableReason: text('undeliverable_reason'),
   },
   (t) => ({
     byState: index('drafts_state_idx').on(t.state),
@@ -523,6 +528,14 @@ export const contactHistory = pgTable(
     replyCheckedAt: timestamp('reply_checked_at', { withTimezone: true }),
     chatRoomId: text('chat_room_id'),
     platformContextUrl: text('platform_context_url'),
+    // Issue #335: sticky "this account cannot be messaged" fact, distinct
+    // from an ordinary prior contact - checkUncontactable
+    // (shared/src/contact-dedup.ts) reads it with no time window, unlike
+    // checkContactDedup's windowed warn/skip. reason keeps the platform's
+    // own wording verbatim (the same string drafts.undeliverable_reason
+    // carries on the draft that produced this row).
+    uncontactable: boolean('uncontactable').notNull().default(false),
+    uncontactableReason: text('uncontactable_reason'),
   },
   (t) => ({
     byTarget: index('contact_history_target_idx').on(t.platformId, t.targetUser),

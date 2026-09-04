@@ -10,6 +10,7 @@ import {
 import { groupVariants } from '@pitchbox/shared/draft-variants';
 import {
   checkContactDedup,
+  checkUncontactable,
   parseDedupPolicy,
   DEFAULT_DEDUP_POLICY,
 } from '@pitchbox/shared/contact-dedup';
@@ -241,6 +242,25 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
       });
       if (r.blocked) {
         skipped.push({ targetUser: d.targetUser ?? null, reason: r.reason });
+        continue;
+      }
+    }
+
+    // Issue #335: a DM target already known to reject message requests on
+    // this platform is skipped outright, ahead of and regardless of the
+    // ordinary dedup window/mode below - "cannot be contacted" is not the
+    // same fact as "was contacted recently".
+    if (d.targetUser && d.kind === 'dm') {
+      const uncontactableCheck = await checkUncontactable(db, {
+        platformId: campaign.platformId,
+        targetUser: d.targetUser,
+        organizationId: orgId,
+      });
+      if (uncontactableCheck.uncontactable) {
+        skipped.push({
+          targetUser: d.targetUser,
+          reason: `uncontactable: ${uncontactableCheck.reason ?? 'unknown reason'}`,
+        });
         continue;
       }
     }

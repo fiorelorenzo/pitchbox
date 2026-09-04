@@ -238,6 +238,161 @@ describe('pitchbox drafts:create', () => {
     expect(events[0].draftId).toBe(drafts[0].id);
   });
 
+  it('skips a target already marked uncontactable, and reports it in the response (issue #335)', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'demo-uncontactable', name: 'DU' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        handle: 'sender-u',
+        role: 'personal',
+      })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c-uncontactable',
+        skillSlug: 'reddit-scout',
+        config: {},
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    // A prior draft to 'bob' already came back undeliverable (the extension
+    // route this mirrors is web/tests/extension-undeliverable.test.ts).
+    await db.insert(schema.contactHistory).values({
+      platformId: platform.id,
+      accountHandle: 'sender-u',
+      targetUser: 'bob',
+      organizationId: org.id,
+      uncontactable: true,
+      uncontactableReason: 'You are unable to send a message request to this account.',
+    });
+
+    const payload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'dm',
+        targetUser: 'alice',
+        body: 'hey alice, ...',
+        sourceRef: {},
+        metadata: {},
+      },
+      {
+        accountId: account.id,
+        kind: 'dm',
+        targetUser: 'bob',
+        body: 'hey bob, ...',
+        sourceRef: {},
+        metadata: {},
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, payload);
+    const lines = out.trim().split('\n');
+    const res = JSON.parse(lines[lines.length - 1]);
+    expect(res.ok).toBe(true);
+    expect(res.data.inserted).toBe(1);
+    expect(res.data.skipped).toHaveLength(1);
+    expect(res.data.skipped[0].targetUser).toBe('bob');
+    expect(res.data.skipped[0].reason).toBe(
+      'uncontactable: You are unable to send a message request to this account.',
+    );
+
+    // Only alice's draft exists - the loop actually closes: bob is never
+    // offered again by the path that would have drafted for him.
+    const drafts = await db.select().from(schema.drafts);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].targetUser).toBe('alice');
+  });
+
+  it('does not skip a post/post_comment draft for an uncontactable DM target - the mark is DM-specific', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'demo-uncontactable-comment', name: 'DUC' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        handle: 'sender-uc',
+        role: 'personal',
+      })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c-uncontactable-comment',
+        skillSlug: 'reddit-commenter',
+        config: {},
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    await db.insert(schema.contactHistory).values({
+      platformId: platform.id,
+      accountHandle: 'sender-uc',
+      targetUser: 'carol',
+      organizationId: org.id,
+      uncontactable: true,
+      uncontactableReason: 'You are unable to send a message request to this account.',
+    });
+
+    const payload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'post_comment',
+        targetUser: 'carol',
+        subreddit: 'fixture',
+        body: 'a public reply, not a DM',
+        sourceRef: {},
+        metadata: {},
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, payload);
+    const lines = out.trim().split('\n');
+    const res = JSON.parse(lines[lines.length - 1]);
+    expect(res.ok).toBe(true);
+    // Reddit cannot refuse a public reply the way it refuses a DM request -
+    // the uncontactable mark from the DM path must not block the comment path.
+    expect(res.data.inserted).toBe(1);
+    expect(res.data.skipped).toHaveLength(0);
+  });
+
   it('skips drafts targeting a blocklisted subreddit and reports them in the response', async () => {
     const db = getDb();
     const [platform] = await db

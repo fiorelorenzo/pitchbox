@@ -127,6 +127,9 @@ export const DRAFT_STATE: Record<string, BadgeStyle> = {
   sent: { label: 'Sent', tone: 'emerald' },
   replied: { label: 'Replied', tone: 'violet' },
   rejected: { label: 'Rejected', tone: 'rose' },
+  // Issue #335: the platform refused delivery, not the human - terminal like
+  // rejected/sent, but slate rather than rose since nothing went wrong.
+  undeliverable: { label: 'Undeliverable', tone: 'slate' },
 };
 
 // A run lifecycle mirrors draft state: queued/running → success (emerald) or

@@ -89,6 +89,27 @@ export function findComposeSendButton(): HTMLButtonElement | null {
   );
 }
 
+/**
+ * The reason Reddit gives for refusing a DM, once the async recipient
+ * validation resolves against a user who does not accept message requests
+ * (#335: "You are unable to send a message request to this account."). The
+ * page renders it as a faceplate-form-helper-text leaf under the recipient
+ * faceplate-text-input and disables Send, but carries neither role="alert"
+ * nor aria-invalid on it - there is nothing to observe until the helper
+ * text itself shows up, so callers must poll rather than read once at load.
+ * Requiring Send to also be disabled guards against matching leftover markup
+ * from a validation that has since cleared.
+ */
+export function findUndeliverableReason(): string | null {
+  const sendBtn = findComposeSendButton();
+  if (!sendBtn?.disabled) return null;
+  for (const helper of queryDeepAll<HTMLElement>('faceplate-form-helper-text')) {
+    const text = (helper.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (/unable to send a message request/i.test(text)) return text;
+  }
+  return null;
+}
+
 export function findCommentTextarea(): HTMLTextAreaElement | HTMLElement | null {
   return (
     queryDeep<HTMLTextAreaElement>('textarea[name="text"]') ??

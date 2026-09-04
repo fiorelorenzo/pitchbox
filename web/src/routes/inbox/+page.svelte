@@ -193,6 +193,7 @@
 		{ value: 'approved', label: 'Approved' },
 		{ value: 'sent', label: 'Sent' },
 		{ value: 'rejected', label: 'Rejected' },
+		{ value: 'undeliverable', label: 'Undeliverable' },
 		{ value: 'all', label: 'All' },
 	];
 

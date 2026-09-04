@@ -129,6 +129,7 @@ export const it = {
     'Impossibile determinare il tuo account Reddit per il draft {draftId}; la corrispondenza delle risposte potrebbe essere meno precisa.',
   'activity.reddit-action.comment-id-unresolved':
     "Impossibile leggere l'id del commento pubblicato per il draft {draftId}; le risposte non verranno rilevate.",
+  'activity.reddit-action.undeliverable': 'Il draft {draftId} non è recapitabile: {reason}',
   'activity.linkedin-action.comment-sent': 'Commento pubblicato per il draft {draftId}.',
   'activity.linkedin-action.fail': 'Aggiornamento backend fallito per il draft {draftId}: {reason}',
   'activity.linkedin-action.composer-missing':

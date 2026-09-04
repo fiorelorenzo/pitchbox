@@ -18,6 +18,8 @@ const VALID_STATES: Record<string, true> = {
   approved: true,
   sent: true,
   rejected: true,
+  // Issue #335: filterable like every other terminal state.
+  undeliverable: true,
   all: true,
 };
 const VALID_KINDS: Record<string, true> = {
@@ -239,6 +241,7 @@ export type InboxDraft = {
   sentContent: string | null;
   platformCommentId: string | null;
   dedupWarning: string | null;
+  undeliverableReason: string | null;
   scheduledSendAfter: Date | null;
   qualityScore: number | null;
   qualityReason: string | null;
@@ -327,6 +330,7 @@ export async function queryInboxDraftsPage(
       sentContent: schema.drafts.sentContent,
       platformCommentId: schema.drafts.platformCommentId,
       dedupWarning: schema.drafts.dedupWarning,
+      undeliverableReason: schema.drafts.undeliverableReason,
       scheduledSendAfter: schema.drafts.scheduledSendAfter,
       qualityScore: schema.drafts.qualityScore,
       qualityReason: schema.drafts.qualityReason,
