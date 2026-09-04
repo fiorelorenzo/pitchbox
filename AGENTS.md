@@ -59,6 +59,41 @@ build and every `mount()` test fails in the workspace run while passing in CI,
 which cost a bisect against `main` before #339 fixed it. Both entry points now
 report the same 239 tests.
 
+Both configs compile Svelte now, so a test can mount a real component and read
+its rendered shadow root rather than a hand-written stand-in. That is why
+`@sveltejs/vite-plugin-svelte` is a root devDependency: without it the root
+config, which is the one CI runs, could not compile a component test, and
+`panel-host.ts`'s `update()` was able to ship as a silent no-op behind an
+`expect(...).not.toThrow()` for exactly that reason (#369).
+
+**A content script that renders a Svelte panel is built by us, not by crxjs.**
+crxjs builds every `contentScripts.standaloneFiles` entry through a nested Vite
+build that hardcodes `plugins: []` (`@crxjs/vite-plugin@2.7.1`,
+`dist/index.mjs:1397`), so `svelte()` never runs there and a panel component
+fails to parse. That path is not optional: a dynamically registered MV3 script
+cannot be an ES module, and registering dynamically is what keeps the LinkedIn
+host permission optional (#317). So:
+
+- `extension/src/content/panel-scripts.ts` is the registry. Both
+  `extension/vite-plugins/panel-content-scripts.ts` (which emits the IIFE) and
+  the background worker's registration read it, so the emitted path and the
+  registered path cannot drift. A panel-bearing script goes there, never in
+  `standaloneFiles`.
+- `extension/src/content/panel.css` must stay **plain CSS**. That build runs no
+  Tailwind, so a `@theme`, `@source`, `@custom-variant` or `@import 'tailwindcss'`
+  in it resolves to nothing, and the symptom is an unstyled panel on a page we
+  do not own rather than an error. `assertNoTailwindDirectives` fails the build
+  if one comes back.
+- The check that a new content script is really shipped is
+  `ls extension/dist/src/content/` after `pnpm run build:extension`, plus
+  confirming the file has no top-level `import`/`export`. A script missing from
+  the registry still builds, as a module with a loader, and Chrome then refuses
+  to run it. No suite notices, which is how #366 nearly shipped.
+- The compliance checker knows both mechanisms: rule 2's scan set is the static
+  `content_scripts`, plus any `registerContentScripts` call whose matches
+  mention LinkedIn, plus the panel registry. A LinkedIn-looking script under
+  `content/` that none of the three accounts for is itself a violation.
+
 `pnpm run test:linkedin-compliance` is a **third** config
 (`vitest.compliance.config.ts`) and a required CI check. It is not a unit suite:
 it parses the real extension source and manifest and fails the build on six
