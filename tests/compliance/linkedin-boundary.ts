@@ -223,7 +223,11 @@ export async function linkedinContentScriptFiles(
     if (!isLinkedIn) continue;
     for (const js of entry.js ?? []) files.add(path.resolve(dir, js));
   }
-  for (const file of dynamicallyRegisteredLinkedinScripts(sourceRoot ?? path.join(dir, 'src'))) {
+  const src = sourceRoot ?? path.join(dir, 'src');
+  for (const file of dynamicallyRegisteredLinkedinScripts(src)) {
+    files.add(file);
+  }
+  for (const file of declaredPanelScripts(path.dirname(src))) {
     files.add(file);
   }
   return [...files];
@@ -303,6 +307,43 @@ function resolveScriptReference(
     if (namedHere) resolved = fromSpecifier(node.moduleSpecifier.text);
   });
   return resolved;
+}
+
+/**
+ * The panel-bearing LinkedIn content scripts, read from the registry module
+ * that declares them (`extension/src/content/panel-scripts.ts`).
+ *
+ * These are registered by a plain path string rather than through a `?script`
+ * import, because crxjs cannot build them: its nested IIFE build runs
+ * `plugins: []`, so a Svelte panel in one fails to parse (#369). The registry
+ * module is what the build plugin and the background worker both read, so it
+ * is also the honest place for this checker to read: a script that reaches
+ * linkedin.com must be in the scan set no matter which mechanism registers it.
+ */
+function declaredPanelScripts(extensionRoot: string): string[] {
+  const registry = path.join(extensionRoot, 'src/content/panel-scripts.ts');
+  if (!fs.existsSync(registry)) return [];
+  const sf = parseSource(registry);
+  const out: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'PANEL_CONTENT_SCRIPTS' &&
+      node.initializer
+    ) {
+      const arr = unwrap(node.initializer);
+      const elements = ts.isArrayLiteralExpression(arr) ? arr.elements : [];
+      for (const el of elements) {
+        if (!ts.isStringLiteral(el)) continue;
+        const resolved = path.join(extensionRoot, el.text);
+        if (fs.existsSync(resolved)) out.push(resolved);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return out;
 }
 
 export async function checkContentScriptStorageReads(

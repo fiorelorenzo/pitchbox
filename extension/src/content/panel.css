@@ -15,20 +15,22 @@
  * No `html`/`body` rules. There is no `html` or `body` in a shadow root, so the
  * panel's ground colour and font family sit on `.pitchbox-panel` below.
  */
-@import 'tailwindcss';
-@import 'tw-animate-css';
-@import 'shadcn-svelte/tailwind.css';
+/* Plain CSS on purpose, and that is a build constraint rather than a style
+ * preference. This sheet is imported with `?inline` by a content script that
+ * is registered dynamically, so the LinkedIn host permission can stay
+ * optional (#317), which means it is built as a standalone IIFE. Every
+ * Tailwind v4 directive (`@import 'tailwindcss'`, `@source`,
+ * `@custom-variant`, `@theme`) needs `@tailwindcss/vite` to have any meaning,
+ * and that pipeline does not reach this file (#369). Vite's core CSS handling
+ * resolves the one plain `@import` below on its own.
+ *
+ * Nothing was lost in dropping them: neither this sheet nor
+ * `panel-frame.svelte` nor the assist panel uses a single Tailwind utility
+ * class or a `dark:` variant, so the `@theme inline` block existed only to
+ * define the three radius steps, which are declared directly at the bottom of
+ * this file now. Keep it that way: a utility class written here would
+ * silently not exist. */
 @import '../lib/tokens.css';
-
-/* Tailwind v4 scans the project for class names. Without these the panel's
- * stylesheet would carry every utility used anywhere in the extension,
- * including the whole side panel, for a bundle that ships into a page we do
- * not own. Keep the panel's own sources listed here and nothing else. */
-@source './panel.svelte';
-@source './shared/panel-host.ts';
-@source './linkedin-comment-assist-panel.svelte';
-
-@custom-variant dark (&:is(.dark *));
 
 /* The host element is reset to nothing so no inherited LinkedIn rule (font,
  * line-height, colour, direction, letter-spacing) reaches the panel, and so
@@ -49,6 +51,13 @@
    * where it fails to. */
   --panel-font-stack:
     'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  /* The three radius steps the panel's own rules use. These used to be
+   * generated from a `@theme inline` block, which was the sheet's last real
+   * dependency on Tailwind's build (#369); as plain `calc()` off tokens.css's
+   * `--radius` they are the same values with nothing to resolve them. */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
 }
 
 /* The panel root, and the real isolation boundary.
@@ -326,28 +335,4 @@
   .assist-button {
     transition: opacity 120ms ease;
   }
-}
-
-@theme inline {
-  --font-sans: var(--panel-font-stack);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-link: var(--link);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
 }

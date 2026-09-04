@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { configDefaults, defineConfig } from 'vitest/config';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 // Point tests at the dedicated test DB. Allow a per-run override ONLY when it names
 // an isolated `pitchbox_test[_suffix]` database (used by parallel worktree agents so
@@ -39,6 +40,13 @@ export default defineConfig({
         return null;
       },
     },
+    // Compile real Svelte components in tests. Without this a test can only
+    // exercise the panel host against a hand-written stand-in, which is how
+    // `panel-host.ts`'s `update()` shipped as a silent no-op: the only
+    // assertion it had was `not.toThrow()`, and a hand-written probe cannot
+    // show whether a real component re-rendered (#369). The extension's own
+    // config has had this since #339; CI runs this one, so it needs it too.
+    svelte(),
   ],
   // SvelteKit's `$lib` alias so tests can import server route handlers
   // (`web/src/routes/**/+server.ts`) that resolve `$lib/server/...` at module load.

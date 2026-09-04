@@ -1,5 +1,13 @@
 import { hasLinkedInPermission } from '../lib/permissions.js';
-import commentAssistScriptPath from '../content/linkedin-comment-assist.ts?script';
+import { PANEL_CONTENT_SCRIPTS, panelScriptOutput } from '../content/panel-scripts.js';
+
+// Not a `?script` import, unlike its two siblings. `?script` is crxjs's own
+// mechanism and resolves to a file crxjs emitted, and crxjs cannot build this
+// one: its nested IIFE build runs `plugins: []`, so the Svelte panel this
+// script renders fails to parse (#369). The build plugin in
+// `extension/build/panel-content-scripts.ts` emits it instead, at exactly the
+// path below, and both sides read the same list so they cannot drift.
+const commentAssistScriptPath = panelScriptOutput(PANEL_CONTENT_SCRIPTS[0]);
 
 // #314's own dynamic-registration helper, mirroring background.ts's
 // syncLinkedInContentScript (linkedin-comment.ts, #308-driven follow-up to
