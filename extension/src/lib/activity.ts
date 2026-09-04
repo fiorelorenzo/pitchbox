@@ -8,6 +8,7 @@ export type ActivitySource =
   | 'matrix-token'
   | 'reddit-action'
   | 'linkedin-dom'
+  | 'linkedin-action'
   | 'settings'
   | 'system';
 

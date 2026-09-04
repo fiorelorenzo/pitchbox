@@ -129,6 +129,14 @@ export const it = {
     'Impossibile determinare il tuo account Reddit per il draft {draftId}; la corrispondenza delle risposte potrebbe essere meno precisa.',
   'activity.reddit-action.comment-id-unresolved':
     "Impossibile leggere l'id del commento pubblicato per il draft {draftId}; le risposte non verranno rilevate.",
+  'activity.linkedin-action.comment-sent': 'Commento pubblicato per il draft {draftId}.',
+  'activity.linkedin-action.fail': 'Aggiornamento backend fallito per il draft {draftId}: {reason}',
+  'activity.linkedin-action.composer-missing':
+    'Impossibile trovare il box del commento LinkedIn per il draft {draftId}; non è stato offerto.',
+  'activity.linkedin-action.comment-submit-not-found':
+    'Impossibile trovare il pulsante di invio del commento LinkedIn per il draft {draftId} entro 15s; la pubblicazione non verrà tracciata automaticamente.',
+  'activity.linkedin-action.comment-confirm-timeout':
+    'Impossibile confermare che il draft {draftId} sia stato pubblicato entro 20s dal clic su invio; verifica manualmente lo stato.',
   'activity.settings.changed': 'Impostazioni aggiornate.',
   'activity.system.boot': 'Service worker avviato.',
   'activity.system.alarms-applied': 'Alarms riapplicati ({interval} min).',

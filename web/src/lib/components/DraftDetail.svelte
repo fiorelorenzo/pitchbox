@@ -338,9 +338,9 @@
 
 	// Whether the extension can drive this platform's send flow end-to-end
 	// (its content script arms the page and the draft flips to `sent`
-	// automatically). Only reddit.com has a matching content script (see
-	// extension/manifest.config.ts) - every other platform needs the human to
-	// open the link, send it themselves, and click "Mark as sent".
+	// automatically). reddit.com and linkedin.com have a matching content
+	// script (see extension/manifest.config.ts) - every other platform needs
+	// the human to open the link, send it themselves, and click "Mark as sent".
 	const extensionAutomated = $derived(isExtensionAutomated(draft?.platformSlug ?? null));
 
 	const GENERIC_EVENT_LABEL: Record<string, string> = {

@@ -54,7 +54,7 @@ export function getPresenter(slug: string | null | undefined): Presenter {
 // platform slug (hackernews, or mastodon outside auto-post mode) has no
 // matching content script, so the human has to open the link, send it
 // themselves, and click "Mark as sent".
-const EXTENSION_AUTOMATED_PLATFORMS = new Set(['reddit']);
+const EXTENSION_AUTOMATED_PLATFORMS = new Set(['reddit', 'linkedin']);
 
 export function isExtensionAutomated(platformSlug: string | null | undefined): boolean {
   return platformSlug != null && EXTENSION_AUTOMATED_PLATFORMS.has(platformSlug);

@@ -124,6 +124,14 @@ export const en = {
     'Could not determine your Reddit account for draft {draftId}; reply matching may be less accurate.',
   'activity.reddit-action.comment-id-unresolved':
     'Could not read the id of the comment posted for draft {draftId}; replies to it will not be detected.',
+  'activity.linkedin-action.comment-sent': 'Posted comment for draft {draftId}.',
+  'activity.linkedin-action.fail': 'Backend flip failed for draft {draftId}: {reason}',
+  'activity.linkedin-action.composer-missing':
+    'Could not find the LinkedIn comment composer for draft {draftId}; it was not offered.',
+  'activity.linkedin-action.comment-submit-not-found':
+    'Could not find the LinkedIn comment submit button for draft {draftId} within 15s; posting will not be tracked automatically.',
+  'activity.linkedin-action.comment-confirm-timeout':
+    'Could not confirm draft {draftId} was posted within 20s after clicking submit; check its status manually.',
   'activity.settings.changed': 'Settings updated.',
   'activity.system.boot': 'Service worker started.',
   'activity.system.alarms-applied': 'Alarms re-applied ({interval} min).',

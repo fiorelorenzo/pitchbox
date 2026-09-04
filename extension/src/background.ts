@@ -10,6 +10,8 @@ import {
 import { api, type DmSyncFanout } from './lib/api.js';
 import { logEvent } from './lib/activity.js';
 import { getSettings as getExtensionSettings } from './lib/settings.js';
+import { hasLinkedInPermission } from './lib/permissions.js';
+import linkedinCommentScriptPath from './content/linkedin-comment.ts?script';
 
 const ALARM = 'pitchbox:dm-sync';
 
@@ -216,6 +218,44 @@ async function applyAlarms(): Promise<void> {
   });
 }
 
+const LINKEDIN_CONTENT_SCRIPT_ID = 'pitchbox-linkedin-comment';
+
+/**
+ * #308-driven follow-up to #317: the LinkedIn host permission is optional
+ * and requested on demand (see lib/permissions.ts), so its content script
+ * cannot be declared in manifest.config.ts's static content_scripts - a
+ * declared match pattern is its own install-time permission grant (Chrome
+ * shows it in the install prompt and grants it unconditionally, the same
+ * as a host_permissions entry), exactly the up-front consent #317 exists
+ * to avoid. Registered/unregistered here instead, kept in sync with the
+ * real chrome.permissions state - the same source of truth
+ * LinkedInAccessCard.svelte already reads for the UI - rather than
+ * assumed from whatever a prior sync last set. Exported so tests can
+ * drive it directly, matching handleInstalled's own convention below.
+ */
+export async function syncLinkedInContentScript(): Promise<void> {
+  try {
+    const [granted, existing] = await Promise.all([
+      hasLinkedInPermission(),
+      chrome.scripting.getRegisteredContentScripts({ ids: [LINKEDIN_CONTENT_SCRIPT_ID] }),
+    ]);
+    if (granted && existing.length === 0) {
+      await chrome.scripting.registerContentScripts([
+        {
+          id: LINKEDIN_CONTENT_SCRIPT_ID,
+          js: [linkedinCommentScriptPath],
+          matches: ['https://www.linkedin.com/feed/update/*'],
+          runAt: 'document_idle',
+        },
+      ]);
+    } else if (!granted && existing.length > 0) {
+      await chrome.scripting.unregisterContentScripts({ ids: [LINKEDIN_CONTENT_SCRIPT_ID] });
+    }
+  } catch (err) {
+    console.warn('[pitchbox] syncLinkedInContentScript failed:', err);
+  }
+}
+
 // #203: exported so tests can drive the install/update branch directly
 // without going through chrome.runtime.onInstalled's listener plumbing.
 export async function handleInstalled(details: chrome.runtime.InstalledDetails): Promise<void> {
@@ -228,6 +268,7 @@ export async function handleInstalled(details: chrome.runtime.InstalledDetails):
     console.warn('[pitchbox] sidePanel.setPanelBehavior failed:', err);
   }
   await applyAlarms();
+  await syncLinkedInContentScript();
   if (details.reason === 'update') {
     await logEvent({
       level: 'info',
@@ -252,7 +293,11 @@ chrome.runtime.onInstalled.addListener(handleInstalled);
 chrome.runtime.onStartup.addListener(async () => {
   await logEvent({ level: 'info', source: 'system', message: 'activity.system.boot' });
   await applyAlarms();
+  await syncLinkedInContentScript();
 });
+
+chrome.permissions.onAdded.addListener(() => void syncLinkedInContentScript());
+chrome.permissions.onRemoved.addListener(() => void syncLinkedInContentScript());
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
