@@ -133,6 +133,11 @@ export const en = {
     'Could not find the LinkedIn comment submit button for draft {draftId} within 15s; posting will not be tracked automatically.',
   'activity.linkedin-action.comment-confirm-timeout':
     'Could not confirm draft {draftId} was posted within 20s after clicking submit; check its status manually.',
+  'activity.linkedin-action.assist-composer-not-found':
+    'Could not find the LinkedIn comment composer; the suggestion assistant was not offered.',
+  'activity.linkedin-action.suggestion-refused': 'LinkedIn assist suggestion refused: {reason}',
+  'activity.linkedin-action.suggestion-inserted':
+    'Inserted an accepted suggestion into the LinkedIn composer for draft {draftId}.',
   'activity.linkedin-dom.selector-miss':
     'LinkedIn selector "{selector}" is not matching on the {pageKind} page ({misses} misses, {matches} matches) - this reading may be stale or missing.',
   'activity.linkedin-collector.batch-sent':
@@ -215,6 +220,38 @@ export const en = {
   // translated; everything else on this surface is.
   'panel.title': 'Pitchbox',
   'panel.close': 'Close',
+
+  // In-page LinkedIn comment assist (LI-17, #314): the panel that offers a
+  // suggested comment next to LinkedIn's own composer. Shared with #315's
+  // post-composer assist wherever a key names no particular kind.
+  'assist.comment.resting.hint': 'Get a Pitchbox-suggested reply for this post.',
+  'assist.comment.resting.cta': 'Suggest a comment',
+  'assist.status.reading': 'Reading the post…',
+  'assist.status.writing': 'Writing…',
+  'assist.comment.ready.label': 'Suggested comment (editable)',
+  'assist.action.accept': 'Insert',
+  'assist.action.retry': 'Try again',
+  'assist.comment.accepting': 'Saving…',
+  'assist.comment.inserted.title': 'Inserted',
+  'assist.comment.inserted.hint': "Press LinkedIn's own Comment button to send it.",
+  // Refused is five states in the brief plus three the accept path can also
+  // answer with (no_account, blocked, uncontactable, recently_contacted) and
+  // three this client detects itself (backend_unreachable, selector health,
+  // a mid-stream generation failure) - each real, each with its own remedy,
+  // never a generic failure.
+  'assist.refusal.assist_disabled': 'The Pitchbox assistant is turned off for this workspace.',
+  'assist.refusal.kill_switch': 'An admin stopped the assistant.',
+  'assist.refusal.project_not_bound': 'No project is bound to the assistant yet.',
+  'assist.refusal.quota_exhausted': "Today's comment quota is used up.",
+  'assist.refusal.no_account': 'No LinkedIn account is linked to this project yet.',
+  'assist.refusal.blocked': 'This person is on the blocklist.',
+  'assist.refusal.uncontactable': 'This person was marked uncontactable.',
+  'assist.refusal.recently_contacted': 'Already contacted recently, so this is being skipped.',
+  'assist.refusal.backend_unreachable': 'Could not reach the Pitchbox backend.',
+  'assist.refusal.selector_health_degraded':
+    "LinkedIn's layout changed and Pitchbox could not read this post reliably.",
+  'assist.refusal.generation_failed': 'Something went wrong while writing the suggestion.',
+  'assist.refusal.unknown': 'The assistant refused this request ({reason}).',
 
   // Language names are endonyms (each language's own name for itself) and
   // are intentionally identical across every locale dictionary; a language

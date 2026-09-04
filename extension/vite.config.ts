@@ -25,6 +25,7 @@ export default defineConfig({
       contentScripts: {
         standaloneFiles: [
           'src/content/linkedin-comment.ts',
+          'src/content/linkedin-comment-assist.ts',
           'src/content/linkedin-observe.ts',
           'src/content/linkedin-reply-ingest.ts',
         ],

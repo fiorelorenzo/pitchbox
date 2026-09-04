@@ -138,6 +138,11 @@ export const it = {
     'Impossibile trovare il pulsante di invio del commento LinkedIn per il draft {draftId} entro 15s; la pubblicazione non verrà tracciata automaticamente.',
   'activity.linkedin-action.comment-confirm-timeout':
     'Impossibile confermare che il draft {draftId} sia stato pubblicato entro 20s dal clic su invio; verifica manualmente lo stato.',
+  'activity.linkedin-action.assist-composer-not-found':
+    "Impossibile trovare il box del commento LinkedIn; l'assistente non è stato offerto.",
+  'activity.linkedin-action.suggestion-refused': 'Suggerimento LinkedIn assist rifiutato: {reason}',
+  'activity.linkedin-action.suggestion-inserted':
+    'Suggerimento accettato inserito nel box del commento LinkedIn per il draft {draftId}.',
   'activity.linkedin-dom.selector-miss':
     'Il selettore LinkedIn "{selector}" non trova corrispondenze nella pagina {pageKind} ({misses} mancate, {matches} trovate) - questa lettura potrebbe essere obsoleta o mancante.',
   'activity.linkedin-collector.batch-sent':
@@ -220,6 +225,32 @@ export const it = {
   // translated; everything else on this surface is.
   'panel.title': 'Pitchbox',
   'panel.close': 'Chiudi',
+
+  // In-page LinkedIn comment assist (LI-17, #314), see the comment in dict-en.ts.
+  'assist.comment.resting.hint': 'Ottieni una risposta suggerita da Pitchbox per questo post.',
+  'assist.comment.resting.cta': 'Suggerisci un commento',
+  'assist.status.reading': 'Lettura del post in corso…',
+  'assist.status.writing': 'Scrittura in corso…',
+  'assist.comment.ready.label': 'Commento suggerito (modificabile)',
+  'assist.action.accept': 'Inserisci',
+  'assist.action.retry': 'Riprova',
+  'assist.comment.accepting': 'Salvataggio in corso…',
+  'assist.comment.inserted.title': 'Inserito',
+  'assist.comment.inserted.hint': 'Premi il pulsante Commenta di LinkedIn per inviarlo.',
+  'assist.refusal.assist_disabled': "L'assistente Pitchbox è disattivato per questo workspace.",
+  'assist.refusal.kill_switch': "Un amministratore ha fermato l'assistente.",
+  'assist.refusal.project_not_bound': "Nessun progetto è collegato all'assistente.",
+  'assist.refusal.quota_exhausted': 'La quota commenti di oggi è esaurita.',
+  'assist.refusal.no_account': 'Nessun account LinkedIn è collegato a questo progetto.',
+  'assist.refusal.blocked': 'Questa persona è nella blocklist.',
+  'assist.refusal.uncontactable': 'Questa persona è stata segnata come non contattabile.',
+  'assist.refusal.recently_contacted': 'Contattata di recente, quindi viene saltata.',
+  'assist.refusal.backend_unreachable': 'Impossibile raggiungere il backend di Pitchbox.',
+  'assist.refusal.selector_health_degraded':
+    'Il layout di LinkedIn è cambiato e Pitchbox non è riuscito a leggere questo post in modo affidabile.',
+  'assist.refusal.generation_failed':
+    'Qualcosa è andato storto durante la scrittura del suggerimento.',
+  'assist.refusal.unknown': "L'assistente ha rifiutato questa richiesta ({reason}).",
 
   // Language names are endonyms, see the comment in dict-en.ts.
   'settings.language.option.en': 'English',

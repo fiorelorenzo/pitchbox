@@ -99,73 +99,64 @@ export function findOurCommentUrn(
   return undefined;
 }
 
-if (draftId !== null) {
+export interface DraftSendWatcher {
+  /** Wires LinkedIn's submit control for this draft. False if the control does not exist yet. */
+  wireSubmit(): boolean;
+}
+
+/**
+ * The send-detection state machine for `targetDraftId`: arms on the human's
+ * own click on LinkedIn's submit control (never dispatches one - see
+ * `insertComposerText`'s doc comment for the one synthetic event this module
+ * does carve out), then polls for completion exactly as this function
+ * always has, before the refactor below split it out of the
+ * `pitchbox_draft`-driven bootstrap. Factored out so #314's in-page accept
+ * flow can hand a freshly accepted draft id to this *exact* mechanism
+ * instead of inventing a second one (docs/linkedin-integration-design.md,
+ * "no second send path"; see `linkedin-comment-assist.ts`).
+ */
+export function createDraftSendWatcher(
+  targetDraftId: number,
+  targetBackendUrl: string | undefined,
+  initialVersion?: number,
+): DraftSendWatcher {
   let armed = false;
   let sent = false;
-  let filled = false;
-  let draftVersion: number | undefined;
-
-  /**
-   * Offer the draft body in the composer, but only once the human has
-   * explicitly clicked into it - the compliance boundary
-   * (docs/linkedin-integration-design.md, "The compliance boundary") is
-   * specific that inserted text follows "an explicit action by the human,
-   * and nothing more". Unlike `post-comment.ts`'s `fill()`, which pre-fills
-   * Reddit's textarea unconditionally at page load, this listens for (never
-   * dispatches) the human's own click on the composer LinkedIn already
-   * rendered - no extra UI, matching every other content script in this
-   * directory ("only reads and writes fields that LinkedIn or Reddit
-   * already put on the page", see `shared/panel-host.ts`'s header for why
-   * that stays true here and the in-page assist panel is separate work).
-   */
-  function wireComposerInsert(composer: HTMLElement, body: string): void {
-    composer.addEventListener(
-      'click',
-      () => {
-        if (filled) return;
-        // Don't overwrite text the human already typed themselves.
-        if (composer.textContent?.trim()) return;
-        filled = true;
-        insertComposerText(composer, body);
-        void copyDraftToClipboard(body);
-      },
-      { capture: true },
-    );
-  }
+  const draftVersion = initialVersion;
 
   async function onSendIntent() {
     if (armed) return;
     armed = true;
-    await api.armed(draftId!, backendUrl);
+    await api.armed(targetDraftId, targetBackendUrl);
   }
 
   async function onSendCompleted(sentContent: string, platformPostId: string) {
     if (sent) return;
     sent = true;
     const res = await api.sent(
-      draftId!,
+      targetDraftId,
       sentContent || undefined,
       undefined,
       platformPostId,
       draftVersion,
-      backendUrl,
+      targetBackendUrl,
     );
     if (res.ok) {
       logFromContent({
         level: 'info',
         source: 'linkedin-action',
         message: 'activity.linkedin-action.comment-sent',
-        messageParams: { draftId: draftId! },
-        meta: { draftId },
+        messageParams: { draftId: targetDraftId },
+        meta: { draftId: targetDraftId },
       });
     } else {
       logFromContent({
         level: 'error',
         source: 'linkedin-action',
         message: 'activity.linkedin-action.fail',
-        messageParams: { draftId: draftId!, reason: res.error || String(res.status) },
+        messageParams: { draftId: targetDraftId, reason: res.error || String(res.status) },
         meta: {
-          draftId,
+          draftId: targetDraftId,
           script: 'linkedin-comment',
           reason: res.error || String(res.status),
           status: res.status,
@@ -177,12 +168,11 @@ if (draftId !== null) {
 
   /**
    * Wires LinkedIn's own submit control. Listens for the human's click
-   * (never dispatches one - see the module doc comment above) to arm the
-   * draft, then polls for completion the same shape
-   * `post-comment.ts`'s `wireSubmit` uses for Reddit: composer cleared, a
-   * new comment node carrying our text, and no inline error banner, all
-   * three required before flipping the draft to sent; a 20s give-up window
-   * if none of that resolves.
+   * (never dispatches one) to arm the draft, then polls for completion the
+   * same shape `post-comment.ts`'s `wireSubmit` uses for Reddit: composer
+   * cleared, a new comment node carrying our text, and no inline error
+   * banner, all three required before flipping the draft to sent; a 20s
+   * give-up window if none of that resolves.
    */
   function wireSubmit(): boolean {
     const btn = findCommentSubmitButton();
@@ -213,9 +203,9 @@ if (draftId !== null) {
               level: 'error',
               source: 'linkedin-action',
               message: 'activity.linkedin-action.comment-confirm-timeout',
-              messageParams: { draftId: draftId! },
+              messageParams: { draftId: targetDraftId },
               meta: {
-                draftId,
+                draftId: targetDraftId,
                 script: 'linkedin-comment',
                 step: 'confirm-send',
                 reason: 'click-poll-timeout',
@@ -230,10 +220,99 @@ if (draftId !== null) {
     return true;
   }
 
+  return { wireSubmit };
+}
+
+/**
+ * Wires `watcher.wireSubmit` now if the submit control already exists, or
+ * retries it via MutationObserver - LinkedIn does not render a submit
+ * control for an empty composer, so this is the expected path on first
+ * offer, not a fallback - for up to 15s before logging a distinct give-up.
+ * Shared by the URL-driven bootstrap below and #314's in-page accept flow.
+ */
+export function watchForCommentSubmit(watcher: DraftSendWatcher, targetDraftId: number): void {
+  if (watcher.wireSubmit()) return;
+  let wired = false;
+  const obs = new MutationObserver(() => {
+    if (watcher.wireSubmit()) {
+      wired = true;
+      obs.disconnect();
+    }
+  });
+  obs.observe(document.documentElement, { childList: true, subtree: true });
+  window.setTimeout(() => {
+    obs.disconnect();
+    if (!wired) {
+      logFromContent({
+        level: 'warn',
+        source: 'linkedin-action',
+        message: 'activity.linkedin-action.comment-submit-not-found',
+        messageParams: { draftId: targetDraftId },
+        meta: {
+          draftId: targetDraftId,
+          script: 'linkedin-comment',
+          step: 'wire-submit-button',
+          selector: 'findCommentSubmitButton',
+          reason: 'submit-button-not-found',
+          url: location.href,
+        },
+      });
+    }
+  }, 15_000);
+}
+
+/**
+ * Entry point for a caller that already has an accepted draft id and does
+ * not go through the `pitchbox_draft` URL bootstrap below - #314's in-page
+ * assist, once the human accepts a suggestion and it lands in the
+ * composer. Creates the watcher and wires it immediately, the same call
+ * shape `init()` below uses for the Inbox-opened flow, so a comment
+ * accepted in-page is armed/sent through exactly the same route as one
+ * opened from the Inbox - no second send path.
+ */
+export function watchDraftForSend(
+  targetDraftId: number,
+  targetBackendUrl?: string,
+  initialVersion?: number,
+): void {
+  const watcher = createDraftSendWatcher(targetDraftId, targetBackendUrl, initialVersion);
+  watchForCommentSubmit(watcher, targetDraftId);
+}
+
+if (draftId !== null) {
+  let filled = false;
+
+  /**
+   * Offer the draft body in the composer, but only once the human has
+   * explicitly clicked into it - the compliance boundary
+   * (docs/linkedin-integration-design.md, "The compliance boundary") is
+   * specific that inserted text follows "an explicit action by the human,
+   * and nothing more". Unlike `post-comment.ts`'s `fill()`, which pre-fills
+   * Reddit's textarea unconditionally at page load, this listens for (never
+   * dispatches) the human's own click on the composer LinkedIn already
+   * rendered - no extra UI, matching every other content script in this
+   * directory ("only reads and writes fields that LinkedIn or Reddit
+   * already put on the page", see `shared/panel-host.ts`'s header for why
+   * that stays true here and the in-page assist panel is separate work).
+   */
+  function wireComposerInsert(composer: HTMLElement, body: string): void {
+    composer.addEventListener(
+      'click',
+      () => {
+        if (filled) return;
+        // Don't overwrite text the human already typed themselves.
+        if (composer.textContent?.trim()) return;
+        filled = true;
+        insertComposerText(composer, body);
+        void copyDraftToClipboard(body);
+      },
+      { capture: true },
+    );
+  }
+
   async function init() {
     const r = await api.getDraft(draftId!, backendUrl);
     if (!r.ok) return;
-    draftVersion = r.data.version;
     const composer = findCommentComposer();
     if (!composer) {
       // #173-equivalent for LinkedIn: give up visibly instead of leaving the
@@ -255,39 +334,7 @@ if (draftId !== null) {
     } else {
       wireComposerInsert(composer, r.data.body);
     }
-    if (!wireSubmit()) {
-      // The submit control legitimately does not exist until the composer
-      // has text (see linkedin-dom.ts's `findCommentSubmitButton` doc
-      // comment), so this is the expected path, not a fallback - wait for
-      // it to appear, whether from our insert or the human's own typing.
-      let wired = false;
-      const obs = new MutationObserver(() => {
-        if (wireSubmit()) {
-          wired = true;
-          obs.disconnect();
-        }
-      });
-      obs.observe(document.documentElement, { childList: true, subtree: true });
-      window.setTimeout(() => {
-        obs.disconnect();
-        if (!wired) {
-          logFromContent({
-            level: 'warn',
-            source: 'linkedin-action',
-            message: 'activity.linkedin-action.comment-submit-not-found',
-            messageParams: { draftId: draftId! },
-            meta: {
-              draftId,
-              script: 'linkedin-comment',
-              step: 'wire-submit-button',
-              selector: 'findCommentSubmitButton',
-              reason: 'submit-button-not-found',
-              url: location.href,
-            },
-          });
-        }
-      }, 15_000);
-    }
+    watchForCommentSubmit(createDraftSendWatcher(draftId!, backendUrl, r.data.version), draftId!);
   }
 
   void init();
