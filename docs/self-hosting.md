@@ -26,7 +26,7 @@ The **`AgentRunner`** box is pluggable. With a local runner (Claude Code, Codex,
 `pg_dump pitchbox` is enough. Everything that matters lives in Postgres:
 
 - Campaigns, runs, drafts, contact history, blocklist, messages.
-- Encrypted account credentials (`accounts.cookie_session`).
+- Encrypted account credentials (`accounts.cookie_session`), for the platforms that have one. LinkedIn accounts carry no credential at all: see [LinkedIn](/platforms/linkedin).
 - App config (`app_config`) - quota defaults, runner configs, default runner, retention policy, notification webhooks. Extension auth uses per-device tokens in `extension_devices`, not a singleton here.
 - Built-in and user playbooks.
 
