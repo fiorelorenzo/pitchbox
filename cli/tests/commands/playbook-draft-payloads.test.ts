@@ -87,7 +87,6 @@ describe('playbook draft payloads validate against the schema that receives them
       subreddit: 'rpg',
       targetUser: null,
       title: null,
-      composeUrl: null,
       fitScore: null,
       metadata: null,
       sourceRef: null,
@@ -95,7 +94,6 @@ describe('playbook draft payloads validate against the schema that receives them
     // Null collapses to undefined, so downstream code keeps two states, not three.
     expect(parsed.targetUser).toBeUndefined();
     expect(parsed.title).toBeUndefined();
-    expect(parsed.composeUrl).toBeUndefined();
     expect(parsed.fitScore).toBeUndefined();
     // The containers still default, which `.default()` alone would not do for null.
     expect(parsed.metadata).toEqual({});

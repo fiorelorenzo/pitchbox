@@ -3,3 +3,4 @@ export * from './client.js';
 export * from './scout.js';
 export * from './reply-reader.js';
 export * from './account-client.js';
+export * from './compose-url.js';

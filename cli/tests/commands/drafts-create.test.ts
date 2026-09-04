@@ -79,6 +79,15 @@ describe('pitchbox drafts:create', () => {
     expect(drafts[0].state).toBe('pending_review');
     expect(drafts[0].targetUser).toBe('bob');
     expect(drafts[0].metadata).toMatchObject({ subreddit: 'rpg' });
+    // issue #325: the agent-supplied composeUrl above is never honoured -
+    // drafts_create builds its own server-side from targetUser + body, so
+    // it can never disagree with the reviewed body. `message=` decodes back
+    // to exactly `body`.
+    expect(drafts[0].composeUrl).not.toBe('https://reddit.com/message/compose?to=bob&subject=hi');
+    const composeUrl = new URL(drafts[0].composeUrl!);
+    expect(composeUrl.origin + composeUrl.pathname).toBe('https://www.reddit.com/message/compose');
+    expect(composeUrl.searchParams.get('to')).toBe('bob');
+    expect(composeUrl.searchParams.get('message')).toBe('hey bob, ...');
     // No qualityScore supplied - persists as null (not scored).
     expect(drafts[0].qualityScore).toBeNull();
     expect(drafts[0].qualityReason).toBeNull();

@@ -85,41 +85,32 @@ Write like this instead:
 
 7. **Pick the account.** Use the first account with `role === 'personal'`. Record `accountId`.
 
-8. **Build the compose URL.** Use the target status's own permalink so a human can open the thread and reply manually:
+8. **Score each draft.** Using `rubricTemplate` from the run context, score the reply 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, contextual replies and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
 
+9. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+
+   > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
+
+   Each draft (sent later as a reply status via `in_reply_to_id`, on human approval):
+
+   ```json
+   {
+     "accountId": 1,
+     "kind": "post_comment",
+     "fitScore": 4,
+     "targetUser": null,
+     "body": "<reply text>",
+     "reasoning": "2-3 sentences on why this status, what angle, what value you're adding.",
+     "sourceRef": { "statusId": "109...", "statusUrl": "https://mastodon.social/@alice/109..." },
+     "metadata": { "matchedHashtag": "selfhosted", "matchedKeyword": "self-hosted" },
+     "qualityScore": 74,
+     "qualityReason": "concrete reference to their status, adds a real point"
+   }
    ```
-   <status.url>
-   ```
 
-   If `status.url` is null (rare, some instances omit it for local statuses), omit `composeUrl` from the draft and note the status id in `metadata` instead.
+   Note `targetUser` is null for `post_comment` - the audience is whoever reads the thread, not one user, mirroring the Reddit/HN commenter convention.
 
-9. **Score each draft.** Using `rubricTemplate` from the run context, score the reply 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, contextual replies and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
-
-10. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
-
-    > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
-
-    Each draft (sent later as a reply status via `in_reply_to_id`, on human approval):
-
-    ```json
-    {
-      "accountId": 1,
-      "kind": "post_comment",
-      "fitScore": 4,
-      "targetUser": null,
-      "body": "<reply text>",
-      "composeUrl": "https://mastodon.social/@alice/109...",
-      "reasoning": "2-3 sentences on why this status, what angle, what value you're adding.",
-      "sourceRef": { "statusId": "109...", "statusUrl": "https://mastodon.social/@alice/109..." },
-      "metadata": { "matchedHashtag": "selfhosted", "matchedKeyword": "self-hosted" },
-      "qualityScore": 74,
-      "qualityReason": "concrete reference to their status, adds a real point"
-    }
-    ```
-
-    Note `targetUser` is null for `post_comment` - the audience is whoever reads the thread, not one user, mirroring the Reddit/HN commenter convention.
-
-11. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 

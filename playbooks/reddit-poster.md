@@ -85,7 +85,6 @@ Write like this instead:
      "targetUser": null,
      "title": "<post title>",
      "body": "<markdown body, including disclosure>",
-     "composeUrl": "https://www.reddit.com/r/<sub>/submit?title=<urlencoded title>&text=<urlencoded body>",
      "reasoning": "<one sentence: which angle + why this subreddit>",
      "sourceRef": {
        "subreddit": "<sub>",
