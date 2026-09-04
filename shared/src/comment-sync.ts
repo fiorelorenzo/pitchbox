@@ -1,3 +1,5 @@
+import { normalizeHandle } from './handle-norm.js';
+
 export type IncomingCommentReply = {
   parentCommentId: string;
   replyCommentId: string;
@@ -58,10 +60,6 @@ export type CommentReplyEvent = {
   repliedAt: Date;
 };
 
-function norm(handle: string): string {
-  return handle.replace(/^u\//i, '').trim().toLowerCase();
-}
-
 export function matchIncomingCommentReplies(
   batch: IncomingCommentReply[],
   drafts: CommentDraftRow[],
@@ -76,7 +74,7 @@ export function matchIncomingCommentReplies(
 
   type ContactKey = string;
   const contactKey = (account: string, target: string, draftId: number): ContactKey =>
-    `${norm(account)}::${norm(target)}::${draftId}`;
+    `${normalizeHandle(account)}::${normalizeHandle(target)}::${draftId}`;
   const existingByKey = new Map<ContactKey, CommentReplyContact>();
   for (const c of existingContacts) {
     existingByKey.set(contactKey(c.accountHandle, c.targetUser, c.draftId), c);
@@ -103,7 +101,7 @@ export function matchIncomingCommentReplies(
     if (seenReplyId.has(dedupKey)) continue;
     seenReplyId.add(dedupKey);
 
-    const target = norm(reply.author);
+    const target = normalizeHandle(reply.author);
     const key = contactKey(draft.accountHandle, target, draft.draftId);
     const createdAt = new Date(reply.createdAt);
 

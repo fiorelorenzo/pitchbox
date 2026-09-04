@@ -1,7 +1,6 @@
 import { json, error } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
-import { getDb, schema, type Db } from '$lib/server/db.js';
-import { requireExtensionAuth } from '$lib/server/extension-auth.js';
+import { getDb } from '$lib/server/db.js';
+import { requireExtensionAuth, resolveDeviceOrgId } from '$lib/server/extension-auth.js';
 import { RateLimiter } from '$lib/server/rate-limit.js';
 import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist';
 
@@ -23,19 +22,6 @@ import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist'
 // tighter than /suggest's perDevice(20, 60_000) while still generous for any
 // reasonable poll cadence.
 const perDevice = new RateLimiter(12, 60_000);
-
-async function resolveDeviceOrgId(db: Db, organizationId: number | null): Promise<number | null> {
-  if (organizationId != null) return organizationId;
-  // A null-org device only happens on self-host / auth-off pairing paths
-  // that predate #196's fail-loud fix. Fall back to the default org, the
-  // same resolution auto-pair itself uses in that mode.
-  const [row] = await db
-    .select({ id: schema.organizations.id })
-    .from(schema.organizations)
-    .where(eq(schema.organizations.slug, 'default'))
-    .limit(1);
-  return row?.id ?? null;
-}
 
 export async function GET({ request }: { request: Request }) {
   const auth = await requireExtensionAuth(request);
