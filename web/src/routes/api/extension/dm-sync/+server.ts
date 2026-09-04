@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { z } from 'zod';
 import { and, eq, gte, inArray } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import { requireExtensionAuth } from '$lib/server/extension-auth.js';
+import { requireExtensionAuth, resolveDeviceOrgId } from '$lib/server/extension-auth.js';
 import { emit } from '$lib/server/events.js';
 import { notify } from '@pitchbox/shared/notifications';
 import { enqueueReplyDraft } from '@pitchbox/shared/reply-drafter';
@@ -14,6 +14,7 @@ import {
   type CommentDraftRow,
   type CommentReplyContact,
 } from '@pitchbox/shared/comment-sync';
+import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist';
 
 // Invariant: this route never writes `drafts.sent_at`. It records inbound
 // messages and flips drafts to `replied`. Quota counts depend on `sent_at`,
@@ -139,6 +140,29 @@ export async function POST({ request }: { request: Request }) {
     .from(schema.platforms)
     .where(eq(schema.platforms.slug, env.platform));
   if (!platform) throw error(404, 'unknown platform');
+
+  // #307: LinkedIn's reply/message ingest is the same passive-collector
+  // shape as #302's observation collector, so it is gated the same way
+  // (#358/#359) - the org must have the assistant on, which
+  // `collectorEnabled` already folds `enabled`/`killSwitch`/a live bound
+  // project into (shared/src/linkedin-assist.ts's
+  // loadLinkedInAssistDeviceState). Unlike POST /api/extension/observations,
+  // this route has no per-request projectId to also check against the
+  // binding: dm-sync's matching is intentionally org-wide (a reply can
+  // belong to any of the org's LinkedIn drafts, not only the one project
+  // the assistant happens to be bound to), so "the device's bound project
+  // matches" is satisfied by collectorEnabled requiring a live bound
+  // project to exist at all, not by narrowing which project's drafts can
+  // match. Reddit (and any other platform) is unaffected - this branch
+  // only runs for platform.slug === 'linkedin'.
+  if (platform.slug === 'linkedin') {
+    const linkedinOrgId = await resolveDeviceOrgId(db, auth.organizationId);
+    const assist =
+      linkedinOrgId != null ? await loadLinkedInAssistDeviceState(db, linkedinOrgId) : null;
+    if (!assist?.collectorEnabled) {
+      throw error(403, assist?.killSwitch ? 'kill_switch' : 'collector_disabled');
+    }
+  }
 
   // Push the freshness predicate into SQL (#198): this used to fetch every
   // contact_history row for the platform and filter `lastContactedAt >= since`

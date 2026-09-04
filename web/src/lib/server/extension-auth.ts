@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { randomBytes, createHash } from 'node:crypto';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import { draftBelongsToOrg } from '@pitchbox/shared/orgs';
-import { getDb, schema } from './db.js';
+import { getDb, schema, type Db } from './db.js';
 
 export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -86,4 +86,28 @@ export async function assertDraftInDeviceOrg(
   if (auth.organizationId == null) return;
   const ok = await draftBelongsToOrg(db, draftId, auth.organizationId);
   if (!ok) throw error(404, 'draft not found');
+}
+
+/**
+ * Turns a device's (possibly null) org binding into a concrete org id.
+ * `auth.organizationId` is null only on a self-host / auth-off pairing path
+ * (#196's fail-loud fix means a fresh pairing there never produces one) -
+ * every org-scoped setting still lives under some real organization row
+ * (the "default" one), so a route that needs to look one up (the LinkedIn
+ * assist gate, shared by GET /api/extension/linkedin-assist and POST
+ * /api/extension/dm-sync's LinkedIn branch) falls back to it rather than
+ * treating a null-org device as having no org at all. Returns null only if
+ * even the default org cannot be found (an unseeded database).
+ */
+export async function resolveDeviceOrgId(
+  db: Db,
+  organizationId: number | null,
+): Promise<number | null> {
+  if (organizationId != null) return organizationId;
+  const [row] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(eq(schema.organizations.slug, 'default'))
+    .limit(1);
+  return row?.id ?? null;
 }

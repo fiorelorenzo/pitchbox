@@ -1,3 +1,5 @@
+import { normalizeHandle } from './handle-norm.js';
+
 export type IncomingDm = {
   fromUser: string;
   toUser: string;
@@ -39,10 +41,6 @@ export type ReplyUpdate = {
 
 const GRACE_MS = 5 * 60 * 1000;
 
-function norm(handle: string): string {
-  return handle.replace(/^u\//i, '').trim().toLowerCase();
-}
-
 export function matchIncomingDms(
   batch: IncomingDm[],
   contacts: ContactRow[],
@@ -57,13 +55,14 @@ export function matchIncomingDms(
   const roomIdsByContact = new Map<number, string>();
 
   type IndexKey = string;
-  const key = (account: string, target: string): IndexKey => `${norm(account)}::${norm(target)}`;
+  const key = (account: string, target: string): IndexKey =>
+    `${normalizeHandle(account)}::${normalizeHandle(target)}`;
   const byPair = new Map<IndexKey, ContactRow>();
   for (const c of contacts) byPair.set(key(c.accountHandle, c.targetUser), c);
 
   for (const dm of batch) {
-    const from = norm(dm.fromUser);
-    const to = norm(dm.toUser);
+    const from = normalizeHandle(dm.fromUser);
+    const to = normalizeHandle(dm.toUser);
 
     const asReply = byPair.get(key(to, from));
     const asOutgoing = byPair.get(key(from, to));

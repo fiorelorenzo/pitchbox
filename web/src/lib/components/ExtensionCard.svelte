@@ -18,7 +18,9 @@
       Pairs the Pitchbox Chrome extension with this dashboard. The extension lives in a persistent
       side panel: it auto-flips drafts to <code class="text-xs">sent</code> when you submit on
       Reddit, polls Reddit inbox + Chat for replies, and surfaces every operation in a real-time
-      activity log.
+      activity log. On LinkedIn, where polling is off-limits, reply and message detection is
+      passive: a reply only reaches this dashboard once you open the post, your notifications or
+      your messaging yourself, so it can lag well behind Reddit's.
     </p>
 
     <div class="rounded-md border border-border/60 px-3 py-2 text-xs">

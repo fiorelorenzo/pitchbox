@@ -108,7 +108,11 @@ export type LinkedInSelectorId =
   | 'commentComposer'
   | 'commentSubmitButton'
   | 'postComposer'
-  | 'ownProfileHandle';
+  | 'ownProfileHandle'
+  | 'postComments'
+  | 'commentAuthor'
+  | 'commentBody'
+  | 'commentTimestamp';
 
 export type SelectorHealthEntry = {
   selector: LinkedInSelectorId;
@@ -470,4 +474,216 @@ export function readOwnProfileHandle(root: ParentNode = document): string | null
   const handle = parseProfileHandle(link?.getAttribute('href'));
   if (pageKind !== 'unknown') record('ownProfileHandle', pageKind, handle !== null);
   return handle;
+}
+
+/**
+ * A single rendered comment or reply on a post-detail page (#307). LinkedIn
+ * renders a reply as a further `article[data-id]` nested directly inside
+ * its parent comment's own article - verified against the real capture
+ * (`extension/tests/content/fixtures/linkedin/post-detail.html`): each of
+ * its 8 top-level comments contains exactly one nested reply article, and
+ * no attribute distinguishes a top-level comment from a reply, only its
+ * position in the tree does.
+ */
+export type LinkedInComment = {
+  /** The comment's own URN (its `article`'s `data-id`). */
+  id: string | null;
+  author: PostAuthor;
+  body: string | null;
+  /**
+   * LinkedIn's own relative-time text (e.g. "2 giorni", "1 day"), never a
+   * machine timestamp: the real capture this module is verified against
+   * shows every comment's `<time>` carrying no `datetime` attribute and no
+   * title, only locale-dependent relative prose. A caller needing an
+   * approximate absolute time must parse this itself and fall back to the
+   * moment it observed the comment when parsing fails, rather than invent a
+   * precision this module cannot supply (see
+   * `linkedin-reply-ingest.ts`'s `approximateTimestamp`).
+   */
+  relativeTime: string | null;
+};
+
+/**
+ * Every comment `article[data-id]` on a classic post-detail page, in
+ * document order - both top-level comments and their nested replies (see
+ * `LinkedInComment`'s doc comment). The SDUI feed has no comment markup at
+ * all (see module header), so this returns `[]` there.
+ */
+export function findPostComments(root: ParentNode = document): Element[] {
+  const pageKind = detectPageKind(root);
+  const comments =
+    pageKind === 'post-detail-classic'
+      ? queryDeepAll<Element>('article[data-id^="urn:li:comment:"]', root)
+      : [];
+  if (pageKind !== 'unknown') record('postComments', pageKind, comments.length > 0);
+  return comments;
+}
+
+/**
+ * The comment `comment` is a reply to, when nested - the nearest ancestor
+ * comment `article` strictly inside `root`. `null` for a top-level comment,
+ * whose parent is the post itself rather than another comment (see
+ * `docs/linkedin-integration-design.md`'s `comment_reply` vs `post_comment`
+ * draft kinds - a caller resolving a top-level comment's parent needs the
+ * post's own identifier from `readPostIdentifier`, not this function).
+ */
+export function findParentCommentId(comment: Element, root: ParentNode = document): string | null {
+  let node = comment.parentElement;
+  while (node && node !== root) {
+    if (node.matches('article[data-id^="urn:li:comment:"]')) {
+      return node.getAttribute('data-id');
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/**
+ * `queryDeepAll` scoped to `comment` itself, excluding anything that
+ * actually belongs to a reply nested inside it - a reply's own header/body
+ * must never leak into its parent's reading, and `querySelectorAll` cannot
+ * tell the two apart on its own since it descends through the nested
+ * `article` unconditionally.
+ */
+function ownCommentDescendant<T extends Element = Element>(
+  comment: Element,
+  selector: string,
+): T | null {
+  const matches = queryDeepAll<T>(selector, comment);
+  return matches.find((m) => m.closest('article[data-id^="urn:li:comment:"]') === comment) ?? null;
+}
+
+/**
+ * `comment`'s author, name plus vanity handle. Verified against the real
+ * capture: a comment's byline wraps the visible name in a plain `<span>`,
+ * the first one inside the byline's `<h3>` - unlike a post's own byline,
+ * where `readPostAuthor` reads an `aria-hidden="true"` duplicate instead
+ * (that duplicate exists on a comment byline too, but wraps a badge
+ * further along, never the name - the two bylines are not the same
+ * structure). Scoped to `comment`'s own header via `ownCommentDescendant`,
+ * never a nested reply's.
+ */
+export function readCommentAuthor(comment: Element, root: ParentNode = document): PostAuthor {
+  const pageKind = detectPageKind(root);
+  const nameEl = ownCommentDescendant<HTMLElement>(comment, 'h3 span');
+  const name = nameEl?.textContent?.trim() || null;
+  if (pageKind !== 'unknown') record('commentAuthor', pageKind, name !== null);
+  return { name, handle: parseProfileHandle(nameEl?.closest('a')?.getAttribute('href')) };
+}
+
+/** `el`'s text, walking every descendant except `excluded` elements and any `<button>` - a comment's "…altro"/"see more" toggle sits inside the same `<section>` as its text and is chrome, not content; a message row's own sender link and timestamp are structural, not body text. */
+function textExcluding(el: Element, excluded: ReadonlySet<Element> = new Set()): string {
+  let text = '';
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent ?? '';
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const child = node as Element;
+      if (!excluded.has(child) && child.tagName !== 'BUTTON')
+        text += textExcluding(child, excluded);
+    }
+  }
+  return text;
+}
+
+/**
+ * `comment`'s body text.
+ *
+ * Verified against the real capture: the body sits inside a `<section>`.
+ * A reply's section leads with the comment's own author name wrapped in an
+ * `<a href="/in/...">` mention - an accessibility duplicate of the byline
+ * in the one captured example, not a distinct "replying to X" chip (its
+ * h3 byline carries the same name) - which this strips only when it
+ * exactly matches the byline name already read via `readCommentAuthor`, so
+ * a genuine @mention of somebody other than the comment's own author is
+ * never silently eaten. A top-level comment's section carries no such
+ * prefix in the captured example, so nothing is stripped there.
+ */
+export function readCommentBody(comment: Element, root: ParentNode = document): string | null {
+  const pageKind = detectPageKind(root);
+  const section = ownCommentDescendant<HTMLElement>(comment, 'section');
+  let text = (section ? textExcluding(section) : '').trim();
+  if (text) {
+    const nameEl = ownCommentDescendant<HTMLElement>(comment, 'h3 span');
+    const authorName = nameEl?.textContent?.trim();
+    if (authorName && text.startsWith(authorName)) {
+      text = text.slice(authorName.length).trim();
+    }
+  }
+  if (pageKind !== 'unknown') record('commentBody', pageKind, text.length > 0);
+  return text || null;
+}
+
+/**
+ * `comment`'s own relative-time text - see `LinkedInComment.relativeTime`'s
+ * doc comment for why this is never a machine timestamp.
+ */
+export function readCommentRelativeTime(
+  comment: Element,
+  root: ParentNode = document,
+): string | null {
+  const pageKind = detectPageKind(root);
+  const timeEl = ownCommentDescendant<HTMLTimeElement>(comment, 'time');
+  const text = timeEl?.textContent?.trim() || null;
+  if (pageKind !== 'unknown') record('commentTimestamp', pageKind, text !== null);
+  return text;
+}
+
+/** A single message event read off LinkedIn's messaging surface (#307). */
+export type LinkedInMessageEvent = {
+  participant: PostAuthor;
+  body: string | null;
+  relativeTime: string | null;
+};
+
+// How many ancestor levels findMessageEvents climbs from a <time> element
+// looking for a profile link before giving up on that event's row. Bounded
+// so a miss degrades to "this one event's row could not be read" instead of
+// silently walking up to the whole conversation pane and mislabelling every
+// message in it as one row.
+const MESSAGE_ROW_SEARCH_DEPTH = 6;
+
+/**
+ * Every rendered message event on LinkedIn's messaging surface.
+ *
+ * Unlike every other accessor in this module, this is unverified against
+ * ANY real capture, not merely against a typed/opened state the two
+ * existing fixtures happen not to show (contrast the disclaimer on
+ * `findCommentSubmitButton`/`findPostComposer`/`readOwnProfileHandle`
+ * above): no signed-in session with an open conversation was ever
+ * available, and no fixture exists for `/messaging` the way `feed.html`/
+ * `post-detail.html` exist for the other two pages. Rather than a guessed
+ * container hierarchy or a LinkedIn-internal class name (both ruled out by
+ * this module's own anchoring policy above), this anchors only on the two
+ * landmarks already verified stable elsewhere in this file: a `<time>`
+ * element per event, and an `a[href*="/in/"]` profile link for whoever sent
+ * it. Not wired into the selector-health self-check above: that mechanism
+ * is scoped to `detectPageKind`'s two post frontends (see its own doc
+ * comment), and the messaging surface is neither. Exercised only against
+ * synthetic markup; needs a recapture with a real open conversation before
+ * this disclaimer can be narrowed the way the other three were.
+ */
+export function findMessageEvents(root: ParentNode = document): LinkedInMessageEvent[] {
+  const events: LinkedInMessageEvent[] = [];
+  for (const time of queryDeepAll<HTMLTimeElement>('time', root)) {
+    let row: Element | null = time.parentElement;
+    for (let depth = 0; row && depth < MESSAGE_ROW_SEARCH_DEPTH; depth += 1) {
+      if (queryDeep('a[href*="/in/"]', row)) break;
+      row = row.parentElement;
+    }
+    const scope = row && queryDeep('a[href*="/in/"]', row) ? row : time.parentElement;
+    if (!scope) continue;
+    const link = queryDeep<HTMLAnchorElement>('a[href*="/in/"]', scope);
+    const name = link?.textContent?.trim() || null;
+    const relativeTime = time.textContent?.trim() || null;
+    const excluded = new Set<Element>([time, ...(link ? [link] : [])]);
+    let body = textExcluding(scope, excluded).trim();
+    if (name && body.startsWith(name)) body = body.slice(name.length).trim();
+    events.push({
+      participant: { name, handle: parseProfileHandle(link?.getAttribute('href')) },
+      body: body || null,
+      relativeTime,
+    });
+  }
+  return events;
 }
