@@ -133,6 +133,12 @@ export const en = {
     'Could not find the LinkedIn comment submit button for draft {draftId} within 15s; posting will not be tracked automatically.',
   'activity.linkedin-action.comment-confirm-timeout':
     'Could not confirm draft {draftId} was posted within 20s after clicking submit; check its status manually.',
+  'activity.linkedin-dom.selector-miss':
+    'LinkedIn selector "{selector}" is not matching on the {pageKind} page ({misses} misses, {matches} matches) - this reading may be stale or missing.',
+  'activity.linkedin-collector.batch-sent':
+    'LinkedIn observations sent - {inserted} new, {duplicates} duplicate, {dropped} dropped.',
+  'activity.linkedin-collector.batch-failed': 'LinkedIn observation batch failed: {reason}',
+  'activity.linkedin-collector.stopped': 'LinkedIn observation collector stopped: {reason}',
   'activity.settings.changed': 'Settings updated.',
   'activity.system.boot': 'Service worker started.',
   'activity.system.alarms-applied': 'Alarms re-applied ({interval} min).',

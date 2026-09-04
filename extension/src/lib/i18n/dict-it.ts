@@ -138,6 +138,13 @@ export const it = {
     'Impossibile trovare il pulsante di invio del commento LinkedIn per il draft {draftId} entro 15s; la pubblicazione non verrà tracciata automaticamente.',
   'activity.linkedin-action.comment-confirm-timeout':
     'Impossibile confermare che il draft {draftId} sia stato pubblicato entro 20s dal clic su invio; verifica manualmente lo stato.',
+  'activity.linkedin-dom.selector-miss':
+    'Il selettore LinkedIn "{selector}" non trova corrispondenze nella pagina {pageKind} ({misses} mancate, {matches} trovate) - questa lettura potrebbe essere obsoleta o mancante.',
+  'activity.linkedin-collector.batch-sent':
+    'Osservazioni LinkedIn inviate - {inserted} nuove, {duplicates} duplicate, {dropped} scartate.',
+  'activity.linkedin-collector.batch-failed':
+    'Invio del batch di osservazioni LinkedIn fallito: {reason}',
+  'activity.linkedin-collector.stopped': 'Collettore di osservazioni LinkedIn fermato: {reason}',
   'activity.settings.changed': 'Impostazioni aggiornate.',
   'activity.system.boot': 'Service worker avviato.',
   'activity.system.alarms-applied': 'Alarms riapplicati ({interval} min).',

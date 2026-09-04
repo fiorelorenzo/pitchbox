@@ -12,6 +12,16 @@ type DraftSummary = {
   version?: number;
 };
 
+/** The exact shape served by GET /api/extension/linkedin-assist (LI-19, #316). */
+export type LinkedInAssistState = {
+  enabled: boolean;
+  collectorEnabled: boolean;
+  killSwitch: boolean;
+  projectId: number | null;
+  dailyCommentCap: number;
+  dailyPostCap: number;
+};
+
 /**
  * Resolve which pairing a single-backend op should target. Compose-time
  * content scripts pass the explicit `backendUrl` the dashboard tags onto the
@@ -310,5 +320,39 @@ export const api = {
     } catch (e) {
       return { ok: false, status: 0, error: (e as Error).message };
     }
+  },
+
+  /**
+   * GET /api/extension/linkedin-assist (#316): whether the org has turned
+   * on the assistant/collector and which project a suggestion or an
+   * observation writes as. #302's passive collector polls this - see
+   * content/linkedin-observe.ts's own doc comment for the poll cadence it
+   * defends. No backendUrl-targeted variant beyond the single-pairing
+   * default: unlike armed/sent, this call never carries a compose-time
+   * draft URL to resolve a specific backend from.
+   */
+  linkedinAssist: async (
+    backendUrl?: string,
+  ): Promise<ApiResult<{ assist: LinkedInAssistState }>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    return getJson(p, '/api/extension/linkedin-assist');
+  },
+
+  /**
+   * POST /api/extension/observations (#301): a debounced batch of posts the
+   * passive collector (#302) saw actually render in the viewport on
+   * linkedin.com. `platform` is a body field (matching dm-sync's own
+   * shape) rather than baked into the path, in case a second observed
+   * platform ever needs the same buffer.
+   */
+  observeLinkedIn: async (
+    projectId: number,
+    items: unknown[],
+    backendUrl?: string,
+  ): Promise<ApiResult<{ ok: true; inserted: number; duplicates: number; dropped: number }>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    return postJson(p, '/api/extension/observations', { platform: 'linkedin', projectId, items });
   },
 };

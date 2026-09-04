@@ -9,6 +9,7 @@ export type ActivitySource =
   | 'reddit-action'
   | 'linkedin-dom'
   | 'linkedin-action'
+  | 'linkedin-collector'
   | 'settings'
   | 'system';
 
