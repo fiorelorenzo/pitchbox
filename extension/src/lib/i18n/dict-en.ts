@@ -162,6 +162,16 @@ export const en = {
   'settings.about.github': 'GitHub',
   'settings.about.docs': 'Documentation',
 
+  'settings.linkedin.title': 'LinkedIn access',
+  'settings.linkedin.description':
+    "Grant LinkedIn access so the in-page assistant can read the post you're viewing and suggest a comment. Nothing is requested until you grant it, and no LinkedIn credential ever leaves your browser.",
+  'settings.linkedin.granted': 'Granted',
+  'settings.linkedin.not-granted': 'Not granted',
+  'settings.linkedin.grant': 'Grant access',
+  'settings.linkedin.revoke': 'Revoke access',
+  'settings.linkedin.denied': 'Permission was not granted. You can try again anytime.',
+  'settings.linkedin.request-failed': 'Could not request LinkedIn access. Try again.',
+
   'time.never': 'never',
   'time.seconds-ago': '{n}s ago',
   'time.minutes-ago': '{n}m ago',

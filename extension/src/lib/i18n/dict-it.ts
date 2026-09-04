@@ -166,6 +166,16 @@ export const it = {
   'settings.about.github': 'GitHub',
   'settings.about.docs': 'Documentazione',
 
+  'settings.linkedin.title': 'Accesso a LinkedIn',
+  'settings.linkedin.description':
+    'Concedi l’accesso a LinkedIn per permettere all’assistente in pagina di leggere il post che stai visualizzando e suggerire un commento. Non viene richiesto nulla finché non lo concedi, e nessuna credenziale di LinkedIn lascia mai il tuo browser.',
+  'settings.linkedin.granted': 'Concesso',
+  'settings.linkedin.not-granted': 'Non concesso',
+  'settings.linkedin.grant': 'Concedi accesso',
+  'settings.linkedin.revoke': 'Revoca accesso',
+  'settings.linkedin.denied': 'Permesso non concesso. Puoi riprovare quando vuoi.',
+  'settings.linkedin.request-failed': 'Impossibile richiedere l’accesso a LinkedIn. Riprova.',
+
   'time.never': 'mai',
   'time.seconds-ago': '{n}s fa',
   'time.minutes-ago': '{n}m fa',
