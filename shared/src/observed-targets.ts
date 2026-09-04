@@ -142,7 +142,7 @@ export async function ingestObservedTargets(
  */
 export async function loadRecentObservedTarget(
   db: Db,
-  input: { projectId: number; platformId: number },
+  input: { organizationId: number; projectId: number; platformId: number },
 ): Promise<{
   authorHandle: string | null;
   authorName: string | null;
@@ -159,6 +159,12 @@ export async function loadRecentObservedTarget(
     .from(observedTargets)
     .where(
       and(
+        // Organization as well as project, even though a project belongs to
+        // exactly one organization and the caller has already checked it:
+        // `organization_id` is carried on this row directly for precisely
+        // this reason (#263), and a read that has to be reasoned about to be
+        // safe is one somebody will get wrong later.
+        eq(observedTargets.organizationId, input.organizationId),
         eq(observedTargets.projectId, input.projectId),
         eq(observedTargets.platformId, input.platformId),
         isNotNull(observedTargets.text),

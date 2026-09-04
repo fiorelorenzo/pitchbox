@@ -272,6 +272,7 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
 
   it('returns null for a project the collector has never seen anything for', async () => {
     const result = await loadRecentObservedTarget(getDb(), {
+      organizationId: orgAId,
       projectId: projectAId,
       platformId: linkedinId,
     });
@@ -300,6 +301,7 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
     });
 
     const result = await loadRecentObservedTarget(db, {
+      organizationId: orgAId,
       projectId: projectAId,
       platformId: linkedinId,
     });
@@ -328,6 +330,7 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
     });
 
     const result = await loadRecentObservedTarget(db, {
+      organizationId: orgAId,
       projectId: projectAId,
       platformId: linkedinId,
     });
@@ -345,6 +348,7 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
     });
 
     const result = await loadRecentObservedTarget(db, {
+      organizationId: orgAId,
       projectId: projectAId,
       platformId: linkedinId,
     });
@@ -361,6 +365,29 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
     });
 
     const result = await loadRecentObservedTarget(db, {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+    });
+    expect(result).toBeNull();
+  });
+
+  it('refuses a mismatched organization and project pair rather than trusting the project id', async () => {
+    const db = getDb();
+    await ingestObservedTargets(db, {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+      observations: [observation({ text: 'org A saw this' })],
+    });
+
+    // A project belongs to exactly one organization, so this pair cannot
+    // arise from real data: it can only arise from a caller that resolved
+    // one of the two from somewhere else. The row carries `organization_id`
+    // directly (#263) so the query can refuse rather than be reasoned about,
+    // and this is the assertion that keeps that filter honest.
+    const result = await loadRecentObservedTarget(db, {
+      organizationId: orgBId,
       projectId: projectAId,
       platformId: linkedinId,
     });
@@ -385,6 +412,7 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
       .where(eq(schema.observedTargets.projectId, projectAId));
 
     const result = await loadRecentObservedTarget(db, {
+      organizationId: orgAId,
       projectId: projectAId,
       platformId: linkedinId,
     });

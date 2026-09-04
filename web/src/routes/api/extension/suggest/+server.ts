@@ -199,6 +199,7 @@ export async function POST(event: RequestEvent) {
   let groundedPost: ObservedPost;
   if (body.kind === 'post') {
     const recent = await loadRecentObservedTarget(db, {
+      organizationId: project.organizationId,
       projectId: project.id,
       platformId: platform.id,
     });
