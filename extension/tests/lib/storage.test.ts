@@ -91,7 +91,7 @@ describe('pairingHealth / overallHealth (#178 honest status)', () => {
     ).toBe('error');
   });
 
-  it('treats an unknown channel as warn, not ok', async () => {
+  it('treats an unconfigured (unknown) channel as fine when the other channel is healthy - not a warning (#341)', async () => {
     const { pairingHealth } = await import('../../src/lib/storage.js');
     const now = Date.now();
     const fresh = new Date(now).toISOString();
@@ -101,6 +101,22 @@ describe('pairingHealth / overallHealth (#178 honest status)', () => {
           backendUrl: 'https://a.example',
           token: 't',
           syncStatus: { chat: 'unknown', legacy: 'ok', capturedAt: fresh },
+        },
+        now,
+      ),
+    ).toBe('ok');
+  });
+
+  it('still treats an unauthorized channel as a warning even when the other channel is ok (#341)', async () => {
+    const { pairingHealth } = await import('../../src/lib/storage.js');
+    const now = Date.now();
+    const fresh = new Date(now).toISOString();
+    expect(
+      pairingHealth(
+        {
+          backendUrl: 'https://a.example',
+          token: 't',
+          syncStatus: { chat: 'unauthorized', legacy: 'ok', capturedAt: fresh },
         },
         now,
       ),

@@ -324,8 +324,8 @@
           {@const health = pairingHealth(p)}
           {@const testResult = testResults[p.backendUrl]}
           <div class="flex flex-col gap-2 px-3 py-2.5">
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex min-w-40 flex-1 flex-col gap-0.5">
                 <div class="flex items-center gap-2">
                   <span
                     class="size-2 shrink-0 rounded-full {healthDotClass(health)}"
@@ -341,7 +341,7 @@
                     {[p.orgName, p.deviceLabel].filter(Boolean).join(' · ')}
                   </div>
                 {/if}
-                <div class="pl-4 text-xs text-muted-foreground">
+                <div class="truncate pl-4 text-xs text-muted-foreground">
                   {$t('dashboard.connection.handshake-ago', { ago: fmtAgo(p.lastHandshakeAt) })}
                   ·
                   {$t('dashboard.connection.sync-ago', { ago: fmtAgo(p.lastDmSyncAt) })}
@@ -358,7 +358,7 @@
                   </div>
                 {/if}
               </div>
-              <div class="flex shrink-0 items-center gap-1">
+              <div class="ml-auto flex shrink-0 items-center gap-1">
                 <Button
                   variant="ghost"
                   size="sm"
