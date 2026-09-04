@@ -1,7 +1,11 @@
 import { parseBackendUrl, parseDraftId } from '../lib/draft-param.js';
 import { api } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
-import { findComposeTextarea, findComposeSendButton } from './shared/reddit-dom.js';
+import {
+  findComposeTextarea,
+  findComposeSendButton,
+  findUndeliverableReason,
+} from './shared/reddit-dom.js';
 
 const draftId = parseDraftId(location.href);
 const backendUrl = parseBackendUrl(location.href) ?? undefined;
@@ -10,6 +14,8 @@ if (draftId !== null) {
   let armed = false;
   let sent = false;
   let capturedBody: string | undefined;
+  let undeliverableReported = false;
+  let undeliverablePoll: ReturnType<typeof window.setInterval> | undefined;
 
   // Reddit's DM compose box is a real <textarea>, but new-Reddit wraps it in a
   // React-controlled component: assigning `.value` directly does not stick
@@ -88,6 +94,7 @@ if (draftId !== null) {
   async function onSendCompleted() {
     if (sent) return;
     sent = true;
+    if (undeliverablePoll != null) clearInterval(undeliverablePoll);
     const res = await api.sent(draftId!, capturedBody, undefined, undefined, undefined, backendUrl);
     if (res.ok) {
       logFromContent({
@@ -106,6 +113,46 @@ if (draftId !== null) {
         meta: {
           draftId,
           script: 'dm-compose',
+          reason: res.error || String(res.status),
+          status: res.status,
+          url: location.href,
+        },
+      });
+    }
+  }
+
+  // #335: Reddit's "unable to send a message request to this account" wall
+  // resolves asynchronously against the recipient, well after the compose
+  // page (and this script) load, and the page gives no event to hook - so
+  // poll instead of checking once. Stops on its own once found, once the
+  // draft is actually sent, or after 30s (long enough to outlast the
+  // validation round-trip on a normal page; most drafts are deliverable and
+  // this should never fire for them).
+  async function checkUndeliverable() {
+    if (undeliverableReported || sent) return;
+    const reason = findUndeliverableReason();
+    if (!reason) return;
+    undeliverableReported = true;
+    if (undeliverablePoll != null) clearInterval(undeliverablePoll);
+    const res = await api.undeliverable(draftId!, reason, backendUrl);
+    if (res.ok) {
+      logFromContent({
+        level: 'info',
+        source: 'reddit-action',
+        message: 'activity.reddit-action.undeliverable',
+        messageParams: { draftId: draftId!, reason },
+        meta: { draftId, reason, script: 'dm-compose', url: location.href },
+      });
+    } else {
+      logFromContent({
+        level: 'error',
+        source: 'reddit-action',
+        message: 'activity.reddit-action.fail',
+        messageParams: { draftId: draftId!, reason: res.error || String(res.status) },
+        meta: {
+          draftId,
+          script: 'dm-compose',
+          step: 'undeliverable',
           reason: res.error || String(res.status),
           status: res.status,
           url: location.href,
@@ -158,6 +205,10 @@ if (draftId !== null) {
 
   async function init() {
     await fill();
+    undeliverablePoll = window.setInterval(() => void checkUndeliverable(), 500);
+    window.setTimeout(() => {
+      if (undeliverablePoll != null) clearInterval(undeliverablePoll);
+    }, 30_000);
     if (!wireUp()) {
       let wired = false;
       const obs = new MutationObserver(() => {

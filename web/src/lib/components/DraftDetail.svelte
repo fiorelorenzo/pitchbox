@@ -43,6 +43,7 @@
 		createdAt: string | Date | null;
 		sentAt: string | Date | null;
 		sentContent: string | null;
+		undeliverableReason?: string | null;
 		regeneratingRunId?: number | null;
 		regenerationCount?: number;
 		draftingRunId?: number | null;
@@ -350,6 +351,7 @@
 		sent: 'Sent',
 		edited: 'Edited',
 		replied: 'Replied',
+		undeliverable: 'Undeliverable',
 	};
 
 	function eventLabel(event: string): string {
@@ -429,6 +431,12 @@
 						>
 							Scheduled until {scheduledUntil.toLocaleString()}
 						</span>
+					</div>
+				{/if}
+				{#if draft.state === 'undeliverable' && draft.undeliverableReason}
+					<div class="rounded-md border px-3 py-2 text-sm {TONE_BANNER_CLASS.slate}">
+						<strong>Undeliverable.</strong>
+						{draft.undeliverableReason}
 					</div>
 				{/if}
 				{#if quotaKind && usage && limits}

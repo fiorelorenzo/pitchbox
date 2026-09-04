@@ -124,6 +124,7 @@ export const en = {
     'Could not determine your Reddit account for draft {draftId}; reply matching may be less accurate.',
   'activity.reddit-action.comment-id-unresolved':
     'Could not read the id of the comment posted for draft {draftId}; replies to it will not be detected.',
+  'activity.reddit-action.undeliverable': 'Draft {draftId} is undeliverable: {reason}',
   'activity.linkedin-action.comment-sent': 'Posted comment for draft {draftId}.',
   'activity.linkedin-action.fail': 'Backend flip failed for draft {draftId}: {reason}',
   'activity.linkedin-action.composer-missing':

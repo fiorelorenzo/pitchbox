@@ -45,12 +45,42 @@ function sendButton(): HTMLButtonElement {
   return document.querySelector('button[type="submit"]') as HTMLButtonElement;
 }
 
-function makeFetchMock(opts: { draftBody?: string; getDraftOk?: boolean; sentOk?: boolean } = {}) {
-  const { draftBody = 'hello there', getDraftOk = true, sentOk = true } = opts;
+function addUndeliverableHelperText(text: string): HTMLElement {
+  const helper = document.createElement('faceplate-form-helper-text');
+  helper.textContent = text;
+  document.body.appendChild(helper);
+  return helper;
+}
+
+function undeliverableCallBodies(fetchMock: ReturnType<typeof makeFetchMock>) {
+  return (fetchMock.mock.calls as unknown as Array<[string, RequestInit]>)
+    .filter(([u]) => u.endsWith('/undeliverable'))
+    .map(([, init]) => JSON.parse(init.body as string));
+}
+
+function makeFetchMock(
+  opts: {
+    draftBody?: string;
+    getDraftOk?: boolean;
+    sentOk?: boolean;
+    undeliverableOk?: boolean;
+  } = {},
+) {
+  const {
+    draftBody = 'hello there',
+    getDraftOk = true,
+    sentOk = true,
+    undeliverableOk = true,
+  } = opts;
   return vi.fn(async (url: string) => {
     const path = new URL(url).pathname;
     if (path.endsWith('/armed')) {
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }
+    if (path.endsWith('/undeliverable')) {
+      return undeliverableOk
+        ? new Response(JSON.stringify({ ok: true }), { status: 200 })
+        : new Response('boom', { status: 500 });
     }
     if (path.endsWith('/sent')) {
       return sentOk
@@ -331,5 +361,125 @@ describe('dm-compose give-up paths (#173)', () => {
     await flush();
 
     expect(logCallsFor('activity.reddit-action.send-button-not-found')).toHaveLength(0);
+  });
+});
+
+describe('dm-compose undeliverable detection (#335)', () => {
+  const REASON = 'You are unable to send a message request to this account.';
+
+  it('detects the condition only after the async validation text appears, not before', async () => {
+    setPairing();
+    setComposeDom();
+    sendButton().disabled = true; // Reddit disables Send while the recipient check is in flight.
+    const fetchMock = makeFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    await importModule();
+    await flush();
+
+    // Several poll ticks pass with Send disabled but no helper text yet -
+    // there is nothing to report until the async validation actually lands.
+    await vi.advanceTimersByTimeAsync(2000);
+    await flush();
+    expect(undeliverableCallBodies(fetchMock)).toHaveLength(0);
+
+    // The validation resolves.
+    addUndeliverableHelperText(REASON);
+
+    await vi.advanceTimersByTimeAsync(500);
+    await flush();
+
+    const calls = undeliverableCallBodies(fetchMock);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].reason).toBe(REASON);
+    expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({ message: 'activity.reddit-action.undeliverable' }),
+      }),
+    );
+  });
+
+  it('never reports anything on a normal, enabled compose page', async () => {
+    setPairing();
+    setComposeDom(); // Send stays enabled the whole time - nothing to detect.
+    const fetchMock = makeFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    await importModule();
+    await flush();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    await flush();
+
+    expect(undeliverableCallBodies(fetchMock)).toHaveLength(0);
+  });
+
+  it('reports only once even though the poll keeps running', async () => {
+    setPairing();
+    setComposeDom();
+    sendButton().disabled = true;
+    addUndeliverableHelperText(REASON);
+    const fetchMock = makeFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    await importModule();
+    await flush();
+    await vi.advanceTimersByTimeAsync(500);
+    await flush();
+    await vi.advanceTimersByTimeAsync(5000);
+    await flush();
+
+    expect(undeliverableCallBodies(fetchMock)).toHaveLength(1);
+  });
+
+  it('stops polling once the draft is actually sent', async () => {
+    setPairing();
+    setComposeDom();
+    const fetchMock = makeFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    await importModule();
+    await flush();
+
+    sendButton().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flush();
+    textarea().value = ''; // Reddit clearing the textarea signals a successful send.
+    await vi.advanceTimersByTimeAsync(600);
+    await flush();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/sent'))).toBe(true);
+
+    // Now disable Send and add the helper text after the fact - the poll must
+    // already be stopped, so this must never fire.
+    sendButton().disabled = true;
+    addUndeliverableHelperText(REASON);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await flush();
+
+    expect(undeliverableCallBodies(fetchMock)).toHaveLength(0);
+  });
+
+  it('logs a failure event when the backend rejects the undeliverable flip', async () => {
+    setPairing();
+    setComposeDom();
+    sendButton().disabled = true;
+    addUndeliverableHelperText(REASON);
+    const fetchMock = makeFetchMock({ undeliverableOk: false });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    await importModule();
+    await flush();
+    await vi.advanceTimersByTimeAsync(500);
+    await flush();
+
+    expect((globalThis as any).chrome.runtime.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({ level: 'error', message: 'activity.reddit-action.fail' }),
+      }),
+    );
   });
 });

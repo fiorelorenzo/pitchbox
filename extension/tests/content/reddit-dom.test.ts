@@ -6,8 +6,10 @@ import {
   findCommentTextarea,
   findCommentSubmitButton,
   findOurCommentId,
+  findUndeliverableReason,
 } from '../../src/content/shared/reddit-dom.js';
 import REDDIT_THREAD_HTML from './fixtures/reddit/comment-thread.html?raw';
+import COMPOSE_UNDELIVERABLE_HTML from './fixtures/reddit/compose-undeliverable.html?raw';
 
 // The synthetic cases below predate the real capture and are kept on purpose: they
 // cover shapes the captured page does not contain (a closed shadow root, two
@@ -23,6 +25,29 @@ function attachShadow(host: Element, mode: 'open' | 'closed', innerHTML: string)
   const shadow = host.attachShadow({ mode });
   shadow.innerHTML = innerHTML;
   return shadow;
+}
+
+/**
+ * The capture records each open shadow root as a `<template
+ * data-fixture-shadow-root="open">` rather than flattening it, since a content
+ * script has to pierce those for real. Re-attach them so `queryDeep` is
+ * exercised against the page's actual encapsulation.
+ */
+function hydrateShadowRoots(root: ParentNode): number {
+  let attached = 0;
+  for (const el of Array.from(root.querySelectorAll('template[data-fixture-shadow-root]'))) {
+    const tpl = el as HTMLTemplateElement;
+    const host = tpl.parentElement;
+    if (!host || host.shadowRoot) continue;
+    const shadow = host.attachShadow({ mode: 'open' });
+    tpl.remove();
+    // A <template>'s children live in its `.content` DocumentFragment per spec,
+    // not as ordinary childNodes on the element itself - move from there.
+    while (tpl.content.firstChild) shadow.appendChild(tpl.content.firstChild);
+    attached++;
+    attached += hydrateShadowRoots(shadow);
+  }
+  return attached;
 }
 
 describe('old.reddit.com style markup (plain form, no shadow DOM)', () => {
@@ -142,6 +167,81 @@ describe('www.reddit.com style markup (shadow-DOM encapsulated controls)', () =>
   });
 });
 
+describe('findUndeliverableReason (#335)', () => {
+  function composeDom(opts: { helperText?: string; sendDisabled: boolean }): void {
+    const host = document.createElement('faceplate-text-input');
+    document.body.appendChild(host);
+    attachShadow(
+      host,
+      'open',
+      opts.helperText
+        ? `<faceplate-form-helper-text>${opts.helperText}</faceplate-form-helper-text>`
+        : '',
+    );
+    const btn = document.createElement('button');
+    btn.type = 'submit';
+    btn.textContent = 'Send';
+    btn.disabled = opts.sendDisabled;
+    document.body.appendChild(btn);
+  }
+
+  it('returns the reason once the helper text lands and Send is disabled', () => {
+    composeDom({
+      helperText: 'You are unable to send a message request to this account.',
+      sendDisabled: true,
+    });
+
+    expect(findUndeliverableReason()).toBe(
+      'You are unable to send a message request to this account.',
+    );
+  });
+
+  it('returns null before the helper text exists, even with Send disabled', () => {
+    // The disabled state can precede the async validation result (e.g. while the
+    // request is still in flight) - nothing to report until the text shows up.
+    composeDom({ sendDisabled: true });
+
+    expect(findUndeliverableReason()).toBeNull();
+  });
+
+  it('returns null on a normal, enabled compose page - nothing to report', () => {
+    composeDom({ sendDisabled: false });
+
+    expect(findUndeliverableReason()).toBeNull();
+  });
+
+  it('returns null for a matching helper text while Send is still enabled', () => {
+    // Guards against matching stale markup from a validation that has since
+    // cleared: Send re-enabling is the signal the error no longer applies.
+    composeDom({
+      helperText: 'You are unable to send a message request to this account.',
+      sendDisabled: false,
+    });
+
+    expect(findUndeliverableReason()).toBeNull();
+  });
+
+  it('ignores an unrelated disabled-Send helper text', () => {
+    composeDom({ helperText: 'Recipient is required.', sendDisabled: true });
+
+    expect(findUndeliverableReason()).toBeNull();
+  });
+});
+
+// compose-undeliverable.html is a synthetic fixture (NOT a live capture, unlike
+// comment-thread.html above) - see fixtures/reddit/README.md for why and how to
+// replace it with a real one.
+describe('compose-undeliverable.html (synthetic - see fixtures/reddit/README.md)', () => {
+  it('finds the reason through the recipient input and message-body shadow roots', () => {
+    document.body.innerHTML = COMPOSE_UNDELIVERABLE_HTML;
+    hydrateShadowRoots(document.body);
+
+    expect(findUndeliverableReason()).toBe(
+      'You are unable to send a message request to this account.',
+    );
+  });
+});
+
 // comment-thread.html is an anonymised capture of a real, signed-in
 // www.reddit.com thread (2026-09-04) - see fixtures/reddit/README.md for what was
 // stripped and how to regenerate it. Loaded with Vite's `?raw` import (not
@@ -151,26 +251,6 @@ describe('comment-thread.html (real www.reddit.com capture)', () => {
   const OURS = 't1_fixture25';
   const OURS_CREATED_MS = Date.parse('2026-09-04T13:22:46.500Z');
   const NEWEST_OTHER_CREATED_MS = Date.parse('2026-09-04T00:40:33.978Z');
-
-  /**
-   * The capture records each open shadow root as a `<template
-   * data-fixture-shadow-root="open">` rather than flattening it, since a content
-   * script has to pierce those for real. Re-attach them so `queryDeep` is
-   * exercised against the page's actual encapsulation.
-   */
-  function hydrateShadowRoots(root: ParentNode): number {
-    let attached = 0;
-    for (const tpl of Array.from(root.querySelectorAll('template[data-fixture-shadow-root]'))) {
-      const host = tpl.parentElement;
-      if (!host || host.shadowRoot) continue;
-      const shadow = host.attachShadow({ mode: 'open' });
-      tpl.remove();
-      while (tpl.firstChild) shadow.appendChild(tpl.firstChild);
-      attached++;
-      attached += hydrateShadowRoots(shadow);
-    }
-    return attached;
-  }
 
   function renderCapture(): void {
     document.body.innerHTML = REDDIT_THREAD_HTML;

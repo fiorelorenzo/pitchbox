@@ -67,6 +67,47 @@ export async function checkContactDedup(
   };
 }
 
+export interface CheckUncontactableInput {
+  platformId: number;
+  targetUser: string;
+  organizationId: number;
+}
+
+export interface UncontactableResult {
+  uncontactable: boolean;
+  reason: string | null;
+}
+
+/**
+ * Whether `targetUser` was previously marked uncontactable on this platform
+ * (issue #335: Reddit disabling Send with "unable to send a message request
+ * to this account" is the first case that sets this). Unlike
+ * checkContactDedup, this has no time window and no warn-only mode: a
+ * platform-level "this account cannot be messaged" fact does not expire with
+ * the dedup policy, so drafts:create always skips a DM to it regardless of
+ * dedup_policy.mode.
+ */
+export async function checkUncontactable(
+  db: Db,
+  input: CheckUncontactableInput,
+): Promise<UncontactableResult> {
+  const { platformId, targetUser, organizationId } = input;
+  const [row] = await db
+    .select({ reason: contactHistory.uncontactableReason })
+    .from(contactHistory)
+    .where(
+      and(
+        eq(contactHistory.organizationId, organizationId),
+        eq(contactHistory.platformId, platformId),
+        eq(contactHistory.targetUser, targetUser),
+        eq(contactHistory.uncontactable, true),
+      ),
+    )
+    .orderBy(desc(contactHistory.lastContactedAt))
+    .limit(1);
+  return { uncontactable: !!row, reason: row?.reason ?? null };
+}
+
 export interface DedupPolicy {
   windowDays: number;
   mode: 'warn' | 'skip';

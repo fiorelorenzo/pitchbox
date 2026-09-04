@@ -61,3 +61,21 @@ for (const pat of [/your-handle/i, /redd\.it|redditmedia/i, /https?:\/\//i]) {
 Add the real handles, subreddit and thread id of whatever session produced the capture to
 that list: the point is to check the values that were actually on the page, not the ones
 that happened to be there in September 2026.
+
+
+## compose-undeliverable.html (synthetic, not captured)
+
+Unlike `comment-thread.html` above, this one is **not** a real capture. Issue #335
+needed a fixture for Reddit's "you are unable to send a message request to this
+account" DM-compose error before any live, signed-in Chrome endpoint was reachable
+from the environment that wrote the detection code, so this file is hand-written -
+modeled on the same `shreddit-*`/`faceplate-*` custom-element family and shadow-DOM
+convention the capture above already verified, using the exact wording issue #335
+quotes from a real session, but never checked against Reddit's live compose page.
+
+`scripts/capture-reddit-fixtures.mjs --target compose --recipient <handle>` now
+supports capturing the real thing (point `--recipient` at an account that has
+already declined message requests from the signed-in session). Regenerate this
+file with it and replace this section once that capture exists; until then, treat
+`findUndeliverableReason`'s tests against this fixture as "the selectors read the
+shape the issue describes", not "this is what Reddit currently renders".

@@ -1,0 +1,16 @@
+<shreddit-compose-message-form>
+  <template data-fixture-shadow-root="open">
+    <faceplate-text-input name="to">
+      <template data-fixture-shadow-root="open">
+        <input type="text" name="to" placeholder="Username">
+        <faceplate-form-helper-text>You are unable to send a message request to this account.</faceplate-form-helper-text>
+      </template>
+    </faceplate-text-input>
+    <faceplate-textarea-input name="message-content">
+      <template data-fixture-shadow-root="open">
+        <textarea name="text" placeholder="Message"></textarea>
+      </template>
+    </faceplate-textarea-input>
+    <button type="submit" disabled="">Send</button>
+  </template>
+</shreddit-compose-message-form>

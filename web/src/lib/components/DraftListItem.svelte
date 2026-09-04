@@ -27,6 +27,7 @@
 		createdAt: string | Date | null;
 		project?: { id: number; slug: string; name: string };
 		dedupWarning?: string | null;
+		undeliverableReason?: string | null;
 		qualityScore?: number | null;
 		variantGroupId?: string | null;
 		variantLabel?: string | null;
@@ -90,6 +91,14 @@
 					title={draft.dedupWarning}
 				>
 					dedup
+				</span>
+			{/if}
+			{#if draft.state === 'undeliverable' && draft.undeliverableReason}
+				<span
+					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium {TONE_CLASS.slate}"
+					title={draft.undeliverableReason}
+				>
+					undeliverable
 				</span>
 			{/if}
 			{#if scheduledUntil}
