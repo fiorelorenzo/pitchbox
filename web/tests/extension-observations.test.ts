@@ -2,6 +2,10 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
+import {
+  defaultLinkedInAssistSettings,
+  saveLinkedInAssistSettings,
+} from '@pitchbox/shared/linkedin-assist';
 import { POST as observationsPost } from '../src/routes/api/extension/observations/+server.js';
 
 /**
@@ -20,6 +24,7 @@ async function reset() {
   // colliding in the same in-memory bucket for the limiter's 60s window. A
   // monotonically increasing id keeps every test's device in its own bucket.
   await getDb().execute(sql`DELETE FROM extension_devices`);
+  await getDb().execute(sql`DELETE FROM app_config WHERE key = 'linkedin_assist'`);
 }
 
 function bearer(token: string | null, body: unknown): Request {
@@ -30,13 +35,28 @@ function bearer(token: string | null, body: unknown): Request {
   });
 }
 
-async function seedOrgWithProject(slug: string) {
+/**
+ * Seeds an org and a project, and by default binds the LinkedIn assistant to
+ * that project with the collector on. That binding is a precondition of the
+ * route now, not decoration: the collector is off by default (#316), and the
+ * route refuses a post an admin never switched on. Pass `assist: false` to
+ * seed the default off state.
+ */
+async function seedOrgWithProject(slug: string, opts: { assist?: boolean } = {}) {
   const db = getDb();
   const [org] = await db.insert(schema.organizations).values({ slug, name: slug }).returning();
   const [project] = await db
     .insert(schema.projects)
     .values({ organizationId: org.id, slug: `p-${slug}`, name: slug })
     .returning();
+  if (opts.assist ?? true) {
+    await saveLinkedInAssistSettings(db, org.id, {
+      ...defaultLinkedInAssistSettings(),
+      enabled: true,
+      collectorEnabled: true,
+      projectId: project.id,
+    });
+  }
   return { org, project };
 }
 
@@ -232,5 +252,82 @@ describe('POST /api/extension/observations', () => {
     expect(passedThrough).toBe(30);
     expect(throttled).toBe(1);
     expect(passedThrough + throttled).toBe(statuses.length);
+  });
+
+  // #316 shipped the collector switch, the kill switch and the device read
+  // path, but nothing on the server refused a post that ignored them. These
+  // three fail on the code as #357 left it: measured before the gate landed,
+  // every one of them returned 200 and wrote the row.
+  it('refuses a collector that an admin never switched on, which is the default state', async () => {
+    const { org, project } = await seedOrgWithProject('obs-collector-off', { assist: false });
+    await mintDevice(org.id, 'tokOff');
+
+    await expect(
+      observationsPost({
+        request: bearer('tokOff', {
+          platform: 'linkedin',
+          projectId: project.id,
+          items: [observation()],
+        }),
+      } as never),
+    ).rejects.toMatchObject({ status: 403 });
+
+    const rows = await getDb()
+      .select()
+      .from(schema.observedTargets)
+      .where(eq(schema.observedTargets.projectId, project.id));
+    expect(rows).toEqual([]);
+  });
+
+  it('refuses while the kill switch is engaged, even with the collector flag left on', async () => {
+    const { org, project } = await seedOrgWithProject('obs-killed', { assist: false });
+    await saveLinkedInAssistSettings(getDb(), org.id, {
+      ...defaultLinkedInAssistSettings(),
+      enabled: true,
+      collectorEnabled: true,
+      projectId: project.id,
+      killSwitch: true,
+    });
+    await mintDevice(org.id, 'tokKilled');
+
+    await expect(
+      observationsPost({
+        request: bearer('tokKilled', {
+          platform: 'linkedin',
+          projectId: project.id,
+          items: [observation()],
+        }),
+      } as never),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('refuses a project of the same org that is not the bound one', async () => {
+    const { org, project } = await seedOrgWithProject('obs-other-project');
+    const [other] = await getDb()
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'p-obs-other', name: 'other' })
+      .returning();
+    await mintDevice(org.id, 'tokOther');
+
+    await expect(
+      observationsPost({
+        request: bearer('tokOther', {
+          platform: 'linkedin',
+          projectId: other.id,
+          items: [observation()],
+        }),
+      } as never),
+    ).rejects.toMatchObject({ status: 403 });
+
+    // The bound project still works from the same device, so this is the
+    // binding being enforced and not the device being broken.
+    const res = await observationsPost({
+      request: bearer('tokOther', {
+        platform: 'linkedin',
+        projectId: project.id,
+        items: [observation()],
+      }),
+    } as never);
+    expect(res.status).toBe(200);
   });
 });

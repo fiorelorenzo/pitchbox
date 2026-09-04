@@ -10,6 +10,7 @@ import { loadActiveTemplates } from '@pitchbox/shared/templates';
 import { getAccountUsage, checkQuota, loadQuotaLimits } from '@pitchbox/shared/quota';
 import { mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
 import { MAX_POST_CHARS, type SuggestionKind } from '@pitchbox/shared/assist/suggest-prompt';
+import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist';
 
 // The real-time plane. What makes the in-page assistant a separate subsystem
 // rather than a view onto campaigns:
@@ -127,6 +128,39 @@ export async function POST(event: RequestEvent) {
         limit: day.limit,
         used: day.used,
         boundBy: day.kind,
+      });
+    }
+  }
+
+  // The kill switch has to be enforced here, not only honoured by the panel
+  // (#316 shipped the switch and the device read path; nothing refused a call
+  // that ignored them). This route's own header says the API is the
+  // enforcement boundary and not the panel, and a switch a client can decline
+  // to read is not a switch: a stolen device token, a stale content script or
+  // a tab left open across the flip all reach this code with the org's
+  // assistant explicitly turned off.
+  //
+  // Scoped to the platform the switch actually names. `linkedin_assist` is a
+  // LinkedIn setting, so gating every platform on it would silently block a
+  // future Mastodon or Reddit assist that nobody ever wired to it.
+  if (platform.slug === 'linkedin') {
+    const assist = await loadLinkedInAssistDeviceState(db, project.organizationId);
+    if (!assist.enabled) {
+      // Same posture as the quota refusal above: a 200 with a body the panel
+      // can render. Nothing went wrong, an admin turned it off.
+      return json({
+        refused: assist.killSwitch ? 'kill_switch' : 'assist_disabled',
+        platform: platform.slug,
+      });
+    }
+    // A suggestion is written as the bound project's voice, so a request
+    // naming a different project of the same org is not a narrower case of
+    // the binding, it bypasses it.
+    if (assist.projectId !== project.id) {
+      return json({
+        refused: 'project_not_bound',
+        platform: platform.slug,
+        boundProjectId: assist.projectId,
       });
     }
   }

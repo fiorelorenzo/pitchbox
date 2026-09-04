@@ -3,6 +3,10 @@ import { sql, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
 import type { AgentRunHandle, AgentRunOptions, AgentRunner } from '@pitchbox/shared/agents';
+import {
+  defaultLinkedInAssistSettings,
+  saveLinkedInAssistSettings,
+} from '@pitchbox/shared/linkedin-assist';
 
 /**
  * The real-time suggestion endpoint (#312). What these tests defend is the
@@ -76,12 +80,20 @@ async function reset() {
     sql`TRUNCATE drafts, runs, campaigns, accounts, projects, contact_history, extension_devices RESTART IDENTITY CASCADE`,
   );
   await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
+  await getDb().execute(sql`DELETE FROM app_config WHERE key = 'linkedin_assist'`);
   lastOptions = null;
   cancelCalls = 0;
   hangForever = false;
 }
 
-async function seedOrgProject(slug: string) {
+/**
+ * Seeds an org and a project, and by default binds the LinkedIn assistant to
+ * that project. The binding is a precondition of the route now: the assistant
+ * is off until an admin turns it on (#316), and the route refuses rather than
+ * trusting the panel to have read the switch. Pass `assist: false` for the
+ * default off state.
+ */
+async function seedOrgProject(slug: string, opts: { assist?: boolean } = {}) {
   const db = getDb();
   const [org] = await db.insert(schema.organizations).values({ slug, name: slug }).returning();
   const [project] = await db
@@ -92,6 +104,13 @@ async function seedOrgProject(slug: string) {
     .select()
     .from(schema.platforms)
     .where(eq(schema.platforms.slug, 'linkedin'));
+  if (opts.assist ?? true) {
+    await saveLinkedInAssistSettings(db, org.id, {
+      ...defaultLinkedInAssistSettings(),
+      enabled: true,
+      projectId: project.id,
+    });
+  }
   return { org, project, platform };
 }
 
@@ -271,5 +290,63 @@ describe('POST /api/extension/suggest', () => {
     await reader.cancel();
 
     await vi.waitFor(() => expect(cancelCalls).toBeGreaterThan(0));
+  });
+
+  // The switch #316 shipped was only ever read by a client that chose to read
+  // it. All three of these returned a full streamed suggestion on the code as
+  // #357 left it, with the org's assistant off.
+  it('refuses to suggest for an org that never turned the assistant on', async () => {
+    const { org, project } = await seedOrgProject('org-off', { assist: false });
+    await mintDevice(org.id, 'tokOff');
+
+    const res = await suggest({
+      request: request('tokOff', { ...POST_BODY, projectId: project.id }),
+    } as never);
+    expect(await res.json()).toMatchObject({ refused: 'assist_disabled' });
+    // No model call at all, which is the point: a refusal that still spawns an
+    // agent has only moved the cost.
+    expect(lastOptions).toBeNull();
+  });
+
+  it('names the kill switch distinctly, so the panel can say who stopped it', async () => {
+    const { org, project } = await seedOrgProject('org-killed', { assist: false });
+    await saveLinkedInAssistSettings(getDb(), org.id, {
+      ...defaultLinkedInAssistSettings(),
+      enabled: true,
+      projectId: project.id,
+      killSwitch: true,
+    });
+    await mintDevice(org.id, 'tokKilled');
+
+    const res = await suggest({
+      request: request('tokKilled', { ...POST_BODY, projectId: project.id }),
+    } as never);
+    expect(await res.json()).toMatchObject({ refused: 'kill_switch' });
+    expect(lastOptions).toBeNull();
+  });
+
+  it('refuses to write as a project of the same org that is not the bound one', async () => {
+    const { org, project } = await seedOrgProject('org-bound');
+    const [other] = await getDb()
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'p-other', name: 'other', description: 'other' })
+      .returning();
+    await mintDevice(org.id, 'tokBound');
+
+    const res = await suggest({
+      request: request('tokBound', { ...POST_BODY, projectId: other.id }),
+    } as never);
+    expect(await res.json()).toMatchObject({
+      refused: 'project_not_bound',
+      boundProjectId: project.id,
+    });
+    expect(lastOptions).toBeNull();
+
+    // The bound project still streams from the same device.
+    const ok = await suggest({
+      request: request('tokBound', { ...POST_BODY, projectId: project.id }),
+    } as never);
+    expect(ok.headers.get('content-type')).toContain('text/event-stream');
+    await ok.text();
   });
 });
