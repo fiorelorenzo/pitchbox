@@ -33,11 +33,17 @@ export default defineConfig({
           { text: 'Playbooks', link: '/playbooks' },
           { text: 'Notifications', link: '/notifications' },
           { text: 'Authentication', link: '/auth' },
+          { text: 'Organizations', link: '/orgs' },
+          { text: 'Permissions', link: '/permissions' },
+          { text: 'Analytics', link: '/analytics' },
         ],
       },
       {
         text: 'Platforms',
-        items: [{ text: 'LinkedIn', link: '/platforms/linkedin' }],
+        items: [
+          { text: 'LinkedIn', link: '/platforms/linkedin' },
+          { text: 'Hacker News', link: '/platforms/hackernews' },
+        ],
       },
       {
         text: 'Surfaces',
@@ -50,7 +56,10 @@ export default defineConfig({
       },
       {
         text: 'Operations',
-        items: [{ text: 'Self-hosting', link: '/self-hosting' }],
+        items: [
+          { text: 'Self-hosting', link: '/self-hosting' },
+          { text: 'Retention', link: '/retention' },
+        ],
       },
     ],
     search: { provider: 'local' },
