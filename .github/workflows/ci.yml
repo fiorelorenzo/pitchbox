@@ -26,6 +26,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Workspace versions in lockstep (#207)
         run: pnpm run version:check
+      - name: LinkedIn compliance boundary (#308)
+        run: pnpm run test:linkedin-compliance
       - name: Lint (eslint + prettier)
         run: pnpm run lint
       - name: Typecheck (tsc + svelte-check)

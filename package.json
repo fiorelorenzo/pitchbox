@@ -12,6 +12,7 @@
     "build": "pnpm -r --if-present run build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:linkedin-compliance": "vitest run --config vitest.compliance.config.ts",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p cli && tsc --noEmit -p daemon && pnpm -F @pitchbox/extension check && pnpm -F web check",
