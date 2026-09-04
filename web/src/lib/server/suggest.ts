@@ -34,6 +34,13 @@ export interface SuggestionResult {
   usage?: {
     inputTokens: number;
     outputTokens: number;
+    // A suggestion's prompt is served from the provider's cache (issue #313
+    // comment): `inputTokens` alone reads as ~2 tokens for an ~800-token
+    // prompt because the cached remainder arrives as these two counts
+    // instead. Carried through so a caller that writes them down (the
+    // accept path's `runs` row) doesn't read as broken accounting.
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
     costUsd: number | null;
   };
 }
@@ -176,6 +183,8 @@ export function runSuggestion(args: {
           ? {
               inputTokens: run.usage.inputTokens,
               outputTokens: run.usage.outputTokens,
+              cacheReadTokens: run.usage.cacheReadTokens,
+              cacheCreationTokens: run.usage.cacheCreationTokens,
               costUsd: run.usage.costUsd,
             }
           : undefined,

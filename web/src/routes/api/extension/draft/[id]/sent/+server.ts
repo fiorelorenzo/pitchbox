@@ -130,7 +130,16 @@ export async function POST({ params, request }: { params: { id: string }; reques
   // unresolvable org here is a bug worth naming rather than a DB error.
   const orgId = await requireDraftOrgId(db, id);
 
-  if (draft.kind === 'dm' && draft.targetUser) {
+  // Was `draft.kind === 'dm' && draft.targetUser` until #313: the dashboard's
+  // own manual-send route (web/src/routes/inbox/[id]/+server.ts) has always
+  // gated this purely on `draft.targetUser`, and the LinkedIn assist accept
+  // path (shared/src/assist-accept.ts) deliberately sets `targetUser` on a
+  // `post_comment` draft (the post's author - real-time, one known target,
+  // unlike the campaign commenter convention of leaving it null) precisely
+  // so a sent assist draft gets a contact_history row. Every other kind's
+  // `targetUser` was already null in practice, so this only widens what was
+  // dead code for them.
+  if (draft.targetUser) {
     const [account] = await db
       .select()
       .from(schema.accounts)
