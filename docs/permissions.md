@@ -61,6 +61,9 @@ already limits them to the active org). Listed here for completeness.
 `playbooks/[id]` PATCH + DELETE,
 `settings/default-runner` GET, `settings/quota` GET, `settings/runner-config` GET
 (view only - saving these needs instance admin, see below),
+`settings/linkedin-assist` GET + POST (org-scoped, unlike the instance-wide
+settings above - the page's own loader also throws here, see the #254 note
+below),
 `orgs/[slug]/invites` POST, `orgs/[slug]/invites/[token]` DELETE,
 `orgs/[slug]/members/[userId]` PATCH + DELETE (with the member-management rules).
 
@@ -90,7 +93,11 @@ viewing the page, and the three GET routes above, stay `requireRole(event,
 The General settings page (four tabs behind one route) was flattened into
 seven top-level routes, one flat rail with no tabs (#254): `settings/status`,
 `settings/runners`, `settings/extension`, `settings/quota`,
-`settings/organization`, `settings/retention`, `settings/security`. `/settings`
+`settings/organization`, `settings/retention`, `settings/security`. LI-19
+(#316) later added an eighth, `settings/linkedin-assist` (the in-page
+LinkedIn assistant's on/off switch, bound project, daily caps and kill
+switch - org-scoped, so it throws `requireRole(event, 'admin')` like
+Retention/Security rather than narrowing like Quota below). `/settings`
 itself now just redirects (307) to `/settings/status`. The four routes that
 used to be General's tabs each gate their own data set in their own loader,
 the same per-data-set split #237 landed on the old combined page: `status`
@@ -106,8 +113,8 @@ empty/misleading state when it isn't. `extension`'s paired-devices list
 status); only revoking a device (DELETE) and minting a pairing code (POST
 `settings/extension-pairing`) are admin-gated. The settings rail
 (`web/src/routes/settings/+layout.svelte`) hides the `organization` link when
-auth is off (no org context to show), and hides the `retention`/`security`
-links from a non-admin since those two routes' loaders
+auth is off (no org context to show), and hides the `retention`/`security`/
+`linkedin-assist` links from a non-admin since those routes' loaders call
 `requireRole(event, 'admin')` and would 403; `status`/`runners`/`extension`/
 `quota` are always shown because none of their loaders throw, they only
 narrow the payload.

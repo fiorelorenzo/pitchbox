@@ -54,7 +54,8 @@
     "./scheduler/jitter": "./src/scheduler/jitter.ts",
     "./scheduler/backoff": "./src/scheduler/backoff.ts",
     "./scheduler/dispatch-lock": "./src/scheduler/dispatch-lock.ts",
-    "./project-extraction": "./src/project-extraction/index.ts"
+    "./project-extraction": "./src/project-extraction/index.ts",
+    "./linkedin-assist": "./src/linkedin-assist.ts"
   },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",
