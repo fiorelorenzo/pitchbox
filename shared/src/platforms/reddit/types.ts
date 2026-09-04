@@ -63,6 +63,15 @@ export interface ScoutProfile {
   minKarma?: number;
   maxAccountAgeDays?: number;
   minPostScore?: number;
+  /**
+   * Posts older than this are dropped as stale at collection time, before
+   * any drafting happens (#338). Unset/null falls back to the scout's
+   * default (72h) - an existing campaign with no such key in its config
+   * still gets the cap, not "no cap". An explicit 0 caps immediately
+   * (everything is older than zero hours); there is no sentinel for
+   * disabling the filter.
+   */
+  maxPostAgeHours?: number | null;
 }
 
 export interface ScoutCandidate {

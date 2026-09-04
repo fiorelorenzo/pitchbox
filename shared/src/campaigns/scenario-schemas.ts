@@ -24,6 +24,11 @@ const RedditScoutSchema = z
       })
       .strict(),
     systemInstructions: z.string().min(1),
+    // Posts older than this are dropped as stale at collection time (#338).
+    // Optional and deliberately left out of the generator's instructions -
+    // see campaign-skill-generator.md step 2 - so the scout falls back to
+    // its own default (72h) instead of an LLM-guessed per-campaign value.
+    maxPostAgeHours: z.number().int().positive().optional(),
   })
   .strict();
 

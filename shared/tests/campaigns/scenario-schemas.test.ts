@@ -44,6 +44,23 @@ describe('reddit-scout schema', () => {
   it('rejects extra unknown fields (strict)', () => {
     expect(() => schema.parse({ ...valid, surprise: 'oops' })).toThrow();
   });
+
+  it('accepts an explicit maxPostAgeHours (#338)', () => {
+    const withCap = { ...valid, maxPostAgeHours: 48 };
+    expect(schema.parse(withCap)).toEqual(withCap);
+  });
+
+  it('omits maxPostAgeHours by default (an existing campaign has no such key)', () => {
+    expect(schema.parse(valid)).not.toHaveProperty('maxPostAgeHours');
+  });
+
+  it('rejects a zero maxPostAgeHours', () => {
+    expect(() => schema.parse({ ...valid, maxPostAgeHours: 0 })).toThrow();
+  });
+
+  it('rejects a negative maxPostAgeHours', () => {
+    expect(() => schema.parse({ ...valid, maxPostAgeHours: -1 })).toThrow();
+  });
 });
 
 describe('reddit-commenter schema', () => {

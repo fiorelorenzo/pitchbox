@@ -54,7 +54,7 @@ Write like this instead:
 
 2. **Fetch raw candidates.** Call `reddit_scout` with `{ "runId": <runId> }`.
 
-   This fetches Reddit via the Pitchbox backend, applies blocklist + contact-history filters, and stages `staging_scout_candidates` rows.
+   This fetches Reddit via the Pitchbox backend, applies blocklist + contact-history + recency filters (a post older than `campaign.config.maxPostAgeHours`, default 72h if unset, is dropped before it ever reaches drafting), and stages `staging_scout_candidates` rows.
 
 3. **Read the staged candidates.** Call `staging_candidates` with `{ "run": <runId> }`.
 
