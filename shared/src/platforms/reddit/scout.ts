@@ -15,9 +15,17 @@ export interface RunScoutOptions {
   contactedHandles: Set<string>;
   blockedHandles: Set<string>;
   verbose?: boolean;
+  /** Injectable clock for deterministic recency tests. Defaults to now. */
+  now?: Date;
 }
 
-export async function runScout(opts: RunScoutOptions): Promise<ScoutCandidate[]> {
+export interface RunScoutResult {
+  candidates: ScoutCandidate[];
+  /** Count of candidates dropped for being older than the campaign's recency cap (#338). */
+  droppedByAge: number;
+}
+
+export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
   const env = loadEnv();
   // Claim the shared browser/context before scraping and release it in the
   // finally below. The client process can multiplex concurrent runs (e.g.
@@ -104,6 +112,8 @@ export async function runScout(opts: RunScoutOptions): Promise<ScoutCandidate[]>
     return filterCandidates(raw, {
       contactedHandles: opts.contactedHandles,
       blockedHandles: opts.blockedHandles,
+      maxPostAgeHours: opts.profile.maxPostAgeHours,
+      now: opts.now,
     });
   } finally {
     await closeBrowser();

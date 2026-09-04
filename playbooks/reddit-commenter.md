@@ -54,7 +54,7 @@ Write like this instead:
 
    Treat `campaign.config.systemInstructions` as additional voice & content guidance - it overrides defaults.
 
-2. **Fetch candidate posts.** Call `reddit_scout` with `{ "runId": <runId> }`. The `matchedBy` field on each candidate tells you whether it came from a keyword search or a hot-browse pass.
+2. **Fetch candidate posts.** Call `reddit_scout` with `{ "runId": <runId> }`. This already dropped anything older than `campaign.config.maxPostAgeHours` (default 72h if unset), so a survivor is at least recent enough to be worth commenting on. The `matchedBy` field on each candidate tells you whether it came from a keyword search or a hot-browse pass.
 
 3. **Read staged candidates.** Call `staging_candidates` with `{ "run": <runId> }`.
 

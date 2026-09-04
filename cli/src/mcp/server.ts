@@ -282,7 +282,7 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     {
       title: 'Fetch and stage Reddit candidates',
       description:
-        'Fetch Reddit candidates for the run via the campaign profile, apply blocklist + contact-history filters, and stage them. Returns { runId, candidatesFetched }.',
+        'Fetch Reddit candidates for the run via the campaign profile, apply blocklist + contact-history + recency filters, and stage them. Returns { runId, candidatesFetched, droppedByAge }.',
       inputSchema: {
         runId: z
           .number()

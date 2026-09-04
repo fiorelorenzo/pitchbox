@@ -48,7 +48,7 @@ Write like this instead:
    From the result extract: `campaignId`, `scenario`, `objective`, `project.description`, `schemaPromptDescription`, `existingConfig`.
 
 2. **Compose the profile.** Build a JSON object that **exactly matches** `schemaPromptDescription`:
-   - Every field must be present and filled (no nulls, no placeholders, no `...`).
+   - Every field must be present and filled (no nulls, no placeholders, no `...`), except a field the schema itself marks optional (for example `reddit-scout`'s `maxPostAgeHours`): leave those out of the profile rather than guessing a value, so the campaign falls back to the platform's own default.
    - No extra fields beyond what the schema describes - the schema uses strict validation and will reject unknown keys.
    - Arrays may be empty when the schema allows it; required arrays (e.g. `targetSubreddits`) must contain at least one entry.
    - URLs must be valid (`https://...`).
