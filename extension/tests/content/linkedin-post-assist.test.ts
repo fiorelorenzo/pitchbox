@@ -41,9 +41,8 @@ vi.mock('../../src/lib/log-from-content.js', () => ({
 // Dynamic, not static: this module must load after the `vi.mock` calls
 // above are in place (vitest hoists `vi.mock` but not a static import),
 // matching `linkedin-comment-assist.test.ts`'s own established pattern.
-const { wirePostAssist, wirePostSubmit, refusalMessage } = await import(
-  '../../src/content/linkedin-post-assist.js'
-);
+const { wirePostAssist, wirePostSubmit, refusalMessage } =
+  await import('../../src/content/linkedin-post-assist.js');
 
 const ASSIST_ON = {
   ok: true as const,
