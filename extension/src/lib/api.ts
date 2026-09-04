@@ -233,7 +233,8 @@ export const api = {
   sent: async (
     draftId: number,
     sentContent?: string,
-    commentLookup?: { postId: string; accountHandle: string; postedAt: string },
+    /** `t1_...` id of the comment this send produced, read from the page. */
+    platformCommentId?: string,
     platformPostId?: string,
     version?: number,
     backendUrl?: string,
@@ -243,7 +244,7 @@ export const api = {
     const payload = {
       sentContent,
       sentAt: new Date().toISOString(),
-      commentLookup,
+      platformCommentId,
       platformPostId,
       version,
     };

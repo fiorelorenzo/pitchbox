@@ -10,10 +10,18 @@ import { requireDraftOrgId } from '@pitchbox/shared/orgs';
 type SentBody = {
   sentContent?: string;
   sentAt?: string;
-  commentLookup?: { postId: string; accountHandle: string; postedAt?: string };
+  /** The `t1_...` thing id of the comment the content script just watched land. */
+  platformCommentId?: string;
   platformPostId?: string;
   version?: number;
 };
+
+// A Reddit comment fullname. Narrow on purpose: this value comes from a device
+// token holder and lands in the column the reply matcher joins on, so a
+// free-form string would let a malformed (or hostile) id claim replies.
+function isRedditCommentId(v: unknown): v is string {
+  return typeof v === 'string' && /^t1_[a-z0-9]{4,16}$/i.test(v);
+}
 
 // States a draft can validly transition to `sent` FROM. Mirrors the dashboard's
 // own allowlists (see EDITABLE_STATES / RESCHEDULABLE_STATES in
@@ -93,31 +101,26 @@ export async function POST({ params, request }: { params: { id: string }; reques
     details,
   });
 
-  if (body.commentLookup && body.commentLookup.postId && body.commentLookup.accountHandle) {
-    const lookup = body.commentLookup;
-    const postedAtMs = lookup.postedAt ? Date.parse(lookup.postedAt) : Date.now();
-    void (async () => {
-      try {
-        const { findOurComment } = await import('$lib/server/comment-lookup.js');
-        const commentId = await findOurComment({
-          postId: lookup.postId,
-          accountHandle: lookup.accountHandle,
-          postedAtMs,
-        });
-        if (commentId) {
-          // platform_comment_id is a side-channel attribute, not a state
-          // transition - leave the version untouched here.
-          await db
-            .update(schema.drafts)
-            .set({ platformCommentId: commentId })
-            .where(eq(schema.drafts.id, id));
-        } else {
-          console.warn('[pitchbox] comment lookup miss for draft', id, lookup.postId);
-        }
-      } catch (e) {
-        console.warn('[pitchbox] comment lookup error', e);
-      }
-    })();
+  // The comment's own thing id, read from the page by the content script that
+  // watched the submit. It used to be resolved here instead, by fetching
+  // `reddit.com/comments/<id>.json` server-side, which cannot work: measured on
+  // 2026-09-04 that endpoint answers 403 to a plain fetch both from a dev box and
+  // from inside the deployed web container, with and without a browser
+  // user-agent. So the lookup returned null on every send and
+  // `platform_comment_id` was never written, which silently cost reply
+  // attribution (#337) - `shared/src/comment-sync.ts` matches an incoming `t1`
+  // reply on exactly this column. The browser already has the id and the
+  // session; the server has neither.
+  //
+  // Not a state transition, so it deliberately leaves `version` alone: the
+  // extension may still be holding the version it sent with.
+  if (isRedditCommentId(body.platformCommentId)) {
+    await db
+      .update(schema.drafts)
+      .set({ platformCommentId: body.platformCommentId })
+      .where(eq(schema.drafts.id, id));
+  } else if (body.platformCommentId != null) {
+    console.warn('[pitchbox] ignoring malformed platformCommentId for draft', id);
   }
 
   // The contact carries the draft's org (not the device's, which may be null on

@@ -1,16 +1,21 @@
 import { parseBackendUrl, parseDraftId } from '../lib/draft-param.js';
 import { api } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
-import { findCommentTextarea, findCommentSubmitButton, queryDeep } from './shared/reddit-dom.js';
+import {
+  findCommentTextarea,
+  findCommentSubmitButton,
+  findOurCommentId,
+  queryDeep,
+} from './shared/reddit-dom.js';
 
 const draftId = parseDraftId(location.href);
 const backendUrl = parseBackendUrl(location.href) ?? undefined;
 
-// /r/<sub>/comments/<postId>/<slug>/...   - Reddit's canonical pattern.
-// Exported (pure, no DOM/network access) so it is unit-testable on its own (#205).
-export function derivePostId(pathname: string): string | null {
-  const m = /\/comments\/([a-z0-9]+)\b/i.exec(pathname);
-  return m ? m[1] : null;
+// `Promise.withResolvers` would read better, but it is Chrome 119+ and this
+// extension declares `minimum_chrome_version: '114'` (manifest.config.ts), so the
+// executor form is the one that runs everywhere we claim to support.
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -98,6 +103,7 @@ async function fetchAccountHandle(draftId: number): Promise<string | null> {
 
 if (draftId !== null) {
   let armed = false;
+  let armedAtMs: number | null = null;
   let sent = false;
 
   function readCurrentText(): string | undefined {
@@ -143,23 +149,56 @@ if (draftId !== null) {
   async function onSendIntent() {
     if (armed) return;
     armed = true;
+    armedAtMs = Date.now();
     await api.armed(draftId!, backendUrl);
+  }
+
+  /**
+   * Read the id of the comment that just landed, which is the only place it can
+   * be read from: `reddit.com/comments/<id>.json` answers 403 to any
+   * server-side fetch, so before #337 the server tried to resolve this and
+   * always got null, leaving reply attribution blind.
+   *
+   * Reddit renders the accepted comment a moment after the submit resolves, so
+   * poll rather than looking once. A miss is not a failure of the send - the
+   * comment is posted either way - so it logs and moves on.
+   */
+  async function readOwnCommentId(handle: string | null): Promise<string | undefined> {
+    if (!handle) return undefined;
+    // Reddit's `created` comes from its clock, not this machine's, so leave a
+    // minute of slack below the arming moment rather than comparing exactly.
+    const notBeforeMs = (armedAtMs ?? Date.now()) - 60_000;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const id = findOurCommentId(handle, { notBeforeMs });
+      if (id) return id;
+      await sleep(700);
+    }
+    logFromContent({
+      level: 'warn',
+      source: 'reddit-action',
+      message: 'activity.reddit-action.comment-id-unresolved',
+      messageParams: { draftId: draftId! },
+      meta: {
+        draftId,
+        script: 'post-comment',
+        step: 'read-own-comment-id',
+        handle,
+        url: location.href,
+      },
+    });
+    return undefined;
   }
 
   async function onSendCompleted() {
     if (sent) return;
     sent = true;
     const sentContent = readCurrentText();
-    const postId = derivePostId(location.pathname);
     const handle = await fetchAccountHandle(draftId!);
-    const commentLookup =
-      postId && handle
-        ? { postId, accountHandle: handle, postedAt: new Date().toISOString() }
-        : undefined;
+    const platformCommentId = await readOwnCommentId(handle);
     const res = await api.sent(
       draftId!,
       sentContent,
-      commentLookup,
+      platformCommentId,
       undefined,
       undefined,
       backendUrl,
