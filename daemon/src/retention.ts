@@ -1,8 +1,8 @@
 // Retention worker - runs once an hour and prunes ageing run_events,
-// draft_events, terminal drafts, and delivered/dead webhook_deliveries
-// according to the policy stored in `app_config.retention`. Contact history
-// is intentionally preserved so the blocklist / quota signals survive draft
-// cleanup.
+// draft_events, terminal drafts, delivered/dead webhook_deliveries, and
+// observed_targets, according to the policy stored in `app_config.retention`.
+// Contact history is intentionally preserved so the blocklist / quota
+// signals survive draft cleanup.
 //
 // Each delete is capped to a batch (10k rows) and loops until either it can't
 // fill a batch or it hits a per-tick safety ceiling, keeping a single tick
@@ -28,6 +28,7 @@ export interface RetentionTickResult {
   draftEventsDeleted: number;
   draftsDeleted: number;
   webhookDeliveriesDeleted: number;
+  observedTargetsDeleted: number;
 }
 
 async function deleteRunEventsBatch(cutoffIso: string): Promise<number> {
@@ -97,6 +98,26 @@ async function deleteWebhookDeliveriesBatch(cutoffIso: string): Promise<number> 
   return res.rowCount ?? 0;
 }
 
+async function deleteObservedTargetsBatch(cutoffIso: string): Promise<number> {
+  // #300: `observed_at` (not an insert-time column) is the age proxy on
+  // purpose - it is the moment the human's browser actually saw the post,
+  // which is what "not worth commenting on a week later" is measuring.
+  // Consumed and unconsumed rows both age out the same way: consumption
+  // only marks a row as drained into a run, it doesn't extend its shelf
+  // life, and a post nobody drained in time is exactly the stale buffer
+  // this prune exists to clear.
+  const res = await getDb().execute(sql`
+    DELETE FROM observed_targets
+    WHERE id IN (
+      SELECT id FROM observed_targets
+      WHERE observed_at < ${cutoffIso}
+      ORDER BY id
+      LIMIT ${RETENTION_BATCH_SIZE}
+    )
+  `);
+  return res.rowCount ?? 0;
+}
+
 async function drainTable(
   label: string,
   cutoffIso: string,
@@ -140,6 +161,11 @@ export async function tick(): Promise<RetentionTickResult> {
     cutoffIsoFromDays(policy.webhook_deliveries_days),
     deleteWebhookDeliveriesBatch,
   );
+  const observedTargetsDeleted = await drainTable(
+    'observed_targets',
+    cutoffIsoFromDays(policy.observed_targets_days),
+    deleteObservedTargetsBatch,
+  );
 
   return {
     policy,
@@ -147,5 +173,6 @@ export async function tick(): Promise<RetentionTickResult> {
     draftEventsDeleted,
     draftsDeleted,
     webhookDeliveriesDeleted,
+    observedTargetsDeleted,
   };
 }

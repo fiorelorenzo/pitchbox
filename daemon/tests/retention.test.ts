@@ -6,7 +6,7 @@ import { tick as retentionTick } from '../src/retention.js';
 
 async function reset() {
   await getDb().execute(
-    sql`TRUNCATE drafts, runs, campaigns, accounts, projects, run_events, draft_events, contact_history, notifications, app_config, webhook_deliveries RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE drafts, runs, campaigns, accounts, projects, run_events, draft_events, contact_history, notifications, app_config, webhook_deliveries, observed_targets RESTART IDENTITY CASCADE`,
   );
 }
 
@@ -296,5 +296,67 @@ describe('retention worker', () => {
     expect(remainingIds).not.toContain(oldDead.id);
     expect(remainingIds).toContain(oldPending.id);
     expect(remainingIds).toContain(freshDelivered.id);
+  });
+
+  it('prunes observed_targets past the window and leaves fresher ones, consumed or not (#300)', async () => {
+    const { proj, platform } = await setupFixtures();
+    const db = getDb();
+
+    // Tight policy so we don't have to fabricate years-old timestamps. The
+    // window is deliberately much shorter than the other tables' - a
+    // LinkedIn post is not worth commenting on a week later.
+    await saveRetention(db, { observed_targets_days: 2 });
+
+    const now = new Date();
+    const aged = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000); // 5 days
+    const fresh = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000); // 1 day
+
+    const [agedUnconsumed] = await db
+      .insert(schema.observedTargets)
+      .values({
+        organizationId: proj.organizationId,
+        projectId: proj.id,
+        platformId: platform.id,
+        externalId: 'urn:li:activity:aged-unconsumed',
+        url: 'https://linkedin.com/feed/update/urn:li:activity:aged-unconsumed/',
+        observedAt: aged,
+      })
+      .returning();
+    // Aged AND already consumed - pruning must not special-case consumption,
+    // an aged row is aged either way.
+    const [agedConsumed] = await db
+      .insert(schema.observedTargets)
+      .values({
+        organizationId: proj.organizationId,
+        projectId: proj.id,
+        platformId: platform.id,
+        externalId: 'urn:li:activity:aged-consumed',
+        url: 'https://linkedin.com/feed/update/urn:li:activity:aged-consumed/',
+        observedAt: aged,
+      })
+      .returning();
+    const [freshRow] = await db
+      .insert(schema.observedTargets)
+      .values({
+        organizationId: proj.organizationId,
+        projectId: proj.id,
+        platformId: platform.id,
+        externalId: 'urn:li:activity:fresh',
+        url: 'https://linkedin.com/feed/update/urn:li:activity:fresh/',
+        observedAt: fresh,
+      })
+      .returning();
+
+    const result = await retentionTick();
+
+    expect(result.observedTargetsDeleted).toBe(2);
+
+    const remaining = await db
+      .select({ id: schema.observedTargets.id, externalId: schema.observedTargets.externalId })
+      .from(schema.observedTargets);
+    expect(remaining.map((r) => r.id)).not.toContain(agedUnconsumed.id);
+    expect(remaining.map((r) => r.id)).not.toContain(agedConsumed.id);
+    expect(remaining.map((r) => r.id)).toContain(freshRow.id);
+    expect(remaining).toHaveLength(1);
   });
 });

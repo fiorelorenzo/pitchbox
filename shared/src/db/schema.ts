@@ -289,6 +289,84 @@ export const stagingScoutCandidates = pgTable('staging_scout_candidates', {
   capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Posts the browser observed on linkedin.com outside of any campaign run -
+// LinkedIn has no discovery API, so an asynchronous LinkedIn campaign has no
+// targets unless the extension supplies them (see
+// docs/linkedin-integration-design.md, "Observation collection"/"Storage").
+// `staging_scout_candidates` above cannot hold these: it is `run_id NOT NULL`
+// with `onDelete: 'cascade'`, so a row cannot exist before the run that
+// consumes it, and an observation arrives with no run in sight.
+//
+// LinkedIn serves two frontends and only one exposes a stable per-post
+// identifier (design doc, "Two frontends, one identifier", corrected
+// 2026-09-03): the feed's server-driven UI has no `data-urn` at all, only a
+// render address that changes on reload, while a post detail page - the post
+// the human actually opened - carries the real URN. `external_id` is
+// therefore a generic column, not a URN-typed one: it is populated only for
+// a sighting with a genuine stable identifier, and the collector (#302) must
+// never call the ingest service for a feed sighting that has none.
+export const observedTargets = pgTable(
+  'observed_targets',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    // Both organization and project carried directly (not only reachable
+    // through a join), following #263's contact_history precedent: a row
+    // visible to no organization is a silent way to leak dedup across
+    // tenants. project_id is direct too because the drain (#304) and this
+    // table's own dedup are project-scoped - an org running several
+    // LinkedIn projects must not let a post scrolled for one seed another's
+    // candidate pool.
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    platformId: integer('platform_id')
+      .notNull()
+      .references(() => platforms.id),
+    // The stable per-frontend identifier (an activity or comment URN on
+    // LinkedIn today). Never absent - see the table comment above.
+    externalId: text('external_id').notNull(),
+    url: text('url').notNull(),
+    authorHandle: text('author_handle'),
+    authorName: text('author_name'),
+    text: text('text'),
+    observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
+    // Set once `linkedin_candidates` (#304) drains this row into
+    // staging_scout_candidates for a run. The row stays in place rather than
+    // being deleted, so a repeat sighting of the same post after
+    // consumption still hits the unique index below and does not resurrect
+    // it as a fresh, unconsumed candidate.
+    consumedByRunId: integer('consumed_by_run_id').references(() => runs.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (t) => ({
+    // Dedup key (issue #300): a repeat sighting of the same post while the
+    // human scrolls must be a no-op via onConflictDoNothing, not a second
+    // row. Deliberately NOT partial on consumed_by_run_id - the whole point
+    // is that a re-sighting of an already-consumed post must also be a
+    // no-op rather than resurrecting it (see verifying-on-conflict-dedupe:
+    // a partial predicate here would stop covering a row the moment it gets
+    // consumed, which is exactly the state a repeat sighting must still
+    // hit). organization_id leads the index, not just platform_id +
+    // external_id, because a public post is observable by more than one
+    // tenant's browser and each tenant's ingest must get its own row.
+    dedup: uniqueIndex('observed_targets_dedup_idx').on(
+      t.organizationId,
+      t.platformId,
+      t.externalId,
+    ),
+    // Drives the drain (#304): unconsumed rows for a project, oldest first.
+    byProjectUnconsumed: index('observed_targets_project_unconsumed_idx').on(
+      t.projectId,
+      t.consumedByRunId,
+      t.observedAt,
+    ),
+  }),
+);
+
 export const drafts = pgTable(
   'drafts',
   {
