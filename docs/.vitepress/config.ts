@@ -36,6 +36,10 @@ export default defineConfig({
         ],
       },
       {
+        text: 'Platforms',
+        items: [{ text: 'LinkedIn', link: '/platforms/linkedin' }],
+      },
+      {
         text: 'Surfaces',
         items: [
           { text: 'Chrome extension', link: '/extension' },
