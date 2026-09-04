@@ -12,6 +12,7 @@ import { logEvent } from './lib/activity.js';
 import { getSettings as getExtensionSettings } from './lib/settings.js';
 import { hasLinkedInPermission } from './lib/permissions.js';
 import linkedinCommentScriptPath from './content/linkedin-comment.ts?script';
+import linkedinObserveScriptPath from './content/linkedin-observe.ts?script';
 
 const ALARM = 'pitchbox:dm-sync';
 
@@ -256,6 +257,58 @@ export async function syncLinkedInContentScript(): Promise<void> {
   }
 }
 
+const LINKEDIN_OBSERVE_CONTENT_SCRIPT_ID = 'pitchbox-linkedin-observe';
+
+/**
+ * Same gating as syncLinkedInContentScript above, for the passive
+ * observation collector (LI-5, #302). A second dynamic registration rather
+ * than folded into the same chrome.scripting.registerContentScripts call:
+ * the two scripts run on different (overlapping but not identical) match
+ * sets and have independent lifecycles, and the linkedin-compliance rule 2
+ * check derives its LinkedIn content-script scan set per registration
+ * entry, so keeping them separate keeps that derivation legible file-by-file.
+ */
+export async function syncLinkedInObserveContentScript(): Promise<void> {
+  try {
+    const [granted, existing] = await Promise.all([
+      hasLinkedInPermission(),
+      chrome.scripting.getRegisteredContentScripts({ ids: [LINKEDIN_OBSERVE_CONTENT_SCRIPT_ID] }),
+    ]);
+    if (granted && existing.length === 0) {
+      await chrome.scripting.registerContentScripts([
+        {
+          id: LINKEDIN_OBSERVE_CONTENT_SCRIPT_ID,
+          js: [linkedinObserveScriptPath],
+          matches: [
+            'https://www.linkedin.com/feed*',
+            'https://www.linkedin.com/posts/*',
+            'https://www.linkedin.com/in/*/recent-activity*',
+          ],
+          runAt: 'document_idle',
+        },
+      ]);
+    } else if (!granted && existing.length > 0) {
+      await chrome.scripting.unregisterContentScripts({
+        ids: [LINKEDIN_OBSERVE_CONTENT_SCRIPT_ID],
+      });
+    }
+  } catch (err) {
+    console.warn('[pitchbox] syncLinkedInObserveContentScript failed:', err);
+  }
+}
+
+/**
+ * Registers/unregisters every LinkedIn content script this extension owns,
+ * gated on the same on-demand host permission (#317). One wrapper instead
+ * of a growing list of individual calls at each of the four trigger sites
+ * below (onInstalled, onStartup, permissions.onAdded/onRemoved) - a future
+ * LinkedIn content script (see #307's reply/DM ingest, landing separately)
+ * has exactly one place to add its own sync call.
+ */
+export async function syncLinkedInContentScripts(): Promise<void> {
+  await Promise.all([syncLinkedInContentScript(), syncLinkedInObserveContentScript()]);
+}
+
 // #203: exported so tests can drive the install/update branch directly
 // without going through chrome.runtime.onInstalled's listener plumbing.
 export async function handleInstalled(details: chrome.runtime.InstalledDetails): Promise<void> {
@@ -268,7 +321,7 @@ export async function handleInstalled(details: chrome.runtime.InstalledDetails):
     console.warn('[pitchbox] sidePanel.setPanelBehavior failed:', err);
   }
   await applyAlarms();
-  await syncLinkedInContentScript();
+  await syncLinkedInContentScripts();
   if (details.reason === 'update') {
     await logEvent({
       level: 'info',
@@ -293,11 +346,11 @@ chrome.runtime.onInstalled.addListener(handleInstalled);
 chrome.runtime.onStartup.addListener(async () => {
   await logEvent({ level: 'info', source: 'system', message: 'activity.system.boot' });
   await applyAlarms();
-  await syncLinkedInContentScript();
+  await syncLinkedInContentScripts();
 });
 
-chrome.permissions.onAdded.addListener(() => void syncLinkedInContentScript());
-chrome.permissions.onRemoved.addListener(() => void syncLinkedInContentScript());
+chrome.permissions.onAdded.addListener(() => void syncLinkedInContentScripts());
+chrome.permissions.onRemoved.addListener(() => void syncLinkedInContentScripts());
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
