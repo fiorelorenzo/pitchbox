@@ -44,6 +44,7 @@
     "./orgs": "./src/orgs.ts",
     "./edition": "./src/edition.ts",
     "./retention": "./src/retention.ts",
+    "./observed-targets": "./src/observed-targets.ts",
     "./runlog": "./src/runlog/index.ts",
     "./runlog/types": "./src/runlog/types.ts",
     "./runlog/classify-failure": "./src/runlog/classify-failure.ts",
