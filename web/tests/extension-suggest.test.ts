@@ -8,6 +8,7 @@ import {
   defaultLinkedInAssistSettings,
   saveLinkedInAssistSettings,
 } from '@pitchbox/shared/linkedin-assist';
+import { ingestObservedTargets } from '@pitchbox/shared/observed-targets';
 
 /**
  * The real-time suggestion endpoint (#312). What these tests defend is the
@@ -397,6 +398,61 @@ describe('POST /api/extension/suggest', () => {
     } as never);
     await res.text();
     expect(lastConfig).toMatchObject({ model: 'opus', maxTurns: 3 });
+  });
+  describe('kind: "post" - grounded server-side in the observation buffer, #315', () => {
+    it('refuses with a renderable body, not a 500, when the buffer has nothing recent', async () => {
+      const { org, project } = await seedOrgProject('org-post-empty');
+      await mintDevice(org.id, 'tokPostEmpty');
+
+      const res = await suggest({
+        request: request('tokPostEmpty', { kind: 'post', projectId: project.id, post: {} }),
+      } as never);
+      expect(res.headers.get('content-type')).toContain('application/json');
+      expect(await res.json()).toMatchObject({ refused: 'no_recent_activity' });
+      expect(lastOptions).toBeNull();
+    });
+
+    it('ignores client-supplied post text and grounds the prompt in the most recent observation instead', async () => {
+      const { org, project, platform } = await seedOrgProject('org-post-grounded');
+      await mintDevice(org.id, 'tokPostGrounded');
+      await ingestObservedTargets(getDb(), {
+        organizationId: org.id,
+        projectId: project.id,
+        platformId: platform.id,
+        observations: [
+          {
+            externalId: 'urn:li:activity:older-sighting',
+            url: 'https://www.linkedin.com/feed/update/urn:li:activity:older-sighting/',
+            text: 'an older thing the network was discussing',
+            observedAt: new Date('2026-01-01T00:00:00Z').toISOString(),
+          },
+          {
+            externalId: 'urn:li:activity:newest-sighting',
+            url: 'https://www.linkedin.com/feed/update/urn:li:activity:newest-sighting/',
+            authorName: 'Recent Author',
+            text: 'the most recent thing the network was discussing',
+            observedAt: new Date('2026-06-01T00:00:00Z').toISOString(),
+          },
+        ],
+      });
+
+      const res = await suggest({
+        request: request('tokPostGrounded', {
+          kind: 'post',
+          projectId: project.id,
+          // A pile of client-supplied text - the route must ignore this
+          // entirely for kind "post" and use the observation buffer instead.
+          post: { text: 'whatever the panel scraped off the current page' },
+        }),
+      } as never);
+      expect(res.headers.get('content-type')).toContain('text/event-stream');
+      await res.text();
+
+      expect(lastOptions?.prompt).toContain('the most recent thing the network was discussing');
+      expect(lastOptions?.prompt).not.toContain('an older thing');
+      expect(lastOptions?.prompt).not.toContain('whatever the panel scraped');
+      expect(lastOptions?.prompt).toContain('Recent Author');
+    });
   });
 });
 

@@ -138,6 +138,12 @@ export const en = {
   'activity.linkedin-action.suggestion-refused': 'LinkedIn assist suggestion refused: {reason}',
   'activity.linkedin-action.suggestion-inserted':
     'Inserted an accepted suggestion into the LinkedIn composer for draft {draftId}.',
+  'activity.linkedin-action.post-submit-not-found':
+    'Could not find the LinkedIn post submit button for draft {draftId} within 15s; posting will not be tracked automatically.',
+  'activity.linkedin-action.post-confirm-unavailable':
+    "Draft {draftId} left the composer with no error, but LinkedIn's feed exposes no stable identifier for a freshly published post, so Pitchbox could not confirm it was sent or capture its URN. Mark it manually if it published.",
+  'activity.linkedin-action.post-confirm-timeout':
+    'Could not confirm draft {draftId} left the composer within 20s after clicking Post; check its status manually.',
   'activity.linkedin-dom.selector-miss':
     'LinkedIn selector "{selector}" is not matching on the {pageKind} page ({misses} misses, {matches} matches) - this reading may be stale or missing.',
   'activity.linkedin-collector.batch-sent':
@@ -234,6 +240,16 @@ export const en = {
   'assist.comment.accepting': 'Saving…',
   'assist.comment.inserted.title': 'Inserted',
   'assist.comment.inserted.hint': "Press LinkedIn's own Comment button to send it.",
+  // In-page LinkedIn post composer assist (LI-18, #315): same shape as the
+  // comment assist above, offering a post rather than a comment. No
+  // `resting`/`ready` subject: the suggestion is the operator's own voice,
+  // not a reply to anyone.
+  'assist.post.resting.hint': 'Get a Pitchbox-suggested post for your network.',
+  'assist.post.resting.cta': 'Suggest a post',
+  'assist.post.ready.label': 'Suggested post (editable)',
+  'assist.post.accepting': 'Saving…',
+  'assist.post.inserted.title': 'Inserted',
+  'assist.post.inserted.hint': "Press LinkedIn's own Post button to send it.",
   // Refused is five states in the brief plus three the accept path can also
   // answer with (no_account, blocked, uncontactable, recently_contacted) and
   // three this client detects itself (backend_unreachable, selector health,
@@ -252,6 +268,15 @@ export const en = {
     "LinkedIn's layout changed and Pitchbox could not read this post reliably.",
   'assist.refusal.generation_failed': 'Something went wrong while writing the suggestion.',
   'assist.refusal.unknown': 'The assistant refused this request ({reason}).',
+  // The post assist's own quota message: the server answers the same
+  // `quota_exhausted` reason for both kinds, but the comment assist's
+  // message above names the wrong quota here - the post quota ships
+  // separately, at one a day.
+  'assist.refusal.post_quota_exhausted': "Today's post quota is used up.",
+  // Post-only: the observation buffer this suggestion grounds in (#315) had
+  // nothing recent enough to draft from.
+  'assist.refusal.no_recent_activity':
+    'Nothing recent to draft a post from yet. Browse your network for a bit, then try again.',
 
   // Language names are endonyms (each language's own name for itself) and
   // are intentionally identical across every locale dictionary; a language

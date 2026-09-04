@@ -11,7 +11,10 @@
  * Vite build with `plugins: []`, so `svelte()` never runs and a panel-bearing
  * script fails to parse (#369).
  */
-export const PANEL_CONTENT_SCRIPTS = ['src/content/linkedin-comment-assist.ts'] as const;
+export const PANEL_CONTENT_SCRIPTS = [
+  'src/content/linkedin-comment-assist.ts',
+  'src/content/linkedin-post-assist.ts',
+] as const;
 
 /**
  * The emitted path for a source entry, relative to the extension root, which

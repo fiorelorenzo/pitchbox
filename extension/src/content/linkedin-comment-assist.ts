@@ -84,9 +84,15 @@ export function readAssistPost(root: ParentNode = document): AssistPost | null {
 
 /** Every refusal this panel can render, honestly and distinctly (the brief's
  * five states, plus the accept path's own three, plus three this client
- * detects itself). */
+ * detects itself). `no_recent_activity` is excluded: it only ever answers a
+ * `kind: 'post'` request (#315's post composer assist grounds itself in the
+ * observation buffer; this comment assist always supplies its own post
+ * text, so it can never hit that refusal). */
 export type AssistRefusal =
-  AcceptRefusalReason | 'backend_unreachable' | 'selector_health_degraded' | 'generation_failed';
+  | Exclude<AcceptRefusalReason, 'no_recent_activity'>
+  | 'backend_unreachable'
+  | 'selector_health_degraded'
+  | 'generation_failed';
 
 const KNOWN_REFUSALS: Record<AssistRefusal, true> = {
   assist_disabled: true,

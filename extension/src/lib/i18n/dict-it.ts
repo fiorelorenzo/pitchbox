@@ -143,6 +143,12 @@ export const it = {
   'activity.linkedin-action.suggestion-refused': 'Suggerimento LinkedIn assist rifiutato: {reason}',
   'activity.linkedin-action.suggestion-inserted':
     'Suggerimento accettato inserito nel box del commento LinkedIn per il draft {draftId}.',
+  'activity.linkedin-action.post-submit-not-found':
+    'Impossibile trovare il pulsante di pubblicazione del post LinkedIn per il draft {draftId} entro 15s; la pubblicazione non verrà tracciata automaticamente.',
+  'activity.linkedin-action.post-confirm-unavailable':
+    "Il draft {draftId} ha lasciato il composer senza errori, ma il feed di LinkedIn non espone un identificatore stabile per un post appena pubblicato, quindi Pitchbox non ha potuto confermarne l'invio né catturarne l'URN. Segnalo manualmente se è stato pubblicato.",
+  'activity.linkedin-action.post-confirm-timeout':
+    'Impossibile confermare che il draft {draftId} abbia lasciato il composer entro 20s dal clic su Pubblica; verifica manualmente lo stato.',
   'activity.linkedin-dom.selector-miss':
     'Il selettore LinkedIn "{selector}" non trova corrispondenze nella pagina {pageKind} ({misses} mancate, {matches} trovate) - questa lettura potrebbe essere obsoleta o mancante.',
   'activity.linkedin-collector.batch-sent':
@@ -237,6 +243,12 @@ export const it = {
   'assist.comment.accepting': 'Salvataggio in corso…',
   'assist.comment.inserted.title': 'Inserito',
   'assist.comment.inserted.hint': 'Premi il pulsante Commenta di LinkedIn per inviarlo.',
+  'assist.post.resting.hint': 'Ottieni un post suggerito da Pitchbox per la tua rete.',
+  'assist.post.resting.cta': 'Suggerisci un post',
+  'assist.post.ready.label': 'Post suggerito (modificabile)',
+  'assist.post.accepting': 'Salvataggio in corso…',
+  'assist.post.inserted.title': 'Inserito',
+  'assist.post.inserted.hint': 'Premi il pulsante Pubblica di LinkedIn per inviarlo.',
   'assist.refusal.assist_disabled': "L'assistente Pitchbox è disattivato per questo workspace.",
   'assist.refusal.kill_switch': "Un amministratore ha fermato l'assistente.",
   'assist.refusal.project_not_bound': "Nessun progetto è collegato all'assistente.",
@@ -251,6 +263,9 @@ export const it = {
   'assist.refusal.generation_failed':
     'Qualcosa è andato storto durante la scrittura del suggerimento.',
   'assist.refusal.unknown': "L'assistente ha rifiutato questa richiesta ({reason}).",
+  'assist.refusal.post_quota_exhausted': 'La quota post di oggi è esaurita.',
+  'assist.refusal.no_recent_activity':
+    'Ancora nulla di recente da cui scrivere un post. Esplora la tua rete per un po’, poi riprova.',
 
   // Language names are endonyms, see the comment in dict-en.ts.
   'settings.language.option.en': 'English',

@@ -9,8 +9,13 @@ import { runSuggestion } from '$lib/server/suggest.js';
 import { loadActiveTemplates } from '@pitchbox/shared/templates';
 import { getAccountUsage, checkQuota, loadQuotaLimits } from '@pitchbox/shared/quota';
 import { mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
-import { MAX_POST_CHARS, type SuggestionKind } from '@pitchbox/shared/assist/suggest-prompt';
+import {
+  MAX_POST_CHARS,
+  type ObservedPost,
+  type SuggestionKind,
+} from '@pitchbox/shared/assist/suggest-prompt';
 import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist';
+import { loadRecentObservedTarget } from '@pitchbox/shared/observed-targets';
 
 // The real-time plane. What makes the in-page assistant a separate subsystem
 // rather than a view onto campaigns:
@@ -29,22 +34,38 @@ const perDevice = new RateLimiter(20, 60_000);
 // several legitimate devices still add up to something sane.
 const perOrg = new RateLimiter(60, 60_000);
 
-const BodySchema = z.object({
-  projectId: z.number().int().positive(),
-  kind: z.enum(['post_comment', 'post']),
-  post: z.object({
-    urn: z.string().max(200).optional(),
-    authorHandle: z.string().max(200).optional(),
-    authorName: z.string().max(200).optional(),
-    text: z
-      .string()
-      .min(1)
-      .max(MAX_POST_CHARS * 2),
-    url: z.string().max(2000).optional(),
-  }),
-  hint: z.string().max(500).optional(),
-  platform: z.string().min(1).max(40).default('linkedin'),
-});
+const BodySchema = z
+  .object({
+    projectId: z.number().int().positive(),
+    kind: z.enum(['post_comment', 'post']),
+    post: z.object({
+      urn: z.string().max(200).optional(),
+      authorHandle: z.string().max(200).optional(),
+      authorName: z.string().max(200).optional(),
+      text: z
+        .string()
+        .max(MAX_POST_CHARS * 2)
+        .optional(),
+      url: z.string().max(2000).optional(),
+    }),
+    hint: z.string().max(500).optional(),
+    platform: z.string().min(1).max(40).default('linkedin'),
+  })
+  .superRefine((val, ctx) => {
+    // A `post_comment` suggestion is grounded in the post the panel read off
+    // the page - that travels with the request, there is nothing else to
+    // draft from. A `post` suggestion is grounded server-side instead (see
+    // the observed-targets read below, #315): the composer itself has no
+    // post to riff off, so its own `post` is informational at most and may
+    // be empty.
+    if (val.kind === 'post_comment' && !val.post.text?.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'post.text is required for kind "post_comment"',
+        path: ['post', 'text'],
+      });
+    }
+  });
 
 function sse(controller: ReadableStreamDefaultController, encoder: TextEncoder) {
   return (kind: string, data: unknown) => {
@@ -165,6 +186,36 @@ export async function POST(event: RequestEvent) {
     }
   }
 
+  // A `post` suggestion has no post to riff off the way a `post_comment`
+  // does - the composer is a blank box - so it is grounded in the most
+  // recent thing the observation buffer (#301/#302) actually saw this
+  // project's account scroll past, read through the server rather than
+  // trusting the panel to have scraped and forwarded a pile of observed
+  // posts itself. An empty buffer (a fresh binding, or nothing sighted
+  // since the collector was last on) is a real, distinct refusal: there is
+  // nothing honest to write a "starting point" prompt from, so this refuses
+  // the same way an exhausted quota does rather than asking the model to
+  // invent a subject.
+  let groundedPost: ObservedPost;
+  if (body.kind === 'post') {
+    const recent = await loadRecentObservedTarget(db, {
+      projectId: project.id,
+      platformId: platform.id,
+    });
+    if (!recent) {
+      return json({ refused: 'no_recent_activity', platform: platform.slug });
+    }
+    groundedPost = {
+      authorHandle: recent.authorHandle ?? undefined,
+      authorName: recent.authorName ?? undefined,
+      text: recent.text,
+      url: recent.url,
+    };
+  } else {
+    // superRefine above guarantees a non-empty post.text for this branch.
+    groundedPost = { ...body.post, text: body.post.text as string };
+  }
+
   const examples = (
     await loadActiveTemplates(db, {
       projectId: project.id,
@@ -188,7 +239,7 @@ export async function POST(event: RequestEvent) {
 
       const handle = runSuggestion({
         kind: body.kind as SuggestionKind,
-        post: body.post,
+        post: groundedPost,
         project: { name: project.name, description: project.description, examples },
         hint: body.hint,
         projectId: project.id,
