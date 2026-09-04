@@ -31,6 +31,7 @@ import {
   postRun as mastodonPostRun,
   type MastodonPostKind,
 } from '../commands/mastodon.js';
+import { linkedinCandidatesRun } from '../commands/linkedin.js';
 import { searchHn, HN_LISTINGS } from '../commands/hn.js';
 import type { HnListing } from '@pitchbox/shared/platforms/hackernews';
 import {
@@ -326,6 +327,55 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
         const ownershipErr = await checkOwnership('run', rid);
         if (ownershipErr) return errorResult(ownershipErr);
         return jsonResult(await mastodonScoutRun(rid));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'linkedin_candidates',
+    {
+      title: 'Drain observed LinkedIn posts into staged candidates',
+      description:
+        "Drain unconsumed observed_targets for the run's project (rows the browser already wrote to the observation buffer - this tool fetches nothing itself) into staged candidates for the run, applying blocklist + contact-history filters server-side. Returns { runId, candidatesFetched }.",
+      inputSchema: {
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(200)
+          .optional()
+          .describe('max observed rows to claim (default 20)'),
+        minAgeMinutes: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe('only claim rows observed at least this many minutes ago (default 0)'),
+        maxAgeHours: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('drop rows older than this as stale (default 72)'),
+      },
+    },
+    async ({ runId, limit, minAgeMinutes, maxAgeHours }) => {
+      const rid = runId ?? defaultRunId();
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
+        return jsonResult(
+          await linkedinCandidatesRun({ runId: rid, limit, minAgeMinutes, maxAgeHours }),
+        );
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }
