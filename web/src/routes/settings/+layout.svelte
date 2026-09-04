@@ -2,24 +2,30 @@
   import type { Snippet } from 'svelte';
   import type { LayoutData } from './$types';
   import { page } from '$app/stores';
-  import { Activity, Bot, Puzzle, Gauge, Building2, Archive, ShieldCheck } from '@lucide/svelte';
+  import { Activity, Bot, Puzzle, Gauge, Building2, Archive, ShieldCheck, Sparkles } from '@lucide/svelte';
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
-  // Flat rail of seven (#254, replaces the General-page-plus-tabs layout).
+  // Flat rail of eight (#254 shipped seven; LI-19/#316 added LinkedIn assist).
   // Status/Agent runners/Browser extension/Quota never 403 - each loader
   // gates its own data set (member sees an "Admin access required" card
   // instead of a thrown error) - so they're always shown, same as General
-  // used to be. Organization needs an org context (auth on); Retention and
-  // Security loaders call requireRole(event, 'admin') and do throw, so those
-  // stay role-filtered here too. The server loaders enforce the real rule;
-  // this only hides links that would otherwise 403.
+  // used to be. Organization needs an org context (auth on); Retention,
+  // Security and LinkedIn assist loaders call requireRole(event, 'admin')
+  // and do throw, so those stay role-filtered here too. The server loaders
+  // enforce the real rule; this only hides links that would otherwise 403.
   const items = $derived(
     [
       { href: '/settings/status', label: 'Status', icon: Activity, show: true },
       { href: '/settings/runners', label: 'Agent runners', icon: Bot, show: true },
       { href: '/settings/extension', label: 'Browser extension', icon: Puzzle, show: true },
       { href: '/settings/quota', label: 'Quota', icon: Gauge, show: true },
+      {
+        href: '/settings/linkedin-assist',
+        label: 'LinkedIn assist',
+        icon: Sparkles,
+        show: data.isAdmin,
+      },
       { href: '/settings/organization', label: 'Organization', icon: Building2, show: data.authOn },
       { href: '/settings/retention', label: 'Retention', icon: Archive, show: data.isAdmin },
       { href: '/settings/security', label: 'Security', icon: ShieldCheck, show: data.isAdmin },
