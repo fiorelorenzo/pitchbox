@@ -52,13 +52,11 @@
     "vitepress": "^1.6.4",
     "vitest": "4.1.9"
   },
-  "overrides": {
-    "cookie": "^1.0.2",
-    "@esbuild-kit/core-utils": {
-      "esbuild": "^0.25.0"
-    },
-    "@crxjs/vite-plugin": {
-      "rollup": "^4.0.0"
+  "pnpm": {
+    "overrides": {
+      "cookie": "^1.0.2",
+      "@esbuild-kit/core-utils>esbuild": "^0.25.0",
+      "@crxjs/vite-plugin>rollup": "^4.0.0"
     }
   }
 }
