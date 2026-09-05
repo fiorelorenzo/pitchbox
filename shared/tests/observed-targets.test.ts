@@ -56,9 +56,15 @@ describe('ingestObservedTargets', () => {
   let projectBId: number;
 
   beforeEach(async () => {
-    await getDb().execute(
-      sql`TRUNCATE observed_targets, projects, organizations RESTART IDENTITY CASCADE`,
-    );
+    // Never truncate `organizations`: the seeded `default` org is created once
+    // by tests/global-setup.ts and several suites resolve it by slug, so
+    // dropping it here fails whichever file happens to run next. Measured:
+    // running this file immediately before web/tests/extension-sent-comment-id
+    // took that suite from 6 passing to 6 failing, and it is why the full run
+    // failed a different unrelated file each time. Every other suite in the
+    // repo uses the delete-except-default form below.
+    await getDb().execute(sql`TRUNCATE observed_targets, projects RESTART IDENTITY CASCADE`);
+    await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
     linkedinId = await platformId('linkedin');
     orgAId = await ensureOrg('obs-targets-org-a');
     orgBId = await ensureOrg('obs-targets-org-b');
@@ -260,9 +266,9 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
   let projectBId: number;
 
   beforeEach(async () => {
-    await getDb().execute(
-      sql`TRUNCATE observed_targets, projects, organizations RESTART IDENTITY CASCADE`,
-    );
+    // Same reason as the reset above: the seeded `default` org has to survive.
+    await getDb().execute(sql`TRUNCATE observed_targets, projects RESTART IDENTITY CASCADE`);
+    await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
     linkedinId = await platformId('linkedin');
     orgAId = await ensureOrg('recent-obs-org-a');
     orgBId = await ensureOrg('recent-obs-org-b');
