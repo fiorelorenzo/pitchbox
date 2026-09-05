@@ -9,6 +9,8 @@ import {
   findCommentComposer,
   findCommentSubmitButton,
   findPostComposer,
+  findPostComposerModal,
+  findPostSubmitButton,
   readOwnProfileHandle,
   getSelectorHealthReport,
   resetSelectorHealth,
@@ -245,6 +247,38 @@ describe('synthetic markup: affordances neither real capture rendered', () => {
     const composer = findPostComposer(document);
     expect(composer).not.toBeNull();
     expect(composer?.getAttribute('role')).toBe('textbox');
+  });
+
+  it('findPostComposerModal finds the role="dialog" container the post composer opens in', () => {
+    render(
+      '<div role="dialog"><div contenteditable="true" role="textbox">Cosa vuoi condividere?</div></div>',
+    );
+    const modal = findPostComposerModal(document);
+    expect(modal).not.toBeNull();
+    expect(modal?.getAttribute('role')).toBe('dialog');
+  });
+
+  it('findPostComposerModal does not mistake an inline comment composer (no dialog ancestor) for the post modal', () => {
+    render('<div contenteditable="true" role="textbox">a comment draft</div>');
+    expect(findPostComposerModal(document)).toBeNull();
+  });
+
+  it('findPostSubmitButton, scoped to the modal, finds the submit control once one exists', () => {
+    render(
+      '<div role="dialog"><div contenteditable="true" role="textbox">a draft post</div><button type="submit">Pubblica</button></div>',
+    );
+    const modal = findPostComposerModal(document)!;
+    const button = findPostSubmitButton(modal);
+    expect(button).toBeInstanceOf(HTMLButtonElement);
+  });
+
+  it('findPostSubmitButton scoped to the modal ignores a submit button outside it', () => {
+    render(
+      '<div role="dialog"><div contenteditable="true" role="textbox">a draft post</div></div>' +
+        '<button type="submit">Commenta</button>',
+    );
+    const modal = findPostComposerModal(document)!;
+    expect(findPostSubmitButton(modal)).toBeNull();
   });
 
   it("readOwnProfileHandle reads the member's own profile link out of the global nav", () => {

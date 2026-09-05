@@ -108,6 +108,8 @@ export type LinkedInSelectorId =
   | 'commentComposer'
   | 'commentSubmitButton'
   | 'postComposer'
+  | 'postComposerModal'
+  | 'postSubmitButton'
   | 'ownProfileHandle'
   | 'postComments'
   | 'commentAuthor'
@@ -457,6 +459,43 @@ export function findPostComposer(root: ParentNode = document): HTMLElement | nul
   const pageKind = detectPageKind(root);
   const el = queryDeep<HTMLElement>('[contenteditable="true"][role="textbox"]', root);
   if (pageKind !== 'unknown') record('postComposer', pageKind, el !== null);
+  return el;
+}
+
+/**
+ * The "start a post" modal's own container under `root` - what a caller must
+ * find first and pass as `root` to `findPostComposer`/`findPostSubmitButton`
+ * below, per those functions' own doc comments. Anchored on the standard
+ * `role="dialog"` ARIA landmark rather than a LinkedIn-authored `data-*`
+ * attribute (contrast every other accessor in this module): LinkedIn ships
+ * that modal as an actual dialog in every capture this project's authors
+ * have seen live, but - like `findPostComposer` itself - neither fixture in
+ * this repo shows it open, so this is unverified against a real capture and
+ * exists to be corrected against one. It is what keeps this script from
+ * mistaking an inline *comment* composer (the identical
+ * `[contenteditable="true"][role="textbox"]` editor, but never inside a
+ * dialog) for the post composer when both can be present on the same
+ * post-detail page.
+ */
+export function findPostComposerModal(root: ParentNode = document): Element | null {
+  const pageKind = detectPageKind(root);
+  const el = queryDeep('[role="dialog"]', root);
+  if (pageKind !== 'unknown') record('postComposerModal', pageKind, el !== null);
+  return el;
+}
+
+/**
+ * The post composer's own submit ("Post") control under `root` - pass the
+ * modal from `findPostComposerModal` above, matching `findCommentSubmitButton`'s
+ * own scoping convention. Same primary selector and the same disclaimer: no
+ * fixture shows the post composer's modal open with typed text, so this is
+ * unverified against a live capture and exercised only against synthetic
+ * markup in tests.
+ */
+export function findPostSubmitButton(root: ParentNode = document): HTMLButtonElement | null {
+  const pageKind = detectPageKind(root);
+  const el = queryDeep<HTMLButtonElement>('button[type="submit"]', root);
+  if (pageKind !== 'unknown') record('postSubmitButton', pageKind, el !== null);
   return el;
 }
 

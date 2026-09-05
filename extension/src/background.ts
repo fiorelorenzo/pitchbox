@@ -2,6 +2,7 @@ import { runInboxSync } from './background/inbox-sync.js';
 import { runChatSync } from './background/chat-sync.js';
 import { registerLinkedInReplyIngestScript } from './background/linkedin-reply-ingest-registration.js';
 import { registerLinkedInCommentAssistScript } from './background/linkedin-comment-assist-registration.js';
+import { registerLinkedInPostAssistScript } from './background/linkedin-post-assist-registration.js';
 import {
   getSettings,
   patchPairing,
@@ -315,6 +316,8 @@ export async function syncLinkedInContentScripts(): Promise<void> {
     registerLinkedInReplyIngestScript(),
     // #314's in-page comment assist, same pattern for the same reason.
     registerLinkedInCommentAssistScript(),
+    // #315's in-page post composer assist, same pattern for the same reason.
+    registerLinkedInPostAssistScript(),
   ]);
 }
 

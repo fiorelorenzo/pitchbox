@@ -31,12 +31,15 @@ export type LinkedInAssistState = {
 export type SuggestionKind = 'post_comment' | 'post';
 
 /** The observed post context /suggest drafts from. `urn` is absent for a
- * feed sighting - see linkedin-dom.ts's "Two frontends, one identifier". */
+ * feed sighting - see linkedin-dom.ts's "Two frontends, one identifier".
+ * `text` is optional because a `kind: 'post'` request carries nothing to
+ * draft from at all - the server grounds that kind itself, in whatever the
+ * observation buffer most recently saw (#315). */
 export type SuggestPost = {
   urn?: string;
   authorHandle?: string;
   authorName?: string;
-  text: string;
+  text?: string;
   url?: string;
 };
 
@@ -52,9 +55,15 @@ export type SuggestUsage = {
   costUsd?: number | null;
 };
 
-/** Every `refused` value POST /api/extension/suggest can answer with, ahead of the stream. */
+/** Every `refused` value POST /api/extension/suggest can answer with, ahead of the stream.
+ * `no_recent_activity` only ever answers a `kind: 'post'` request: the observation
+ * buffer this project's account has filled has nothing recent enough to draft from. */
 export type SuggestRefusalReason =
-  'assist_disabled' | 'kill_switch' | 'project_not_bound' | 'quota_exhausted';
+  | 'assist_disabled'
+  | 'kill_switch'
+  | 'project_not_bound'
+  | 'quota_exhausted'
+  | 'no_recent_activity';
 
 /** Every `refused` value POST /api/extension/suggest/accept can answer with: the same
  * assist gate as /suggest, plus shared/src/assist-accept.ts's own refusals for a

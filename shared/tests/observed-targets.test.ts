@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import { getDb, schema } from '../src/db/client.js';
 import {
   ingestObservedTargets,
+  loadRecentObservedTarget,
   MAX_OBSERVED_TARGETS_BATCH,
   type RawObservedTarget,
 } from '../src/observed-targets.js';
@@ -248,5 +249,173 @@ describe('ingestObservedTargets', () => {
 
     const rows = await db.select().from(schema.observedTargets);
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds in)', () => {
+  let linkedinId: number;
+  let orgAId: number;
+  let orgBId: number;
+  let projectAId: number;
+  let projectBId: number;
+
+  beforeEach(async () => {
+    await getDb().execute(
+      sql`TRUNCATE observed_targets, projects, organizations RESTART IDENTITY CASCADE`,
+    );
+    linkedinId = await platformId('linkedin');
+    orgAId = await ensureOrg('recent-obs-org-a');
+    orgBId = await ensureOrg('recent-obs-org-b');
+    projectAId = await makeProject(orgAId, 'recent-obs-proj-a');
+    projectBId = await makeProject(orgBId, 'recent-obs-proj-b');
+  });
+
+  it('returns null for a project the collector has never seen anything for', async () => {
+    const result = await loadRecentObservedTarget(getDb(), {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+    });
+    expect(result).toBeNull();
+  });
+
+  it('returns the most recently observed row, not the first or the largest id', async () => {
+    const db = getDb();
+    await ingestObservedTargets(db, {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+      observations: [
+        observation({
+          externalId: 'urn:li:activity:older',
+          text: 'an older sighting',
+          observedAt: new Date('2026-01-01T00:00:00Z').toISOString(),
+        }),
+        observation({
+          externalId: 'urn:li:activity:newer',
+          authorName: 'Recent Author',
+          text: 'the newest sighting',
+          observedAt: new Date('2026-06-01T00:00:00Z').toISOString(),
+        }),
+      ],
+    });
+
+    const result = await loadRecentObservedTarget(db, {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+    });
+    expect(result?.text).toBe('the newest sighting');
+    expect(result?.authorName).toBe('Recent Author');
+  });
+
+  it('skips a text-less sighting even when it is the most recent one', async () => {
+    const db = getDb();
+    await ingestObservedTargets(db, {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+      observations: [
+        observation({
+          externalId: 'urn:li:activity:has-text',
+          text: 'readable content',
+          observedAt: new Date('2026-01-01T00:00:00Z').toISOString(),
+        }),
+        observation({
+          externalId: 'urn:li:activity:no-text',
+          text: null,
+          observedAt: new Date('2026-06-01T00:00:00Z').toISOString(),
+        }),
+      ],
+    });
+
+    const result = await loadRecentObservedTarget(db, {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+    });
+    expect(result?.text).toBe('readable content');
+  });
+
+  it('never crosses a project boundary within the same org', async () => {
+    const db = getDb();
+    const otherProjectId = await makeProject(orgAId, 'recent-obs-proj-a2');
+    await ingestObservedTargets(db, {
+      organizationId: orgAId,
+      projectId: otherProjectId,
+      platformId: linkedinId,
+      observations: [observation({ text: 'seen for the other project only' })],
+    });
+
+    const result = await loadRecentObservedTarget(db, {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+    });
+    expect(result).toBeNull();
+  });
+
+  it('never crosses an organization boundary', async () => {
+    const db = getDb();
+    await ingestObservedTargets(db, {
+      organizationId: orgBId,
+      projectId: projectBId,
+      platformId: linkedinId,
+      observations: [observation({ text: 'org B saw this, org A never did' })],
+    });
+
+    const result = await loadRecentObservedTarget(db, {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+    });
+    expect(result).toBeNull();
+  });
+
+  it('refuses a mismatched organization and project pair rather than trusting the project id', async () => {
+    const db = getDb();
+    await ingestObservedTargets(db, {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+      observations: [observation({ text: 'org A saw this' })],
+    });
+
+    // A project belongs to exactly one organization, so this pair cannot
+    // arise from real data: it can only arise from a caller that resolved
+    // one of the two from somewhere else. The row carries `organization_id`
+    // directly (#263) so the query can refuse rather than be reasoned about,
+    // and this is the assertion that keeps that filter honest.
+    const result = await loadRecentObservedTarget(db, {
+      organizationId: orgBId,
+      projectId: projectAId,
+      platformId: linkedinId,
+    });
+    expect(result).toBeNull();
+  });
+
+  it('still returns a row already consumed by a run - consumption is not what "recent" means here', async () => {
+    const db = getDb();
+    await ingestObservedTargets(db, {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+      observations: [observation({ text: 'already drained into a scout run' })],
+    });
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ projectId: projectAId, trigger: 'manual', kind: 'project_extraction' })
+      .returning({ id: schema.runs.id });
+    await db
+      .update(schema.observedTargets)
+      .set({ consumedByRunId: run.id })
+      .where(eq(schema.observedTargets.projectId, projectAId));
+
+    const result = await loadRecentObservedTarget(db, {
+      organizationId: orgAId,
+      projectId: projectAId,
+      platformId: linkedinId,
+    });
+    expect(result?.text).toBe('already drained into a scout run');
   });
 });
