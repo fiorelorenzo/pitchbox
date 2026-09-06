@@ -112,11 +112,16 @@ checker (#350).
 
 ### Local verification: run the minimal covering subset
 
-CI (`.github/workflows/ci.yml`) runs the full lint + typecheck + build + test
-matrix on every push and PR - that's the gate at merge. Locally, don't re-run
-the whole matrix; run just enough to catch an obviously broken PR in the code
-you touched. Scope by **amount** (narrow to your diff), never by **category**
-(don't skip a check CI runs - e.g. typecheck or a sub-workspace's own `check`):
+CI (`.github/workflows/ci.yml`) now has three tiers. On a PR it runs a single
+scoped `quality` job (lint + typecheck + build) - skipped entirely when the
+diff can't touch it, per the `changes` filter job. `Tests (Postgres)` no
+longer runs on a PR at all: it moved to `push: main`, since it's the heaviest
+job (5.2m) and doesn't need to block a review. The `ci` job aggregates all of
+the above (skips count as passing) and is the one required status check.
+Locally, don't try to reproduce the whole matrix; run just enough to catch an
+obviously broken PR in the code you touched. Scope by **amount** (narrow to
+your diff), never by **category** (don't skip a check CI runs - e.g.
+typecheck or a sub-workspace's own `check`):
 
 ```bash
 # Tests - filter to the file(s)/pattern you touched, not the full suite
@@ -136,7 +141,9 @@ pnpm -F web check                     # or @pitchbox/extension check
 
 Run the full `pnpm run lint`, `pnpm run typecheck`, and `pnpm test` only for
 release-critical changes (migrations, auth, the runner protocol) or when the
-change is genuinely repo-wide.
+change is genuinely repo-wide. `pnpm test` is also what `preflight` runs
+locally (see "CI and preflight" below) against its own disposable Postgres,
+so a green `preflight` run before you push already covers it.
 
 ## Working in a worktree, next to other agents
 
@@ -210,6 +217,17 @@ above only calls out lint/typecheck/test. `deploy-preview.yml` (on every CI
 success on `main`) and `deploy-prod.yml` (on a `v*` tag) both run on
 `[self-hosted, prodbox]` and rsync into `/opt/apps/pitchbox{-preview}/`: nothing
 local reproduces either, so don't report them as verified.
+
+**CI and preflight.** The one required status check on `main` is `ci`, an
+aggregate job that needs every other job in `.github/workflows/ci.yml` and
+treats a `skipped` dependency as passing - that's what lets a docs-only PR go
+green without paying for `quality` or `Tests (Postgres)`. `Tests (Postgres)`
+only runs on `push: main` now; its PR-path replacement is `preflight`
+(`.github/preflight.json`), which runs `pnpm test` locally against a
+disposable Postgres on `127.0.0.1:5490` (`docker-compose.preflight.yml`,
+its own compose project so it can never touch the dev Postgres on 5434).
+Run `preflight` (or let the installed `pre-push` hook run it) before you
+push; `preflight --list` shows what it would run for your current diff.
 
 **Merging requires a PR, squash-only, and cleans up after itself.** Two active
 rulesets (`gh api repos/fiorelorenzo/pitchbox/rulesets`) protect `main`:
