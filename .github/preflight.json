@@ -1,0 +1,26 @@
+{
+  "base": "origin/main",
+  "jobs": 4,
+  "checks": [
+    {
+      "id": "test-postgres",
+      "run": "DATABASE_URL=postgres://pitchbox:pitchbox@127.0.0.1:5490/pitchbox_test_preflight ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef PITCHBOX_ROOT=$(pwd) pnpm test",
+      "when": [
+        "web/**",
+        "cli/**",
+        "daemon/**",
+        "extension/**",
+        "shared/**",
+        "tests/**",
+        "package.json",
+        "pnpm-lock.yaml",
+        "vitest.config.ts"
+      ],
+      "setup": "docker compose -f docker-compose.preflight.yml up -d --wait",
+      "teardown": "docker compose -f docker-compose.preflight.yml down -v",
+      "serial": true,
+      "lock": "postgres",
+      "why": "Tests (Postgres) moved off the PR path to main-only (5.2m job); this is its local-tier replacement, against its own disposable Postgres on 5490 so it never touches the dev DB on 5434"
+    }
+  ]
+}

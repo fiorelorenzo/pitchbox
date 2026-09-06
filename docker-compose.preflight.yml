@@ -1,0 +1,28 @@
+# Postgres for `preflight`'s local Tests (Postgres) check only. Deliberately its
+# own stack rather than docker-compose.yml's shared dev container: preflight runs
+# unattended (setup, run, teardown) and must not depend on, or disturb, a Postgres
+# a developer already has up for `pnpm run dev`. `name:` gives this its own
+# compose project so `up`/`down -v` here can never touch, recreate, or delete the
+# dev stack's "postgres" service or its `pitchbox-pg-data` volume - without it
+# both files share the directory-derived "pitchbox" project and collide on the
+# service key, which destroyed and replaced the live dev container the first
+# time this was tested. Port 5490 and the tmpfs data directory keep this stack
+# disposable and off every other repo's port range (dev + CI already use 5434).
+name: pitchbox-preflight
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pitchbox-preflight-postgres
+    environment:
+      POSTGRES_USER: pitchbox
+      POSTGRES_PASSWORD: pitchbox
+      POSTGRES_DB: pitchbox_test_preflight
+    ports:
+      - '127.0.0.1:5490:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U pitchbox -d pitchbox_test_preflight']
+      interval: 2s
+      timeout: 3s
+      retries: 20
