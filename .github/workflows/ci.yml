@@ -57,7 +57,12 @@ jobs:
   quality:
     name: Lint · Typecheck · Build
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.app == 'true'
+    # !cancelled() (not always()) defeats needs-cascade-skip: a job with
+    # `needs` is skipped whenever the dependency was skipped, regardless of
+    # its own `if`, unless that `if` contains a status-check function. changes
+    # is always skipped on push, so without this, quality silently skipped on
+    # every push:main too - the exact tier this change moved coverage onto.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.app == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
