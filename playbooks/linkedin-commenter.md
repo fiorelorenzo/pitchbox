@@ -99,7 +99,7 @@ Write like this instead:
      "accountId": 1,
      "kind": "post_comment",
      "fitScore": 4,
-     "targetUser": null,
+     "targetUser": "<the post author's profile slug, the candidate's author.handle>",
      "body": "<reply text>",
      "reasoning": "2-3 sentences on why this post, what angle, what value you're adding.",
      "sourceRef": {
@@ -112,7 +112,7 @@ Write like this instead:
    }
    ```
 
-   Note `targetUser` is null for `post_comment` - the audience is whoever reads the post, not one person, mirroring the Reddit/HN/Mastodon commenter convention.
+   `targetUser` is the author of the post you are replying to, and it is their profile slug (`author.handle`), never their display name: a name cannot be blocklisted or deduped. Commenting on someone's post counts as contacting them, so it feeds the blocklist, the dedup window and contact history, exactly as the in-page assist already does. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.externalId` points at; an observation captured without a slug has no target, and null is the right answer there.
 
 10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 

@@ -63,6 +63,8 @@ Pitchbox tracks every successful outreach in `contact_history`. Before creating 
 
 Dedup is per organization (#263). Two organizations reaching the same handle do not warn each other, because doing so would tell one tenant that another had already been in touch. On a single-tenant install everything lives under the `default` organization, so this makes no difference.
 
+A public comment counts as contact with the post's author (#336). A `post_comment` draft therefore carries that author as its `target_user`, and marking it as sent writes a `contact_history` row exactly like a DM: the author enters the dedup window, the blocklist applies before the draft is even created, and a second reply to the same person is warned about or skipped per the policy below. The handle is not left to the playbook to copy across. `drafts:create` derives it from the run's own staged candidates, matching them to the draft by the post identifier the draft already carries (`shared/src/comment-target.ts`). Hacker News stages no candidates, so there the playbook remains the only source, and a comment whose author cannot be named keeps a null target and writes no contact row rather than an invented one.
+
 Behaviour is governed by `app_config.dedup_policy`:
 
 ```json

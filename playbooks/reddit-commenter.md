@@ -97,7 +97,7 @@ Write like this instead:
      "kind": "post_comment",
      "fitScore": 4,
      "subreddit": "Solo_Roleplaying",
-     "targetUser": null,
+     "targetUser": "<the post author's username, from the candidate's user.name>",
      "body": "<comment markdown>",
      "reasoning": "2-3 sentences on why this post, what angle, what value you're adding.",
      "sourceRef": { "permalink": "/r/Solo_Roleplaying/comments/abc/.../", "postTitle": "..." },
@@ -107,7 +107,7 @@ Write like this instead:
    }
    ```
 
-   Note `targetUser` is null for post_comment - the audience is the whole thread, not one user.
+   `targetUser` is the author of the post you are replying to. Commenting on someone's post counts as contacting them, so it feeds the blocklist, the dedup window and contact history. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.permalink` points at.
 
 9. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 

@@ -83,7 +83,7 @@ Write like this instead:
      "accountId": 1,
      "kind": "post_comment",
      "fitScore": 4,
-     "targetUser": null,
+     "targetUser": "<the story's author, the candidate's `by` field>",
      "body": "<comment text>",
      "reasoning": "Why this story, what angle, what value you're adding.",
      "sourceRef": { "itemUrl": "https://news.ycombinator.com/item?id=12345", "title": "..." },
@@ -93,7 +93,7 @@ Write like this instead:
    }
    ```
 
-   `targetUser` is null for `post_comment` - the audience is the thread.
+   `targetUser` is the author of the story you are replying to (`by` on the item you scored). Commenting on someone's story counts as contacting them, so it feeds the blocklist, the dedup window and contact history. Hacker News has no scout staging candidates for the run, so nothing can recover this handle if you omit it: copy it across for every draft.
 
 8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 

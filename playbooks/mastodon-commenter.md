@@ -98,7 +98,7 @@ Write like this instead:
      "accountId": 1,
      "kind": "post_comment",
      "fitScore": 4,
-     "targetUser": null,
+     "targetUser": "<the status author's fully qualified handle, the candidate's author.acct>",
      "body": "<reply text>",
      "reasoning": "2-3 sentences on why this status, what angle, what value you're adding.",
      "sourceRef": { "statusId": "109...", "statusUrl": "https://mastodon.social/@alice/109..." },
@@ -108,7 +108,7 @@ Write like this instead:
    }
    ```
 
-   Note `targetUser` is null for `post_comment` - the audience is whoever reads the thread, not one user, mirroring the Reddit/HN commenter convention.
+   `targetUser` is the author of the status you are replying to, as the fully qualified `author.acct` handle. Replying to someone counts as contacting them, so it feeds the blocklist, the dedup window and contact history. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.statusId` points at.
 
 10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
