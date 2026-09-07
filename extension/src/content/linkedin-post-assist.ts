@@ -1,3 +1,7 @@
+// MUST stay the first import: see linkedin-comment-assist.ts and the shim's
+// own note. Without it Svelte's runtime throws on linkedin.com's
+// `trusted-types` allowlist and this script dies before mounting (#379).
+import './shared/trusted-types-shim.js';
 import { api, type AcceptRefusalReason, type SuggestEvent, type SuggestUsage } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import { mountPanel, panelFor } from './shared/panel-host.js';

@@ -147,6 +147,34 @@ describe('post-detail.html (classic Ember frontend, real capture)', () => {
     render(POST_DETAIL_HTML);
     expect(readOwnProfileHandle(document)).toBeNull();
   });
+
+  // #379, measured on a real signed-in `/posts/...` page: the first element
+  // with 30+ characters of its own text was a clipped, screen-reader-only
+  // line ("35 minuti fa - Visibile a tutti su LinkedIn e altrove"), so the
+  // suggestion request carried LinkedIn's visibility metadata instead of the
+  // post. Both shapes below are what that page actually contains.
+  it('readPostText skips a screen-reader-only line that precedes the body', () => {
+    render(`
+      <div role="article" data-urn="urn:li:activity:7000000000000000002" data-view-name="post">
+        <span class="visually-hidden">35 minuti fa • Visibile a tutti su LinkedIn e altrove</span>
+        <span>We are letting AI agents handle more of the outreach work behind the product.</span>
+      </div>`);
+    const [post] = findFeedPosts(document);
+    expect(readPostText(post, document)).toMatch(/AI agents handle more/);
+  });
+
+  it("readPostText prefers LinkedIn's own body container when it is present", () => {
+    render(`
+      <div role="article" data-urn="urn:li:activity:7000000000000000003" data-view-name="post">
+        <span class="a11y-text">2 ore fa • Visibile a tutti</span>
+        <div class="update-components-text">The workflow runs on a queue and a human approves every message.</div>
+        <div data-id="comment:1"><span>A commenter saying something long enough to qualify.</span></div>
+      </div>`);
+    const [post] = findFeedPosts(document);
+    const text = readPostText(post, document);
+    expect(text).toMatch(/runs on a queue/);
+    expect(text).not.toMatch(/commenter/);
+  });
 });
 
 describe('selector health: matches expected structure on both real captures', () => {
