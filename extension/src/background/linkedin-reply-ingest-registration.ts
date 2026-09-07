@@ -28,6 +28,8 @@ export async function registerLinkedInReplyIngestScript(): Promise<void> {
           js: [replyIngestScriptPath],
           matches: [
             'https://www.linkedin.com/feed/update/*',
+            // The same post-detail page under its canonical URL (#379).
+            'https://www.linkedin.com/posts/*',
             'https://www.linkedin.com/notifications*',
             'https://www.linkedin.com/messaging*',
           ],

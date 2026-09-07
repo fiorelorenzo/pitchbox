@@ -17,11 +17,22 @@ const commentAssistScriptPath = panelScriptOutput(PANEL_CONTENT_SCRIPTS[0]);
 // per script, so a future LinkedIn content script has exactly one place to
 // add its own.
 //
-// Same match set as linkedin-comment.ts's own registration
-// (`/feed/update/*`): the comment composer, and the stable activity URN
-// this module needs to key a suggestion request on, only exist on the
-// classic post-detail page - see linkedin-comment-assist.ts's own doc
-// comment and linkedin-dom.ts's "Two frontends, one identifier".
+// Same match set as linkedin-comment.ts's own registration: the comment
+// composer, and the stable activity URN this module needs to key a suggestion
+// request on, only exist on a classic post-detail page - see
+// linkedin-comment-assist.ts's own doc comment and linkedin-dom.ts's "Two
+// frontends, one identifier".
+//
+// `/posts/*` belongs in that set as much as `/feed/update/*` (#379). It is the
+// canonical post URL: LinkedIn's own "Copia link al post" hands it out, a
+// shared link resolves to it, and content search results open it. Measured on
+// a real signed-in page: it serves the classic frontend, carries
+// `[role="article"][data-urn]` and holds the comment composer, so registering
+// only `/feed/update/*` left the assistant absent from the page a human is
+// most likely to be reading.
+// The literal array is deliberate: tests/compliance/linkedin-boundary.ts
+// rule 2 derives its scan set from the text of this initializer, so hoisting
+// it into a shared constant would silently drop this file out of the check.
 const LINKEDIN_COMMENT_ASSIST_SCRIPT_ID = 'pitchbox-linkedin-comment-assist';
 
 export async function registerLinkedInCommentAssistScript(): Promise<void> {
@@ -37,7 +48,7 @@ export async function registerLinkedInCommentAssistScript(): Promise<void> {
         {
           id: LINKEDIN_COMMENT_ASSIST_SCRIPT_ID,
           js: [commentAssistScriptPath],
-          matches: ['https://www.linkedin.com/feed/update/*'],
+          matches: ['https://www.linkedin.com/feed/update/*', 'https://www.linkedin.com/posts/*'],
           runAt: 'document_idle',
         },
       ]);

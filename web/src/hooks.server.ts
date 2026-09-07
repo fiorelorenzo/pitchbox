@@ -2,6 +2,7 @@ import { getDb, schema } from '$lib/server/db.js';
 import { eq } from 'drizzle-orm';
 import { loadSession } from '@pitchbox/shared/auth';
 import { loadActiveOrganization } from '@pitchbox/shared/orgs';
+import { extensionCorsHeaders } from '$lib/server/extension-cors.js';
 
 /**
  * One-shot cleanup on server boot.
@@ -58,19 +59,6 @@ if (process.env.PITCHBOX_EMBED_DAEMON === '1') {
   };
   process.once('SIGINT', () => void stop('SIGINT'));
   process.once('SIGTERM', () => void stop('SIGTERM'));
-}
-
-const EXTENSION_ALLOWED_ORIGINS = new Set(['https://www.reddit.com', 'https://old.reddit.com']);
-
-function extensionCorsHeaders(origin: string | null): Record<string, string> {
-  const allowed = origin && EXTENSION_ALLOWED_ORIGINS.has(origin) ? origin : 'null';
-  return {
-    'access-control-allow-origin': allowed,
-    'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'authorization, content-type',
-    'access-control-max-age': '86400',
-    vary: 'Origin',
-  };
 }
 
 const AUTH_ON = process.env.PITCHBOX_AUTH === 'on';
