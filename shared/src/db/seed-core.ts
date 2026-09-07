@@ -4,6 +4,7 @@ import { sql, eq } from 'drizzle-orm';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ensurePersonalProject } from '../personal-project.js';
 
 export const QUOTA_DEFAULTS = {
   reddit: {
@@ -128,6 +129,15 @@ export async function seedCore() {
     // (see createUser). The slug 'default' is load-bearing (auth-off fallback).
     .values({ slug: 'default', name: 'My Organization' })
     .onConflictDoNothing();
+  // Every organization gets a `personal` project up front (shared/src/
+  // personal-project.ts, decision 2026-09-07). `onConflictDoNothing` above
+  // means the insert carries no id when the org already existed, so the id
+  // is read back rather than assumed.
+  const [defaultOrg] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(eq(schema.organizations.slug, 'default'));
+  if (defaultOrg) await ensurePersonalProject(db, defaultOrg.id);
   await db
     .insert(schema.appConfig)
     .values({ key: 'quota_defaults', value: QUOTA_DEFAULTS })

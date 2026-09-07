@@ -17,11 +17,12 @@ const commentAssistScriptPath = panelScriptOutput(PANEL_CONTENT_SCRIPTS[0]);
 // per script, so a future LinkedIn content script has exactly one place to
 // add its own.
 //
-// Same match set as linkedin-comment.ts's own registration: the comment
-// composer, and the stable activity URN this module needs to key a suggestion
-// request on, only exist on a classic post-detail page - see
-// linkedin-comment-assist.ts's own doc comment and linkedin-dom.ts's "Two
-// frontends, one identifier".
+// Same match set as linkedin-comment.ts's own registration, plus `/feed/*`
+// (2026-09-07): the classic post-detail page's own composer and stable
+// activity URN - see linkedin-comment-assist.ts's own doc comment and
+// linkedin-dom.ts's "Two frontends, one identifier" - and the main feed,
+// where the assistant now wires a composer per card, with no urn to key on
+// there (decision 1/2 of the 2026-09-07 overlay/feed rework).
 //
 // `/posts/*` belongs in that set as much as `/feed/update/*` (#379). It is the
 // canonical post URL: LinkedIn's own "Copia link al post" hands it out, a
@@ -48,7 +49,11 @@ export async function registerLinkedInCommentAssistScript(): Promise<void> {
         {
           id: LINKEDIN_COMMENT_ASSIST_SCRIPT_ID,
           js: [commentAssistScriptPath],
-          matches: ['https://www.linkedin.com/feed/update/*', 'https://www.linkedin.com/posts/*'],
+          matches: [
+            'https://www.linkedin.com/feed/update/*',
+            'https://www.linkedin.com/posts/*',
+            'https://www.linkedin.com/feed/*',
+          ],
           runAt: 'document_idle',
         },
       ]);

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mountPanel } from '../../src/content/shared/panel-host.js';
 import PanelFrame from '../../src/content/panel-frame.svelte';
 
@@ -25,6 +25,14 @@ beforeEach(() => {
   vi.restoreAllMocks();
   // jsdom has no FontFace, and the host treats that as cosmetic.
   Reflect.deleteProperty(globalThis as Record<string, unknown>, 'FontFace');
+});
+
+// Without this, a test's undestroyed panel leaves its `window`/`document`
+// listeners armed past the test, and the last one in the file fires its
+// `MutationObserver` mid-teardown against a `window` Vitest has already torn
+// down (see `panel-host.test.ts` for the fuller version of this comment).
+afterEach(() => {
+  document.body.innerHTML = '';
 });
 
 function anchorEl(): HTMLElement {

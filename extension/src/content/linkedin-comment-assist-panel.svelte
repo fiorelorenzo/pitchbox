@@ -7,6 +7,14 @@
    * for the states this renders (resting, streaming, ready, edited, inserted,
    * refused) and D3 (docs/design/DECISIONS.md) for why streaming shows a
    * skeleton plus a status line rather than a bare spinner.
+   *
+   * `reasoning` and `draft` (#382) render as two distinct sections wherever a
+   * state carries both: `reasoning` in `.assist-hint` (13px, muted - the
+   * same class the resting/inserted hints already use), `draft` in
+   * `.assist-preview`/`.assist-textarea` (15px, the panel's primary text
+   * size) - reasoning is context, the draft is the thing the human is here
+   * for. Only `state.draft` ever reaches `onAccept`; `no_draft` renders no
+   * accept control at all, because there is nothing there to insert.
    */
   import PanelFrame from './panel-frame.svelte';
   import { t } from '../lib/i18n/index.js';
@@ -34,8 +42,11 @@
         <p class="assist-status" aria-live="polite">
           {$t(state.status === 'reading' ? 'assist.status.reading' : 'assist.status.writing')}
         </p>
-        {#if state.text}
-          <p class="assist-preview">{state.text}</p>
+        {#if state.reasoning}
+          <p class="assist-hint">{state.reasoning}</p>
+        {/if}
+        {#if state.draft}
+          <p class="assist-preview">{state.draft}</p>
         {:else}
           <div class="assist-skeleton" aria-hidden="true">
             <span></span>
@@ -44,10 +55,13 @@
           </div>
         {/if}
       {:else if state.phase === 'ready' || state.phase === 'edited'}
+        {#if state.reasoning}
+          <p class="assist-hint">{state.reasoning}</p>
+        {/if}
         <textarea
           class="assist-textarea"
           aria-label={$t('assist.comment.ready.label')}
-          value={state.text}
+          value={state.draft}
           oninput={onTextareaInput}
         ></textarea>
         <div class="assist-row">
@@ -60,6 +74,22 @@
       {:else if state.phase === 'inserted'}
         <p class="assist-status">{$t('assist.comment.inserted.title')}</p>
         <p class="assist-hint">{$t('assist.comment.inserted.hint')}</p>
+      {:else if state.phase === 'no_draft'}
+        {#if state.reasoning}
+          <p class="assist-hint">{state.reasoning}</p>
+        {/if}
+        <p class="assist-status" aria-live="polite">
+          {$t(
+            state.skipped
+              ? 'assist.comment.no_draft.skipped'
+              : 'assist.comment.no_draft.unstructured',
+          )}
+        </p>
+        <div class="assist-row">
+          <button type="button" class="assist-button assist-button--ghost" onclick={onRequest}>
+            {$t('assist.action.retry')}
+          </button>
+        </div>
       {:else if state.phase === 'refused'}
         <p class="assist-refusal" role="alert">{$t(state.messageKey, state.messageParams)}</p>
         <div class="assist-row">

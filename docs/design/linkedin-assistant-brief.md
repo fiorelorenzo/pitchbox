@@ -77,3 +77,58 @@ The cost: anchoring makes more of LinkedIn's DOM load-bearing, which is more sel
 The suggestion endpoint streams, so there is no spinner, but the first token is five to ten seconds away and a mute skeleton for that long reads as stuck. So the skeleton carries one explicit status line (reading the post, writing) in the interface's own voice. That costs one string in two languages and looks slightly theatrical when the answer arrives in two seconds, which is the cheaper failure of the two.
 
 Rejected: a mute skeleton alone (too long a silence at this latency), and streaming into an empty box with no skeleton (honest about generating now, but the layout grows while you read, which is the motion the profile's skeleton rule exists to avoid).
+
+## Round two: the companion (approved 2026-09-07)
+
+Status: approved 2026-09-07, epic #385. Built in #386 (overlay panel), #387 (reasoning and draft split), #388 (feed), #389 (what it knows). The rules it creates are rows D13, D14 and D15 in `docs/design/DECISIONS.md`, and D13 supersedes D11 above.
+
+The round-one brief survives except where this section overrides it. Lorenzo installed the build, used it on a real post, and named four things. Three were design, one was product, and all four are in scope here.
+
+```
+Subject      The same panel, now the visible half of a companion rather than of a project's
+             voice: it knows who the operator is, what they build, and what they have
+             shipped, and it can write about anything rather than only about a bound product.
+
+Audience     Unchanged, with one addition: the operator now reads two things in the panel
+             rather than one, and the first (why this angle) has to be skimmable in about a
+             second so it does not delay the second (the draft).
+
+The job      Unchanged. Request, read, edit, insert. What changes is that the panel makes
+             clear what it is offering to post and what it is only telling the operator.
+
+Palette      Unchanged, tokens only. Reasoning uses --muted-foreground, the draft
+             --foreground: the hierarchy is weight and size, not a new colour.
+
+Type         Inter only. Reasoning 13px, draft 15-16px in the editable box. Round one said
+             "the suggestion body is the only long-form text on the surface"; there are now
+             two bodies, and the smaller one must lose.
+
+Density      Middle still, but the panel no longer borrows LinkedIn's column: it is ~440px
+             with a 60vh ceiling and its own scroll, so density is now a choice rather than
+             a consequence of the anchor's width.
+
+Signature    The overlay itself: a Pitchbox card floating above the feed, anchored to the
+             post it is about and naming its author in the header.
+
+States       Round one's six, plus two the split creates and one the feed creates:
+             "declined" (the model chose not to write, reason shown, nothing insertable),
+             "no draft" (the model ignored the shape, reason shown, nothing insertable),
+             and a feed post with no URN, which is a normal success and not a degraded one.
+
+Constraints  Round one's, plus: the panel is now in document.body, so its z-index has to beat
+             LinkedIn's sticky chrome and its dismissal has to work for a floating surface
+             (Escape, outside pointer-down). Reasoning must never render inside an insertable
+             control. Nothing captured about the operator may reach a prompt without being
+             visible and editable in /settings/companion.
+
+Non-goals    Still not a second inbox, still never unprompted, still no DMs or reactions.
+             Does not read a profile that is not the operator's own. Does not reach a private
+             repository (that needs the app in #390). Does not decide what to post: a draft
+             is inserted into LinkedIn's composer and the human presses LinkedIn's button.
+```
+
+**Why the panel floats now.** The anchored decision was right about the question it answered ("which post is this about") and wrong about what it cost. Anchoring was implemented as an inline sibling whose width was copied from LinkedIn's comment form, and that form is about 260px wide on a post-detail page, so the panel was unreadable in the only place it ever appeared. The header names the post's author, which answers the same question at a fraction of the layout cost, so the anchor is now a position rather than a parent. See D13.
+
+**Why the split is server-side.** The panel could look for the model's reasoning and strip it, and that is exactly the design that produced #382: a surface built to stop a bad comment offering one, because the refusal was text like any other text. The server splits on a marker and the fail-safe is "no marker, no draft", which makes the worst case an empty draft instead of a wrong one. A model asked to emit an exact shape complies most of the time, and a design that needs it to comply every time is a design that fails intermittently in production. See D14.
+
+**Why passive capture, and only the operator's own profile.** The companion needs to know who is writing, and rule 2 of the compliance boundary forbids Pitchbox initiating any request to or navigation of linkedin.com. So the persona is read from the operator's own profile page when they open it themselves, the voice samples from their own activity page, and the server refuses a capture whose handle does not match the persona it already holds: opening somebody else's profile must not rewrite who the assistant thinks you are.

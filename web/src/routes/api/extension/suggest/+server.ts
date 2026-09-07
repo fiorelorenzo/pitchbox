@@ -14,6 +14,7 @@ import {
   type ObservedPost,
   type SuggestionKind,
 } from '@pitchbox/shared/assist/suggest-prompt';
+import { loadCompanionContext } from '@pitchbox/shared/assist/context';
 import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist';
 import { loadRecentObservedTarget } from '@pitchbox/shared/observed-targets';
 
@@ -176,8 +177,11 @@ export async function POST(event: RequestEvent) {
     }
     // A suggestion is written as the bound project's voice, so a request
     // naming a different project of the same org is not a narrower case of
-    // the binding, it bypasses it.
-    if (assist.projectId !== project.id) {
+    // the binding, it bypasses it - except for the org's own `personal`
+    // project (decision 2026-09-07): an accepted suggestion has to file
+    // somewhere, and the operator's own voice is exactly what `personal`
+    // exists for, so it is allowed alongside the bound product project.
+    if (assist.projectId !== project.id && project.id !== assist.personalProjectId) {
       return json({
         refused: 'project_not_bound',
         platform: platform.slug,
@@ -224,6 +228,15 @@ export async function POST(event: RequestEvent) {
     })
   ).map((t) => ({ title: t.title, body: t.body }));
 
+  // Everything the companion is allowed to know beyond this one post:
+  // the operator's own persona and voice, every project in the org, and the
+  // public repos GitHub read cached (shared/src/assist/context.ts). Loaded
+  // once, right before the spawn, so a refusal above never pays for it.
+  const context = await loadCompanionContext(db, {
+    organizationId: project.organizationId,
+    currentProjectId: project.id,
+  });
+
   let cancel: () => void = () => {};
   let settled = false;
 
@@ -238,16 +251,34 @@ export async function POST(event: RequestEvent) {
       controller.enqueue(encoder.encode(': ' + ' '.repeat(2048) + '\n\n'));
       send('status', { phase: 'reading' });
 
+      // The panel is not the enforcement boundary for the reasoning/draft
+      // split either (#382): `runSuggestion` already ran every chunk through
+      // `EnvelopeSplitter`, so this callback only routes what it is handed,
+      // and "writing" fires on the first DRAFT-section text specifically -
+      // not the first chunk of any kind, which used to be reasoning.
+      let wroteDraft = false;
       const handle = runSuggestion({
         kind: body.kind as SuggestionKind,
         post: groundedPost,
-        project: { name: project.name, description: project.description, examples },
+        currentProject: { name: project.name, description: project.description },
+        persona: context.persona,
+        projects: context.projects,
+        repos: context.repos,
+        examples,
         hint: body.hint,
         projectId: project.id,
         orgId: auth.organizationId ?? undefined,
         runnerSlug: project.defaultAgentRunner,
-        onFirstChunk: () => send('status', { phase: 'writing' }),
-        onChunk: (text) => send('chunk', { text }),
+        onChunk: (chunk) => {
+          if (chunk.reasoning) send('chunk', { text: chunk.reasoning, section: 'reasoning' });
+          if (chunk.draft) {
+            if (!wroteDraft) {
+              wroteDraft = true;
+              send('status', { phase: 'writing' });
+            }
+            send('chunk', { text: chunk.draft, section: 'draft' });
+          }
+        },
       });
       cancel = handle.cancel;
 
@@ -255,7 +286,13 @@ export async function POST(event: RequestEvent) {
         .then((res) => {
           if (settled) return;
           settled = true;
-          send('done', { text: res.text, usage: res.usage, ms: res.ms });
+          send('done', {
+            reasoning: res.reasoning,
+            draft: res.draft,
+            skipped: res.skipped,
+            usage: res.usage,
+            ms: res.ms,
+          });
           controller.close();
         })
         .catch((err: unknown) => {

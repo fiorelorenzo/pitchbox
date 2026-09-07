@@ -7,21 +7,37 @@ import { saveRunnerConfig, type RunnerConfig } from '@pitchbox/shared/agents/con
 import {
   defaultLinkedInAssistSettings,
   saveLinkedInAssistSettings,
+  loadLinkedInAssistDeviceState,
 } from '@pitchbox/shared/linkedin-assist';
 import { ingestObservedTargets } from '@pitchbox/shared/observed-targets';
+import { DRAFT_MARKER, SKIP_MARKER } from '@pitchbox/shared/assist/envelope';
 
 /**
  * The real-time suggestion endpoint (#312). What these tests defend is the
  * enforcement boundary and the stream's contract, because the panel is not the
  * boundary: auth, cross-tenant scoping, an exhausted quota, incremental
- * delivery, and a disconnect actually cancelling the model call rather than
- * leaving it running for nobody.
+ * delivery, the reasoning/draft split (#382) and a disconnect actually
+ * cancelling the model call rather than leaving it running for nobody.
  *
  * The agent itself is the one thing faked. Everything below it is real: the
  * route, the quota read, the prompt composition and the SSE framing.
  */
 
-const chunks = ['A specific ', 'thing that ', 'happened.'];
+const REASONING = 'Noticed the cache change and the specific number.';
+const DRAFT = 'A specific thing that happened.';
+/** The default fake response: a well-formed envelope, split across several
+ * streamed chunks the way a real model call arrives - reasoning first, the
+ * marker, then the draft in pieces. */
+const ENVELOPE_CHUNKS = [
+  `${REASONING}\n`,
+  DRAFT_MARKER,
+  '\n',
+  'A specific ',
+  'thing that ',
+  'happened.',
+];
+let responseChunks: string[] = ENVELOPE_CHUNKS;
+
 let lastOptions: AgentRunOptions | null = null;
 /** The runner config the route actually handed to the registry, so a test can
  * assert which model a suggestion asks for rather than trusting the resolver
@@ -53,7 +69,7 @@ vi.mock('@pitchbox/shared/agents/registry', () => ({
           },
         };
       }
-      for (const c of chunks) opts.onTextChunk?.(c);
+      for (const c of responseChunks) opts.onTextChunk?.(c);
       return {
         result: Promise.resolve({
           exitCode: 0,
@@ -98,6 +114,7 @@ async function reset() {
   lastConfig = null;
   cancelCalls = 0;
   hangForever = false;
+  responseChunks = ENVELOPE_CHUNKS;
 }
 
 /**
@@ -194,22 +211,135 @@ describe('POST /api/extension/suggest', () => {
 
     const events = await readEvents(res);
     const kinds = events.map((e) => e.kind);
-    // Incremental: one event per chunk, not one event carrying the whole answer.
-    expect(kinds.filter((k) => k === 'chunk')).toHaveLength(chunks.length);
+    // Incremental: at least one chunk event per non-empty piece of the
+    // response, not one event carrying the whole answer.
+    expect(kinds.filter((k) => k === 'chunk').length).toBeGreaterThan(1);
     expect(kinds).toContain('status');
     expect(kinds[kinds.length - 1]).toBe('done');
 
     const done = events.at(-1)!.data as {
-      text: string;
+      reasoning: string;
+      draft: string | null;
+      skipped: boolean;
       usage?: { outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number };
     };
-    expect(done.text).toBe(chunks.join(''));
+    expect(done.reasoning).toBe(REASONING);
+    expect(done.draft).toBe(DRAFT);
+    expect(done.skipped).toBe(false);
     expect(done.usage?.outputTokens).toBe(40);
     // #313 comment: `inputTokens` alone reads as ~2 tokens for a cached
     // prompt, so the cache counts have to reach the caller for the accept
     // path's `runs` row to not read as broken accounting.
     expect(done.usage?.cacheReadTokens).toBe(780);
     expect(done.usage?.cacheCreationTokens).toBe(0);
+  });
+
+  // #382: the fail-safe this endpoint exists for. Every `chunk` event carries
+  // the section it belongs to, and the panel is told `status: writing` only
+  // once actual draft text starts - never for reasoning, which must never
+  // read as something the human could insert.
+  it('tags each chunk with its section and flips to writing only when the draft begins', async () => {
+    const { org, project } = await seedOrgProject('org-section');
+    await mintDevice(org.id, 'tok-section');
+
+    const res = await suggest({
+      request: request('tok-section', { ...POST_BODY, projectId: project.id }),
+    } as never);
+    const events = await readEvents(res);
+
+    const chunkEvents = events.filter((e) => e.kind === 'chunk') as Array<{
+      kind: string;
+      data: { text: string; section: 'reasoning' | 'draft' };
+    }>;
+    expect(
+      chunkEvents.every((e) => e.data.section === 'reasoning' || e.data.section === 'draft'),
+    ).toBe(true);
+    const reasoningText = chunkEvents
+      .filter((e) => e.data.section === 'reasoning')
+      .map((e) => e.data.text)
+      .join('');
+    const draftText = chunkEvents
+      .filter((e) => e.data.section === 'draft')
+      .map((e) => e.data.text)
+      .join('');
+    // Streamed pieces are raw (only `finish()` trims), so the joined
+    // reasoning can carry the newline that preceded the marker. And the
+    // draft's own trailing ~18 characters (the longest marker's length) are
+    // held back by the splitter until `finish()`, in case they are half of a
+    // stray marker - see EnvelopeSplitter. The full draft is asserted
+    // against `done.draft` in the streaming test above.
+    expect(reasoningText.trim()).toBe(REASONING);
+    expect(draftText.length).toBeGreaterThan(0);
+    expect(DRAFT.startsWith(draftText.trimStart())).toBe(true);
+
+    // Every reasoning chunk precedes every draft chunk: the marker is what
+    // separates the two, and nothing draft-flavoured leaks earlier.
+    const lastReasoningIdx = chunkEvents.map((e) => e.data.section).lastIndexOf('reasoning');
+    const firstDraftIdx = chunkEvents.map((e) => e.data.section).indexOf('draft');
+    expect(lastReasoningIdx).toBeLessThan(firstDraftIdx);
+
+    // "writing" appears exactly once, and only after the draft chunks start
+    // arriving - "reading" is the only status during the reasoning stretch.
+    const statusEvents = events.filter((e) => e.kind === 'status') as Array<{
+      data: { phase: string };
+    }>;
+    const statusPhases = statusEvents.map((e) => e.data.phase);
+    expect(statusPhases).toEqual(['reading', 'writing']);
+  });
+
+  // The fail-safe itself: a model that never emits the marker (ignored the
+  // instruction, or was never asked - see the "prove it bites" note below)
+  // must never hand the panel something to insert.
+  it('arrives as done with draft: null when the model never emits the marker', async () => {
+    const { org, project } = await seedOrgProject('org-unstructured');
+    await mintDevice(org.id, 'tok-unstructured');
+    responseChunks = ['Just some prose with no marker at all.'];
+
+    const res = await suggest({
+      request: request('tok-unstructured', { ...POST_BODY, projectId: project.id }),
+    } as never);
+    const events = await readEvents(res);
+
+    // No draft chunk ever went out, and status never left "reading".
+    const unstructuredChunks = events.filter((e) => e.kind === 'chunk') as Array<{
+      data: { section: string };
+    }>;
+    const chunkSections = unstructuredChunks.map((e) => e.data.section);
+    expect(chunkSections).not.toContain('draft');
+    const unstructuredStatuses = events.filter((e) => e.kind === 'status') as Array<{
+      data: { phase: string };
+    }>;
+    const statusPhases = unstructuredStatuses.map((e) => e.data.phase);
+    expect(statusPhases).toEqual(['reading']);
+
+    const done = events.at(-1)!.data as {
+      reasoning: string;
+      draft: string | null;
+      skipped: boolean;
+    };
+    expect(done.draft).toBeNull();
+    expect(done.skipped).toBe(false);
+    expect(done.reasoning).toBe('Just some prose with no marker at all.');
+  });
+
+  // A model that explicitly declines: SKIP_MARKER, not silence. Also arrives
+  // with draft: null, distinguished only by `skipped`.
+  it('arrives as done with draft: null and skipped: true when the model declines', async () => {
+    const { org, project } = await seedOrgProject('org-skipped');
+    await mintDevice(org.id, 'tok-skipped');
+    responseChunks = ['Nothing worth adding here.\n', SKIP_MARKER, '\nExplained above.'];
+
+    const res = await suggest({
+      request: request('tok-skipped', { ...POST_BODY, projectId: project.id }),
+    } as never);
+    const events = await readEvents(res);
+    const done = events.at(-1)!.data as {
+      reasoning: string;
+      draft: string | null;
+      skipped: boolean;
+    };
+    expect(done.draft).toBeNull();
+    expect(done.skipped).toBe(true);
   });
 
   it('attaches no MCP server and passes a prompt rather than a playbook', async () => {
@@ -225,6 +355,8 @@ describe('POST /api/extension/suggest', () => {
     // The house style is not optional on this path: a suggestion is text that
     // goes out under a real name.
     expect(lastOptions?.prompt).toContain('House style: write like a human');
+    // The envelope instruction is what makes the split possible at all.
+    expect(lastOptions?.prompt).toContain(DRAFT_MARKER);
   });
 
   it('writes no runs row and no draft', async () => {
@@ -286,7 +418,10 @@ describe('POST /api/extension/suggest', () => {
     const handle = runSuggestion({
       kind: 'post_comment',
       post: POST_BODY.post,
-      project: { name: project.name, description: project.description },
+      currentProject: { name: project.name, description: project.description },
+      persona: null,
+      projects: [],
+      repos: [],
       projectId: project.id,
       runnerSlug: project.defaultAgentRunner,
     });
@@ -370,6 +505,23 @@ describe('POST /api/extension/suggest', () => {
     } as never);
     expect(ok.headers.get('content-type')).toContain('text/event-stream');
     await ok.text();
+  });
+
+  // Decision 2026-09-07: the org's own `personal` project is always a valid
+  // destination, unlike an arbitrary sibling project of the same org, which
+  // the previous test proves still gets refused.
+  it('serves a request naming the org personal project even though it is not the bound one', async () => {
+    const { org, project } = await seedOrgProject('org-personal');
+    await mintDevice(org.id, 'tokPersonal');
+    const assist = await loadLinkedInAssistDeviceState(getDb(), org.id);
+    expect(assist.personalProjectId).not.toBe(project.id);
+
+    const res = await suggest({
+      request: request('tokPersonal', { ...POST_BODY, projectId: assist.personalProjectId }),
+    } as never);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    await res.text();
+    expect(lastOptions).not.toBeNull();
   });
 
   // #360: the wait a human sees is dominated by how long the model deliberates

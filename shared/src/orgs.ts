@@ -11,6 +11,7 @@ import {
   runs,
   users,
 } from './db/schema.js';
+import { ensurePersonalProject } from './personal-project.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = PgDatabase<any, any, any>;
@@ -366,6 +367,11 @@ export async function createOrganization(
     .insert(memberships)
     .values({ organizationId: org.id, userId: args.ownerUserId, role: 'owner' })
     .onConflictDoNothing();
+  // Every organization gets the `personal` project up front (decision
+  // 2026-09-07, shared/src/personal-project.ts): an accepted suggestion that
+  // is not about a product still has to file somewhere, and creating it here
+  // means a brand new org is never waiting on a migration to have one.
+  await ensurePersonalProject(db, org.id);
   return { id: org.id, slug: org.slug, role: 'owner' };
 }
 

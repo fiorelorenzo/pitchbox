@@ -7,10 +7,12 @@ import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { loadRunnerConfig, type RunnerConfig } from '@pitchbox/shared/agents/config';
 import {
   buildSuggestionPrompt,
+  type CurrentProject,
   type ObservedPost,
-  type ProjectVoice,
   type SuggestionKind,
 } from '@pitchbox/shared/assist/suggest-prompt';
+import { EnvelopeSplitter, type EnvelopeChunk } from '@pitchbox/shared/assist/envelope';
+import type { CodeRepo, OperatorPersona, ProjectBrief } from '@pitchbox/shared/assist/context';
 
 /**
  * Runs one suggestion: a single-turn agent invocation with no playbook, no MCP
@@ -29,7 +31,13 @@ import {
  * too slow in real use.
  */
 export interface SuggestionResult {
-  text: string;
+  /** Why the model wrote what it wrote. Shown, never insertable. */
+  reasoning: string;
+  /** The text the human may insert, or null when the model gave nothing to
+   * insert - no marker, or an explicit skip (#382, envelope.ts). */
+  draft: string | null;
+  /** True when the model explicitly declined to write a draft. */
+  skipped: boolean;
   ms: number;
   usage?: {
     inputTokens: number;
@@ -85,18 +93,28 @@ export function resolveAssistRunnerConfig(config: RunnerConfig): RunnerConfig {
 export function runSuggestion(args: {
   kind: SuggestionKind;
   post: ObservedPost;
-  project: ProjectVoice;
+  currentProject: CurrentProject;
+  persona: OperatorPersona | null;
+  projects: ProjectBrief[];
+  repos: CodeRepo[];
+  examples?: Array<{ title: string; body: string }>;
   hint?: string;
   projectId: number;
   orgId?: number;
   runnerSlug: string;
-  onFirstChunk?: () => void;
-  onChunk?: (text: string) => void;
+  /** One callback per model chunk, already split into its reasoning/draft
+   * halves (#382). The caller decides what to do with each half - the SSE
+   * route turns non-empty pieces into `chunk` events with a `section`. */
+  onChunk?: (chunk: EnvelopeChunk) => void;
 }): SuggestionHandle {
   const prompt = buildSuggestionPrompt({
     kind: args.kind,
     post: args.post,
-    project: args.project,
+    currentProject: args.currentProject,
+    persona: args.persona,
+    projects: args.projects,
+    repos: args.repos,
+    examples: args.examples,
     hint: args.hint,
   });
 
@@ -139,8 +157,12 @@ export function runSuggestion(args: {
       throw new Cancelled();
     }
 
-    let text = '';
-    let sawChunk = false;
+    // `rawText` is the whole response, unsplit - used only to tell an actual
+    // zero-text turn (a real failure) apart from a well-formed response whose
+    // envelope happens to carry no draft (#382: that is a success, not an
+    // error). The splitter itself is what decides what the panel gets.
+    let rawText = '';
+    const splitter = new EnvelopeSplitter();
 
     try {
       const handle = runner.run({
@@ -152,12 +174,8 @@ export function runSuggestion(args: {
         timeoutMs: SUGGESTION_TIMEOUT_MS,
         orgId: args.orgId,
         onTextChunk: (chunk) => {
-          if (!sawChunk) {
-            sawChunk = true;
-            args.onFirstChunk?.();
-          }
-          text += chunk;
-          args.onChunk?.(chunk);
+          rawText += chunk;
+          args.onChunk?.(splitter.push(chunk));
         },
       });
       cancelHandle = handle.cancel;
@@ -167,7 +185,7 @@ export function runSuggestion(args: {
       const run = await handle.result;
 
       if (cancelled) throw new Cancelled();
-      if (!text.trim()) {
+      if (!rawText.trim()) {
         // A zero-text turn is a failure the panel has to be told about: an
         // empty suggestion area with a "done" event reads as a broken panel.
         throw new Error(
@@ -176,8 +194,11 @@ export function runSuggestion(args: {
             : `the agent exited ${run.exitCode} without producing text`,
         );
       }
+      const envelope = splitter.finish();
       return {
-        text: text.trim(),
+        reasoning: envelope.reasoning,
+        draft: envelope.draft,
+        skipped: envelope.skipped,
         ms: Date.now() - started,
         usage: run.usage
           ? {

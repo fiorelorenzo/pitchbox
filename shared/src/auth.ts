@@ -11,6 +11,7 @@ import {
   memberships,
 } from './db/schema.js';
 import { defaultOrgName } from './orgs.js';
+import { ensurePersonalProject } from './personal-project.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = PgDatabase<any, any, any>;
@@ -222,6 +223,12 @@ export async function createUser(
     // The first real user takes over the seeded placeholder name.
     await db.update(organizations).set({ name: orgName }).where(eq(organizations.id, org.id));
   }
+  // Every organization needs its `personal` project (shared/src/personal-
+  // project.ts, decision 2026-09-07). Idempotent, so this is a harmless
+  // no-op on the common path where seed:core already created it; it only
+  // does real work on the fresh-install path just above, where the default
+  // org itself was just created inline.
+  await ensurePersonalProject(db, org.id);
   await db
     .insert(memberships)
     .values({ organizationId: org.id, userId: row.id, role: 'owner' })

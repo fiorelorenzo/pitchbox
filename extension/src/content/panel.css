@@ -38,11 +38,33 @@
  * to be restored after `all: initial`, which resets it to `inline`. */
 :host {
   all: initial;
-  display: block;
-  /* Anchored to a post (docs/design/DECISIONS.md D11), so the host is
-   * positioned by the anchor and never floats over unrelated content. */
-  position: relative;
-  z-index: 1;
+  /* Column flex, not block: the body has to scroll within a capped height
+   * while the header stays put, and that only works if `:host` itself is
+   * part of that flex chain (see `.pitchbox-panel` / `.frame .body` below)
+   * instead of being a box the shadow content simply overflows. */
+  display: flex;
+  flex-direction: column;
+  /* Floats above the page, anchored to the composer that was clicked (D13,
+   * issue #386, supersedes D11). D11's rule was `insertAdjacentElement`
+   * plus a `ResizeObserver` copying the anchor's width; on a post-detail
+   * page's ~260px comment form that read as "piccolissimo e difficilissimo
+   * da leggere". `panel-host.ts` now appends the host to `document.body`
+   * and positions it in viewport coordinates on every mount, scroll and
+   * resize; this rule only fixes the size it renders at. */
+  position: fixed;
+  /* Placeholder coordinates: `panel-host.ts` sets the real `top`/`left` (or
+   * `bottom`) and `max-height` before the panel is ever visible. Declared
+   * here too so the host is never unpositioned if that runs late. */
+  top: 0;
+  left: 0;
+  width: min(440px, calc(100vw - 24px));
+  max-height: 60vh;
+  /* LinkedIn's own sticky header sits around z-index 500, and its own
+   * modals and toasts go higher still. Rather than chase a number that can
+   * drift under us, this picks one with no realistic ceiling above it,
+   * short of the 32-bit signed max so it still reads as a deliberate value
+   * rather than "as high as this type allows". */
+  z-index: 2147483000;
   contain: layout style;
   /* `all: initial` deliberately does not reset custom properties, so the token
    * values tokens.css puts on `:host` survive it and inherit into the shadow
@@ -87,6 +109,16 @@
 
   display: flex;
   flex-direction: column;
+  /* The flex item inside `:host`'s own flex column above: without
+   * `min-height: 0` a flex item refuses to shrink below its content's
+   * natural height, which is exactly what has to happen once a draft is
+   * long enough to hit `:host`'s `max-height` - the body has to be what
+   * scrolls (`.frame .body` below), not the whole card growing past the
+   * viewport. `overflow: hidden` keeps that scroll region's corners inside
+   * this rule's own `border-radius` instead of squaring them off. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
   box-sizing: border-box;
   background: var(--card);
   color: var(--card-foreground);
@@ -126,6 +158,12 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Same shrink-to-scroll chain as `.pitchbox-panel` above, one level down:
+   * `.frame` is the only element `mount()` puts in the shadow root, so it
+   * has to pass the capped height on to `.body` rather than eating it
+   * itself. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .frame .head {
@@ -188,7 +226,15 @@
 }
 
 .frame .body {
-  padding: 0.75rem;
+  padding: 1rem;
+  /* The part that actually scrolls: the header above stays put, and a
+   * draft long enough to hit `:host`'s `max-height` scrolls here instead
+   * of running the panel off the screen. Deliberately no font-size here -
+   * the content mounted into it sets its own (D14 splits reasoning at 13px
+   * muted from the draft at 15px primary; a rule here would fight that). */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* LI-17 (#314): the comment-assist body rendered inside `.frame .body`

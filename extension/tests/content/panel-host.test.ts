@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Component } from 'svelte';
 import { mountPanel, panelFor } from '../../src/content/shared/panel-host.js';
 
@@ -52,6 +52,16 @@ beforeEach(() => {
   delete globalThis.FontFace;
 });
 
+// A test that never calls `destroy()` leaves its `window`/`document` listeners
+// live past the test. Without this, the last such test in the file leaves a
+// `MutationObserver` armed against a DOM that Vitest tears down before the
+// next `beforeEach` ever runs, and it fires mid-teardown against a `window`
+// that is already gone (#386's overlay dismissal added the first listeners
+// `mountPanel` puts on `window`/`document` rather than just on the anchor).
+afterEach(() => {
+  document.body.innerHTML = '';
+});
+
 function anchorEl(): HTMLElement {
   const post = document.createElement('article');
   post.setAttribute('data-urn', 'urn:li:activity:1');
@@ -101,10 +111,23 @@ describe('mountPanel', () => {
     expect(document.head.innerHTML).toBe(before);
   });
 
-  it('inserts the host after its anchor, so the panel is anchored to the post', () => {
-    const anchor = anchorEl();
+  it('appends the host to document.body as a floating overlay, not next to the anchor (D13)', () => {
+    // Nested rather than a direct child of body: this is what actually
+    // distinguishes an overlay from a sibling insert, since a host appended
+    // to `document.body` and a host inserted `afterend` on a body-level
+    // anchor would land in the same place.
+    const container = document.createElement('div');
+    document.body.append(container);
+    const anchor = document.createElement('article');
+    container.append(anchor);
+
     mountPanel({ anchor, component: Probe, props: { label: 'a' } });
-    expect(anchor.nextElementSibling?.tagName.toLowerCase()).toBe('pitchbox-panel-host');
+
+    const host = document.querySelector('pitchbox-panel-host');
+    expect(host).not.toBeNull();
+    expect(host!.parentElement).toBe(document.body);
+    expect(container.contains(host)).toBe(false);
+    expect((host as HTMLElement).style.position).toBe('fixed');
   });
 
   it('returns the existing panel instead of stacking a second one on the same anchor', () => {
@@ -112,7 +135,7 @@ describe('mountPanel', () => {
     const first = mountPanel({ anchor, component: Probe, props: { label: 'a' } });
     const second = mountPanel({ anchor, component: Probe, props: { label: 'b' } });
 
-    // D11: exactly one panel per acted-on post.
+    // Exactly one panel per acted-on post.
     expect(second).toBe(first);
     expect(document.querySelectorAll('pitchbox-panel-host').length).toBe(1);
   });

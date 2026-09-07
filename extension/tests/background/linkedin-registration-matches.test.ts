@@ -62,6 +62,12 @@ const POST_DETAIL_URLS = [
   'https://www.linkedin.com/posts/aiagents-share-7502751597039562752-zgxL/',
 ];
 
+// 2026-09-07: the comment assist wires a composer per card on the main feed
+// too (decision 1/2 of the overlay/feed rework), so its send-detection and
+// the assist script itself both need to reach a plain feed URL, not only
+// the two post-detail shapes above.
+const FEED_URL = 'https://www.linkedin.com/feed/';
+
 /** True when `matches` (Chrome match patterns) covers `url`. */
 function covers(matches: string[] | undefined, url: string): boolean {
   return (matches ?? []).some((pattern) => {
@@ -78,21 +84,23 @@ function covers(matches: string[] | undefined, url: string): boolean {
 }
 
 describe('LinkedIn content scripts reach both shapes of a post-detail URL (#379)', () => {
-  it('registers the comment send-detection script for /feed/update and /posts', async () => {
+  it('registers the comment send-detection script for /feed/update, /posts and /feed', async () => {
     const { syncLinkedInContentScript } = await import('../../src/background.js');
     await syncLinkedInContentScript();
     const entry = registered.find((s) => s.id === 'pitchbox-linkedin-comment');
     expect(entry).toBeTruthy();
-    for (const url of POST_DETAIL_URLS) expect(covers(entry!.matches, url)).toBe(true);
+    for (const url of [...POST_DETAIL_URLS, FEED_URL])
+      expect(covers(entry!.matches, url)).toBe(true);
   });
 
-  it('registers the in-page comment assistant for /feed/update and /posts', async () => {
+  it('registers the in-page comment assistant for /feed/update, /posts and /feed', async () => {
     const { registerLinkedInCommentAssistScript } =
       await import('../../src/background/linkedin-comment-assist-registration.js');
     await registerLinkedInCommentAssistScript();
     const entry = registered.find((s) => s.id === 'pitchbox-linkedin-comment-assist');
     expect(entry).toBeTruthy();
-    for (const url of POST_DETAIL_URLS) expect(covers(entry!.matches, url)).toBe(true);
+    for (const url of [...POST_DETAIL_URLS, FEED_URL])
+      expect(covers(entry!.matches, url)).toBe(true);
   });
 
   it('registers reply ingestion for /feed/update, /posts, notifications and messaging', async () => {

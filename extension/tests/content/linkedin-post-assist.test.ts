@@ -12,6 +12,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
  * the same posture `linkedin-dom.test.ts`'s own synthetic cases already take
  * for `findPostComposer`/`findMessageEvents`. The API layer is faked; the
  * panel and the modal shape are real.
+ *
+ * #382's reasoning/draft split and `personalProjectId` routing (2026-09-07)
+ * mirror `linkedin-comment-assist.test.ts`'s own coverage of the same
+ * contract.
  */
 
 const linkedinAssist = vi.fn();
@@ -44,6 +48,10 @@ vi.mock('../../src/lib/log-from-content.js', () => ({
 const { wirePostAssist, wirePostSubmit, refusalMessage } =
   await import('../../src/content/linkedin-post-assist.js');
 
+// `projectId` (context/grounding) and `personalProjectId` (decision 5: where
+// an accepted draft is filed) are deliberately distinct values below, so a
+// test that reads the wrong one fails loudly instead of passing by
+// coincidence.
 const ASSIST_ON = {
   ok: true as const,
   data: {
@@ -52,6 +60,7 @@ const ASSIST_ON = {
       collectorEnabled: true,
       killSwitch: false,
       projectId: 2,
+      personalProjectId: 99,
       dailyCommentCap: 8,
       dailyPostCap: 1,
     },
@@ -91,14 +100,16 @@ async function settle(times = 6): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
 }
 
-/** A suggestion delivered as the route delivers it: chunks, then done. */
-function streamingSuggest(text: string) {
+/** A suggestion delivered as the route delivers it (#382): reasoning chunks,
+ * then draft chunks, then done. */
+function streamingSuggest(reasoning: string, draft: string) {
   return async (_body: unknown, onEvent: (event: Record<string, unknown>) => void) => {
     onEvent({ kind: 'status', phase: 'writing' });
-    onEvent({ kind: 'chunk', text: text.slice(0, 20) });
-    onEvent({ kind: 'chunk', text: text.slice(20) });
-    onEvent({ kind: 'done', text, ms: 900 });
-    return { ok: true as const, data: { text } };
+    if (reasoning) onEvent({ kind: 'chunk', text: reasoning, section: 'reasoning' });
+    onEvent({ kind: 'chunk', text: draft.slice(0, 20), section: 'draft' });
+    onEvent({ kind: 'chunk', text: draft.slice(20), section: 'draft' });
+    onEvent({ kind: 'done', reasoning, draft, skipped: false, ms: 900 });
+    return { ok: true as const, data: { ok: true } };
   };
 }
 
@@ -144,7 +155,7 @@ describe('the panel never appears unprompted', () => {
 describe('grounded through the server, never a pile of observed posts', () => {
   it('asks for kind "post" and sends only the current page URL, never post text this script read itself', async () => {
     const { editor, modal } = renderModal();
-    suggest.mockImplementation(streamingSuggest('A short update about tonight.'));
+    suggest.mockImplementation(streamingSuggest('', 'A short update about tonight.'));
 
     wirePostAssist(editor, modal);
     editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -167,14 +178,20 @@ describe('the suggestion, as it arrives', () => {
       async (
         _body: unknown,
         onEvent: (e: Record<string, unknown>) => void,
-      ): Promise<{ ok: true; data: { text: string } }> => {
+      ): Promise<{ ok: true; data: { ok: true } }> => {
         onEvent({ kind: 'status', phase: 'writing' });
-        onEvent({ kind: 'chunk', text: 'First half. ' });
+        onEvent({ kind: 'chunk', text: 'First half. ', section: 'draft' });
         await settle(2);
         seen.push(panelText());
-        onEvent({ kind: 'chunk', text: 'Second half.' });
-        onEvent({ kind: 'done', text: 'First half. Second half.', ms: 900 });
-        return { ok: true, data: { text: 'First half. Second half.' } };
+        onEvent({ kind: 'chunk', text: 'Second half.', section: 'draft' });
+        onEvent({
+          kind: 'done',
+          reasoning: '',
+          draft: 'First half. Second half.',
+          skipped: false,
+          ms: 900,
+        });
+        return { ok: true, data: { ok: true } };
       },
     );
 
@@ -188,13 +205,31 @@ describe('the suggestion, as it arrives', () => {
     expect(seen[0]).not.toContain('Second half.');
     expect(shadow().querySelector('textarea')?.value).toBe('First half. Second half.');
   });
+
+  it('renders the reasoning small and separate from the draft, above it', async () => {
+    const { editor, modal } = renderModal();
+    suggest.mockImplementation(
+      streamingSuggest('Upbeat, first-person recap.', 'Shipped something fun tonight.'),
+    );
+
+    wirePostAssist(editor, modal);
+    editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    const hint = shadow().querySelector<HTMLElement>('.assist-hint');
+    const draftEl = shadow().querySelector('textarea');
+    expect(hint?.textContent).toBe('Upbeat, first-person recap.');
+    expect(draftEl?.value).toBe('Shipped something fun tonight.');
+  });
 });
 
 describe('accept, insert, and the button the human presses', () => {
   it('writes the text into LinkedIn own composer and dispatches no click or submit', async () => {
     const { editor, modal } = renderModal();
     const text = 'Shipped the post composer assist tonight.';
-    suggest.mockImplementation(streamingSuggest(text));
+    suggest.mockImplementation(streamingSuggest('', text));
     acceptSuggestion.mockResolvedValue({
       ok: true,
       data: { accepted: true, draftId: 5150, runId: 9 },
@@ -227,11 +262,104 @@ describe('accept, insert, and the button the human presses', () => {
     expect(editor.textContent).toContain('post composer assist');
     expect(acceptSuggestion).toHaveBeenCalledTimes(1);
     // No urn/authorHandle/authorName in the accept body: a post has none of
-    // those until it publishes, and it is the operator's own voice.
-    expect(acceptSuggestion.mock.calls[0][0]).toMatchObject({ kind: 'post', post: {} });
+    // those until it publishes, and it is the operator's own voice. Decision
+    // 5: it lands under the personal project, not the project it was
+    // grounded in (projectId 2 above).
+    expect(acceptSuggestion.mock.calls[0][0]).toMatchObject({
+      kind: 'post',
+      post: {},
+      projectId: 99,
+    });
     expect(clicks).toEqual([]);
     expect(submits).toEqual([]);
     expect(panelText()).toMatch(/Post button|Inserted/i);
+  });
+
+  it('sends only the draft on accept, never the reasoning', async () => {
+    const { editor, modal } = renderModal();
+    suggest.mockImplementation(
+      streamingSuggest('This reasoning must never reach LinkedIn.', 'A clean, short update.'),
+    );
+    acceptSuggestion.mockResolvedValue({
+      ok: true,
+      data: { accepted: true, draftId: 1, runId: 1 },
+    });
+
+    wirePostAssist(editor, modal);
+    editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(acceptSuggestion.mock.calls[0][0].body).toBe('A clean, short update.');
+    expect(editor.textContent).toContain('A clean, short update.');
+    expect(editor.textContent).not.toContain('This reasoning must never reach LinkedIn.');
+  });
+});
+
+describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
+  it('a decline (skipped) renders the reasoning and a retry, never an insert control', async () => {
+    const { editor, modal } = renderModal();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'status', phase: 'writing' });
+        onEvent({
+          kind: 'done',
+          reasoning: 'Nothing worth posting about right now.',
+          draft: null,
+          skipped: true,
+          ms: 400,
+        });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wirePostAssist(editor, modal);
+    editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(panelText()).toContain('Nothing worth posting about right now.');
+    expect(panelText()).not.toContain('Insert');
+    expect(shadow().querySelector('textarea')).toBeNull();
+    expect(shadow().querySelectorAll('.assist-button').length).toBe(1);
+  });
+
+  it('a malformed answer (not skipped) renders distinct copy from a decline, still no insert control', async () => {
+    const { editor, modal } = renderModal();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'done', reasoning: 'Thinking...', draft: null, skipped: true, ms: 400 });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wirePostAssist(editor, modal);
+    editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+    const skippedCopy = panelText();
+
+    document.body.innerHTML = '';
+    const second = renderModal();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'done', reasoning: 'Thinking...', draft: null, skipped: false, ms: 400 });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+    wirePostAssist(second.editor, second.modal);
+    second.editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(panelText()).not.toBe(skippedCopy);
+    expect(shadow().querySelector('textarea')).toBeNull();
   });
 });
 

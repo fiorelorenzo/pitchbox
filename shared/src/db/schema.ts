@@ -779,3 +779,112 @@ export const projectInsights = pgTable(
     byProject: index('project_insights_project_idx').on(t.projectId, t.generatedAt),
   }),
 );
+
+// The operator's own persona: who the human writing through the in-page
+// assistant actually is. One row per organization, because the assistant
+// writes as a person and an organization here is that person's workspace.
+//
+// Populated by the extension when the human opens their OWN LinkedIn profile
+// (docs/linkedin-integration-design.md's rule 2 allows reading the DOM their
+// navigation already rendered and nothing more), and editable by hand from
+// Settings, which is why `source` records where the current text came from:
+// a manual edit is not overwritten by a later capture without the human
+// asking for it.
+export const operatorProfiles = pgTable(
+  'operator_profiles',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    /** LinkedIn vanity handle, when a capture supplied one. Not a credential. */
+    handle: text('handle'),
+    displayName: text('display_name'),
+    headline: text('headline'),
+    about: text('about'),
+    /** `[{ title, company, period, summary }]` as rendered on the profile. */
+    experiences: jsonb('experiences').notNull().default([]),
+    /** Free text the human writes about how they want to sound. Never captured. */
+    notes: text('notes'),
+    source: text('source').notNull().default('linkedin_capture'), // 'linkedin_capture' | 'manual'
+    capturedAt: timestamp('captured_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byOrg: uniqueIndex('operator_profiles_org_unique').on(t.organizationId),
+  }),
+);
+
+// The operator's own recent posts, captured passively from their activity page
+// and used as few-shot voice samples. These are examples of how this person
+// writes, which is a different thing from `templates` (hand-written patterns
+// for a project's outreach) and is why they do not share a table.
+//
+// `excluded` rather than a delete: a sample the human does not want in the
+// prompt should stay visible in Settings, otherwise the next capture silently
+// brings it back.
+export const operatorVoiceSamples = pgTable(
+  'operator_voice_samples',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    /** The post's stable identifier on the platform, and the dedup key. */
+    externalId: text('external_id').notNull(),
+    platformId: integer('platform_id')
+      .notNull()
+      .references(() => platforms.id),
+    text: text('text').notNull(),
+    url: text('url'),
+    postedAt: timestamp('posted_at', { withTimezone: true }),
+    excluded: boolean('excluded').notNull().default(false),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byOrgExternal: uniqueIndex('operator_voice_samples_org_external_unique').on(
+      t.organizationId,
+      t.externalId,
+    ),
+    byOrgExcluded: index('operator_voice_samples_org_idx').on(t.organizationId, t.excluded),
+  }),
+);
+
+// A public code repository the operator points the companion at, so a
+// suggestion can be grounded in what they actually built rather than in a
+// project description written months ago.
+//
+// Public by URL and no credential (Lorenzo's call, 2026-09-07): the reader
+// calls GitHub's anonymous API, caches what it read, and a private repository
+// is out of scope until the optional GitHub App lands. `fetch_error` is kept
+// so a repo that stopped resolving says so in Settings instead of quietly
+// contributing nothing to every prompt.
+export const githubSources = pgTable(
+  'github_sources',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    /** Optional: a repo that belongs to one project rather than the operator. */
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    owner: text('owner').notNull(),
+    repo: text('repo').notNull(),
+    url: text('url').notNull(),
+    description: text('description'),
+    primaryLanguage: text('primary_language'),
+    /** Clamped README text, not the whole file. */
+    readmeExcerpt: text('readme_excerpt'),
+    /** `[{ sha, message, committedAt }]`, newest first. */
+    recentCommits: jsonb('recent_commits').notNull().default([]),
+    active: boolean('active').notNull().default(true),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }),
+    fetchError: text('fetch_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byOrgRepo: uniqueIndex('github_sources_org_repo_unique').on(t.organizationId, t.owner, t.repo),
+  }),
+);

@@ -12,12 +12,16 @@ type DraftSummary = {
   version?: number;
 };
 
-/** The exact shape served by GET /api/extension/linkedin-assist (LI-19, #316). */
+/** The exact shape served by GET /api/extension/linkedin-assist (LI-19, #316).
+ * `personalProjectId` is the org's auto-created `personal` project (decision
+ * 5): the panel accepts a draft under it, distinct from `projectId` - which
+ * product the assistant speaks for, used for context and templates. */
 export type LinkedInAssistState = {
   enabled: boolean;
   collectorEnabled: boolean;
   killSwitch: boolean;
   projectId: number | null;
+  personalProjectId: number;
   dailyCommentCap: number;
   dailyPostCap: number;
 };
@@ -75,11 +79,28 @@ export type AcceptRefusalReason =
  * One event out of /suggest, folded to one shape regardless of whether the
  * server answered a plain `200 {refused}` ahead of the stream or an actual
  * `text/event-stream` frame - a caller switches on `kind` either way.
+ *
+ * `chunk.section` and `done.{reasoning,draft,skipped}` are #382's split: the
+ * server never lets the model's reasoning land where it could be inserted,
+ * so the wire itself carries the two halves apart rather than trusting every
+ * caller to re-derive the split from a marker. `done.draft` is `null` for
+ * both an outright decline (`skipped: true`, the model chose not to write
+ * one) and a malformed response (`skipped: false`, the model ignored the
+ * envelope format) - the fail-safe is "no marker means no draft" either way,
+ * and a caller must never fall back to inserting `reasoning` when that
+ * happens.
  */
 export type SuggestEvent =
   | { kind: 'status'; phase: 'reading' | 'writing' }
-  | { kind: 'chunk'; text: string }
-  | { kind: 'done'; text: string; usage?: SuggestUsage; ms: number }
+  | { kind: 'chunk'; text: string; section: 'reasoning' | 'draft' }
+  | {
+      kind: 'done';
+      reasoning: string;
+      draft: string | null;
+      skipped: boolean;
+      usage?: SuggestUsage;
+      ms: number;
+    }
   | { kind: 'failed'; message: string }
   | { kind: 'refused'; reason: SuggestRefusalReason; detail: Record<string, unknown> };
 
@@ -203,12 +224,17 @@ export function parseSuggestSseFrame(frame: string): SuggestEvent | null {
         ? { kind: 'status', phase: data.phase }
         : null;
     case 'chunk':
-      return typeof data.text === 'string' ? { kind: 'chunk', text: data.text } : null;
+      return typeof data.text === 'string' &&
+        (data.section === 'reasoning' || data.section === 'draft')
+        ? { kind: 'chunk', text: data.text, section: data.section }
+        : null;
     case 'done':
-      return typeof data.text === 'string'
+      return typeof data.reasoning === 'string' && typeof data.skipped === 'boolean'
         ? {
             kind: 'done',
-            text: data.text,
+            reasoning: data.reasoning,
+            draft: typeof data.draft === 'string' ? data.draft : null,
+            skipped: data.skipped,
             usage: data.usage as SuggestUsage | undefined,
             ms: typeof data.ms === 'number' ? data.ms : 0,
           }

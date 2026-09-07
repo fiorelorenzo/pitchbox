@@ -45,23 +45,49 @@ describe('parseSuggestSseFrame', () => {
     });
   });
 
-  it('parses a chunk frame', () => {
-    expect(parseSuggestSseFrame('event: chunk\ndata: {"text":"Great post"}')).toEqual({
+  it('parses a chunk frame, carrying which section it belongs to', () => {
+    expect(
+      parseSuggestSseFrame('event: chunk\ndata: {"text":"Great post","section":"draft"}'),
+    ).toEqual({
       kind: 'chunk',
       text: 'Great post',
+      section: 'draft',
     });
   });
 
-  it('parses a done frame with usage', () => {
+  it('returns null for a chunk with no recognised section', () => {
+    expect(
+      parseSuggestSseFrame('event: chunk\ndata: {"text":"Great post","section":"nonsense"}'),
+    ).toBeNull();
+  });
+
+  it('parses a done frame with usage, reasoning and a draft', () => {
     expect(
       parseSuggestSseFrame(
-        'event: done\ndata: {"text":"Great post!","usage":{"outputTokens":12},"ms":2200}',
+        'event: done\ndata: {"reasoning":"Sounds upbeat.","draft":"Great post!","skipped":false,"usage":{"outputTokens":12},"ms":2200}',
       ),
     ).toEqual({
       kind: 'done',
-      text: 'Great post!',
+      reasoning: 'Sounds upbeat.',
+      draft: 'Great post!',
+      skipped: false,
       usage: { outputTokens: 12 },
       ms: 2200,
+    });
+  });
+
+  it('parses a done frame with no draft - the marker never arrived (#382)', () => {
+    expect(
+      parseSuggestSseFrame(
+        'event: done\ndata: {"reasoning":"Nothing worth adding here.","draft":null,"skipped":true,"ms":900}',
+      ),
+    ).toEqual({
+      kind: 'done',
+      reasoning: 'Nothing worth adding here.',
+      draft: null,
+      skipped: true,
+      usage: undefined,
+      ms: 900,
     });
   });
 
@@ -112,9 +138,9 @@ describe('api.suggest', () => {
     const frames = [
       'event: status\ndata: {"phase":"reading"}',
       'event: status\ndata: {"phase":"writing"}',
-      'event: chunk\ndata: {"text":"Great "}',
-      'event: chunk\ndata: {"text":"post!"}',
-      'event: done\ndata: {"text":"Great post!","ms":2200}',
+      'event: chunk\ndata: {"text":"Great ","section":"draft"}',
+      'event: chunk\ndata: {"text":"post!","section":"draft"}',
+      'event: done\ndata: {"reasoning":"Positive tone.","draft":"Great post!","skipped":false,"ms":2200}',
     ];
     vi.stubGlobal(
       'fetch',
@@ -134,16 +160,25 @@ describe('api.suggest', () => {
     expect(events).toEqual([
       { kind: 'status', phase: 'reading' },
       { kind: 'status', phase: 'writing' },
-      { kind: 'chunk', text: 'Great ' },
-      { kind: 'chunk', text: 'post!' },
-      { kind: 'done', text: 'Great post!', usage: undefined, ms: 2200 },
+      { kind: 'chunk', text: 'Great ', section: 'draft' },
+      { kind: 'chunk', text: 'post!', section: 'draft' },
+      {
+        kind: 'done',
+        reasoning: 'Positive tone.',
+        draft: 'Great post!',
+        skipped: false,
+        usage: undefined,
+        ms: 2200,
+      },
     ]);
   });
 
   it('reassembles a frame split across two reader chunks', async () => {
     seed();
     const { api } = await import('../../src/lib/api.js');
-    const frames = ['event: chunk\ndata: {"text":"a fairly long chunk of streamed text here"}'];
+    const frames = [
+      'event: chunk\ndata: {"text":"a fairly long chunk of streamed text here","section":"draft"}',
+    ];
     vi.stubGlobal(
       'fetch',
       vi.fn(
@@ -159,7 +194,9 @@ describe('api.suggest', () => {
       events.push(e),
     );
 
-    expect(events).toEqual([{ kind: 'chunk', text: 'a fairly long chunk of streamed text here' }]);
+    expect(events).toEqual([
+      { kind: 'chunk', text: 'a fairly long chunk of streamed text here', section: 'draft' },
+    ]);
   });
 
   it('maps a pre-stream JSON refusal to a refused event, not an error result', async () => {

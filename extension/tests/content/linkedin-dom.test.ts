@@ -12,6 +12,8 @@ import {
   findPostComposerModal,
   findPostSubmitButton,
   readOwnProfileHandle,
+  readOwnProfile,
+  readOwnPosts,
   getSelectorHealthReport,
   resetSelectorHealth,
   selectorHealthActivityEvents,
@@ -347,5 +349,143 @@ describe('compliance boundary: this module reads the DOM and nothing else', () =
 
   it('never uses a chrome extension API to send or read anything', () => {
     expect(source).not.toMatch(/chrome\.(runtime|storage|cookies|tabs|scripting)\b/);
+  });
+});
+
+describe('readOwnProfile / readOwnPosts: persona capture (LI-21)', () => {
+  // No real profile-page fixture exists yet (see the module's own doc
+  // comment on readOwnProfile) - this is a hand-built DOM that mirrors the
+  // structure the reader targets: a `<main><h1>` top card with a headline
+  // line, an `id="about"` section, and an `id="experience"` section of
+  // `<li>` entries read positionally.
+  function renderProfile(opts: { canonicalHref?: string; ogUrl?: string; body: string }): void {
+    document.head.innerHTML = [
+      opts.canonicalHref ? `<link rel="canonical" href="${opts.canonicalHref}">` : '',
+      opts.ogUrl ? `<meta property="og:url" content="${opts.ogUrl}">` : '',
+    ].join('');
+    document.body.innerHTML = opts.body;
+  }
+
+  const PROFILE_BODY = `
+    <main>
+      <section>
+        <h1>Ada Lovelace</h1>
+        <div>Mathematician and writer</div>
+      </section>
+    </main>
+    <section id="about">
+      <h2>Informazioni</h2>
+      <div>I write about the analytical engine and what a general-purpose computer could someday do.</div>
+    </section>
+    <section id="experience">
+      <h2>Esperienza</h2>
+      <ul>
+        <li>
+          <div>Founder</div>
+          <div>Analytical Engine Co.</div>
+          <div>2020 - Present</div>
+          <div>Wrote the first algorithm intended for a machine, published as notes on Menabrea's memoir.</div>
+        </li>
+      </ul>
+    </section>
+  `;
+
+  it('reads name, handle (from the canonical link, not nav), headline, about and experience', () => {
+    renderProfile({
+      canonicalHref: 'https://www.linkedin.com/in/ada-lovelace/',
+      body: PROFILE_BODY,
+    });
+    const profile = readOwnProfile(document);
+    expect(profile).not.toBeNull();
+    expect(profile?.handle).toBe('ada-lovelace');
+    expect(profile?.displayName).toBe('Ada Lovelace');
+    expect(profile?.headline).toBe('Mathematician and writer');
+    expect(profile?.about).toMatch(/analytical engine/);
+    expect(profile?.experiences).toEqual([
+      {
+        title: 'Founder',
+        company: 'Analytical Engine Co.',
+        period: '2020 - Present',
+        summary:
+          "Wrote the first algorithm intended for a machine, published as notes on Menabrea's memoir.",
+      },
+    ]);
+  });
+
+  it('never trusts the global nav for the page handle, only the canonical URL', () => {
+    // Nav names the signed-in member; the page itself is someone else's -
+    // this is exactly the "visited a competitor's profile" case the server
+    // guard (POST /api/extension/operator-profile) has to refuse.
+    renderProfile({
+      canonicalHref: 'https://www.linkedin.com/in/someone-else/',
+      body: `<nav><a href="/in/the-operator/">Visualizza profilo</a></nav>${PROFILE_BODY}`,
+    });
+    expect(readOwnProfile(document)?.handle).toBe('someone-else');
+    expect(readOwnProfileHandle(document)).toBe('the-operator');
+  });
+
+  it('falls back to og:url when there is no canonical link', () => {
+    renderProfile({ ogUrl: 'https://www.linkedin.com/in/og-fallback/', body: PROFILE_BODY });
+    expect(readOwnProfile(document)?.handle).toBe('og-fallback');
+  });
+
+  it('returns null when the page has no top card at all (not a profile page)', () => {
+    renderProfile({ body: '<main><div>nothing here</div></main>' });
+    expect(readOwnProfile(document)).toBeNull();
+  });
+
+  it('returns about/experience as null/empty when those sections are absent, without failing the whole read', () => {
+    renderProfile({
+      canonicalHref: 'https://www.linkedin.com/in/minimal/',
+      body: '<main><section><h1>Minimal Person</h1><div>Just a headline</div></section></main>',
+    });
+    const profile = readOwnProfile(document);
+    expect(profile?.displayName).toBe('Minimal Person');
+    expect(profile?.about).toBeNull();
+    expect(profile?.experiences).toEqual([]);
+  });
+
+  it('records selector-health misses for the about/experience sections when absent', () => {
+    renderProfile({
+      canonicalHref: 'https://www.linkedin.com/in/minimal/',
+      body: '<main><section><h1>Minimal Person</h1></section></main>',
+    });
+    readOwnProfile(document);
+    const report = getSelectorHealthReport();
+    const about = report.find((e) => e.selector === 'ownProfileAbout' && e.pageKind === 'profile');
+    const experience = report.find(
+      (e) => e.selector === 'ownProfileExperience' && e.pageKind === 'profile',
+    );
+    expect(about?.lastResult).toBe('miss');
+    expect(experience?.lastResult).toBe('miss');
+  });
+
+  it('readOwnPosts reads the recent-activity list via the same classic-frontend post accessors', () => {
+    // Same shape post-detail.html's own classic-frontend posts use
+    // (role="article" + data-urn), reused here rather than invented, per
+    // "Two frontends, one identifier".
+    render(`
+      <div role="article" data-urn="urn:li:activity:1111">
+        <div class="update-components-text">First post about the analytical engine.</div>
+      </div>
+      <div role="article" data-urn="urn:li:activity:2222">
+        <div class="update-components-text">Second post about punched cards.</div>
+      </div>
+    `);
+    const posts = readOwnPosts(document);
+    expect(posts).toEqual([
+      { externalId: 'urn:li:activity:1111', text: 'First post about the analytical engine.' },
+      { externalId: 'urn:li:activity:2222', text: 'Second post about punched cards.' },
+    ]);
+  });
+
+  it('readOwnPosts skips a feed-sdui sighting: no stable urn to dedupe a voice sample on', () => {
+    render(`
+      <div role="listitem">
+        <div data-sdui-anchor-id="feed-header-1">Ada Lovelace</div>
+        <div data-sdui-anchor-id="commentary-1">A feed post with no stable identifier.</div>
+      </div>
+    `);
+    expect(readOwnPosts(document)).toEqual([]);
   });
 });

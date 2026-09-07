@@ -28,6 +28,13 @@ export default defineConfig({
           'src/content/linkedin-comment.ts',
           'src/content/linkedin-observe.ts',
           'src/content/linkedin-reply-ingest.ts',
+          // The persona capture (#389). Same shape as the three above: no
+          // panel, registered dynamically once the LinkedIn permission is
+          // granted, so it has to be built as a standalone IIFE or the
+          // registration resolves a path that does not exist in `dist`
+          // (exactly the #379 defect, caught here by
+          // `tests/extension-packaged-build.test.ts`).
+          'src/content/linkedin-profile-capture.ts',
         ],
       },
     }),

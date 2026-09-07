@@ -4,7 +4,7 @@
 import './shared/trusted-types-shim.js';
 import { api, type AcceptRefusalReason, type SuggestEvent, type SuggestUsage } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
-import { mountPanel, panelFor } from './shared/panel-host.js';
+import { mountPanel, panelFor, type PanelHandle } from './shared/panel-host.js';
 import { insertComposerText, hasInlineCommentError } from './linkedin-comment.js';
 import {
   findPostComposer,
@@ -23,12 +23,12 @@ import PostAssistPanel from './linkedin-post-assist-panel.svelte';
  *
  * ## Registered on the feed, not on a single post
  *
- * The comment assist registers against `/feed/update/*` - the one page that
- * both renders a comment composer and exposes a stable post identifier (see
- * `linkedin-dom.ts`'s "Two frontends, one identifier"). The post composer has
- * neither concern: it opens as a modal reachable from the top of the main
- * feed, not from any one post's own page, so this registers against
- * `/feed*` instead (`linkedin-post-assist-registration.ts`).
+ * The comment assist registers against every post card it can find - the
+ * classic post-detail page and the feed alike (see its own module doc
+ * comment). The post composer has no equivalent notion of "which card": it
+ * opens as one modal reachable from the top of the main feed, so this
+ * registers against `/feed*` (`linkedin-post-assist-registration.ts`) and
+ * needs no per-card wiring of its own.
  *
  * ## Grounded through the server, not by scraping the feed itself
  *
@@ -79,6 +79,19 @@ import PostAssistPanel from './linkedin-post-assist-panel.svelte';
  * the profile's own `/recent-activity/` page render it through the classic
  * frontend with a real `data-urn`? None of the fixtures in this repo show
  * that state, so none of it is guessed here.
+ *
+ * ## Reasoning is never insertable (#382)
+ *
+ * Same split as the comment assist: `PostAssistState` carries `reasoning`
+ * and `draft` apart through every phase that has both, the accept button
+ * only ever sends `draft`, and a `done` event whose `draft` is `null`
+ * renders no insert affordance - see `no_draft` below.
+ *
+ * ## Every accepted draft lands under the personal project
+ *
+ * Same routing as the comment assist: `api.acceptSuggestion` here sends
+ * `assist.personalProjectId` (decision 5), not the project the suggestion
+ * was grounded in (`boundProjectId`, still used for `api.suggest` alone).
  */
 
 const POST_KIND = 'post';
@@ -90,7 +103,8 @@ const POST_KIND = 'post';
  * can never fire here, and this script never reads post content off the page,
  * so `selector_health_degraded` cannot fire either. `no_recent_activity` is
  * new: the observation buffer this suggestion grounds in (see the module doc
- * comment) had nothing recent enough to draft from. */
+ * comment) had nothing recent enough to draft from. A `done` event with no
+ * draft is never a refusal - see `PostAssistState.no_draft` below. */
 export type PostAssistRefusal =
   | Exclude<AcceptRefusalReason, 'uncontactable' | 'recently_contacted'>
   | 'backend_unreachable'
@@ -129,13 +143,19 @@ export function refusalMessage(reason: string): {
   return { key: 'assist.refusal.unknown', params: { reason } };
 }
 
+/**
+ * State machine (#382): `reasoning` and `draft` travel apart through every
+ * phase that carries both - see `linkedin-comment-assist.ts`'s own
+ * `CommentAssistState` doc comment, which this mirrors exactly.
+ */
 export type PostAssistState =
   | { phase: 'resting' }
-  | { phase: 'streaming'; status: 'reading' | 'writing'; text: string }
-  | { phase: 'ready'; text: string }
-  | { phase: 'edited'; text: string }
-  | { phase: 'accepting'; text: string }
+  | { phase: 'streaming'; status: 'reading' | 'writing'; reasoning: string; draft: string }
+  | { phase: 'ready'; reasoning: string; draft: string }
+  | { phase: 'edited'; reasoning: string; draft: string }
+  | { phase: 'accepting'; reasoning: string; draft: string }
   | { phase: 'inserted' }
+  | { phase: 'no_draft'; reasoning: string; skipped: boolean }
   | { phase: 'refused'; messageKey: string; messageParams?: Record<string, string> };
 
 export type PostAssistPanelProps = {
@@ -244,6 +264,19 @@ function watchPostForSend(modal: Element, draftId: number): void {
   }, POST_SUBMIT_WAIT_MS);
 }
 
+/** #382: a `done` event with no draft is never a refusal, so it gets its own
+ * log message - see `linkedin-comment-assist.ts`'s own `logNoDraft`, which
+ * this mirrors exactly. */
+function logNoDraft(skipped: boolean): void {
+  logFromContent({
+    level: skipped ? 'info' : 'warn',
+    source: 'linkedin-action',
+    message: 'activity.linkedin-action.suggestion-no-draft',
+    messageParams: { skipped: String(skipped) },
+    meta: { skipped, script: 'linkedin-post-assist' },
+  });
+}
+
 /**
  * Mounts the assist panel on `editor`'s anchor and wires its whole state
  * machine: request, edit, accept-then-insert-then-arm, refuse. One call per
@@ -254,8 +287,10 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
   const anchor = editor.closest('form') ?? editor;
   for (const event of selectorHealthActivityEvents()) logFromContent(event);
 
-  let currentText = '';
+  let currentReasoning = '';
+  let currentDraft = '';
   let boundProjectId: number | null = null;
+  let personalProjectId: number | null = null;
   let lastUsage: SuggestUsage | undefined;
   let lastMs: number | undefined;
 
@@ -263,14 +298,21 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
     state: { phase: 'resting' },
     onRequest: () => void requestSuggestion(),
     onEditChange: (text) => {
-      currentText = text;
-      if (handle.alive) handle.update({ state: { phase: 'edited', text } });
+      currentDraft = text;
+      if (handle.alive) {
+        handle.update({ state: { phase: 'edited', reasoning: currentReasoning, draft: text } });
+      }
     },
     onAccept: () => void acceptAndInsert(),
     onDismiss: () => handle.destroy(),
   };
 
-  const handle = mountPanel({ anchor, component: PostAssistPanel, props });
+  const handle: PanelHandle<PostAssistPanelProps> = mountPanel({
+    anchor,
+    component: PostAssistPanel,
+    props,
+    onDismiss: () => handle.destroy(),
+  });
 
   function setRefused(reason: string): void {
     logFromContent({
@@ -287,7 +329,7 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
   }
 
   async function requestSuggestion(): Promise<void> {
-    handle.update({ state: { phase: 'streaming', status: 'reading', text: '' } });
+    handle.update({ state: { phase: 'streaming', status: 'reading', reasoning: '', draft: '' } });
 
     const assistRes = await api.linkedinAssist();
     if (!handle.alive) return;
@@ -309,8 +351,10 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
       return;
     }
     boundProjectId = assist.projectId;
+    personalProjectId = assist.personalProjectId;
 
-    let streamed = '';
+    let reasoning = '';
+    let draft = '';
     // Never a pile of observed posts: the server itself reads the
     // observation buffer for `kind: 'post'` (see the module doc comment).
     // `post` here is informational context only.
@@ -320,17 +364,30 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
         if (!handle.alive) return;
         switch (event.kind) {
           case 'status':
-            handle.update({ state: { phase: 'streaming', status: event.phase, text: streamed } });
+            handle.update({
+              state: { phase: 'streaming', status: event.phase, reasoning, draft },
+            });
             break;
           case 'chunk':
-            streamed += event.text;
-            handle.update({ state: { phase: 'streaming', status: 'writing', text: streamed } });
+            if (event.section === 'reasoning') reasoning += event.text;
+            else draft += event.text;
+            handle.update({ state: { phase: 'streaming', status: 'writing', reasoning, draft } });
             break;
           case 'done':
             lastUsage = event.usage;
             lastMs = event.ms;
-            currentText = event.text;
-            handle.update({ state: { phase: 'ready', text: event.text } });
+            currentReasoning = event.reasoning;
+            if (event.draft === null) {
+              logNoDraft(event.skipped);
+              handle.update({
+                state: { phase: 'no_draft', reasoning: event.reasoning, skipped: event.skipped },
+              });
+            } else {
+              currentDraft = event.draft;
+              handle.update({
+                state: { phase: 'ready', reasoning: event.reasoning, draft: event.draft },
+              });
+            }
             break;
           case 'failed':
             setRefused('generation_failed');
@@ -346,20 +403,22 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
   }
 
   async function acceptAndInsert(): Promise<void> {
-    if (boundProjectId === null) {
+    if (personalProjectId === null) {
       setRefused('backend_unreachable');
       return;
     }
-    handle.update({ state: { phase: 'accepting', text: currentText } });
+    handle.update({
+      state: { phase: 'accepting', reasoning: currentReasoning, draft: currentDraft },
+    });
     const res = await api.acceptSuggestion({
-      projectId: boundProjectId,
+      projectId: personalProjectId,
       kind: POST_KIND,
       // No urn (a post has none until it publishes), no authorHandle/authorName
       // (this is the operator's own voice, not a reply to someone) - see
       // web/src/routes/api/extension/suggest/accept/+server.ts's targetUser
       // handling for `kind: 'post'`.
       post: {},
-      body: currentText,
+      body: currentDraft,
       usage: lastUsage,
       ms: lastMs,
     });
@@ -373,7 +432,7 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
       return;
     }
 
-    insertComposerText(editor, currentText);
+    insertComposerText(editor, currentDraft);
     watchPostForSend(modal, res.data.draftId);
     logFromContent({
       level: 'info',

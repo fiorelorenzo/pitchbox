@@ -14,9 +14,11 @@ import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist'
 //
 // Response shape (see PR body for the frozen contract):
 //   { assist: LinkedInAssistDeviceState }
-// LinkedInAssistDeviceState (shared/src/linkedin-assist.ts) carries only
-// booleans, the bound project id and the two daily caps - nothing org-scoped
-// beyond what the device already handles in observations/suggest bodies.
+// LinkedInAssistDeviceState (shared/src/linkedin-assist.ts) carries booleans,
+// the bound project id, the org's `personal` project id (2026-09-07 - where
+// an accepted suggestion files when it is not about a product) and the two
+// daily caps - nothing org-scoped beyond what the device already handles in
+// observations/suggest bodies.
 
 // Polled on an interval by a background script, not user-driven, so this is
 // tighter than /suggest's perDevice(20, 60_000) while still generous for any

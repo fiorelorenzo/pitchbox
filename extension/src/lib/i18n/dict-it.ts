@@ -141,6 +141,8 @@ export const it = {
   'activity.linkedin-action.assist-composer-not-found':
     "Impossibile trovare il box del commento LinkedIn; l'assistente non è stato offerto.",
   'activity.linkedin-action.suggestion-refused': 'Suggerimento LinkedIn assist rifiutato: {reason}',
+  'activity.linkedin-action.suggestion-no-draft':
+    'LinkedIn assist non ha prodotto una bozza da inserire (skipped: {skipped}).',
   'activity.linkedin-action.suggestion-inserted':
     'Suggerimento accettato inserito nel box del commento LinkedIn per il draft {draftId}.',
   'activity.linkedin-action.post-submit-not-found':
@@ -156,6 +158,13 @@ export const it = {
   'activity.linkedin-collector.batch-failed':
     'Invio del batch di osservazioni LinkedIn fallito: {reason}',
   'activity.linkedin-collector.stopped': 'Collettore di osservazioni LinkedIn fermato: {reason}',
+  'activity.linkedin-collector.profile-captured': 'Profilo LinkedIn acquisito.',
+  'activity.linkedin-collector.profile-refused':
+    "Acquisizione profilo LinkedIn saltata: questa pagina non corrisponde all'operatore registrato.",
+  'activity.linkedin-collector.profile-failed':
+    'Acquisizione profilo LinkedIn non riuscita: {reason}',
+  'activity.linkedin-collector.voice-samples-captured':
+    'Acquisiti {count} nuovi post come esempi di voce.',
   'activity.settings.changed': 'Impostazioni aggiornate.',
   'activity.system.boot': 'Service worker avviato.',
   'activity.system.alarms-applied': 'Alarms riapplicati ({interval} min).',
@@ -266,6 +275,11 @@ export const it = {
   'assist.refusal.post_quota_exhausted': 'La quota post di oggi è esaurita.',
   'assist.refusal.no_recent_activity':
     'Ancora nulla di recente da cui scrivere un post. Esplora la tua rete per un po’, poi riprova.',
+  'assist.comment.no_draft.skipped': "L'assistente ha deciso di non suggerire un commento qui.",
+  'assist.comment.no_draft.unstructured': "L'assistente non ha prodotto un commento da inserire.",
+  'assist.post.no_draft.skipped':
+    "L'assistente ha deciso di non suggerire un post in questo momento.",
+  'assist.post.no_draft.unstructured': "L'assistente non ha prodotto un post da inserire.",
 
   // Language names are endonyms, see the comment in dict-en.ts.
   'settings.language.option.en': 'English',
