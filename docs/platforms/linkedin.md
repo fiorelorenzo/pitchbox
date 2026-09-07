@@ -37,6 +37,8 @@ Because nothing is fetched or scraped, a LinkedIn candidate only arrives while a
 
 It is also narrower than "while a human browses". Measured against real captured markup on 2026-09-04: the feed LinkedIn serves today is a server-driven UI where a post has no stable identifier at all, only a token that changes on reload, so a feed card cannot be recorded as a candidate. What can is a post the human actually opens, and a post in a profile's recent-activity list, which still carry the activity URN. So scrolling contributes nothing to the pool; opening a post does.
 
+This was accepted rather than worked around (2026-09-07). Two things follow for anyone using LinkedIn here. The in-page assistant is the surface to reach for first: it works on the post already in front of you and needs no candidate pool at all. And a LinkedIn campaign that finds nothing is not broken - the pool is a function of how much you browsed, so an empty observation buffer ends a run as a normal success with zero drafts, exactly like a Reddit run where nothing qualified.
+
 ## LinkedIn's own posting API, deliberately not used
 
 `w_member_social` would let a connected member's own posts go out through LinkedIn's official API without the human pressing a button. It needs three-legged OAuth with a hosted redirect URI, and self-hosting Pitchbox should not require registering a LinkedIn developer app to work. It is recorded as a spike, not built, for v1.
