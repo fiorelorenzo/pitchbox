@@ -1,3 +1,7 @@
+// MUST stay the first import: it patches Trusted Types policy creation before
+// Svelte's runtime is evaluated, without which this script throws on
+// linkedin.com and the panel never mounts (#379). See the module's own note.
+import './shared/trusted-types-shim.js';
 import { api, type AcceptRefusalReason, type SuggestEvent, type SuggestUsage } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import { mountPanel, panelFor } from './shared/panel-host.js';

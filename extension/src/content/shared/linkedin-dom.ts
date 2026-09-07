@@ -356,6 +356,37 @@ function ownText(el: Element): string {
   return text.trim();
 }
 
+/**
+ * Class tokens LinkedIn puts on text that exists for a screen reader and is
+ * clipped out of the rendered page ("35 minuti fa - Visibile a tutti su
+ * LinkedIn e altrove", "Attiva per visualizzare un'immagine piu grande").
+ *
+ * `aria-hidden="true"` is the opposite case and already skipped; this is the
+ * one that actually cost us. On a real signed-in post page the first element
+ * with 30+ characters of its own text was the clipped timestamp line, so
+ * `readPostText` returned it and the suggestion request carried LinkedIn's
+ * visibility metadata instead of the post (#379). The model then said so and
+ * refused, which is the right behaviour and no substitute for sending it the
+ * post.
+ *
+ * Matched on class tokens rather than geometry on purpose: every element has
+ * a zero-size box in jsdom, so a `getBoundingClientRect` filter would empty
+ * the fixture-driven tests instead of narrowing them.
+ */
+const SCREEN_READER_ONLY_CLASSES = new Set([
+  'visually-hidden',
+  'a11y-text',
+  'sr-only',
+  'screen-reader-text',
+]);
+
+function isScreenReaderOnly(el: Element): boolean {
+  for (const token of Array.from(el.classList)) {
+    if (SCREEN_READER_ONLY_CLASSES.has(token)) return true;
+  }
+  return false;
+}
+
 function isWithinExcludedRegion(el: Element, boundary: Element): boolean {
   let node: Element | null = el;
   while (node) {
@@ -382,6 +413,7 @@ function isWithinExcludedRegion(el: Element, boundary: Element): boolean {
 function firstSubstantialText(scope: ParentNode, boundary: Element): string | null {
   for (const el of queryDeepAll<Element>('span, p, div', scope)) {
     if (el.getAttribute('aria-hidden') === 'true') continue;
+    if (isScreenReaderOnly(el)) continue;
     if (isWithinExcludedRegion(el, boundary)) continue;
     const text = ownText(el);
     if (text.length >= MIN_SUBSTANTIAL_TEXT_LENGTH) return text;
@@ -395,9 +427,10 @@ function firstSubstantialText(scope: ParentNode, boundary: Element): string | nu
  * - SDUI feed: every `[data-sdui-anchor-id^="commentary-"]` element inside
  *   `post`, joined - LinkedIn's own instrumentation for the post's text
  *   blocks.
- * - Classic: no `data-*` attribute marks the post body either (see module
- *   header), so this falls back to `firstSubstantialText`, deliberately
- *   scoped away from comments and the composer.
+ * - Classic: LinkedIn's own body container (`.update-components-text`) when
+ *   it is there, which is what the rendered post text lives in; otherwise a
+ *   fallback to `firstSubstantialText`, deliberately scoped away from
+ *   comments, the composer and screen-reader-only lines.
  */
 export function readPostText(
   post: Element,
@@ -413,7 +446,12 @@ export function readPostText(
     return text;
   }
   if (pageKind === 'post-detail-classic') {
-    const text = firstSubstantialText(post, post);
+    // Prefer the container LinkedIn itself wraps the body in. The generic
+    // fallback reads whichever element happens to come first, which on a real
+    // page was the clipped "35 minuti fa - Visibile a tutti" line (#379).
+    const container = queryDeep<Element>('.update-components-text', post);
+    const containerText = container?.textContent?.trim() || null;
+    const text = containerText ?? firstSubstantialText(post, post);
     record('postText', pageKind, text !== null);
     return text;
   }
