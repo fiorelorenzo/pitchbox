@@ -87,6 +87,23 @@ function collect(): CapturePayload | null {
   if (profile?.about) payload.about = profile.about;
   if (profile && profile.experiences.length > 0) payload.experiences = profile.experiences;
   if (posts.length > 0) payload.posts = posts;
+
+  // A handle with nothing else attached is what a topcard selector miss
+  // looks like from here - readOwnProfile returns null the moment its own
+  // name selector misses (see its doc comment), so `profile` is null and
+  // every optional field above stays unset. Posting that anyway would
+  // carry nothing the server could act on, and next to an earlier, real
+  // capture in the activity log it would read as "the persona is now
+  // nothing" rather than "the card had not rendered yet". Skip it; the
+  // next debounced rescan gets another chance once it has.
+  const hasContent =
+    payload.displayName !== undefined ||
+    payload.headline !== undefined ||
+    payload.about !== undefined ||
+    payload.experiences !== undefined ||
+    payload.posts !== undefined;
+  if (!hasContent) return null;
+
   return payload;
 }
 

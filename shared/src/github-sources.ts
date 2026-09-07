@@ -93,14 +93,35 @@ export function parseRepoUrl(input: string): ParsedRepoUrl {
  * a prompt has no use for. */
 const BADGE_MARKDOWN_RE = /\[?!\[[^\]]*\]\([^)]*\)\]?(?:\([^)]*\))?/g;
 
+/** Raw HTML, which a README on GitHub may use freely and which is pure noise
+ * in a prompt. Measured on this repo's own README (2026-09-07): the first 200
+ * characters the excerpt carried were a `<p align="left">` wrapping two
+ * `<img>` wordmarks, so the model was handed markup instead of the sentence
+ * that says what the project is. */
+const HTML_TAG_RE = /<\/?[a-zA-Z][^>]*>/g;
+
 function excerptReadme(raw: string): string {
   const withoutComments = raw.replace(/<!--[\s\S]*?-->/g, '');
   const proseLines = withoutComments.split('\n').filter((line) => {
     const trimmed = line.trim();
     if (!trimmed) return true; // keep blank lines: they separate paragraphs
-    return trimmed.replace(BADGE_MARKDOWN_RE, '').trim().length > 0;
+    // A line is dropped when nothing but badges, HTML and punctuation is
+    // left once both are removed. `[a-z0-9]` rather than "non-empty": a line
+    // reduced to `|` or `---` is a table rule or a divider, not prose.
+    const stripped = trimmed.replace(BADGE_MARKDOWN_RE, '').replace(HTML_TAG_RE, '');
+    return /[a-z0-9]/i.test(stripped);
   });
-  return proseLines.join('\n').trim().slice(0, README_EXCERPT_MAX_CHARS).trim();
+  return (
+    proseLines
+      .join('\n')
+      // Inline HTML around real prose (a `<b>` mid-sentence, an `<img>` before
+      // the first word) is removed rather than dropping the whole line with it.
+      .replace(HTML_TAG_RE, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+      .slice(0, README_EXCERPT_MAX_CHARS)
+      .trim()
+  );
 }
 
 /** What this module actually needs from `fetch`: a string URL and headers.
