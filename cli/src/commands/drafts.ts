@@ -14,6 +14,11 @@ import {
   parseDedupPolicy,
   DEFAULT_DEDUP_POLICY,
 } from '@pitchbox/shared/contact-dedup';
+import {
+  commentTargetSpec,
+  indexCandidateAuthors,
+  resolveCommentTargetUser,
+} from '@pitchbox/shared/comment-target';
 import { notify } from '@pitchbox/shared/notifications';
 import { getProjectOrgId } from '@pitchbox/shared/orgs';
 import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
@@ -68,10 +73,11 @@ function extractOfferSubject(config: unknown): string | null {
 }
 
 // Playbooks document their `drafts_create` payloads with an explicit `null`
-// for fields that do not apply to the kind being written: every commenter and
-// poster playbook on all three platforms shows `"targetUser": null` on a
-// `post`/`post_comment`, because the audience is the thread rather than one
-// user. Zod's `.optional()` accepts a missing key but NOT an explicit null,
+// for fields that do not apply to the kind being written: every poster
+// playbook shows `"targetUser": null` on a `post`, because the audience is
+// the thread rather than one user (the commenter playbooks did too until
+// #336, which made a comment contact with the post's author). Zod's
+// `.optional()` accepts a missing key but NOT an explicit null,
 // so a literal, playbook-compliant payload was rejected whole with "invalid
 // payload" and the agent lost the entire batch. Treat null as absent, and
 // keep the parsed type `T | undefined` so no consumer has to learn a third
@@ -194,6 +200,32 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
   // (issue #325); every other scenario either has no subject or builds its
   // compose URL from the body alone.
   const offerSubject = extractOfferSubject(campaign.config);
+
+  // A `post_comment` is contact with the post's author (issue #336), and the
+  // author is already on the run's own staged candidates, so fill it in here
+  // rather than trusting every playbook to copy the handle across. This runs
+  // ahead of the filter loop on purpose: a derived target then goes through
+  // the same blocklist and dedup checks as one the agent supplied, and
+  // marking the draft as sent later writes the contact_history row the Inbox
+  // dialog promises. Hacker News stages no candidates, so its playbook stays
+  // the only source there and a missing author stays null.
+  const commentSpec = commentTargetSpec(platform?.slug);
+  const needsCommentTarget = draftsInput.some((d) => d.kind === 'post_comment' && !d.targetUser);
+  if (commentSpec && needsCommentTarget) {
+    const candidates = await db
+      .select({ raw: schema.stagingScoutCandidates.raw })
+      .from(schema.stagingScoutCandidates)
+      .where(eq(schema.stagingScoutCandidates.runId, runId));
+    const authorsByPost = indexCandidateAuthors(
+      commentSpec,
+      candidates.map((c) => c.raw),
+    );
+    for (const d of draftsInput) {
+      if (d.kind !== 'post_comment' || d.targetUser) continue;
+      const derived = resolveCommentTargetUser(commentSpec, authorsByPost, d);
+      if (derived) d.targetUser = derived;
+    }
+  }
 
   // Load dedup policy from app_config.dedup_policy. Defaults to a 90-day
   // warn-only window when unset.

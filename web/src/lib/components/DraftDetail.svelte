@@ -664,8 +664,9 @@
 		<Dialog.Header>
 			<Dialog.Title>Mark as sent</Dialog.Title>
 			<Dialog.Description>
-				Paste or edit what you actually sent. Saved on the draft for future reference and logged
-				to contact history.
+				Paste or edit what you actually sent. Saved on the draft for future reference{draft?.targetUser
+					? ' and logged to contact history.'
+					: '. This draft has no recipient, so nothing is written to contact history.'}
 			</Dialog.Description>
 		</Dialog.Header>
 		{#if overQuota && quotaKind && usage && limits}
