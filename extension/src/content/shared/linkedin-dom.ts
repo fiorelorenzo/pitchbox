@@ -83,8 +83,13 @@ import type { ActivityEvent } from '../../lib/activity.js';
  * composer once a live session is available.
  */
 
-/** Page kinds this module knows how to read. `detectPageKind` never guesses past what it can verify. */
-export type LinkedInPageKind = 'feed-sdui' | 'post-detail-classic' | 'unknown';
+/** Page kinds this module knows how to read. `detectPageKind` never guesses past what it can verify.
+ * `'profile'` is not one of `detectPageKind`'s own return values below: it is never inferred from
+ * markup, only assigned by `readOwnProfile` itself, because the pages it reads
+ * (`linkedin.com/in/<slug>` and its `recent-activity` sibling) are only ever visited via a content
+ * script registered on that exact URL pattern - the caller already knows the page kind from where it
+ * runs, and there is nothing in the DOM `detectPageKind`'s own two checks could distinguish it from. */
+export type LinkedInPageKind = 'feed-sdui' | 'post-detail-classic' | 'profile' | 'unknown';
 
 /**
  * A post's identifier, honest about which frontend produced it. Only the
@@ -114,7 +119,11 @@ export type LinkedInSelectorId =
   | 'postComments'
   | 'commentAuthor'
   | 'commentBody'
-  | 'commentTimestamp';
+  | 'commentTimestamp'
+  | 'ownProfileName'
+  | 'ownProfileHeadline'
+  | 'ownProfileAbout'
+  | 'ownProfileExperience';
 
 export type SelectorHealthEntry = {
   selector: LinkedInSelectorId;
@@ -763,4 +772,155 @@ export function findMessageEvents(root: ParentNode = document): LinkedInMessageE
     });
   }
   return events;
+}
+
+// ---------------------------------------------------------------------------
+// Persona capture (LI-21): the operator's own profile and recent posts.
+// ---------------------------------------------------------------------------
+
+/** One entry from the "Experience" section of a profile, as rendered - no
+ * attempt to parse `period` into machine dates (same posture as every other
+ * relative/free-text field in this module: a caller that needs a date parses
+ * this string itself, and a parse failure degrades to "unknown", never to a
+ * fabricated one). */
+export type OwnProfileExperience = {
+  title: string | null;
+  company: string | null;
+  period: string | null;
+  summary: string | null;
+};
+
+export type OwnProfileCapture = {
+  /** From the page's own canonical URL, not the signed-in member's nav link -
+   * see `readOwnProfile`'s doc comment for why the distinction matters. */
+  handle: string | null;
+  displayName: string | null;
+  headline: string | null;
+  about: string | null;
+  experiences: OwnProfileExperience[];
+};
+
+export type OwnPost = {
+  externalId: string;
+  text: string;
+};
+
+/**
+ * The profile *page's own* subject, from `<link rel="canonical">` (falling
+ * back to `<meta property="og:url">`) - never from the global nav's identity
+ * link (`readOwnProfileHandle`), which always names the signed-in member
+ * regardless of whose `/in/<slug>` page is open. `readOwnProfile` below is
+ * registered on every `/in/*` page, including one the human opened to read
+ * someone else's profile, and has no way to tell the two apart from the DOM
+ * alone - the design's own call (2026-09-07) is that it does not try: the
+ * page's own subject travels to the server as `handle`, and
+ * `POST /api/extension/operator-profile` is what refuses a capture whose
+ * handle does not match the operator already on file, rather than silently
+ * overwriting the persona with a competitor's profile.
+ */
+export function readOwnProfilePageHandle(doc: Document): string | null {
+  const canonical = doc.querySelector('link[rel="canonical"]');
+  const fromCanonical = parseProfileHandle(canonical?.getAttribute('href'));
+  if (fromCanonical) return fromCanonical;
+  const ogUrl = doc.querySelector('meta[property="og:url"]');
+  return parseProfileHandle(ogUrl?.getAttribute('content'));
+}
+
+/**
+ * Every substantial, non-decorative own-text leaf under `scope`, in document
+ * order, collapsing an immediate repeat into one line - LinkedIn nests a
+ * wrapper and a leaf carrying the same text more than once on a real page
+ * (see `firstSubstantialText`'s own note on this), and a caller reading "the
+ * next line" of a card wants each line once.
+ */
+function ownTextLines(scope: ParentNode): string[] {
+  const lines: string[] = [];
+  for (const el of queryDeepAll<Element>('span, div, p, h1, h2, h3', scope)) {
+    if (el.getAttribute('aria-hidden') === 'true') continue;
+    if (isScreenReaderOnly(el)) continue;
+    const text = ownText(el);
+    if (!text) continue;
+    if (lines[lines.length - 1] === text) continue;
+    lines.push(text);
+  }
+  return lines;
+}
+
+/**
+ * The signed-in member's profile card - name, headline, about, experience -
+ * read from whichever `/in/<slug>` page is open (LI-21's persona capture,
+ * `linkedin-profile-capture.ts`).
+ *
+ * Unverified against a live capture: unlike `feed.html`/`post-detail.html`
+ * (real, anonymised captures - see `fixtures/linkedin/README.md`), no
+ * profile-page fixture exists yet, so the selectors below are a best-effort
+ * shape rather than one checked against real markup. They anchor on
+ * `id="about"`/`id="experience"`, which are LinkedIn's own long-standing
+ * in-page navigation anchors (also the URL segments of its own "Show all
+ * experiences" detail pages) rather than a generated class name, on the
+ * theory that an anchor id LinkedIn's own deep links depend on is the least
+ * likely thing to change without also breaking its own navigation. Each
+ * experience entry is read positionally (title, then company, then period,
+ * then summary) rather than by field-specific selector, since nothing in
+ * this section carries a `data-*` attribute naming the field. This should be
+ * narrowed the way `readCommentAuthor`/`readPostText` already were, the next
+ * time someone captures a real signed-in profile page.
+ */
+export function readOwnProfile(root: Document = document): OwnProfileCapture | null {
+  const nameEl = queryDeep<Element>('main h1', root);
+  const displayName = nameEl ? ownText(nameEl) || nameEl.textContent?.trim() || null : null;
+  record('ownProfileName', 'profile', displayName !== null);
+  if (!nameEl || !displayName) return null;
+
+  const handle = readOwnProfilePageHandle(root);
+
+  const topCard = nameEl.closest('section') ?? nameEl.parentElement ?? root;
+  const headline = ownTextLines(topCard).find((line) => line !== displayName) ?? null;
+  record('ownProfileHeadline', 'profile', headline !== null);
+
+  const aboutSection = queryDeep<Element>('section#about', root);
+  const about = aboutSection ? firstSubstantialText(aboutSection, aboutSection) : null;
+  record('ownProfileAbout', 'profile', about !== null);
+
+  const experienceSection = queryDeep<Element>('section#experience', root);
+  const experiences: OwnProfileExperience[] = [];
+  if (experienceSection) {
+    for (const li of queryDeepAll<Element>('li', experienceSection)) {
+      const lines = ownTextLines(li);
+      if (lines.length === 0) continue;
+      experiences.push({
+        title: lines[0] ?? null,
+        company: lines[1] ?? null,
+        period: lines[2] ?? null,
+        summary: lines.slice(3).join(' ') || null,
+      });
+    }
+  }
+  record('ownProfileExperience', 'profile', experienceSection !== null);
+
+  return { handle, displayName, headline, about, experiences };
+}
+
+/**
+ * Recent posts on a profile's `recent-activity` page, as voice samples.
+ * Reuses `findFeedPosts`/`readPostIdentifier`/`readPostText` rather than
+ * inventing new selectors: `docs/linkedin-integration-design.md`'s "Two
+ * frontends, one identifier" already documents that a profile's
+ * recent-activity list renders on the classic frontend and carries the same
+ * stable `data-urn` a post-detail page does, which is exactly what makes a
+ * post here dedupable as a voice sample in the first place. A sighting with
+ * no `urn` (feed-sdui) or no text is skipped, the same rule
+ * `linkedin-observe.ts`'s collector applies to `observed_targets`, since
+ * `operator_voice_samples.external_id` is `NOT NULL` too.
+ */
+export function readOwnPosts(root: ParentNode = document): OwnPost[] {
+  const out: OwnPost[] = [];
+  for (const post of findFeedPosts(root)) {
+    const identifier = readPostIdentifier(post, root);
+    if (identifier.kind !== 'urn' || !identifier.value) continue;
+    const text = readPostText(post, root);
+    if (!text) continue;
+    out.push({ externalId: identifier.value, text });
+  }
+  return out;
 }

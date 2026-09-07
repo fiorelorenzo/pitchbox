@@ -1,23 +1,31 @@
 /**
- * Mounts the in-page panel into a shadow root anchored to a host-page element.
+ * Mounts the in-page panel into a shadow root, floating over the page rather
+ * than living inside it.
  *
  * This is the first UI Pitchbox renders into a page it does not own. Every
  * other content script (`dm-compose.ts`, `post-comment.ts`, `post-submit.ts`,
  * `chat-token.ts`, `auto-pair.ts`) only reads and writes fields the host page
  * already put there, so there is no in-page precedent in this repo and the
  * rules below come from `docs/design/linkedin-assistant-brief.md` and
- * `docs/design/DECISIONS.md` D10 to D12.
+ * `docs/design/DECISIONS.md` D10, D12 and D13.
  *
- * Three invariants this module exists to hold:
+ * Four invariants this module exists to hold:
  *
  * 1. **Isolation both ways.** The panel lives in a shadow root with its own
  *    adopted stylesheet, so LinkedIn's rules cannot reach in and ours cannot
  *    leak out. Nothing is ever appended to the host document except, once, a
- *    font face (see `panel-fonts.ts`).
- * 2. **Exactly one panel, on the anchor that was acted on** (D11). Mounting on
- *    an anchor that already has a panel returns the existing handle instead of
+ *    font face (see `panel-fonts.ts`), and the host element itself.
+ * 2. **Exactly one panel, on the anchor that was acted on.** Mounting on an
+ *    anchor that already has a panel returns the existing handle instead of
  *    stacking a second one.
- * 3. **It leaves nothing behind.** LinkedIn is a single-page app: anchors are
+ * 3. **Its own size and position, never the anchor's** (D13). The panel used
+ *    to be a document sibling sized from the anchor's own width, which on a
+ *    real post's ~260px comment form made it unreadable. It now floats in
+ *    viewport coordinates, positioned against the anchor's rect and kept
+ *    there while the page scrolls or resizes, and closes itself on `Escape`
+ *    or an outside click since a floating surface needs that in a way an
+ *    inline one did not.
+ * 4. **It leaves nothing behind.** LinkedIn is a single-page app: anchors are
  *    recycled and routes change without a reload. A panel whose anchor leaves
  *    the document destroys itself, and destroying it removes its host element,
  *    unmounts its component and drops every listener and observer it created.
@@ -46,14 +54,19 @@ export type PanelHandle<Props extends Record<string, unknown>> = {
 };
 
 export type MountOptions<Props extends Record<string, unknown>> = {
-  /** The host-page element the panel belongs to. One panel per anchor (D11). */
+  /** The host-page element the panel belongs to. One panel per anchor. */
   anchor: Element;
-  /** Where the host element goes relative to the anchor. */
-  position?: 'afterend' | 'beforeend';
   component: Component<Props>;
   props: Props;
   /** Called when the panel destroys itself because its anchor went away. */
   onDetached?: () => void;
+  /**
+   * Called on `Escape` or a pointer-down outside the panel. A floating
+   * surface needs a way to dismiss itself that an inline sibling never did;
+   * the caller decides what dismissal means (usually `handle.destroy()`).
+   * Omit it and the panel only ever closes through its own controls.
+   */
+  onDismiss?: () => void;
 };
 
 const mounted = new WeakMap<Element, PanelHandle<Record<string, never>>>();
@@ -95,6 +108,124 @@ function applyStyles(shadow: ShadowRoot): void {
   shadow.append(style);
 }
 
+/** Gap kept between the panel and both the anchor and the viewport edge. */
+const OVERLAY_MARGIN = 12;
+
+/**
+ * The floating card's own width (D13): never the anchor's, which on a
+ * post-detail page's ~260px comment form is what made the panel unreadable
+ * in the first place. Mirrored in panel.css's `:host { width }` rule; kept
+ * here too because the placement math below needs it before layout runs.
+ */
+const OVERLAY_WIDTH = 440;
+
+/**
+ * Below this much vertical room, stacking the panel under the anchor reads
+ * as clipped rather than adjacent - barely more than the frame's own header
+ * - so stacking above is worth the flip instead.
+ */
+const OVERLAY_MIN_HEIGHT = 160;
+
+/** Mirrors panel.css's `:host { max-height: 60vh }` default. */
+const OVERLAY_MAX_HEIGHT_RATIO = 0.6;
+
+/** A structural subset of `DOMRect`, so placement can be tested without one. */
+type AnchorRect = { top: number; left: number; right: number; bottom: number };
+
+type OverlayPlacement = {
+  left: number;
+  /** Viewport pixels from the top; `null` when `bottom` is used instead. */
+  top: number | null;
+  /** Viewport pixels from the bottom; `null` when `top` is used instead. */
+  bottom: number | null;
+  maxHeight: number;
+};
+
+/**
+ * Where the floating panel goes for a given anchor rect and viewport size.
+ *
+ * Pure on purpose: jsdom's layout engine returns zeroed-out rects for
+ * everything, which makes the three placement rules unprovable through a
+ * real mount. Exported so a test can drive the rule directly instead of
+ * asserting on pixels jsdom never computed.
+ *
+ * The anchor's right side is preferred (D13), so the panel reads as
+ * belonging to the thing that was clicked without covering it. When there
+ * is not enough width for that, it stacks under the anchor instead, aligned
+ * to its left edge and clamped inside the viewport - which is what pulls it
+ * left of a naive anchor-aligned position when the anchor itself sits near
+ * the right edge. When there is not enough height under it either (a
+ * composer near the bottom of the feed), it stacks above instead, anchored
+ * to the viewport's bottom edge from the anchor's own top edge, so the flip
+ * never needs to know the panel's rendered height ahead of time.
+ */
+export function computeOverlayPlacement(
+  anchor: AnchorRect,
+  viewportWidth: number,
+  viewportHeight: number,
+): OverlayPlacement {
+  const width = Math.min(OVERLAY_WIDTH, viewportWidth - OVERLAY_MARGIN * 2);
+  const spaceRight = viewportWidth - anchor.right - OVERLAY_MARGIN;
+
+  let left: number;
+  let top: number | null;
+  let bottom: number | null;
+
+  if (spaceRight >= width) {
+    left = anchor.right + OVERLAY_MARGIN;
+    top = anchor.top;
+    bottom = null;
+  } else {
+    left = anchor.left;
+    const spaceBelow = viewportHeight - anchor.bottom - OVERLAY_MARGIN;
+    if (spaceBelow >= OVERLAY_MIN_HEIGHT) {
+      top = anchor.bottom + OVERLAY_MARGIN;
+      bottom = null;
+    } else {
+      top = null;
+      bottom = viewportHeight - anchor.top + OVERLAY_MARGIN;
+    }
+  }
+
+  // Clamped inside the viewport rather than left to run off it: `maxLeft`
+  // guards the inverted-range case (a viewport narrower than the panel's own
+  // minimum) by never dropping below `minLeft`.
+  const minLeft = OVERLAY_MARGIN;
+  const maxLeft = Math.max(viewportWidth - width - OVERLAY_MARGIN, minLeft);
+  left = Math.min(Math.max(left, minLeft), maxLeft);
+
+  // How much room the chosen side actually has, capped at the 60vh default so
+  // a wide-open viewport never grows the panel past what the rest of the
+  // frame was designed for, and floored so a corner anchor with almost no
+  // room left still gets a usable panel rather than a sliver.
+  const available =
+    top !== null ? viewportHeight - top - OVERLAY_MARGIN : anchor.top - OVERLAY_MARGIN * 2;
+  const maxHeight = Math.max(
+    Math.min(viewportHeight * OVERLAY_MAX_HEIGHT_RATIO, available),
+    OVERLAY_MIN_HEIGHT,
+  );
+
+  return { left, top, bottom, maxHeight };
+}
+
+/** Applies `computeOverlayPlacement` to `host`'s inline style. */
+function positionOverlay(host: HTMLElement, anchor: Element): void {
+  const placement = computeOverlayPlacement(
+    anchor.getBoundingClientRect(),
+    window.innerWidth,
+    window.innerHeight,
+  );
+  host.style.left = `${placement.left}px`;
+  if (placement.top !== null) {
+    host.style.top = `${placement.top}px`;
+    host.style.bottom = 'auto';
+  } else {
+    host.style.top = 'auto';
+    host.style.bottom = `${placement.bottom}px`;
+  }
+  host.style.maxHeight = `${placement.maxHeight}px`;
+}
+
 /**
  * Mount the panel on `anchor`, or return the panel already mounted there.
  *
@@ -105,7 +236,7 @@ function applyStyles(shadow: ShadowRoot): void {
 export function mountPanel<Props extends Record<string, unknown>>(
   options: MountOptions<Props>,
 ): PanelHandle<Props> {
-  const { anchor, position = 'afterend', component, props, onDetached } = options;
+  const { anchor, component, props, onDetached, onDismiss } = options;
 
   const existing = mounted.get(anchor) as PanelHandle<Props> | undefined;
   if (existing?.alive) return existing;
@@ -126,21 +257,18 @@ export function mountPanel<Props extends Record<string, unknown>>(
   root.className = 'pitchbox-panel dark';
   shadow.append(root);
 
-  anchor.insertAdjacentElement(position, host);
-
-  // An anchored panel that is wider than the thing it is anchored to does not
-  // read as belonging to it (D11), and a sibling inserted `afterend` inherits
-  // its parent's width, not the anchor's. A smoke render against a fixture
-  // whose post was narrower than the page showed the panel spanning the whole
-  // viewport. So the width is measured from the anchor and kept in sync.
-  //
-  // Inline styles rather than a token: this is a measurement of another
-  // element, not a design value, so D1 does not apply.
-  const syncWidth = () => {
-    const { width } = anchor.getBoundingClientRect();
-    if (width > 0) host.style.width = `${width}px`;
-  };
-  syncWidth();
+  // D13: appended to the document itself, not next to the anchor. The panel
+  // used to be a sibling sized from the anchor's own width, which inherited
+  // whatever column the anchor happened to sit in (~260px on a post-detail
+  // page's comment form); a true overlay needs neither that width nor that
+  // position in the document. `position` is set inline as well as in
+  // panel.css's `:host` rule: everything else about placement already has to
+  // be inline (the coordinates are per-mount, computed values), so the host
+  // is never left un-positioned by a stylesheet that failed to adopt.
+  host.style.position = 'fixed';
+  document.body.append(host);
+  const reposition = () => positionOverlay(host, anchor);
+  reposition();
 
   // Reactive, not the caller's plain object: `mount()` does not make props
   // reactive, so assigning onto a plain object re-renders nothing. The panel's
@@ -153,10 +281,39 @@ export function mountPanel<Props extends Record<string, unknown>>(
   let observer: MutationObserver | null = null;
   let resize: ResizeObserver | null = null;
 
+  // The anchor moving is not the only way the panel drifts out of place: its
+  // own box can change size (a composer growing as the human types) without
+  // the page ever scrolling or the window ever resizing.
   if (typeof ResizeObserver !== 'undefined') {
-    resize = new ResizeObserver(syncWidth);
+    resize = new ResizeObserver(reposition);
     resize.observe(anchor);
   }
+
+  // `scroll` does not bubble, so catching every scroll on the page - the feed
+  // itself, a nested modal, one of LinkedIn's own scroll containers - needs
+  // the capture phase on `window` rather than a bubble-phase listener
+  // anywhere more specific. `resize` covers the window itself changing size.
+  // Never a timer: both fire only when the anchor could actually have moved.
+  window.addEventListener('scroll', reposition, { capture: true, passive: true });
+  window.addEventListener('resize', reposition);
+
+  // A floating surface needs a way to dismiss itself that an inline sibling
+  // never did. `composedPath()` rather than `event.target`: a listener on
+  // `document` sees `target` retargeted to the host element for anything
+  // that happened inside the (open) shadow root, which would make every
+  // click on the panel read as "outside" through simple `contains()`. The
+  // composed path still lists the actual node the pointer landed on, so a
+  // click on the textarea never closes the panel it is inside.
+  const onPointerDown = (event: PointerEvent) => {
+    if (event.composedPath().includes(host)) return;
+    onDismiss?.();
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    onDismiss?.();
+  };
+  document.addEventListener('pointerdown', onPointerDown, true);
+  document.addEventListener('keydown', onKeyDown, true);
 
   const handle: PanelHandle<Props> = {
     update(next) {
@@ -170,6 +327,10 @@ export function mountPanel<Props extends Record<string, unknown>>(
       observer = null;
       resize?.disconnect();
       resize = null;
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown, true);
       unmount(view);
       host.remove();
       mounted.delete(anchor);

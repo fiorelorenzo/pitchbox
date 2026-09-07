@@ -49,7 +49,7 @@ already limits them to the active org). Listed here for completeness.
 `projects/[id]/runs` POST, `projects/[id]/insights` POST,
 `projects/[id]/extraction-uploads` POST, `projects/[id]/templates` POST,
 `projects/[id]/templates/[templateId]` PATCH, `blocklist` POST, `run` POST,
-`run/[id]` DELETE, `notifications` POST.
+`run/[id]` DELETE, `notifications` POST, `settings/github-sources` GET.
 
 **admin** (`requireRole(event, 'admin')`):
 `campaigns/[id]` DELETE, `projects` POST, `projects/[id]` PATCH + DELETE,
@@ -63,7 +63,13 @@ already limits them to the active org). Listed here for completeness.
 (view only - saving these needs instance admin, see below),
 `settings/linkedin-assist` GET + POST (org-scoped, unlike the instance-wide
 settings above - the page's own loader also throws here, see the #254 note
-below),
+below), `settings/companion` GET + the `saveProfile`/`toggleVoiceSample` form
+actions (2026-09-07 companion decisions: the operator's persona and voice
+samples that feed every suggestion's prompt are at least as sensitive as the
+LinkedIn assist switch, so this page's loader throws the same way),
+`settings/github-sources` POST + `[id]` DELETE (adding/removing a repo the
+companion may cite; the GET is member-level, listed below, since reading it
+back is no more sensitive than reading a project),
 `orgs/[slug]/invites` POST, `orgs/[slug]/invites/[token]` DELETE,
 `orgs/[slug]/members/[userId]` PATCH + DELETE (with the member-management rules).
 
@@ -97,7 +103,10 @@ seven top-level routes, one flat rail with no tabs (#254): `settings/status`,
 (#316) later added an eighth, `settings/linkedin-assist` (the in-page
 LinkedIn assistant's on/off switch, bound project, daily caps and kill
 switch - org-scoped, so it throws `requireRole(event, 'admin')` like
-Retention/Security rather than narrowing like Quota below). `/settings`
+Retention/Security rather than narrowing like Quota below); the 2026-09-07
+companion decisions added a ninth, `settings/companion` (the operator's
+persona, voice samples and GitHub sources that feed the assistant's prompt -
+same org-scoped `requireRole(event, 'admin')` gate). `/settings`
 itself now just redirects (307) to `/settings/status`. The four routes that
 used to be General's tabs each gate their own data set in their own loader,
 the same per-data-set split #237 landed on the old combined page: `status`
@@ -114,10 +123,10 @@ status); only revoking a device (DELETE) and minting a pairing code (POST
 `settings/extension-pairing`) are admin-gated. The settings rail
 (`web/src/routes/settings/+layout.svelte`) hides the `organization` link when
 auth is off (no org context to show), and hides the `retention`/`security`/
-`linkedin-assist` links from a non-admin since those routes' loaders call
-`requireRole(event, 'admin')` and would 403; `status`/`runners`/`extension`/
-`quota` are always shown because none of their loaders throw, they only
-narrow the payload.
+`linkedin-assist`/`companion` links from a non-admin since those routes'
+loaders call `requireRole(event, 'admin')` and would 403; `status`/`runners`/
+`extension`/`quota` are always shown because none of their loaders throw,
+they only narrow the payload.
 
 **Exempt** (no org role): `auth/*`, `extension/*` (token-auth companion),
 `orgs` POST + `orgs/switch` POST (self-service), `orgs/[slug]/invites/[token]/accept`

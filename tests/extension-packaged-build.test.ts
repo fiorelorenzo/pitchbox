@@ -51,9 +51,51 @@ describe('the packaged extension', () => {
       'linkedin-reply-ingest.js',
       'linkedin-comment-assist.js',
       'linkedin-post-assist.js',
+      'linkedin-profile-capture.js',
     ]) {
       expect(existsSync(path.join(DIST, 'src/content', script)), script).toBe(true);
     }
+  });
+
+  it('registers every dynamic content script as a standalone file, never as a module chunk', () => {
+    // The fourth way this class of defect ships, found on 2026-09-07 while
+    // adding the persona capture (#389): a new content script that is not in
+    // `vite.config.ts`'s `contentScripts.standaloneFiles` still builds, and
+    // its `?script` import still resolves, but to an ES module chunk under
+    // `assets/`. A dynamically-registered MV3 content script cannot be a
+    // module, so `chrome.scripting.registerContentScripts` rejects it at
+    // runtime and the feature is simply absent - which is what #379 looked
+    // like from the outside.
+    //
+    // So: every `src/content/*.js` path the built service worker names must
+    // exist AND be free of module syntax. The `assets/` path shape is what a
+    // missing `standaloneFiles` entry produces, and it is caught by the
+    // existence half.
+    const background = files.find(
+      (f) => f.includes('background') && f.endsWith('.js') && f.includes('assets'),
+    );
+    expect(background, 'built service worker').toBeTruthy();
+    const workerJs = readFileSync(background as string, 'utf8');
+    const referenced = new Set(
+      [...workerJs.matchAll(/["'`](src\/content\/[A-Za-z0-9._-]+\.js)["'`]/g)].map((m) => m[1]),
+    );
+    // The registrations under `extension/src/background/` all go through this
+    // worker, so an empty set means the extraction broke, not that there is
+    // nothing to check.
+    expect(referenced.size).toBeGreaterThan(0);
+    const offenders: string[] = [];
+    for (const rel of referenced) {
+      const abs = path.join(DIST, rel);
+      if (!existsSync(abs)) {
+        offenders.push(`${rel}: registered but not emitted`);
+        continue;
+      }
+      const js = readFileSync(abs, 'utf8');
+      if (/^\s*import\s.+\sfrom\s|^\s*export\s/m.test(js)) {
+        offenders.push(`${rel}: emitted as a module, cannot be registered`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it('has no inline script in any page, which MV3 refuses to execute', () => {

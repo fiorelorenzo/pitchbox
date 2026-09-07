@@ -3,6 +3,7 @@ import { runChatSync } from './background/chat-sync.js';
 import { registerLinkedInReplyIngestScript } from './background/linkedin-reply-ingest-registration.js';
 import { registerLinkedInCommentAssistScript } from './background/linkedin-comment-assist-registration.js';
 import { registerLinkedInPostAssistScript } from './background/linkedin-post-assist-registration.js';
+import { registerLinkedInProfileCaptureScript } from './background/linkedin-profile-capture-registration.js';
 import {
   getSettings,
   patchPairing,
@@ -251,9 +252,18 @@ export async function syncLinkedInContentScript(): Promise<void> {
           // `/posts/*` as well as `/feed/update/*` (#379): both serve the
           // classic post-detail frontend that carries the composer and the
           // activity URN, and `/posts/*` is the URL LinkedIn's own share and
-          // "copy link" hand out. Literal array on purpose - the compliance
-          // checker's rule 2 reads this initializer's text.
-          matches: ['https://www.linkedin.com/feed/update/*', 'https://www.linkedin.com/posts/*'],
+          // "copy link" hand out. `/feed/*` (2026-09-07): the in-page comment
+          // assist now wires a composer per card on the main feed too, with
+          // no urn to key on there - see linkedin-comment-assist.ts's own
+          // doc comment - so a comment submitted from the feed still needs
+          // this same script watching for its send. Literal array on
+          // purpose - the compliance checker's rule 2 reads this
+          // initializer's text.
+          matches: [
+            'https://www.linkedin.com/feed/update/*',
+            'https://www.linkedin.com/posts/*',
+            'https://www.linkedin.com/feed/*',
+          ],
           runAt: 'document_idle',
         },
       ]);
@@ -323,6 +333,10 @@ export async function syncLinkedInContentScripts(): Promise<void> {
     registerLinkedInCommentAssistScript(),
     // #315's in-page post composer assist, same pattern for the same reason.
     registerLinkedInPostAssistScript(),
+    // LI-21 (2026-09-07): passive operator-profile/voice-sample capture,
+    // same pattern for the same reason (Persona owns the registration
+    // module, PanelContent owns this wiring - see that module's own note).
+    registerLinkedInProfileCaptureScript(),
   ]);
 }
 

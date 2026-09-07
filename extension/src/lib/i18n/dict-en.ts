@@ -136,6 +136,12 @@ export const en = {
   'activity.linkedin-action.assist-composer-not-found':
     'Could not find the LinkedIn comment composer; the suggestion assistant was not offered.',
   'activity.linkedin-action.suggestion-refused': 'LinkedIn assist suggestion refused: {reason}',
+  // #382: a `done` event can arrive with no draft - either the model chose
+  // not to write one (`skipped: true`) or it ignored the envelope format
+  // (`skipped: false`, the fail-safe: no marker means no draft). Neither is
+  // a refusal, so it gets its own message rather than reusing that key.
+  'activity.linkedin-action.suggestion-no-draft':
+    'LinkedIn assist produced no draft to insert (skipped: {skipped}).',
   'activity.linkedin-action.suggestion-inserted':
     'Inserted an accepted suggestion into the LinkedIn composer for draft {draftId}.',
   'activity.linkedin-action.post-submit-not-found':
@@ -150,6 +156,15 @@ export const en = {
     'LinkedIn observations sent - {inserted} new, {duplicates} duplicate, {dropped} dropped.',
   'activity.linkedin-collector.batch-failed': 'LinkedIn observation batch failed: {reason}',
   'activity.linkedin-collector.stopped': 'LinkedIn observation collector stopped: {reason}',
+  // Passive operator-profile/voice-sample capture (Persona, decision 3): the
+  // handle/headline/experience read off a profile page the human opened, and
+  // recent posts read the same way as voice samples.
+  'activity.linkedin-collector.profile-captured': 'Captured your LinkedIn profile.',
+  'activity.linkedin-collector.profile-refused':
+    'LinkedIn profile capture skipped: this page is not the operator on file.',
+  'activity.linkedin-collector.profile-failed': 'LinkedIn profile capture failed: {reason}',
+  'activity.linkedin-collector.voice-samples-captured':
+    'Captured {count} new post(s) as voice samples.',
   'activity.settings.changed': 'Settings updated.',
   'activity.system.boot': 'Service worker started.',
   'activity.system.alarms-applied': 'Alarms re-applied ({interval} min).',
@@ -277,6 +292,12 @@ export const en = {
   // nothing recent enough to draft from.
   'assist.refusal.no_recent_activity':
     'Nothing recent to draft a post from yet. Browse your network for a bit, then try again.',
+  // #382: "no marker means no draft" rendered honestly - two distinct causes,
+  // two distinct messages, never an insertable blob of reasoning.
+  'assist.comment.no_draft.skipped': 'The assistant decided not to suggest a comment here.',
+  'assist.comment.no_draft.unstructured': 'The assistant did not produce a comment to insert.',
+  'assist.post.no_draft.skipped': 'The assistant decided not to suggest a post right now.',
+  'assist.post.no_draft.unstructured': 'The assistant did not produce a post to insert.',
 
   // Language names are endonyms (each language's own name for itself) and
   // are intentionally identical across every locale dictionary; a language

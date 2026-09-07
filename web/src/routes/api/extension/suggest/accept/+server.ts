@@ -103,7 +103,11 @@ export async function POST(event: RequestEvent) {
         platform: platform.slug,
       });
     }
-    if (assist.projectId !== project.id) {
+    // Same exception /suggest makes for the same reason (decision
+    // 2026-09-07): the org's own `personal` project is always a valid
+    // destination alongside the bound one, because that is exactly where a
+    // suggestion that is not about a product is meant to file.
+    if (assist.projectId !== project.id && project.id !== assist.personalProjectId) {
       return json({
         refused: 'project_not_bound',
         platform: platform.slug,
@@ -113,18 +117,27 @@ export async function POST(event: RequestEvent) {
   }
 
   // Convention shared with the linkedin-commenter playbook (sourceRef holds
-  // the post's own identifiers; see playbooks/linkedin-commenter.md).
+  // the post's own identifiers; see playbooks/linkedin-commenter.md). A feed
+  // post carries no URN at all (docs/linkedin-integration-design.md, "Two
+  // frontends, one identifier"), and the honest response to that is to record
+  // what the panel actually saw - the author and the post's own URL - rather
+  // than invent an id that would read as more certain than it is.
   const sourceRef: Record<string, unknown> = {};
-  if (body.post.urn) sourceRef.externalId = body.post.urn;
+  if (body.post.urn) {
+    sourceRef.externalId = body.post.urn;
+  } else if (body.post.authorHandle) {
+    sourceRef.authorHandle = body.post.authorHandle;
+  }
   if (body.post.url) sourceRef.url = body.post.url;
 
   // Unlike the campaign commenter playbook (targetUser always null - "the
   // audience is whoever reads the post, not one person"), the assist accept
   // path knows exactly which member's post the human is engaging in real
   // time, so a `post_comment` carries that author as its target: it is what
-  // lets the blocklist and contact-history ledger see it at all. A `post`
-  // has no target - it is the human's own content, merely inspired by
-  // something they read.
+  // lets the blocklist and contact-history ledger see it at all (#336). A
+  // `post` has no target - it is the human's own content, merely inspired by
+  // something they read. Unaffected by whether the post had a URN: the
+  // target is the author, not the post's identifier.
   const targetUser =
     body.kind === 'post_comment' && body.post.authorHandle ? body.post.authorHandle : null;
 
@@ -139,6 +152,9 @@ export async function POST(event: RequestEvent) {
     metadata: {
       ...(body.post.authorHandle ? { authorHandle: body.post.authorHandle } : {}),
       ...(body.post.authorName ? { authorName: body.post.authorName } : {}),
+      // Marks a draft filed without a URN, so analytics and any later dedup
+      // work can tell "no id available" apart from "id just wasn't sent".
+      ...(body.post.urn ? {} : { identifier: 'author-only' }),
     },
     agentRunner: project.defaultAgentRunner,
     usage: body.usage ?? null,

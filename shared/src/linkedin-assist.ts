@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
 import { QUOTA_DEFAULTS } from './db/seed-core.js';
 import { projectBelongsToOrg } from './orgs.js';
+import { ensurePersonalProject } from './personal-project.js';
 
 // The org-level off switch and owner for the in-page LinkedIn assistant
 // (LI-19, #316, docs/linkedin-integration-design.md). Until this exists the
@@ -100,6 +101,12 @@ export type LinkedInAssistDeviceState = {
   killSwitch: boolean;
   /** Null when unbound or when the stored project id no longer resolves in this org. */
   projectId: number | null;
+  /** The org's `personal` project (shared/src/personal-project.ts, decision
+   * 2026-09-07), always present: an accepted suggestion has to file
+   * somewhere even when nothing is bound, and the panel uses this id for
+   * that regardless of what `projectId` names. Created on first read if it
+   * somehow does not exist yet, so this never goes stale like `projectId` can. */
+  personalProjectId: number;
   dailyCommentCap: number;
   dailyPostCap: number;
 };
@@ -115,17 +122,20 @@ export async function loadLinkedInAssistDeviceState(
   organizationId: number,
 ): Promise<LinkedInAssistDeviceState> {
   const settings = await loadLinkedInAssistSettings(db, organizationId);
-  const projectId =
-    settings.projectId != null &&
-    (await projectBelongsToOrg(db, settings.projectId, organizationId))
-      ? settings.projectId
-      : null;
+  const [projectLive, personalProjectId] = await Promise.all([
+    settings.projectId != null
+      ? projectBelongsToOrg(db, settings.projectId, organizationId)
+      : Promise.resolve(false),
+    ensurePersonalProject(db, organizationId),
+  ]);
+  const projectId = settings.projectId != null && projectLive ? settings.projectId : null;
   const boundAndLive = settings.enabled && projectId != null && !settings.killSwitch;
   return {
     enabled: boundAndLive,
     collectorEnabled: boundAndLive && settings.collectorEnabled,
     killSwitch: settings.killSwitch,
     projectId,
+    personalProjectId,
     dailyCommentCap: settings.dailyCommentCap,
     dailyPostCap: settings.dailyPostCap,
   };

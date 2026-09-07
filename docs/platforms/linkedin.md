@@ -59,6 +59,30 @@ LinkedIn ships with the tightest limits of any platform, because the constraint 
 
 An operator can lower these from **Settings → Quota**. Unlike the other platforms, LinkedIn's ceiling is not meant to be raised past these defaults: the product deliberately does not offer a setting for that.
 
+## What the companion knows
+
+The in-page assistant does not just speak for a project - since 2026-09-07 it
+also carries the operator's own persona and their own recent posts as voice
+samples, both captured passively from LinkedIn pages the human opens (no
+extra request, same rule 2 as everywhere else on this page), plus every
+project in the organization and the public GitHub repos the operator points
+it at. An operator reviews and controls all four from **Settings ->
+Companion**:
+
+- **Who you are**: the captured persona (handle, headline, about,
+  experience), editable by hand - a saved edit is never overwritten by a
+  later capture. Flagged stale past 90 days.
+- **How you write**: the operator's own recent posts as voice samples,
+  newest first. A sample can be excluded from prompts without deleting it,
+  since a delete would just come back on the next capture.
+- **What you have shipped**: public GitHub repositories, added by URL with
+  no credential. Private repos need the (not yet built) GitHub App.
+
+An accepted suggestion that isn't written for a bound project - the operator
+writing as themselves, not as any one product - lands under the
+organization's `personal` project, created automatically the first time it's
+needed.
+
 ## Status
 
 Most of the LinkedIn work tracked on the `v1.5 - LinkedIn` milestone (epics #296 and #297) is still open. What is merged today:

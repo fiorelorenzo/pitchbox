@@ -1,11 +1,12 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { sql } from 'drizzle-orm';
+import { sql, eq, and } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
 import {
   listUserOrganizations,
   loadActiveOrganization,
   createOrganization,
 } from '@pitchbox/shared/orgs';
+import { PERSONAL_PROJECT_SLUG } from '@pitchbox/shared/personal-project';
 
 async function reset() {
   const db = getDb();
@@ -71,5 +72,27 @@ describe('active-org resolution', () => {
     expect(org.role).toBe('owner');
     const orgs = await listUserOrganizations(getDb(), uid);
     expect(orgs.some((o) => o.id === org.id)).toBe(true);
+  });
+
+  // Decision 2026-09-07 (shared/src/personal-project.ts): a new org must not
+  // wait for a migration to have a `personal` project - it exists the moment
+  // the org does.
+  it('creates the personal project alongside a new org', async () => {
+    const uid = await seedUser('u6');
+    const org = await createOrganization(getDb(), {
+      slug: 'ao-personal',
+      name: 'Personal Test',
+      ownerUserId: uid,
+    });
+    const [personalProject] = await getDb()
+      .select()
+      .from(schema.projects)
+      .where(
+        and(
+          eq(schema.projects.organizationId, org.id),
+          eq(schema.projects.slug, PERSONAL_PROJECT_SLUG),
+        ),
+      );
+    expect(personalProject).toBeDefined();
   });
 });

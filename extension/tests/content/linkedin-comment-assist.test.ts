@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 /**
  * The in-page comment assist (#314), against the real Svelte panel rather than
@@ -10,9 +10,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
  * The API layer is the only thing faked. The DOM is the real captured
  * post-detail fixture, the panel is the real component, and the composer the
  * text lands in is the fixture's own.
+ *
+ * #382's reasoning/draft split and the 2026-09-07 feed rework (per-card
+ * wiring, `personalProjectId` routing) are covered by later `describe`
+ * blocks below, using the real anonymised feed fixture the same way.
  */
 
 import POST_DETAIL_HTML from './fixtures/linkedin/post-detail.html?raw';
+import FEED_HTML from './fixtures/linkedin/feed.html?raw';
 
 const linkedinAssist = vi.fn();
 const suggest = vi.fn();
@@ -37,9 +42,14 @@ vi.mock('../../src/lib/log-from-content.js', () => ({
   },
 }));
 
-const { wireCommentAssist, refusalMessage } =
+const { wireCommentAssist, refusalMessage, scanFeedForAssist, readAssistPostFromCard } =
   await import('../../src/content/linkedin-comment-assist.js');
+const { findFeedPosts } = await import('../../src/content/shared/linkedin-dom.js');
 
+// `projectId` (context/grounding) and `personalProjectId` (decision 5: where
+// an accepted draft is filed) are deliberately distinct values below, so a
+// test that reads the wrong one fails loudly instead of passing by
+// coincidence.
 const ASSIST_ON = {
   ok: true as const,
   data: {
@@ -48,6 +58,7 @@ const ASSIST_ON = {
       collectorEnabled: true,
       killSwitch: false,
       projectId: 2,
+      personalProjectId: 99,
       dailyCommentCap: 8,
       dailyPostCap: 1,
     },
@@ -68,14 +79,24 @@ function renderPost(): HTMLElement {
   return composer;
 }
 
+/** Every mounted panel's shadow root, in DOM order - `shadow()` when there is
+ * exactly one, `shadows()` when a test needs to tell two cards' panels apart. */
+function shadows(): ShadowRoot[] {
+  return [...document.querySelectorAll('*')].flatMap((e) => (e.shadowRoot ? [e.shadowRoot] : []));
+}
+
 function shadow(): ShadowRoot {
-  const host = [...document.querySelectorAll('*')].find((e) => e.shadowRoot);
-  if (!host?.shadowRoot) throw new Error('no panel mounted');
-  return host.shadowRoot;
+  const [first] = shadows();
+  if (!first) throw new Error('no panel mounted');
+  return first;
+}
+
+function textOf(root: ShadowRoot): string {
+  return (root.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
 function panelText(): string {
-  return (shadow().textContent ?? '').replace(/\s+/g, ' ').trim();
+  return textOf(shadow());
 }
 
 /** Lets the panel's mount, the awaited API calls and Svelte's flush settle. */
@@ -85,14 +106,16 @@ async function settle(times = 6): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
 }
 
-/** A suggestion delivered as the route delivers it: chunks, then done. */
-function streamingSuggest(text: string) {
+/** A suggestion delivered as the route delivers it (#382): reasoning chunks,
+ * then draft chunks, then done. */
+function streamingSuggest(reasoning: string, draft: string) {
   return async (_body: unknown, onEvent: (event: Record<string, unknown>) => void) => {
     onEvent({ kind: 'status', phase: 'writing' });
-    onEvent({ kind: 'chunk', text: text.slice(0, 20) });
-    onEvent({ kind: 'chunk', text: text.slice(20) });
-    onEvent({ kind: 'done', text, ms: 900 });
-    return { ok: true as const, data: { text } };
+    if (reasoning) onEvent({ kind: 'chunk', text: reasoning, section: 'reasoning' });
+    onEvent({ kind: 'chunk', text: draft.slice(0, 20), section: 'draft' });
+    onEvent({ kind: 'chunk', text: draft.slice(20), section: 'draft' });
+    onEvent({ kind: 'done', reasoning, draft, skipped: false, ms: 900 });
+    return { ok: true as const, data: { ok: true } };
   };
 }
 
@@ -102,6 +125,17 @@ beforeEach(() => {
   vi.clearAllMocks();
   Reflect.deleteProperty(globalThis as Record<string, unknown>, 'FontFace');
   linkedinAssist.mockResolvedValue(ASSIST_ON);
+});
+
+// Whichever test runs last in this file leaves no `beforeEach` after it to
+// trigger panel-host's own anchor-removal cleanup before jsdom tears down -
+// without this, a mounted panel's leftover `MutationObserver` callback can
+// fire once `window`/`document` are already gone. Clearing the DOM and
+// settling after every test, not only before the next one, keeps that
+// cleanup inside a still-live environment regardless of run order.
+afterEach(async () => {
+  document.body.innerHTML = '';
+  await settle();
 });
 
 describe('the panel never appears unprompted', () => {
@@ -143,14 +177,20 @@ describe('the suggestion, as it arrives', () => {
       async (
         _body: unknown,
         onEvent: (e: Record<string, unknown>) => void,
-      ): Promise<{ ok: true; data: { text: string } }> => {
+      ): Promise<{ ok: true; data: { ok: true } }> => {
         onEvent({ kind: 'status', phase: 'writing' });
-        onEvent({ kind: 'chunk', text: 'First half. ' });
+        onEvent({ kind: 'chunk', text: 'First half. ', section: 'draft' });
         await settle(2);
         seen.push(panelText());
-        onEvent({ kind: 'chunk', text: 'Second half.' });
-        onEvent({ kind: 'done', text: 'First half. Second half.', ms: 900 });
-        return { ok: true, data: { text: 'First half. Second half.' } };
+        onEvent({ kind: 'chunk', text: 'Second half.', section: 'draft' });
+        onEvent({
+          kind: 'done',
+          reasoning: '',
+          draft: 'First half. Second half.',
+          skipped: false,
+          ms: 900,
+        });
+        return { ok: true, data: { ok: true } };
       },
     );
 
@@ -166,13 +206,31 @@ describe('the suggestion, as it arrives', () => {
     // And when it finishes, the human gets an editable copy of the whole thing.
     expect(shadow().querySelector('textarea')?.value).toBe('First half. Second half.');
   });
+
+  it('renders the reasoning small and separate from the draft, above it', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(streamingSuggest('Friendly, technical tone.', 'Nice writeup!'));
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    const hint = shadow().querySelector<HTMLElement>('.assist-hint');
+    const draftEl = shadow().querySelector('textarea');
+    expect(hint?.textContent).toBe('Friendly, technical tone.');
+    expect(draftEl?.value).toBe('Nice writeup!');
+    // Reasoning renders before the draft in document order, not after.
+    expect(hint!.compareDocumentPosition(draftEl!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
 
 describe('accept, insert, and the button the human presses', () => {
   it('writes the text into LinkedIn own composer and dispatches no click or submit', async () => {
     const composer = renderPost();
     const text = 'We saw the same thing, but the cause was PR size.';
-    suggest.mockImplementation(streamingSuggest(text));
+    suggest.mockImplementation(streamingSuggest('', text));
     acceptSuggestion.mockResolvedValue({
       ok: true,
       data: { accepted: true, draftId: 4242, runId: 7 },
@@ -204,9 +262,143 @@ describe('accept, insert, and the button the human presses', () => {
 
     expect(composer.textContent).toContain('PR size');
     expect(acceptSuggestion).toHaveBeenCalledTimes(1);
+    // Decision 5: an accepted draft lands under the personal project, not
+    // the project the suggestion was grounded in.
+    expect(acceptSuggestion.mock.calls[0][0]).toMatchObject({ projectId: 99 });
     expect(clicks).toEqual([]);
     expect(submits).toEqual([]);
     expect(panelText()).toMatch(/Comment button|Inserted/i);
+  });
+
+  it('sends only the draft on accept, never the reasoning', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(
+      streamingSuggest('This reasoning must never reach LinkedIn.', 'A clean, short reply.'),
+    );
+    acceptSuggestion.mockResolvedValue({
+      ok: true,
+      data: { accepted: true, draftId: 1, runId: 1 },
+    });
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(acceptSuggestion.mock.calls[0][0].body).toBe('A clean, short reply.');
+    expect(composer.textContent).toContain('A clean, short reply.');
+    expect(composer.textContent).not.toContain('This reasoning must never reach LinkedIn.');
+  });
+});
+
+describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
+  it('a decline (skipped) renders the reasoning and a retry, never an insert control', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'status', phase: 'writing' });
+        onEvent({
+          kind: 'done',
+          reasoning: 'This post is a job posting; commenting reads as spam here.',
+          draft: null,
+          skipped: true,
+          ms: 400,
+        });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(panelText()).toContain('This post is a job posting');
+    expect(panelText()).not.toContain('Insert');
+    expect(shadow().querySelector('textarea')).toBeNull();
+    expect(shadow().querySelectorAll('.assist-button').length).toBe(1);
+    expect(shadow().querySelector('.assist-button')?.textContent?.trim()).toBe($tRetry());
+  });
+
+  it('a malformed answer (not skipped) renders distinct copy from a decline, still no insert control', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'status', phase: 'writing' });
+        onEvent({
+          kind: 'done',
+          reasoning: 'Thinking about tone...',
+          draft: null,
+          skipped: false,
+          ms: 400,
+        });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    const skippedCopy = panelText();
+
+    document.body.innerHTML = '';
+    const second = renderPost();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({
+          kind: 'done',
+          reasoning: 'Thinking about tone...',
+          draft: null,
+          skipped: true,
+          ms: 400,
+        });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+    wireCommentAssist(second);
+    second.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(panelText()).not.toBe(skippedCopy);
+    expect(shadow().querySelector('textarea')).toBeNull();
+  });
+
+  it('logs the no-draft outcome, distinct from a refusal', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({
+          kind: 'done',
+          reasoning: 'Nothing to add.',
+          draft: null,
+          skipped: true,
+          ms: 400,
+        });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    const entry = logged.find((e) => e.message === 'activity.linkedin-action.suggestion-no-draft');
+    expect(entry).toBeDefined();
+    expect(entry?.level).toBe('info');
+    expect(logged.some((e) => e.message === 'activity.linkedin-action.suggestion-refused')).toBe(
+      false,
+    );
   });
 });
 
@@ -271,3 +463,145 @@ describe('single-page navigation', () => {
     expect(document.querySelectorAll('pitchbox-panel-host').length).toBe(0);
   });
 });
+
+describe('per-card wiring on the feed (2026-09-07 overlay/feed rework)', () => {
+  /** Appends a synthetic comment composer under `card` - the real anonymised
+   * fixture carries none (LinkedIn renders one lazily, behind the human's
+   * own "Comment" click, only after this content script would already be
+   * running), so this stands in for that click's own DOM effect. Never a
+   * simulated click on a LinkedIn control - the composer element itself is
+   * the only thing added. */
+  function appendComposer(card: Element): HTMLElement {
+    const composer = document.createElement('div');
+    composer.setAttribute('contenteditable', 'true');
+    composer.setAttribute('role', 'textbox');
+    card.appendChild(composer);
+    return composer;
+  }
+
+  /** The fixture's real cards carry mostly empty commentary in this reduced
+   * capture; this appends the one element `readPostText` actually reads
+   * (`[data-sdui-anchor-id^="commentary-"]`), giving each card real text to
+   * draft from without touching any selector this module depends on. */
+  function appendCommentary(card: Element, text: string): void {
+    const el = document.createElement('p');
+    el.setAttribute('data-sdui-anchor-id', 'commentary-test');
+    el.textContent = text;
+    card.appendChild(el);
+  }
+
+  function renderFeed(): Element[] {
+    document.body.innerHTML = FEED_HTML;
+    return findFeedPosts(document);
+  }
+
+  it('wires two cards to two independent panels, each keyed to its own post', async () => {
+    const cards = renderFeed();
+    expect(cards.length).toBeGreaterThanOrEqual(2);
+    appendCommentary(cards[0], 'First card body text, long enough to draft from.');
+    appendCommentary(cards[1], 'Second card body text, long enough to draft from.');
+
+    scanFeedForAssist(document);
+    const composerA = appendComposer(cards[0]);
+    const composerB = appendComposer(cards[1]);
+    await settle();
+
+    composerA.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    composerB.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(document.querySelectorAll('pitchbox-panel-host').length).toBe(2);
+
+    const postA = readAssistPostFromCard(cards[0], document);
+    const postB = readAssistPostFromCard(cards[1], document);
+    expect(postA?.authorName).toBeTruthy();
+    expect(postB?.authorName).toBeTruthy();
+    expect(postA?.authorName).not.toBe(postB?.authorName);
+  });
+
+  it("the second card's suggestion request carries the second card's own author, not the first's", async () => {
+    const cards = renderFeed();
+    appendCommentary(cards[0], 'First card body text, long enough to draft from.');
+    appendCommentary(cards[1], 'Second card body text, long enough to draft from.');
+    const expectedAuthor = readAssistPostFromCard(cards[1], document)?.authorName;
+    expect(expectedAuthor).toBeTruthy();
+
+    scanFeedForAssist(document);
+    const composerA = appendComposer(cards[0]);
+    const composerB = appendComposer(cards[1]);
+    await settle();
+
+    composerA.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    composerB.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    // The second card's own panel names its own author as the subject, not
+    // whichever author the first card's panel already showed.
+    const [, panelB] = shadows();
+    expect(textOf(panelB)).toContain(expectedAuthor!);
+  });
+
+  it('a feed suggestion carries no urn, but does carry the author handle', async () => {
+    const cards = renderFeed();
+    appendCommentary(cards[0], 'Enough body text on the feed card to draft a reply from.');
+    const post = readAssistPostFromCard(cards[0], document);
+    expect(post?.urn).toBeUndefined();
+    expect(post?.authorHandle).toBeTruthy();
+
+    scanFeedForAssist(document);
+    const composer = appendComposer(cards[0]);
+    await settle();
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(1);
+    // vi.fn mock call built entirely by this test, not external input.
+    const call = suggest.mock.calls[0][0] as { post: { urn?: string; authorHandle?: string } };
+    const sentPost = call.post;
+    expect(sentPost.urn).toBeUndefined();
+    expect(sentPost.authorHandle).toBe(post?.authorHandle);
+  });
+
+  it('re-running the scan does not double-wire an already-wired card', async () => {
+    const cards = renderFeed();
+    appendCommentary(cards[0], 'Enough body text on the feed card to draft a reply from.');
+
+    scanFeedForAssist(document);
+    scanFeedForAssist(document); // mirrors the MutationObserver firing again
+    const composer = appendComposer(cards[0]);
+    await settle();
+
+    let clickListenerCalls = 0;
+    const realAdd = HTMLElement.prototype.addEventListener;
+    // wireCommentAssist attaches exactly one click listener per composer; a
+    // double-wire would attach a second one here, on the very same element.
+    composer.addEventListener = function patched(
+      this: HTMLElement,
+      type: string,
+      ...rest: unknown[]
+    ) {
+      if (type === 'click') clickListenerCalls++;
+      // @ts-expect-error - forwarding a variadic spy to the real implementation
+      return realAdd.call(this, type, ...rest);
+    };
+
+    scanFeedForAssist(document); // composer already exists now; still a no-op
+    await settle();
+
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(document.querySelectorAll('pitchbox-panel-host').length).toBe(1);
+    expect(clickListenerCalls).toBe(0);
+  });
+});
+
+function $tRetry(): string {
+  // Mirrors dict-en.ts's 'assist.action.retry' literally, so this test does
+  // not have to import the whole i18n runtime just to name one button.
+  return 'Try again';
+}

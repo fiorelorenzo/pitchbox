@@ -1,0 +1,205 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { eq, sql } from 'drizzle-orm';
+import { getDb, schema } from '../src/db/client.js';
+import {
+  loadOperatorProfile,
+  saveOperatorProfile,
+  listVoiceSamples,
+  setVoiceSampleExcluded,
+  recordVoiceSamples,
+  ensureOperatorAccount,
+} from '../src/operator-profile.js';
+
+async function platformId(slug: string): Promise<number> {
+  const db = getDb();
+  const [p] = await db.select().from(schema.platforms).where(eq(schema.platforms.slug, slug));
+  return p!.id;
+}
+
+async function ensureOrg(slug: string): Promise<number> {
+  const db = getDb();
+  await db.insert(schema.organizations).values({ slug, name: slug }).onConflictDoNothing();
+  const [org] = await db
+    .select({ id: schema.organizations.id })
+    .from(schema.organizations)
+    .where(eq(schema.organizations.slug, slug));
+  return org!.id;
+}
+
+async function makeProject(organizationId: number, slug: string): Promise<number> {
+  const db = getDb();
+  const [p] = await db
+    .insert(schema.projects)
+    .values({ organizationId, slug, name: slug })
+    .returning({ id: schema.projects.id });
+  return p!.id;
+}
+
+describe('shared/src/operator-profile', () => {
+  let linkedinId: number;
+  let orgAId: number;
+  let orgBId: number;
+
+  beforeEach(async () => {
+    await getDb().execute(
+      sql`TRUNCATE operator_profiles, operator_voice_samples, accounts, projects RESTART IDENTITY CASCADE`,
+    );
+    await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
+    linkedinId = await platformId('linkedin');
+    orgAId = await ensureOrg('op-profile-org-a');
+    orgBId = await ensureOrg('op-profile-org-b');
+  });
+
+  describe('loadOperatorProfile / saveOperatorProfile', () => {
+    it('returns null when no row exists yet', async () => {
+      expect(await loadOperatorProfile(getDb(), orgAId)).toBeNull();
+    });
+
+    it('a first capture inserts a row, defaults source to linkedin_capture, and sets capturedAt', async () => {
+      const row = await saveOperatorProfile(getDb(), orgAId, {
+        handle: 'ada-lovelace',
+        displayName: 'Ada Lovelace',
+      });
+      expect(row.handle).toBe('ada-lovelace');
+      expect(row.source).toBe('linkedin_capture');
+      expect(row.capturedAt).not.toBeNull();
+      expect(row.experiences).toEqual([]);
+    });
+
+    it('a later capture updates only the fields it carries, leaving the rest as they were', async () => {
+      await saveOperatorProfile(getDb(), orgAId, {
+        handle: 'ada-lovelace',
+        displayName: 'Ada Lovelace',
+        headline: 'Mathematician',
+      });
+      const row = await saveOperatorProfile(getDb(), orgAId, {
+        headline: 'Mathematician and writer',
+      });
+      expect(row.displayName).toBe('Ada Lovelace');
+      expect(row.headline).toBe('Mathematician and writer');
+    });
+
+    it('protects a manual row from an automated capture unless overwrite is set', async () => {
+      await saveOperatorProfile(getDb(), orgAId, {
+        handle: 'ada-lovelace',
+        displayName: 'Ada, by hand',
+        source: 'manual',
+      });
+
+      const skipped = await saveOperatorProfile(getDb(), orgAId, {
+        displayName: 'Ada, from a capture',
+        source: 'linkedin_capture',
+      });
+      expect(skipped.displayName).toBe('Ada, by hand');
+      expect(skipped.source).toBe('manual');
+
+      const overwritten = await saveOperatorProfile(
+        getDb(),
+        orgAId,
+        { displayName: 'Ada, from a capture', source: 'linkedin_capture' },
+        { overwrite: true },
+      );
+      expect(overwritten.displayName).toBe('Ada, from a capture');
+      expect(overwritten.source).toBe('linkedin_capture');
+    });
+
+    it('always applies a manual-to-manual save, with no overwrite flag needed', async () => {
+      await saveOperatorProfile(getDb(), orgAId, {
+        handle: 'ada-lovelace',
+        displayName: 'First manual edit',
+        source: 'manual',
+      });
+      const row = await saveOperatorProfile(getDb(), orgAId, {
+        displayName: 'Second manual edit',
+        source: 'manual',
+      });
+      expect(row.displayName).toBe('Second manual edit');
+    });
+  });
+
+  describe('listVoiceSamples / setVoiceSampleExcluded', () => {
+    it('recordVoiceSamples dedupes on (organization_id, external_id) and reports only newly inserted rows', async () => {
+      const firstBatch = await recordVoiceSamples(getDb(), orgAId, linkedinId, [
+        { externalId: 'urn:li:activity:1', text: 'First post' },
+        { externalId: 'urn:li:activity:2', text: 'Second post' },
+      ]);
+      expect(firstBatch).toBe(2);
+
+      const secondBatch = await recordVoiceSamples(getDb(), orgAId, linkedinId, [
+        { externalId: 'urn:li:activity:2', text: 'Second post, re-scraped' },
+        { externalId: 'urn:li:activity:3', text: 'Third post' },
+      ]);
+      expect(secondBatch).toBe(1);
+
+      const samples = await listVoiceSamples(getDb(), orgAId);
+      expect(samples).toHaveLength(3);
+      // Not resurrected/mutated by the duplicate in the second batch.
+      expect(samples.find((s) => s.externalId === 'urn:li:activity:2')?.text).toBe('Second post');
+    });
+
+    it('setVoiceSampleExcluded flips the flag without deleting the row, and listVoiceSamples still returns it', async () => {
+      await recordVoiceSamples(getDb(), orgAId, linkedinId, [
+        { externalId: 'urn:li:activity:1', text: 'First post' },
+      ]);
+      const [sample] = await listVoiceSamples(getDb(), orgAId);
+      await setVoiceSampleExcluded(getDb(), orgAId, sample.id, true);
+
+      const after = await listVoiceSamples(getDb(), orgAId);
+      expect(after).toHaveLength(1);
+      expect(after[0].excluded).toBe(true);
+    });
+
+    it("never crosses an organization boundary: excluding org B's sample id under org A is a no-op", async () => {
+      await recordVoiceSamples(getDb(), orgBId, linkedinId, [
+        { externalId: 'urn:li:activity:cross', text: 'Org B post' },
+      ]);
+      const [sampleB] = await listVoiceSamples(getDb(), orgBId);
+
+      await setVoiceSampleExcluded(getDb(), orgAId, sampleB.id, true);
+
+      const stillB = await listVoiceSamples(getDb(), orgBId);
+      expect(stillB[0].excluded).toBe(false);
+    });
+  });
+
+  describe('ensureOperatorAccount', () => {
+    it('creates an active, credential-less personal-role LinkedIn account', async () => {
+      const projectId = await makeProject(orgAId, 'op-profile-personal-a');
+      await ensureOperatorAccount(getDb(), {
+        projectId,
+        platformId: linkedinId,
+        handle: 'ada-lovelace',
+      });
+
+      const [account] = await getDb()
+        .select()
+        .from(schema.accounts)
+        .where(eq(schema.accounts.projectId, projectId));
+      expect(account.role).toBe('personal');
+      expect(account.handle).toBe('ada-lovelace');
+      expect(account.active).toBe(true);
+      expect(account.cookieSession).toBeNull();
+      expect(account.accessTokenEncrypted).toBeNull();
+    });
+
+    it('is idempotent: a second call for the same project/platform creates no second row', async () => {
+      const projectId = await makeProject(orgAId, 'op-profile-personal-b');
+      await ensureOperatorAccount(getDb(), {
+        projectId,
+        platformId: linkedinId,
+        handle: 'ada-lovelace',
+      });
+      await ensureOperatorAccount(getDb(), {
+        projectId,
+        platformId: linkedinId,
+        handle: 'ada-lovelace',
+      });
+
+      const accounts = await getDb()
+        .select()
+        .from(schema.accounts)
+        .where(eq(schema.accounts.projectId, projectId));
+      expect(accounts).toHaveLength(1);
+    });
+  });
+});

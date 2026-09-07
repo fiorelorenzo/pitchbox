@@ -5,6 +5,7 @@ import { getDb, schema } from '@pitchbox/shared/db';
 import {
   defaultLinkedInAssistSettings,
   saveLinkedInAssistSettings,
+  loadLinkedInAssistDeviceState,
 } from '@pitchbox/shared/linkedin-assist';
 import { getAccountUsage } from '@pitchbox/shared/quota';
 import { updateDraftWithVersion } from '../src/lib/server/draft-state.js';
@@ -166,6 +167,27 @@ describe('POST /api/extension/suggest/accept', () => {
     });
   });
 
+  // Decision 2026-09-07: the org's own `personal` project is always a valid
+  // destination, unlike an arbitrary sibling project of the same org, which
+  // the test above proves still gets refused.
+  it('accepts a request naming the org personal project even though it is not the bound one', async () => {
+    const { org, project, platform } = await seedOrgProject('acc-personal');
+    await mintDevice(org.id, 'tokPersonal');
+    const assist = await loadLinkedInAssistDeviceState(getDb(), org.id);
+    expect(assist.personalProjectId).not.toBe(project.id);
+    await seedAccount(assist.personalProjectId, platform.id);
+
+    const res = await accept({
+      request: request('tokPersonal', { ...POST_BODY, projectId: assist.personalProjectId }),
+    } as never);
+    const body = (await res.json()) as { ok: boolean; draftId: number };
+    expect(body.ok).toBe(true);
+
+    const drafts = await getDb().select().from(schema.drafts);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].projectId).toBe(assist.personalProjectId);
+  });
+
   it('materialises exactly one draft and one terminal assist run, carrying cache tokens through honestly', async () => {
     const { org, project, platform } = await seedOrgProject('acc-happy');
     const account = await seedAccount(project.id, platform.id);
@@ -206,6 +228,37 @@ describe('POST /api/extension/suggest/accept', () => {
       version: 0,
     });
     expect(drafts[0].sourceRef).toMatchObject({ externalId: POST_BODY.post.urn });
+  });
+
+  // A feed post carries no URN at all (docs/linkedin-integration-design.md,
+  // "Two frontends, one identifier"). The honest response is to record what
+  // the panel actually saw rather than invent an id.
+  it('accepts a feed post with no urn, recording an honest author-only identifier', async () => {
+    const { org, project, platform } = await seedOrgProject('acc-no-urn');
+    await seedAccount(project.id, platform.id);
+    await mintDevice(org.id, 'tokNoUrn');
+
+    const postWithoutUrn = {
+      authorHandle: POST_BODY.post.authorHandle,
+      authorName: POST_BODY.post.authorName,
+      url: POST_BODY.post.url,
+    };
+    const res = await accept({
+      request: request('tokNoUrn', { ...POST_BODY, post: postWithoutUrn, projectId: project.id }),
+    } as never);
+    const body = (await res.json()) as { ok: boolean; draftId: number };
+    expect(body.ok).toBe(true);
+
+    const drafts = await getDb().select().from(schema.drafts);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].sourceRef).toMatchObject({
+      authorHandle: postWithoutUrn.authorHandle,
+      url: postWithoutUrn.url,
+    });
+    expect(drafts[0].sourceRef).not.toHaveProperty('externalId');
+    expect(drafts[0].metadata).toMatchObject({ identifier: 'author-only' });
+    // #336: the post author still lands as target_user even without a urn.
+    expect(drafts[0].targetUser).toBe('jane-doe');
   });
 
   it('refuses no_account when the project has no active LinkedIn account, with no partial write', async () => {
