@@ -248,7 +248,12 @@ export async function syncLinkedInContentScript(): Promise<void> {
         {
           id: LINKEDIN_CONTENT_SCRIPT_ID,
           js: [linkedinCommentScriptPath],
-          matches: ['https://www.linkedin.com/feed/update/*'],
+          // `/posts/*` as well as `/feed/update/*` (#379): both serve the
+          // classic post-detail frontend that carries the composer and the
+          // activity URN, and `/posts/*` is the URL LinkedIn's own share and
+          // "copy link" hand out. Literal array on purpose - the compliance
+          // checker's rule 2 reads this initializer's text.
+          matches: ['https://www.linkedin.com/feed/update/*', 'https://www.linkedin.com/posts/*'],
           runAt: 'document_idle',
         },
       ]);

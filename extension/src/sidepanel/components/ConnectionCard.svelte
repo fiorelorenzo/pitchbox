@@ -20,6 +20,20 @@
   import { DEFAULT_BACKEND_URL, normalizeBackendUrl } from '$ext/backend';
   import { originStillNeeded } from '$ext/permissions';
   import { autoPairOutcomeMessageKey, type AutoPairOutcome } from '$ext/auto-pair-outcome';
+  // The *built* auto-pair script, as a standalone IIFE, because this path
+  // injects it on demand into a tab that has usually run it once already.
+  //
+  // Two bugs sat here. Injecting the source path `src/content/auto-pair.ts`
+  // only ever worked under `vite dev`, where that file is served as written;
+  // in a real build it does not exist, executeScript rejected, and pairing
+  // reported "No Pitchbox dashboard found in that tab" while looking straight
+  // at the dashboard. Pointing at crxjs's `?script` output fixed the
+  // rejection and replaced it with a silent no-op: that output is an ESM
+  // loader that dynamic-imports the real chunk, and the dashboard's own
+  // declared content script has already imported that chunk in this
+  // document, so the module is cached and its top-level run never happens a
+  // second time. `?iife` is self-contained, so every injection executes.
+  import autoPairScriptPath from '../../content/auto-pair.ts?iife';
 
   let pairings = $state<Pairing[]>([]);
   let busy = $state(false);
@@ -148,7 +162,7 @@
       const timer = setTimeout(() => finish({ kind: 'no-dashboard' }), 4000);
       chrome.runtime.onMessage.addListener(listener);
       chrome.scripting
-        .executeScript({ target: { tabId: target.tabId }, files: ['src/content/auto-pair.ts'] })
+        .executeScript({ target: { tabId: target.tabId }, files: [autoPairScriptPath] })
         .catch(() => finish({ kind: 'no-dashboard' }));
     });
   }
