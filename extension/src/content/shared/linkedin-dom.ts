@@ -110,6 +110,7 @@ export type LinkedInSelectorId =
   | 'postIdentifier'
   | 'postAuthor'
   | 'postText'
+  | 'postTextCommentaryAnchor'
   | 'commentComposer'
   | 'commentSubmitButton'
   | 'postComposer'
@@ -123,7 +124,8 @@ export type LinkedInSelectorId =
   | 'ownProfileName'
   | 'ownProfileHeadline'
   | 'ownProfileAbout'
-  | 'ownProfileExperience';
+  | 'ownProfileExperience'
+  | 'ownPostTimestamp';
 
 export type SelectorHealthEntry = {
   selector: LinkedInSelectorId;
@@ -396,6 +398,18 @@ function isScreenReaderOnly(el: Element): boolean {
   return false;
 }
 
+/**
+ * True when `el` sits inside something `longestSubstantialText` must never
+ * return as post body: a classic comment (`[data-id]`), an open composer
+ * (`role="textbox"`/`contenteditable`), or - added for the feed-sdui
+ * fallback below (#392) - a rendered feed comment
+ * (`[data-sdui-anchor-id^="comment-"]`, LinkedIn's own instrumentation for
+ * a comment card, distinct from the `commentary-` prefix a post's own body
+ * uses). Measured on the real capture: `feed.html`'s third card carries
+ * both its own `commentary-` text and a rendered
+ * `comment-urn:li:comment:(...)::0` reply; a scan with no exclusion for it
+ * would risk handing a commenter's words back as the post's.
+ */
 function isWithinExcludedRegion(el: Element, boundary: Element): boolean {
   let node: Element | null = el;
   while (node) {
@@ -406,6 +420,7 @@ function isWithinExcludedRegion(el: Element, boundary: Element): boolean {
     ) {
       return true;
     }
+    if (node.getAttribute('data-sdui-anchor-id')?.startsWith('comment-')) return true;
     if (node === boundary) return false;
     node = node.parentElement;
   }
@@ -413,21 +428,38 @@ function isWithinExcludedRegion(el: Element, boundary: Element): boolean {
 }
 
 /**
- * First substantial (>= 30 chars of its own direct text) leaf under `scope`
- * that is not screen-reader-hidden and not inside a comment (`[data-id]`) or
- * a composer (`[role="textbox"]`/`[contenteditable]`). Used as the classic
- * frontend's fallback for `readPostText`, where no `data-*` attribute marks
- * the post body at all.
+ * Longest substantial (>= 30 chars of its own direct text) leaf under
+ * `scope` that is not screen-reader-hidden and not inside a comment
+ * (`[data-id]` or, on the feed, `[data-sdui-anchor-id^="comment-"]`) or a
+ * composer (`[role="textbox"]`/`[contenteditable]`). Used as the fallback
+ * for `readPostText` on both frontends, where no `data-*` attribute marks
+ * the post body at all (classic) or the one that usually does is absent
+ * (feed-sdui, #392).
+ *
+ * Longest, not first in document order: measured on a live feed card with
+ * no `commentary-` anchor (#392), the first >=30-char own-text block was
+ * the author's own headline/bio line ("Publisher and Editor in Chief -
+ * Reaching 1.5 Mio Followers", 60 chars) - a sibling of the
+ * `feed-header-*` element, not inside it, so there is no LinkedIn-authored
+ * container that excludes it the way a comment or composer can be
+ * excluded. The actual post body (1238 chars) came later in document order.
+ * A LinkedIn post's own body is, by construction, the largest block of
+ * prose rendered in its own card - this is a heuristic, not a parse: a
+ * real post shorter than its own author's headline would still pick the
+ * headline. Traded deliberately, for the far more common shape this exists
+ * to fix.
  */
-function firstSubstantialText(scope: ParentNode, boundary: Element): string | null {
+function longestSubstantialText(scope: ParentNode, boundary: Element): string | null {
+  let longest: string | null = null;
   for (const el of queryDeepAll<Element>('span, p, div', scope)) {
     if (el.getAttribute('aria-hidden') === 'true') continue;
     if (isScreenReaderOnly(el)) continue;
     if (isWithinExcludedRegion(el, boundary)) continue;
     const text = ownText(el);
-    if (text.length >= MIN_SUBSTANTIAL_TEXT_LENGTH) return text;
+    if (text.length < MIN_SUBSTANTIAL_TEXT_LENGTH) continue;
+    if (!longest || text.length > longest.length) longest = text;
   }
-  return null;
+  return longest;
 }
 
 /**
@@ -435,10 +467,19 @@ function firstSubstantialText(scope: ParentNode, boundary: Element): string | nu
  *
  * - SDUI feed: every `[data-sdui-anchor-id^="commentary-"]` element inside
  *   `post`, joined - LinkedIn's own instrumentation for the post's text
- *   blocks.
+ *   blocks. Measured on a live feed and on the regenerated `feed.html`
+ *   (#392): LinkedIn does not always render this anchor even on a card that
+ *   has a `feed-header-*` anchor and visible body text (two of three cards
+ *   in the capture carry it; the middle one does not). When no `commentary-`
+ *   element is found, this falls back to the same scan the classic frontend
+ *   uses (`longestSubstantialText`), scoped to `post` -
+ *   `postTextCommentaryAnchor` records the miss separately from `postText`
+ *   itself, so a feed whose commentary anchor disappears from every card is
+ *   visible in the selector health report rather than silently degrading to
+ *   the fallback forever.
  * - Classic: LinkedIn's own body container (`.update-components-text`) when
  *   it is there, which is what the rendered post text lives in; otherwise a
- *   fallback to `firstSubstantialText`, deliberately scoped away from
+ *   fallback to `longestSubstantialText`, deliberately scoped away from
  *   comments, the composer and screen-reader-only lines.
  */
 export function readPostText(
@@ -450,17 +491,18 @@ export function readPostText(
     const parts = queryDeepAll<Element>('[data-sdui-anchor-id^="commentary-"]', post)
       .map((el) => el.textContent?.trim() ?? '')
       .filter((s) => s.length > 0);
-    const text = parts.length > 0 ? parts.join(' ') : null;
+    record('postTextCommentaryAnchor', pageKind, parts.length > 0);
+    const text = parts.length > 0 ? parts.join(' ') : longestSubstantialText(post, post);
     record('postText', pageKind, text !== null);
     return text;
   }
   if (pageKind === 'post-detail-classic') {
     // Prefer the container LinkedIn itself wraps the body in. The generic
-    // fallback reads whichever element happens to come first, which on a real
-    // page was the clipped "35 minuti fa - Visibile a tutti" line (#379).
+    // fallback reads whichever element happens to be longest, which is a
+    // heuristic - the container is a real, LinkedIn-authored answer.
     const container = queryDeep<Element>('.update-components-text', post);
     const containerText = container?.textContent?.trim() || null;
-    const text = containerText ?? firstSubstantialText(post, post);
+    const text = containerText ?? longestSubstantialText(post, post);
     record('postText', pageKind, text !== null);
     return text;
   }
@@ -791,8 +833,9 @@ export type OwnProfileExperience = {
 };
 
 export type OwnProfileCapture = {
-  /** From the page's own canonical URL, not the signed-in member's nav link -
-   * see `readOwnProfile`'s doc comment for why the distinction matters. */
+  /** From the page's own URL path, not the signed-in member's nav link -
+   * see `readOwnProfilePageHandle`'s doc comment for why the distinction
+   * matters. */
   handle: string | null;
   displayName: string | null;
   headline: string | null;
@@ -800,38 +843,53 @@ export type OwnProfileCapture = {
   experiences: OwnProfileExperience[];
 };
 
+/** A recent post read off a profile's `recent-activity` page, as a voice
+ * sample. `relativeTime` is LinkedIn's own rendered text ("3 ore", "6
+ * giorni") - never a machine timestamp, the same posture
+ * `LinkedInComment.relativeTime` documents, for the same reason: parsing it
+ * into a real date is a caller's job, with a caller's choice of "now" to
+ * measure back from. There is no post permalink here either - every `href`
+ * on the anonymised capture is rewritten to the same placeholder by the
+ * fixture scrubber, so this module has no real one to verify a selector
+ * against, and a URL built from the urn instead would be untested and
+ * unresolved. */
 export type OwnPost = {
   externalId: string;
   text: string;
+  relativeTime: string | null;
 };
 
 /**
- * The profile *page's own* subject, from `<link rel="canonical">` (falling
- * back to `<meta property="og:url">`) - never from the global nav's identity
- * link (`readOwnProfileHandle`), which always names the signed-in member
- * regardless of whose `/in/<slug>` page is open. `readOwnProfile` below is
- * registered on every `/in/*` page, including one the human opened to read
- * someone else's profile, and has no way to tell the two apart from the DOM
- * alone - the design's own call (2026-09-07) is that it does not try: the
- * page's own subject travels to the server as `handle`, and
- * `POST /api/extension/operator-profile` is what refuses a capture whose
- * handle does not match the operator already on file, rather than silently
- * overwriting the persona with a competitor's profile.
+ * The profile *page's own* subject, from the page's own URL path
+ * (`location.pathname`, matching `/in/<slug>`) - never from the global
+ * nav's identity link (`readOwnProfileHandle`), which always names the
+ * signed-in member regardless of whose `/in/<slug>` page is open, and never
+ * from `<link rel="canonical">`/`<meta property="og:url">`: measured
+ * 2026-09-07 against the real profile page, neither exists there -
+ * `document.querySelector('link[rel=canonical]')` is null, and the only
+ * `<meta>` names present are `viewport`, `como-t`, `como-err`,
+ * `trusted-types`, `storage-inventory`, `como-pk`. A canonical/og:url
+ * fallback is not a fallback if the page it runs on never renders either -
+ * that was #391's actual bug: the handle guard never fired, so nothing was
+ * ever captured. `readOwnProfile` below is registered on every `/in/*`
+ * page, including one the human opened to read someone else's profile, and
+ * has no way to tell the two apart from the DOM alone - the design's own
+ * call (2026-09-07) is that it does not try: the page's own subject travels
+ * to the server as `handle`, and `POST /api/extension/operator-profile` is
+ * what refuses a capture whose handle does not match the operator already
+ * on file, rather than silently overwriting the persona with a
+ * competitor's profile.
  */
 export function readOwnProfilePageHandle(doc: Document): string | null {
-  const canonical = doc.querySelector('link[rel="canonical"]');
-  const fromCanonical = parseProfileHandle(canonical?.getAttribute('href'));
-  if (fromCanonical) return fromCanonical;
-  const ogUrl = doc.querySelector('meta[property="og:url"]');
-  return parseProfileHandle(ogUrl?.getAttribute('content'));
+  return parseProfileHandle(doc.location?.pathname);
 }
 
 /**
  * Every substantial, non-decorative own-text leaf under `scope`, in document
  * order, collapsing an immediate repeat into one line - LinkedIn nests a
  * wrapper and a leaf carrying the same text more than once on a real page
- * (see `firstSubstantialText`'s own note on this), and a caller reading "the
- * next line" of a card wants each line once.
+ * (see `longestSubstantialText`'s own note on this), and a caller reading
+ * "the next line" of a card wants each line once.
  */
 function ownTextLines(scope: ParentNode): string[] {
   const lines: string[] = [];
@@ -851,41 +909,61 @@ function ownTextLines(scope: ParentNode): string[] {
  * read from whichever `/in/<slug>` page is open (LI-21's persona capture,
  * `linkedin-profile-capture.ts`).
  *
- * Unverified against a live capture: unlike `feed.html`/`post-detail.html`
- * (real, anonymised captures - see `fixtures/linkedin/README.md`), no
- * profile-page fixture exists yet, so the selectors below are a best-effort
- * shape rather than one checked against real markup. They anchor on
- * `id="about"`/`id="experience"`, which are LinkedIn's own long-standing
- * in-page navigation anchors (also the URL segments of its own "Show all
- * experiences" detail pages) rather than a generated class name, on the
- * theory that an anchor id LinkedIn's own deep links depend on is the least
- * likely thing to change without also breaking its own navigation. Each
- * experience entry is read positionally (title, then company, then period,
- * then summary) rather than by field-specific selector, since nothing in
- * this section carries a `data-*` attribute naming the field. This should be
- * narrowed the way `readCommentAuthor`/`readPostText` already were, the next
- * time someone captures a real signed-in profile page.
+ * Verified against `own-profile.html` (real, anonymised capture - see
+ * `fixtures/linkedin/README.md`). Measured 2026-09-07: this is the
+ * server-driven-UI profile frontend, which renders no `h1` for the person
+ * and no `data-view-name` anywhere - its cards are addressable only by
+ * `id`, so every selector below anchors on an id suffix/substring
+ * (`[id$="Topcard"]`, `[id$="About"]`, `[id*="profileCardsExperienceOnly"]`)
+ * rather than a tag or a generated class name.
+ *
+ * - Name and headline both come from the topcard: the name is its one
+ *   `<h2>`; the headline is the first other text line the topcard renders,
+ *   which on the capture is the member's own headline text (LinkedIn
+ *   renders it twice, full then truncated, for two responsive breakpoints -
+ *   `ownTextLines` only drops an *immediate* exact repeat, so the first,
+ *   full copy wins).
+ * - About: `[data-testid="expandable-text-box"]`, LinkedIn's own
+ *   instrumentation for the section's expandable body text.
+ *   `ownText` reads only that element's own direct text nodes, which is
+ *   what keeps the result from starting with the section's own `<h2>`
+ *   heading text ("Informazioni" - the capture is an Italian UI) and from
+ *   picking up the nested "…altro" expand button's own label.
+ * - Experience: positional per `<li>` (title, then company, then period,
+ *   then summary), the same posture the old `#experience`-anchored version
+ *   used, since nothing in this card carries a `data-*` attribute naming
+ *   the field. `own-profile.html` itself has none - measured live and on a
+ *   second, more thoroughly scrolled recapture (2026-09-07): this account's
+ *   profile renders the "no experience" layout (its own sibling card is
+ *   literally named `profileCardsBelowActivityPart1WithoutExp<slug>`), not
+ *   a selector miss, so `experiences` is legitimately `[]` against this
+ *   fixture - see the fixture-based test asserting exactly that, and the
+ *   synthetic-markup one proving the row-reading logic itself against rows
+ *   this account's profile does not have.
  */
 export function readOwnProfile(root: Document = document): OwnProfileCapture | null {
-  const nameEl = queryDeep<Element>('main h1', root);
+  const topCard = queryDeep<Element>('[id$="Topcard"]', root);
+  const nameEl = topCard ? queryDeep<Element>('h2', topCard) : null;
   const displayName = nameEl ? ownText(nameEl) || nameEl.textContent?.trim() || null : null;
   record('ownProfileName', 'profile', displayName !== null);
-  if (!nameEl || !displayName) return null;
+  if (!topCard || !nameEl || !displayName) return null;
 
   const handle = readOwnProfilePageHandle(root);
 
-  const topCard = nameEl.closest('section') ?? nameEl.parentElement ?? root;
   const headline = ownTextLines(topCard).find((line) => line !== displayName) ?? null;
   record('ownProfileHeadline', 'profile', headline !== null);
 
-  const aboutSection = queryDeep<Element>('section#about', root);
-  const about = aboutSection ? firstSubstantialText(aboutSection, aboutSection) : null;
+  const aboutCard = queryDeep<Element>('[id$="About"]', root);
+  const aboutBox = aboutCard
+    ? queryDeep<Element>('[data-testid="expandable-text-box"]', aboutCard)
+    : null;
+  const about = aboutBox ? ownText(aboutBox) || null : null;
   record('ownProfileAbout', 'profile', about !== null);
 
-  const experienceSection = queryDeep<Element>('section#experience', root);
+  const experienceCard = queryDeep<Element>('[id*="profileCardsExperienceOnly"]', root);
   const experiences: OwnProfileExperience[] = [];
-  if (experienceSection) {
-    for (const li of queryDeepAll<Element>('li', experienceSection)) {
+  if (experienceCard) {
+    for (const li of queryDeepAll<Element>('li', experienceCard)) {
       const lines = ownTextLines(li);
       if (lines.length === 0) continue;
       experiences.push({
@@ -896,9 +974,38 @@ export function readOwnProfile(root: Document = document): OwnProfileCapture | n
       });
     }
   }
-  record('ownProfileExperience', 'profile', experienceSection !== null);
+  // Keyed on rows actually read, not on the card existing - the card exists
+  // and is legitimately empty on this account's "no experience" layout
+  // (see the doc comment above), and a health check keyed on the card alone
+  // would never notice a populated profile whose row selector broke and
+  // started coming back empty too.
+  record('ownProfileExperience', 'profile', experiences.length > 0);
 
   return { handle, displayName, headline, about, experiences };
+}
+
+/**
+ * The signed-in member's own rendered relative-time text for `post`, read
+ * the same way `readPostAuthor`'s classic branch reads the byline name: the
+ * name, badge and headline all sit inside the byline's own `<a>`, and the
+ * first `[aria-hidden="true"]` element *outside* any anchor is the
+ * relative-time line LinkedIn renders next to it - verified against both
+ * classic captures (`post-detail.html`: "6 giorni • Modificato •",
+ * `own-activity.html`: "3 ore •"), in both cases before any comment content
+ * in document order.
+ */
+function readOwnPostRelativeTime(post: Element): string | null {
+  let text: string | null = null;
+  for (const el of queryDeepAll<Element>('[aria-hidden="true"]', post)) {
+    if (el.closest('a')) continue;
+    const own = el.textContent?.trim();
+    if (own) {
+      text = own;
+      break;
+    }
+  }
+  record('ownPostTimestamp', 'post-detail-classic', text !== null);
+  return text;
 }
 
 /**
@@ -920,7 +1027,7 @@ export function readOwnPosts(root: ParentNode = document): OwnPost[] {
     if (identifier.kind !== 'urn' || !identifier.value) continue;
     const text = readPostText(post, root);
     if (!text) continue;
-    out.push({ externalId: identifier.value, text });
+    out.push({ externalId: identifier.value, text, relativeTime: readOwnPostRelativeTime(post) });
   }
   return out;
 }

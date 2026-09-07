@@ -308,6 +308,44 @@ describe('refreshGithubSource', () => {
     expect(after.readmeExcerpt).not.toMatch(/nobody should read/);
     expect(after.readmeExcerpt).toContain('Widget does the thing');
   });
+
+  it('drops raw HTML so the excerpt starts at the first real sentence', async () => {
+    // Measured against this repo's own README on 2026-09-07: the excerpt began
+    // with a `<p align="left">` holding two `<img>` wordmarks, so the first
+    // 200 characters a prompt received were markup. A README is allowed to be
+    // HTML on GitHub; a prompt has no use for it.
+    const orgId = await setupOrg();
+    const db = getDb();
+    const [row] = await db
+      .insert(schema.githubSources)
+      .values({
+        organizationId: orgId,
+        owner: 'acme',
+        repo: 'htmlish',
+        url: 'https://github.com/acme/htmlish',
+      })
+      .returning();
+
+    const readme = [
+      '<p align="left"><img src="assets/wordmark-dark.svg#gh-dark-mode-only" alt="Widget" height="64"><img src="assets/wordmark-light.svg" alt="Widget" height="64"></p>',
+      '',
+      'Widget does the thing, reliably, for people who need the thing done.',
+      '',
+      '<div align="center">',
+      '  <b>Bold</b> claims belong in prose, not in a div.',
+      '</div>',
+    ].join('\n');
+
+    await refreshGithubSource(db, row.id, { fetchImpl: successfulFetch(readme), ttlMs: 60_000 });
+
+    const [after] = await db
+      .select()
+      .from(schema.githubSources)
+      .where(eq(schema.githubSources.id, row.id));
+    expect(after.readmeExcerpt?.startsWith('Widget does the thing')).toBe(true);
+    expect(after.readmeExcerpt).not.toMatch(/</);
+    expect(after.readmeExcerpt).toContain('Bold claims belong in prose');
+  });
 });
 
 describe('addGithubSource / listGithubSources / removeGithubSource', () => {

@@ -12,6 +12,7 @@ import {
   findPostComposerModal,
   findPostSubmitButton,
   readOwnProfileHandle,
+  readOwnProfilePageHandle,
   readOwnProfile,
   readOwnPosts,
   getSelectorHealthReport,
@@ -22,15 +23,26 @@ import linkedinDomSource from '../../src/content/shared/linkedin-dom.ts?raw';
 
 // feed.html and post-detail.html are anonymised captures of two real, signed-in
 // LinkedIn pages (2026-09-03) - see extension/tests/content/fixtures/linkedin/README.md
-// for what they are, what was stripped, and how to regenerate them. Loaded with
-// Vite's `?raw` import (not `node:fs`) because the extension's tsconfig has no
+// for what they are, what was stripped, and how to regenerate them. own-profile.html
+// and own-activity.html (2026-09-07, #389/#391) are the same kind of capture for the
+// signed-in member's own `/in/<slug>` page and its `recent-activity` sibling. Loaded
+// with Vite's `?raw` import (not `node:fs`) because the extension's tsconfig has no
 // Node type defs - it is a browser sandbox, and `pnpm -F @pitchbox/extension check`
 // type-checks this test file under that same tsconfig.
 import FEED_HTML from './fixtures/linkedin/feed.html?raw';
 import POST_DETAIL_HTML from './fixtures/linkedin/post-detail.html?raw';
+import OWN_PROFILE_HTML from './fixtures/linkedin/own-profile.html?raw';
+import OWN_ACTIVITY_HTML from './fixtures/linkedin/own-activity.html?raw';
 
 function render(html: string): void {
   document.body.innerHTML = html;
+}
+
+// Relative pushState resolves against the current (default jsdom) origin, so this
+// works regardless of what that origin actually is and never trips jsdom's
+// cross-origin pushState guard - same helper post-comment.test.ts already uses.
+function setUrl(pathAndSearch: string): void {
+  window.history.pushState({}, '', pathAndSearch);
 }
 
 beforeEach(() => {
@@ -76,16 +88,110 @@ describe('feed.html (SDUI frontend, real capture)', () => {
     }
   });
 
-  it('readPostText reads at least one commentary block for a post that has one', () => {
+  it('readPostText reads every card, falling back when a card has no commentary anchor', () => {
+    // Measured on the capture (#392, live-page report plus this fixture):
+    // three cards, a `feed-header-*` anchor on all three, but a
+    // `commentary-*` anchor on only the first and third. The second has
+    // visible body text and no commentary anchor at all, which is what
+    // silently produced a null body (and `selector_health_degraded` in the
+    // comment-assist panel) before the fallback below existed.
     render(FEED_HTML);
     const posts = findFeedPosts(document);
-    const texts = posts.map((post) => readPostText(post, document));
-    expect(texts.some((t) => typeof t === 'string' && t.length > 0)).toBe(true);
+    expect(posts).toHaveLength(3);
+    for (const post of posts) expect(readPostText(post, document)).toBeTruthy();
+  });
+
+  it("prefers the longest qualifying text over the first, so a commentary-less card does not return its author's headline", () => {
+    // Measured live (#392): the middle card's `feed-header-*` element wraps
+    // only the author's name - the headline/bio text ("Publisher and Editor
+    // in Chief - Reaching 1.5 Mio Followers", 60 chars) is a *sibling*, not
+    // inside it, so there is no LinkedIn-authored container to exclude it
+    // by, and it precedes the real ~1238-character post body in document
+    // order. "First qualifying text" picked the headline; "longest" does
+    // not. own-profile.html's anonymiser preserves this: real prose over 24
+    // chars is replaced by filler capped at its own original length, so the
+    // real post's filler is far longer than the headline's here too.
+    render(FEED_HTML);
+    const [, middle] = findFeedPosts(document);
+    const text = readPostText(middle, document);
+    expect(text?.length).toBeGreaterThan(500);
+  });
+
+  it('the commentary anchor still wins over the fallback when it is present (no regression)', () => {
+    render(FEED_HTML);
+    const [first, , third] = findFeedPosts(document);
+    for (const post of [first, third]) {
+      const direct = [...post.querySelectorAll('[data-sdui-anchor-id^="commentary-"]')]
+        .map((el) => el.textContent?.trim() ?? '')
+        .filter((s) => s.length > 0)
+        .join(' ');
+      expect(direct.length).toBeGreaterThan(0);
+      expect(readPostText(post, document)).toBe(direct);
+    }
+  });
+
+  it('records the commentary-anchor miss separately from postText, so a feed with none left is visible', () => {
+    render(FEED_HTML);
+    for (const post of findFeedPosts(document)) readPostText(post, document);
+    const report = getSelectorHealthReport();
+    const commentaryAnchor = report.find(
+      (e) => e.selector === 'postTextCommentaryAnchor' && e.pageKind === 'feed-sdui',
+    );
+    const postText = report.find((e) => e.selector === 'postText' && e.pageKind === 'feed-sdui');
+    // 2 of the 3 cards carry the anchor, 1 does not - that gap is the signal
+    // worth its own selector id; postText itself still comes back healthy
+    // because the fallback covers the one that misses.
+    expect(commentaryAnchor).toMatchObject({ matches: 2, misses: 1 });
+    expect(postText).toMatchObject({ matches: 3, misses: 0 });
   });
 
   it('findCommentComposer finds nothing on the feed (no composer is open there)', () => {
     render(FEED_HTML);
     expect(findCommentComposer(document)).toBeNull();
+  });
+});
+
+describe('readPostText: feed-sdui fallback excludes a rendered comment', () => {
+  // Synthetic (module convention, same disclaimer as findCommentSubmitButton/
+  // readOwnProfileHandle): feed.html's own rendered comment
+  // (`comment-urn:li:comment:(...)::0`, #392) is real but only 11 characters,
+  // short enough to miss `longestSubstantialText`'s 30-character floor with
+  // or without the exclusion, so it cannot prove the exclusion by itself.
+  // This is the same shape with a comment body long enough to actually
+  // exercise it.
+  it("does not return a rendered comment's text when there is no commentary anchor", () => {
+    render(`
+      <div role="listitem">
+        <div data-sdui-anchor-id="feed-header-x">Giulia Bianchi</div>
+        <div data-sdui-anchor-id="comment-urn:li:comment:(ugcPost:1,2)::0">
+          <span>A rendered comment long enough on its own to pass the 30 character floor.</span>
+        </div>
+        <span>The post body text that should win once the comment above is excluded from the scan.</span>
+      </div>
+    `);
+    const [post] = findFeedPosts(document);
+    const text = readPostText(post, document);
+    expect(text).toMatch(/post body text that should win/);
+    expect(text).not.toMatch(/rendered comment/);
+  });
+
+  it('still excludes a rendered comment even when the comment is longer than the real body', () => {
+    // Proves exclusion, not just length ordering: with the comment left in
+    // the candidate pool, "longest wins" would pick it over the shorter but
+    // real body below.
+    render(`
+      <div role="listitem">
+        <div data-sdui-anchor-id="feed-header-x">Giulia Bianchi</div>
+        <div data-sdui-anchor-id="comment-urn:li:comment:(ugcPost:1,2)::0">
+          <span>A rendered comment that is deliberately much longer than the real post body below it, so a naive longest-wins scan with no exclusion would pick this instead of the actual post.</span>
+        </div>
+        <span>A short but real post body, over the 30 character floor.</span>
+      </div>
+    `);
+    const [post] = findFeedPosts(document);
+    const text = readPostText(post, document);
+    expect(text).toMatch(/short but real post body/);
+    expect(text).not.toMatch(/rendered comment/);
   });
 });
 
@@ -122,8 +228,17 @@ describe('post-detail.html (classic Ember frontend, real capture)', () => {
   });
 
   it('readPostText finds the post body and excludes comment text', () => {
+    // The classic frontend's own body container is a class
+    // (`.update-components-text`) - and the fixture's anonymiser drops
+    // every class name (README: "What was stripped"), so this fixture can
+    // never exercise the container-preference branch of readPostText, only
+    // the `longestSubstantialText` fallback below it. The container branch
+    // itself is proven by the synthetic "prefers LinkedIn's own body
+    // container" case further down, the same way `findCommentSubmitButton`
+    // and `readOwnProfileHandle` are - see the module's own header comment.
     render(POST_DETAIL_HTML);
     const [post] = findFeedPosts(document);
+    expect(post.querySelector('.update-components-text')).toBeNull();
     const text = readPostText(post, document);
     expect(text).toBeTruthy();
     expect(text).toMatch(/ingest path/);
@@ -352,115 +467,193 @@ describe('compliance boundary: this module reads the DOM and nothing else', () =
   });
 });
 
-describe('readOwnProfile / readOwnPosts: persona capture (LI-21)', () => {
-  // No real profile-page fixture exists yet (see the module's own doc
-  // comment on readOwnProfile) - this is a hand-built DOM that mirrors the
-  // structure the reader targets: a `<main><h1>` top card with a headline
-  // line, an `id="about"` section, and an `id="experience"` section of
-  // `<li>` entries read positionally.
-  function renderProfile(opts: { canonicalHref?: string; ogUrl?: string; body: string }): void {
-    document.head.innerHTML = [
-      opts.canonicalHref ? `<link rel="canonical" href="${opts.canonicalHref}">` : '',
-      opts.ogUrl ? `<meta property="og:url" content="${opts.ogUrl}">` : '',
-    ].join('');
-    document.body.innerHTML = opts.body;
-  }
+describe('readOwnProfile: own-profile.html (SDUI profile frontend, real capture)', () => {
+  const EXPECTED_HEADLINE =
+    'We shipped the new ingest path last week and the p99 dropped by half. The interesting part was not the';
 
-  const PROFILE_BODY = `
-    <main>
-      <section>
-        <h1>Ada Lovelace</h1>
-        <div>Mathematician and writer</div>
-      </section>
-    </main>
-    <section id="about">
-      <h2>Informazioni</h2>
-      <div>I write about the analytical engine and what a general-purpose computer could someday do.</div>
-    </section>
-    <section id="experience">
-      <h2>Esperienza</h2>
-      <ul>
-        <li>
-          <div>Founder</div>
-          <div>Analytical Engine Co.</div>
-          <div>2020 - Present</div>
-          <div>Wrote the first algorithm intended for a machine, published as notes on Menabrea's memoir.</div>
-        </li>
-      </ul>
-    </section>
-  `;
-
-  it('reads name, handle (from the canonical link, not nav), headline, about and experience', () => {
-    renderProfile({
-      canonicalHref: 'https://www.linkedin.com/in/ada-lovelace/',
-      body: PROFILE_BODY,
-    });
+  it('reads name, handle (from the URL path), headline and about', () => {
+    setUrl('/in/example-person/');
+    render(OWN_PROFILE_HTML);
     const profile = readOwnProfile(document);
     expect(profile).not.toBeNull();
-    expect(profile?.handle).toBe('ada-lovelace');
-    expect(profile?.displayName).toBe('Ada Lovelace');
-    expect(profile?.headline).toBe('Mathematician and writer');
-    expect(profile?.about).toMatch(/analytical engine/);
-    expect(profile?.experiences).toEqual([
-      {
-        title: 'Founder',
-        company: 'Analytical Engine Co.',
-        period: '2020 - Present',
-        summary:
-          "Wrote the first algorithm intended for a machine, published as notes on Menabrea's memoir.",
-      },
-    ]);
+    expect(profile?.handle).toBe('example-person');
+    expect(profile?.displayName).toBe('Giulia Bianchi');
+    expect(profile?.headline).toBe(EXPECTED_HEADLINE);
+    expect(profile?.about).toBeTruthy();
+    // The About card's own <h2> heading ("Informazioni" - the capture is an
+    // Italian UI) is a sibling of the text box this reads, never inside it -
+    // if the selector regressed to reading the whole card instead of just
+    // the text box, the result would start with the heading.
+    expect(profile?.about?.startsWith('Informazioni')).toBe(false);
   });
 
-  it('never trusts the global nav for the page handle, only the canonical URL', () => {
-    // Nav names the signed-in member; the page itself is someone else's -
-    // this is exactly the "visited a competitor's profile" case the server
-    // guard (POST /api/extension/operator-profile) has to refuse.
-    renderProfile({
-      canonicalHref: 'https://www.linkedin.com/in/someone-else/',
-      body: `<nav><a href="/in/the-operator/">Visualizza profilo</a></nav>${PROFILE_BODY}`,
-    });
+  it("the handle comes from the page's own URL path, not from any link on the page", () => {
+    // Every href in the anonymised capture is rewritten to
+    // /in/example-person/ by the fixture scrubber (README) - if the handle
+    // were read from a link instead of location.pathname, this would always
+    // read back "example-person" no matter which /in/<slug> page is
+    // actually open, which is exactly the case the server's persona guard
+    // exists to catch (POST /api/extension/operator-profile,
+    // refused: 'not_your_profile').
+    setUrl('/in/a-different-slug/');
+    render(OWN_PROFILE_HTML);
+    expect(readOwnProfile(document)?.handle).toBe('a-different-slug');
+    expect(readOwnProfilePageHandle(document)).toBe('a-different-slug');
+  });
+
+  it('never trusts the global nav for the page handle either', () => {
+    // Nav names the signed-in member; the page itself may be someone else's.
+    setUrl('/in/someone-else/');
+    render(`<nav><a href="/in/the-operator/">Visualizza profilo</a></nav>${OWN_PROFILE_HTML}`);
     expect(readOwnProfile(document)?.handle).toBe('someone-else');
     expect(readOwnProfileHandle(document)).toBe('the-operator');
   });
 
-  it('falls back to og:url when there is no canonical link', () => {
-    renderProfile({ ogUrl: 'https://www.linkedin.com/in/og-fallback/', body: PROFILE_BODY });
-    expect(readOwnProfile(document)?.handle).toBe('og-fallback');
-  });
-
-  it('returns null when the page has no top card at all (not a profile page)', () => {
-    renderProfile({ body: '<main><div>nothing here</div></main>' });
-    expect(readOwnProfile(document)).toBeNull();
-  });
-
-  it('returns about/experience as null/empty when those sections are absent, without failing the whole read', () => {
-    renderProfile({
-      canonicalHref: 'https://www.linkedin.com/in/minimal/',
-      body: '<main><section><h1>Minimal Person</h1><div>Just a headline</div></section></main>',
-    });
+  it('has no experience section - reads everything else and returns experiences as [], not a failure', () => {
+    // Measured live and against a second, more thoroughly scrolled
+    // recapture (2026-09-07): this account's profile renders the "no
+    // experience" layout (its own sibling card is literally named
+    // profileCardsBelowActivityPart1WithoutExp<slug> - see readOwnProfile's
+    // own doc comment), not a selector miss. `[]` here is a tested,
+    // documented outcome, not an accident.
+    setUrl('/in/example-person/');
+    render(OWN_PROFILE_HTML);
     const profile = readOwnProfile(document);
-    expect(profile?.displayName).toBe('Minimal Person');
-    expect(profile?.about).toBeNull();
+    expect(profile?.displayName).toBe('Giulia Bianchi');
+    expect(profile?.about).toBeTruthy();
     expect(profile?.experiences).toEqual([]);
   });
 
-  it('records selector-health misses for the about/experience sections when absent', () => {
-    renderProfile({
-      canonicalHref: 'https://www.linkedin.com/in/minimal/',
-      body: '<main><section><h1>Minimal Person</h1></section></main>',
-    });
+  it('records a selector-health miss for experience when it comes back with no rows, even though the card exists', () => {
+    // Keyed on rows read, not on the card existing, precisely so a
+    // populated profile whose row selector breaks would show up here too
+    // instead of looking identical to this account's legitimate empty state.
+    setUrl('/in/example-person/');
+    render(OWN_PROFILE_HTML);
     readOwnProfile(document);
     const report = getSelectorHealthReport();
-    const about = report.find((e) => e.selector === 'ownProfileAbout' && e.pageKind === 'profile');
     const experience = report.find(
       (e) => e.selector === 'ownProfileExperience' && e.pageKind === 'profile',
     );
-    expect(about?.lastResult).toBe('miss');
     expect(experience?.lastResult).toBe('miss');
   });
 
-  it('readOwnPosts reads the recent-activity list via the same classic-frontend post accessors', () => {
+  it('reads title, company, period and summary from experience rows when a profile has them (synthetic - this account has none, see above)', () => {
+    setUrl('/in/example-person/');
+    render(`
+      <div id="com.linkedin.sdui.profile.card.refEXAMPLETopcard">
+        <h2>Ada Lovelace</h2>
+        <div>Mathematician and writer</div>
+      </div>
+      <div id="profileCardsExperienceOnlyexample-person">
+        <ul>
+          <li>
+            <div>Founder</div>
+            <div>Analytical Engine Co.</div>
+            <div>2020 - Present</div>
+            <div>Wrote the first algorithm intended for a machine.</div>
+          </li>
+          <li>
+            <div>Research Fellow</div>
+            <div>Royal Society</div>
+            <div>2018 - 2020</div>
+          </li>
+        </ul>
+      </div>
+    `);
+    const profile = readOwnProfile(document);
+    expect(profile?.experiences).toHaveLength(2);
+    expect(profile?.experiences[0]).toMatchObject({
+      title: 'Founder',
+      company: 'Analytical Engine Co.',
+    });
+    expect(profile?.experiences[1]).toMatchObject({
+      title: 'Research Fellow',
+      company: 'Royal Society',
+    });
+  });
+
+  it('returns null when the page has no topcard at all (not a profile page)', () => {
+    setUrl('/in/example-person/');
+    render('<div>nothing here</div>');
+    expect(readOwnProfile(document)).toBeNull();
+  });
+});
+
+describe('selector health: red on a broken profile selector, green on the intact capture', () => {
+  it('goes red when the topcard id LinkedIn would normally render is missing', () => {
+    const broken = OWN_PROFILE_HTML.replace(
+      'com.linkedin.sdui.profile.card.refEXAMPLEMEMBERTopcard',
+      'com.linkedin.sdui.profile.card.refEXAMPLEMEMBERTopcardBroken',
+    );
+    expect(broken).not.toBe(OWN_PROFILE_HTML);
+    setUrl('/in/example-person/');
+    render(broken);
+    expect(readOwnProfile(document)).toBeNull();
+    const name = getSelectorHealthReport().find(
+      (e) => e.selector === 'ownProfileName' && e.pageKind === 'profile',
+    );
+    expect(name?.lastResult).toBe('miss');
+  });
+
+  it('is green again for name against the unmodified capture', () => {
+    setUrl('/in/example-person/');
+    render(OWN_PROFILE_HTML);
+    expect(readOwnProfile(document)).not.toBeNull();
+    const name = getSelectorHealthReport().find(
+      (e) => e.selector === 'ownProfileName' && e.pageKind === 'profile',
+    );
+    expect(name?.lastResult).toBe('match');
+  });
+
+  it("goes red when the About card's text-box instrumentation is missing", () => {
+    const broken = OWN_PROFILE_HTML.replace(/data-testid="expandable-text-box"/, '');
+    expect(broken).not.toBe(OWN_PROFILE_HTML);
+    setUrl('/in/example-person/');
+    render(broken);
+    expect(readOwnProfile(document)?.about).toBeNull();
+    const about = getSelectorHealthReport().find(
+      (e) => e.selector === 'ownProfileAbout' && e.pageKind === 'profile',
+    );
+    expect(about?.lastResult).toBe('miss');
+  });
+
+  it('is green again for about against the unmodified capture', () => {
+    setUrl('/in/example-person/');
+    render(OWN_PROFILE_HTML);
+    expect(readOwnProfile(document)?.about).toBeTruthy();
+    const about = getSelectorHealthReport().find(
+      (e) => e.selector === 'ownProfileAbout' && e.pageKind === 'profile',
+    );
+    expect(about?.lastResult).toBe('match');
+  });
+});
+
+describe('readOwnPosts: own-activity.html (classic frontend, real capture)', () => {
+  it('reads every activity card, each with a distinct urn and non-empty text', () => {
+    setUrl('/in/example-person/recent-activity/all/');
+    render(OWN_ACTIVITY_HTML);
+    const posts = readOwnPosts(document);
+    expect(posts).toHaveLength(6);
+    // The property that actually matters for dedupe
+    // (operator_voice_samples is keyed on (organization, external_id)):
+    // six distinct urns, not six copies of the same one.
+    expect(new Set(posts.map((p) => p.externalId)).size).toBe(6);
+    for (const post of posts) {
+      expect(post.externalId).toMatch(/^urn:li:activity:\d+$/);
+      expect(post.text.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("reads each post's own relative-time text, never a machine timestamp", () => {
+    setUrl('/in/example-person/recent-activity/all/');
+    render(OWN_ACTIVITY_HTML);
+    for (const post of readOwnPosts(document)) expect(post.relativeTime).toMatch(/\d/);
+  });
+});
+
+describe('readOwnPosts: synthetic markup', () => {
+  it('reads the recent-activity list via the same classic-frontend post accessors', () => {
     // Same shape post-detail.html's own classic-frontend posts use
     // (role="article" + data-urn), reused here rather than invented, per
     // "Two frontends, one identifier".
@@ -474,12 +667,20 @@ describe('readOwnProfile / readOwnPosts: persona capture (LI-21)', () => {
     `);
     const posts = readOwnPosts(document);
     expect(posts).toEqual([
-      { externalId: 'urn:li:activity:1111', text: 'First post about the analytical engine.' },
-      { externalId: 'urn:li:activity:2222', text: 'Second post about punched cards.' },
+      {
+        externalId: 'urn:li:activity:1111',
+        text: 'First post about the analytical engine.',
+        relativeTime: null,
+      },
+      {
+        externalId: 'urn:li:activity:2222',
+        text: 'Second post about punched cards.',
+        relativeTime: null,
+      },
     ]);
   });
 
-  it('readOwnPosts skips a feed-sdui sighting: no stable urn to dedupe a voice sample on', () => {
+  it('skips a feed-sdui sighting: no stable urn to dedupe a voice sample on', () => {
     render(`
       <div role="listitem">
         <div data-sdui-anchor-id="feed-header-1">Ada Lovelace</div>

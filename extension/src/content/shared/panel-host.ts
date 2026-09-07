@@ -120,9 +120,11 @@ const OVERLAY_MARGIN = 12;
 const OVERLAY_WIDTH = 440;
 
 /**
- * Below this much vertical room, stacking the panel under the anchor reads
- * as clipped rather than adjacent - barely more than the frame's own header
- * - so stacking above is worth the flip instead.
+ * The panel's shortest useful size, and the assumed height before it has
+ * ever rendered: at that point `computeOverlayPlacement` has nothing real
+ * to measure yet, and assuming the shortest size means the first paint is
+ * never shifted or flipped on a guess a `ResizeObserver` corrects a frame
+ * later anyway.
  */
 const OVERLAY_MIN_HEIGHT = 160;
 
@@ -142,30 +144,45 @@ type OverlayPlacement = {
 };
 
 /**
- * Where the floating panel goes for a given anchor rect and viewport size.
+ * Where the floating panel goes for a given anchor rect, viewport size and
+ * the panel's own current rendered height.
  *
  * Pure on purpose: jsdom's layout engine returns zeroed-out rects for
- * everything, which makes the three placement rules unprovable through a
- * real mount. Exported so a test can drive the rule directly instead of
+ * everything, which makes the placement rules unprovable through a real
+ * mount. Exported so a test can drive the rule directly instead of
  * asserting on pixels jsdom never computed.
  *
+ * `panelHeight` matters because the panel's height is not fixed: it starts
+ * at a skeleton's height and grows as a suggestion streams in (#387). A
+ * placement computed once from the anchor alone stays valid only for the
+ * height it was computed for - measured on a real page, a panel placed at
+ * `top: anchor.top` for a 116px skeleton grew to 160px as the draft arrived
+ * and ran 66px past the bottom of the viewport, because nothing recomputed
+ * `top` for the new height. This function is deliberately re-run by a
+ * `ResizeObserver` on the host every time that height changes, not just on
+ * anchor move or viewport resize.
+ *
  * The anchor's right side is preferred (D13), so the panel reads as
- * belonging to the thing that was clicked without covering it. When there
- * is not enough width for that, it stacks under the anchor instead, aligned
- * to its left edge and clamped inside the viewport - which is what pulls it
- * left of a naive anchor-aligned position when the anchor itself sits near
- * the right edge. When there is not enough height under it either (a
- * composer near the bottom of the feed), it stacks above instead, anchored
- * to the viewport's bottom edge from the anchor's own top edge, so the flip
- * never needs to know the panel's rendered height ahead of time.
+ * belonging to the thing that was clicked without covering it; there it is
+ * shifted up rather than left to run past the bottom of the viewport, which
+ * is always safe because floating beside the anchor never requires vertical
+ * alignment with it. When there is not enough width for that, it stacks
+ * under the anchor instead, aligned to its left edge and clamped inside the
+ * viewport horizontally. Shifting *that* up to fit would risk pulling it
+ * into the anchor itself, so when the current height does not fit below,
+ * it stacks above instead: anchored to the viewport's bottom edge from the
+ * anchor's own top edge, which needs no shift because the whole rest of the
+ * page above the anchor is normally there to grow into.
  */
 export function computeOverlayPlacement(
   anchor: AnchorRect,
   viewportWidth: number,
   viewportHeight: number,
+  panelHeight: number,
 ): OverlayPlacement {
   const width = Math.min(OVERLAY_WIDTH, viewportWidth - OVERLAY_MARGIN * 2);
   const spaceRight = viewportWidth - anchor.right - OVERLAY_MARGIN;
+  const height = panelHeight > 0 ? panelHeight : OVERLAY_MIN_HEIGHT;
 
   let left: number;
   let top: number | null;
@@ -173,12 +190,12 @@ export function computeOverlayPlacement(
 
   if (spaceRight >= width) {
     left = anchor.right + OVERLAY_MARGIN;
-    top = anchor.top;
+    top = Math.max(Math.min(anchor.top, viewportHeight - OVERLAY_MARGIN - height), OVERLAY_MARGIN);
     bottom = null;
   } else {
     left = anchor.left;
     const spaceBelow = viewportHeight - anchor.bottom - OVERLAY_MARGIN;
-    if (spaceBelow >= OVERLAY_MIN_HEIGHT) {
+    if (spaceBelow >= height) {
       top = anchor.bottom + OVERLAY_MARGIN;
       bottom = null;
     } else {
@@ -194,16 +211,15 @@ export function computeOverlayPlacement(
   const maxLeft = Math.max(viewportWidth - width - OVERLAY_MARGIN, minLeft);
   left = Math.min(Math.max(left, minLeft), maxLeft);
 
-  // How much room the chosen side actually has, capped at the 60vh default so
-  // a wide-open viewport never grows the panel past what the rest of the
-  // frame was designed for, and floored so a corner anchor with almost no
-  // room left still gets a usable panel rather than a sliver.
+  // The hard ceiling `panel.css`'s `max-height` is set to. No floor here on
+  // purpose (there used to be one, at `OVERLAY_MIN_HEIGHT` - it is what
+  // caused the overflow above): `top`/`bottom` above are already chosen so
+  // the *current* height fits, so the ceiling only needs to stop the panel
+  // growing past that same room before the next `ResizeObserver` tick can
+  // react to it.
   const available =
     top !== null ? viewportHeight - top - OVERLAY_MARGIN : anchor.top - OVERLAY_MARGIN * 2;
-  const maxHeight = Math.max(
-    Math.min(viewportHeight * OVERLAY_MAX_HEIGHT_RATIO, available),
-    OVERLAY_MIN_HEIGHT,
-  );
+  const maxHeight = Math.min(viewportHeight * OVERLAY_MAX_HEIGHT_RATIO, available);
 
   return { left, top, bottom, maxHeight };
 }
@@ -214,6 +230,7 @@ function positionOverlay(host: HTMLElement, anchor: Element): void {
     anchor.getBoundingClientRect(),
     window.innerWidth,
     window.innerHeight,
+    host.getBoundingClientRect().height,
   );
   host.style.left = `${placement.left}px`;
   if (placement.top !== null) {
@@ -267,8 +284,6 @@ export function mountPanel<Props extends Record<string, unknown>>(
   // is never left un-positioned by a stylesheet that failed to adopt.
   host.style.position = 'fixed';
   document.body.append(host);
-  const reposition = () => positionOverlay(host, anchor);
-  reposition();
 
   // Reactive, not the caller's plain object: `mount()` does not make props
   // reactive, so assigning onto a plain object re-renders nothing. The panel's
@@ -277,16 +292,32 @@ export function mountPanel<Props extends Record<string, unknown>>(
   const live = reactiveProps({ ...props });
   const view = mount(component, { target: root, props: live });
 
+  // Mounted before the first `reposition()` call, not after: placement reads
+  // the panel's own rendered height (`computeOverlayPlacement`'s `panelHeight`),
+  // and a host with no content yet would measure zero.
+  const reposition = () => positionOverlay(host, anchor);
+  reposition();
+
   let alive = true;
   let observer: MutationObserver | null = null;
-  let resize: ResizeObserver | null = null;
+  let anchorResize: ResizeObserver | null = null;
+  let panelResize: ResizeObserver | null = null;
 
-  // The anchor moving is not the only way the panel drifts out of place: its
-  // own box can change size (a composer growing as the human types) without
-  // the page ever scrolling or the window ever resizing.
   if (typeof ResizeObserver !== 'undefined') {
-    resize = new ResizeObserver(reposition);
-    resize.observe(anchor);
+    // The anchor moving is not the only way the panel drifts out of place:
+    // its own box can change size (a composer growing as the human types)
+    // without the page ever scrolling or the window ever resizing.
+    anchorResize = new ResizeObserver(reposition);
+    anchorResize.observe(anchor);
+
+    // Nor is the anchor the only thing that moves: the panel's own height
+    // grows as a suggestion streams in (#387), and a placement computed for
+    // a shorter height does not shrink to fit a taller one on its own -
+    // measured on a real page, a panel placed for a 116px skeleton grew to
+    // 160px and ran 66px past the bottom of the viewport because nothing
+    // ever recomputed `top` for the new height.
+    panelResize = new ResizeObserver(reposition);
+    panelResize.observe(host);
   }
 
   // `scroll` does not bubble, so catching every scroll on the page - the feed
@@ -325,8 +356,10 @@ export function mountPanel<Props extends Record<string, unknown>>(
       alive = false;
       observer?.disconnect();
       observer = null;
-      resize?.disconnect();
-      resize = null;
+      anchorResize?.disconnect();
+      anchorResize = null;
+      panelResize?.disconnect();
+      panelResize = null;
       window.removeEventListener('scroll', reposition, true);
       window.removeEventListener('resize', reposition);
       document.removeEventListener('pointerdown', onPointerDown, true);

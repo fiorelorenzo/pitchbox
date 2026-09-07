@@ -1,24 +1,31 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import linkedinProfileCaptureSource from '../../src/content/linkedin-profile-capture.ts?raw';
+// own-profile.html is the same real, anonymised capture linkedin-dom.test.ts
+// uses (see extension/tests/content/fixtures/linkedin/README.md) - used here
+// once, for an end-to-end proof that a capture off the real page actually
+// reaches the point of posting now (#391: it never did, because the handle
+// guard below could never resolve one).
+import OWN_PROFILE_HTML from './fixtures/linkedin/own-profile.html?raw';
 
 const BACKEND = 'https://backend.example';
 const PAIRING = { backendUrl: BACKEND, token: 't'.repeat(40) };
 
-// No real profile-page fixture exists yet - see linkedin-dom.ts's own doc
-// comment on readOwnProfile. Hand-built to mirror the shape the reader
-// targets: `<main><h1>` top card plus `id="about"`/`id="experience"`
-// sections, matching the fixture already used in linkedin-dom.test.ts.
+// Hand-built to mirror the shape linkedin-dom.ts's readOwnProfile targets on
+// the real page (own-profile.html): a `[id$="Topcard"]` card with an `<h2>`
+// name plus a headline line, and an `[id$="About"]` card whose text lives in
+// `[data-testid="expandable-text-box"]`, next to (not inside) its own
+// localised `<h2>` heading - matching the fixture already used in
+// linkedin-dom.test.ts.
 const PROFILE_HTML = `
-  <main>
-    <section>
-      <h1>Ada Lovelace</h1>
-      <div>Mathematician and writer</div>
-    </section>
-  </main>
-  <section id="about">
-    <div>I write about the analytical engine and what a general-purpose computer could someday do.</div>
-  </section>
+  <div id="com.linkedin.sdui.profile.card.refEXAMPLETopcard">
+    <h2>Ada Lovelace</h2>
+    <div>Mathematician and writer</div>
+  </div>
+  <div id="com.linkedin.sdui.profile.card.refEXAMPLEAbout">
+    <h2>Informazioni</h2>
+    <span data-testid="expandable-text-box">I write about the analytical engine and what a general-purpose computer could someday do.</span>
+  </div>
 `;
 
 function installChromeMock() {
@@ -50,8 +57,12 @@ function loggedEvents(): Array<Record<string, any>> {
   return fn.mock.calls.map((args: any[]) => args[0]?.event);
 }
 
-function setCanonical(href: string): void {
-  document.head.innerHTML = `<link rel="canonical" href="${href}">`;
+// Relative pushState resolves against the current (default jsdom) origin, so
+// this works regardless of what that origin actually is and never trips
+// jsdom's cross-origin pushState guard - same helper linkedin-dom.test.ts and
+// post-comment.test.ts already use.
+function setUrl(pathAndSearch: string): void {
+  window.history.pushState({}, '', pathAndSearch);
 }
 
 function render(html: string): void {
@@ -90,6 +101,10 @@ beforeEach(() => {
   // firing into its own (stale) module closure. Replacing the element
   // outright detaches it.
   document.documentElement.innerHTML = '<head></head><body></body>';
+  // Neutral by default - a path with no `/in/<slug>` segment, so a test that
+  // forgets to call setUrl() gets "no handle" rather than leaking a prior
+  // test's URL (jsdom's location persists across tests in the same file).
+  setUrl('/feed/');
   installChromeMock();
   seedPairing();
   vi.resetModules();
@@ -102,7 +117,7 @@ afterEach(() => {
 
 describe('scans once per debounce and posts the captured profile', () => {
   it('posts handle, displayName, headline and about to /api/extension/operator-profile', async () => {
-    setCanonical('https://www.linkedin.com/in/ada-lovelace/');
+    setUrl('/in/ada-lovelace/');
     render(PROFILE_HTML);
     const { calls } = installFetchMock(() => ({
       status: 200,
@@ -124,8 +139,31 @@ describe('scans once per debounce and posts the captured profile', () => {
     });
   });
 
+  it('reaches the point of posting against the real own-profile.html capture (#391 regression)', async () => {
+    // #391: the handle came only from a canonical link/og:url meta that the
+    // real profile page renders neither of, so `collect()` always returned
+    // null and nothing was ever sent. This is the same fixture
+    // linkedin-dom.test.ts's readOwnProfile suite exercises, run through
+    // the whole content script end to end.
+    setUrl('/in/example-person/');
+    render(OWN_PROFILE_HTML);
+    const { calls } = installFetchMock(() => ({
+      status: 200,
+      body: { ok: true, voiceSamplesRecorded: 0 },
+    }));
+
+    vi.useFakeTimers();
+    await importModule();
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ handle: 'example-person', displayName: 'Giulia Bianchi' });
+  });
+
   it('never re-posts identical content within the same page view, even after further DOM mutation triggers a rescan', async () => {
-    setCanonical('https://www.linkedin.com/in/ada-lovelace/');
+    setUrl('/in/ada-lovelace/');
     render(PROFILE_HTML);
     const { calls } = installFetchMock(() => ({
       status: 200,
@@ -149,7 +187,7 @@ describe('scans once per debounce and posts the captured profile', () => {
   });
 
   it('sends a fresh request once the rendered content actually changes', async () => {
-    setCanonical('https://www.linkedin.com/in/ada-lovelace/');
+    setUrl('/in/ada-lovelace/');
     render(PROFILE_HTML);
     const { calls } = installFetchMock(() => ({
       status: 200,
@@ -172,6 +210,7 @@ describe('scans once per debounce and posts the captured profile', () => {
   });
 
   it('never sends anything when the page carries no handle at all', async () => {
+    setUrl('/feed/');
     render('<main><div>not a profile page</div></main>');
     const { calls } = installFetchMock(() => ({
       status: 200,
@@ -187,8 +226,30 @@ describe('scans once per debounce and posts the captured profile', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('never sends anything when the topcard selectors all miss, even though the URL carries a handle', async () => {
+    // A handle with nothing else attached is what a topcard selector miss
+    // looks like from collect()'s side (readOwnProfile returns null the
+    // moment its own name selector misses) - posting it would carry nothing
+    // the server could act on, and would read as "the persona is now
+    // nothing" next to an earlier, real capture in the activity log.
+    setUrl('/in/ada-lovelace/');
+    render('<div>LinkedIn is mid-render, nothing recognisable yet</div>');
+    const { calls } = installFetchMock(() => ({
+      status: 200,
+      body: { ok: true, voiceSamplesRecorded: 0 },
+    }));
+
+    vi.useFakeTimers();
+    await importModule();
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await flushMicrotasks();
+
+    expect(calls).toHaveLength(0);
+  });
+
   it('logs activity.linkedin-collector.voice-samples-captured with the server-reported count', async () => {
-    setCanonical('https://www.linkedin.com/in/ada-lovelace/');
+    setUrl('/in/ada-lovelace/');
     render(
       PROFILE_HTML +
         `<div role="article" data-urn="urn:li:activity:1111">
@@ -217,7 +278,7 @@ describe('scans once per debounce and posts the captured profile', () => {
 
 describe('server refusal', () => {
   it('logs a refused capture through logFromContent instead of throwing', async () => {
-    setCanonical('https://www.linkedin.com/in/someone-else/');
+    setUrl('/in/someone-else/');
     render(PROFILE_HTML);
     installFetchMock(() => ({ status: 200, body: { ok: false, refused: 'not_your_profile' } }));
 
@@ -241,7 +302,7 @@ describe('server refusal', () => {
 
 describe('a failed request is logged, not thrown', () => {
   it('logs activity.linkedin-collector.profile-failed on a network error', async () => {
-    setCanonical('https://www.linkedin.com/in/ada-lovelace/');
+    setUrl('/in/ada-lovelace/');
     render(PROFILE_HTML);
     vi.stubGlobal(
       'fetch',
