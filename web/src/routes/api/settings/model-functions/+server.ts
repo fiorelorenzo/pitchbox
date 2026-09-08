@@ -2,6 +2,7 @@ import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { getDb } from '$lib/server/db.js';
 import { requireInstanceAdmin } from '$lib/server/auth.js';
+import { recordInstanceAudit } from '@pitchbox/shared/instance-audit';
 import {
   MODEL_FUNCTIONS,
   loadModelFunctionConfig,
@@ -34,6 +35,14 @@ export async function POST(event: RequestEvent) {
   const parsed = Body.safeParse(await event.request.json().catch(() => null));
   if (!parsed.success) throw error(400, parsed.error.issues[0]?.message ?? 'invalid body');
   const { fn, modelId } = parsed.data;
-  await saveModelFunctionModel(getDb(), fn as ModelFunction, modelId.trim() ? modelId : null);
-  return json(await loadModelFunctionConfig(getDb()));
+  const db = getDb();
+  const before = (await loadModelFunctionConfig(db))[fn as ModelFunction];
+  await saveModelFunctionModel(db, fn as ModelFunction, modelId.trim() ? modelId : null);
+  await recordInstanceAudit(db, {
+    key: `model_function:${fn}`,
+    actor: event.locals.user ?? null,
+    before: { modelId: before },
+    after: { modelId: modelId.trim() ? modelId : null },
+  });
+  return json(await loadModelFunctionConfig(db));
 }

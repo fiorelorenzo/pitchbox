@@ -80,23 +80,44 @@ back is no more sensitive than reading a project),
 
 Distinct from the per-org roles above: `users.is_instance_admin` gates
 instance-wide config shared by every tenant (default runner, quota defaults,
-runner config, notification webhook, dead-letter webhook retry). Any user can
-self-create an org via `POST /api/orgs` and become its owner/admin, so the
-per-org `admin`/`owner` roles must never grant access to this config - only
-`requireInstanceAdmin(event)` (`web/src/lib/server/auth.ts`) does, checking
-the signed-in user's `is_instance_admin` column. A no-op when auth is off (no
-`locals.user`), same convention as `requireRole`. The first user (first-login
-bootstrap or `seed:owner`) is always the instance admin. Every write to
+runner config, notification webhook, dead-letter webhook retry, per-function
+model config). Any user can self-create an org via `POST /api/orgs` and
+become its owner/admin, so the per-org `admin`/`owner` roles must never
+grant access to this config - only `requireInstanceAdmin(event)`
+(`web/src/lib/server/auth.ts`) does, checking the signed-in user's
+`is_instance_admin` column. A no-op when auth is off (no `locals.user`),
+same convention as `requireRole`. The first user (first-login bootstrap or
+`seed:owner`) is always the instance admin. Every write to
 `is_instance_admin` - the bootstrap grant and every promotion after it - goes
 through the single `setInstanceAdmin` function (`shared/src/auth.ts`), so
 there is exactly one place to audit for who can end up with the flag (#413).
 
 `settings/default-runner` PUT, `settings/runner-config` PUT, `settings/quota`
-POST, `settings/webhooks` PUT, `webhooks/deliveries/[id]/retry` POST (also
-tenant-guarded: the delivery must belong to the caller's org before the
-instance-admin gate runs), `settings/retention` form action (saving only -
-viewing the page, and the three GET routes above, stay `requireRole(event,
-'admin')`).
+POST, `settings/webhooks` PUT, `settings/model-functions` POST,
+`webhooks/deliveries/[id]/retry` POST (also tenant-guarded: the delivery
+must belong to the caller's org before the instance-admin gate runs),
+`settings/retention` form action (saving only - viewing the page, and the
+GET routes above, stay `requireRole(event, 'admin')`).
+
+### Instance-wide audit trail (#414)
+
+Every write listed above changes config shared by every organization, so it
+cannot land in the org-scoped audit feed below (`draft_events`/`run_events`,
+both reached through a project's `organization_id` - an instance-wide write
+belongs to no project). `instance_audit_log` (`shared/src/db/schema.ts`) is
+its own table for exactly that reason: `key`, `actor`, `before`, `after`,
+`created_at`. `recordInstanceAudit` (`shared/src/instance-audit.ts`) is the
+one function every route above calls after its write succeeds - a route
+that forgets to call it is the only way this trail goes missing, rather than
+each route recording it differently - and it redacts `before`/`after` itself
+(any JSON field whose name looks like a credential, and any `*url` field,
+which a webhook target can carry one inside), so a caller does not have to
+remember to. Wired into default-runner, runner-config, quota, webhooks,
+retention, and model-functions; the account-promotion action #413 is adding
+(`web/src/routes/api/settings/admin/promote/+server.ts`) is expected to call
+it too, right after `setInstanceAdmin`, once that route lands. Rendered at
+`settings/admin/audit` (gated the same way as every other page in the area
+below), most recent first.
 
 ### Instance admin area (#412)
 
@@ -106,14 +127,15 @@ settings route above: it gates on `requireInstanceAdmin(event)` (not
 a direct request the same as a member would. Unlike the rest of `settings/`
 (each route above gates itself in its own loader), this gate lives once in
 `web/src/routes/settings/admin/+layout.server.ts` rather than per page: the
-area is expected to grow a sibling route (#411's per-function model
-configuration) and a shared layout gate protects a new page under it without
-that page needing to repeat the check. `settings/admin` itself is a landing
-page that links out to the instance-wide config that already lived on
-org-shaped pages before this area existed - `runners`, `quota`, `retention`,
-and the outgoing webhook on `/notifications` - rather than moving or
-duplicating them; each of those keeps the write gate described above. With
-auth off, `requireInstanceAdmin` is a no-op (no `locals.user`) the same way
+area grew two sibling routes behind that one gate - `settings/admin/models`
+(#411's per-function model configuration) and `settings/admin/audit` (#414's
+instance-wide audit trail above) - without either needing to repeat the
+check. `settings/admin` itself is a landing page that links out to the
+instance-wide config that already lived on org-shaped pages before this area
+existed - `runners`, `quota`, `retention`, and the outgoing webhook on
+`/notifications` - plus its own `models` and `audit` pages; each of the
+org-shaped ones keeps the write gate described above. With auth off,
+`requireInstanceAdmin` is a no-op (no `locals.user`) the same way
 `requireRole` is, so the lone self-host operator - who already owns every
 organization on the instance - reaches this area too; that is a deliberate
 reading of the no-op convention, not an oversight; it does not change while

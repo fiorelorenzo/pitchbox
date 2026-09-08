@@ -1,12 +1,14 @@
 import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { getDb } from '$lib/server/db.js';
 import {
+  loadRunnerConfig,
   loadRunnerConfigs,
   saveRunnerConfig,
   type RunnerConfig,
 } from '@pitchbox/shared/agents/config';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { z } from 'zod';
+import { recordInstanceAudit } from '@pitchbox/shared/instance-audit';
 import { requireInstanceAdmin, requireRole } from '$lib/server/auth.js';
 
 const ConfigSchema = z.object({
@@ -42,7 +44,14 @@ export async function PUT(event: RequestEvent) {
   if (!parsed.success) throw error(400, 'invalid body');
   if (!isRunnerSlug(parsed.data.slug)) throw error(400, 'unknown runner');
   const db = getDb();
+  const before = await loadRunnerConfig(db, parsed.data.slug);
   await saveRunnerConfig(db, parsed.data.slug, parsed.data.config as RunnerConfig);
+  await recordInstanceAudit(db, {
+    key: `runner_config:${parsed.data.slug}`,
+    actor: event.locals.user ?? null,
+    before,
+    after: parsed.data.config,
+  });
   const configs = await loadRunnerConfigs(db);
   return json({ configs });
 }
