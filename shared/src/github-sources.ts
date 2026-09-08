@@ -287,7 +287,7 @@ export async function addGithubSource(
   db: Db,
   organizationId: number,
   input: string,
-  opts: RefreshOptions & { projectId?: number | null } = {},
+  opts: RefreshOptions = {},
 ): Promise<AddGithubSourceResult> {
   const parsed = parseRepoUrl(input);
   if (!parsed.ok) return { ok: false, code: 'invalid_url', reason: parsed.reason };
@@ -296,7 +296,6 @@ export async function addGithubSource(
     .insert(schema.githubSources)
     .values({
       organizationId,
-      projectId: opts.projectId ?? null,
       owner: parsed.owner,
       repo: parsed.repo,
       url: parsed.url,
