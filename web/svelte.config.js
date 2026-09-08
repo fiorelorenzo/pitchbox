@@ -8,14 +8,12 @@ import adapter from '@sveltejs/adapter-node';
 // a stale ORIGIN as the cause. The two manual cutover steps - flipping
 // Caddy/DNS to app.pitchbox.app and updating the deployed ORIGIN to match -
 // cannot be made atomic, so trustedOrigins covers the gap regardless of
-// which one lands first. Transitional: drop `pitchbox.app` and
-// `www.pitchbox.app` once the apex has served the landing page, not this
-// app, for a full release.
-const TRUSTED_ORIGINS = [
-  'https://app.pitchbox.app',
-  'https://pitchbox.app',
-  'https://www.pitchbox.app',
-];
+// which one lands first.
+//
+// The list itself lives in src/lib/trusted-origins.js because the hook that
+// guards /api/* mutations needs the same one and disagreed with this one
+// until #501.
+import { TRUSTED_ORIGINS } from './src/lib/trusted-origins.js';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
