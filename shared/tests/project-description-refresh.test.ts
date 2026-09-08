@@ -291,6 +291,41 @@ describe('acceptDescriptionProposal', () => {
     expect(project!.description).toBe('Base.'); // never applied
   });
 
+  it('refuses a confirmation whose text is not the live proposal, so a hand edit in between survives', async () => {
+    // The case that matters for "a hand edit is never overwritten without a
+    // confirmation": the operator confirms what their screen showed, and by
+    // then the project has moved on. The other stale test above passes for a
+    // weaker reason - a project with no sources has no proposal at all - so
+    // this one gives the check something live to disagree with.
+    const { orgId, projectId } = await setupOrgAndProject('Base.');
+    const db = getDb();
+    await createProjectSource(db, orgId, projectId, 'website', { url: 'https://example.com' });
+    const shown = await computeDescriptionProposal(db, orgId, projectId);
+    expect(shown).not.toBeNull();
+
+    // The human edits the description in another tab while the proposal is on
+    // screen. Their text is what must survive.
+    const handEdited = 'Base, rewritten by me while the dialog was open.';
+    await db
+      .update(schema.projects)
+      .set({ description: handEdited })
+      .where(eq(schema.projects.id, projectId));
+
+    const result = await acceptDescriptionProposal(
+      db,
+      orgId,
+      projectId,
+      shown!.proposedDescription,
+    );
+    expect(result).toEqual({ ok: false, code: 'stale' });
+
+    const [project] = await db
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.id, projectId));
+    expect(project!.description).toBe(handEdited);
+  });
+
   it('returns not_found for a project in a different organization', async () => {
     const { projectId } = await setupOrgAndProject('Base.');
     const { orgId: otherOrgId } = await setupOrgAndProject('Other.');
