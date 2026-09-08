@@ -1,13 +1,110 @@
 # Cloud runner
 
-Status: IMPLEMENTED. The cloud runner is live end to end: the client adapter ships
-in the private `cloud/adapter`, the runner service in the private `cloud/runner`
-(a standalone repo, deployable as a Docker image with dev + prod overlays and an
-optional Cloudflare Tunnel sidecar), the MCP relay is validated end to end, and
-token + USD usage is metered on `session.done`. The runner owns the LLM
-subscription and picks the model server-side (`RUNNER_MODEL`). This page keeps the
-original design record below; the tags mark how firm each decision was: **[LOCKED]**
-decided, **[PROPOSED]** recommended but open for change, **[OPEN]** needs a decision.
+Status: IMPLEMENTED, and being replaced. What runs today is the ACP runner service
+described from "Summary" down: a private compute service that spawns a coding-agent
+CLI on my personal subscription and tunnels every MCP frame back to the client. It
+works and it does not scale past me, so epic #396 replaces the model path with the
+Vercel AI SDK through the AI Gateway. The section immediately below is the #415
+decision that shapes that build; everything after it is the ACP design record, still
+accurate about what is deployed until #420 switches it off, and rewritten wholesale
+by #421. In the historical part the tags mark how firm each decision was:
+**[LOCKED]** decided, **[PROPOSED]** recommended but open for change, **[OPEN]**
+needs a decision.
+
+## The SDK runner's shape: decided 2026-09-08 (#415)
+
+Three questions decided the whole build. Each answer below was run, not drawn: the
+throwaway script behind them drove `playbooks/hn-commenter.md` to completion through
+the real Gateway on `google/gemini-3.1-flash-lite`, against a real campaign row in a
+real database, and the run inserted a real draft. Seven tool calls, `run_start` then
+four `hn_search` calls then `drafts_create` then `run_finish`, 15.4s wall, 42,767
+input tokens of which 18,065 were cache reads, 576 output tokens. The draft it wrote
+is a comment on a live Ask HN story, scored 4 for fit, and the run row ended
+`success` with `finished_at` set.
+
+### 1. The model loop runs in the client process. There is no runner service.
+
+The SDK runner is an ordinary `AgentRunner` registered in
+`shared/src/agents/registry.ts`, constructed and driven where every other runner is
+driven (`dispatchRun` in `web/src/lib/server/runner.ts`), with the Gateway as its
+only remote.
+
+The alternative was keeping the runner service and speaking today's WebSocket
+protocol (`shared/src/agents/cloud/protocol.ts`, version 2: start, resume, cancel,
+done, the MCP relay frames and a per-session monotonic `seq` for replay). It lost
+because every reason that protocol exists is gone. It exists because the model was
+reachable only through a CLI that needed a filesystem, a permission prompt and my
+personal credential, so the loop had to run somewhere that was not the client, and
+then the data had to be tunnelled back to where it lives. A Gateway call is an HTTPS
+request with an API key: the thing that had to be remote is now the only thing that
+is remote, and the client already holds both halves the relay was built to reunite.
+
+What that buys, concretely: the MCP relay disappears rather than being reimplemented,
+resume-after-disconnect stops being a problem the product has to solve (there is no
+socket to drop between the loop and its data), and one deployment stops needing two
+services with a shared protocol version. What it costs: a run now occupies the web or
+daemon process for its duration, which is exactly what the local ACP path has always
+done, and concurrency is already bounded per organization (`max_concurrent_runs`,
+`shared/src/org-quota.ts`). A run does not survive a container restart, which is also
+true today.
+
+Cancellation and timeout both work in-process, with one finding worth carrying into
+#416: an aborted `streamText` does **not** throw. Measured on the same script with a
+2.5s abort, the stream ended cleanly after `run_start` with `finishReason: 'other'`,
+leaving the run row `running` and `finished_at` null. A runner that treats "the
+stream ended" as success would record a cancelled run as a completed one, so the
+abort signal's state is what decides the outcome, not the absence of a throw. The
+v0.10.14 completion contract (an agent turn that never called the finish tool is a
+failure) is the second net under it, and it caught this case in the probe.
+
+### 2. The Pitchbox MCP server stays, in-process, over an in-memory transport.
+
+`createPitchboxMcpServer` (`cli/src/mcp/server.ts`) is connected to one half of an
+`InMemoryTransport.createLinkedPair()`, the SDK's MCP client to the other, and
+`await mcp.tools()` hands `streamText` the tool set. Measured: 26 tools, byte for
+byte the same list the ACP path sees, because it is the same registration code.
+
+The alternative was generating an SDK tool set from the registered schemas directly,
+skipping MCP. It lost on the invariant it would have put at risk: the org scoping and
+the ownership checks live inside those tool handlers, and the run, campaign and
+project ids are bound by the session rather than chosen by the agent. A second
+surface over the same handlers is a second place for that binding to be wired, and
+the failure mode of getting it wrong is one tenant reading another's rows. The
+subprocess variant (`bin/pitchbox-mcp` over stdio, which is what the local backends
+use) lost for a smaller reason: it pays a node plus tsx boot per run to cross a
+process boundary that no longer exists.
+
+So MCP is kept as the contract and dropped as a boundary. The stdio entrypoint stays
+for the local ACP backends and for anyone driving the tools by hand.
+
+A property that came out of the run and is worth stating: a tool that fails returns
+its error to the model instead of killing the loop. In the first attempt the campaign
+profile was in the old unstructured format, `run_start` came back
+`isError: true, "campaign profile is not in the structured format"`, and the model
+read it, gave up cleanly and explained why. That is the behaviour #417 has to keep.
+
+### 3. The playbooks stay as they are.
+
+`playbooks/hn-commenter.md` ran unchanged, as the system prompt, with the task in the
+user turn. It already tells the agent that all state lives behind the MCP tools and
+that it must not shell out, so the parts of it written for a coding agent with a
+filesystem were already dead weight rather than load-bearing instructions.
+
+The alternative was presenting something that looks like the old environment, a fake
+filesystem or a permission prompt. It lost because nothing asked for it: the ACP
+permission policy in `shared/src/agents/acp/runner.ts` exists to answer prompts a
+coding-agent CLI raises about shell and file access, and a tool-calling model with no
+shell raises none. Inventing the prompts so the runner can answer them is work whose
+only output is that the old code path keeps compiling.
+
+What the SDK runner does present instead is a bounded loop: `stopWhen(stepCountIs(n))`.
+The probe used 12 steps and the playbook finished in 7. A playbook that needs a
+higher ceiling is a per-scenario number, not a reason to change the shape.
+
+Two edits the playbooks do want, and they are edits rather than a rewrite: the
+`mcp__pitchbox__*` naming in the tool lists is an ACP detail the SDK path does not
+use, and the few remaining "do not shell out" lines can say what is true instead
+(there is no shell). Neither blocks #416.
 
 ## Summary
 
