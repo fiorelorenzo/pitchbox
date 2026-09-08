@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { releaseDocumentClaimsForTests } from '../../src/content/shared/claim-document.js';
 import linkedinProfileCaptureSource from '../../src/content/linkedin-profile-capture.ts?raw';
 // own-profile.html is the same real, anonymised capture linkedin-dom.test.ts
 // uses (see extension/tests/content/fixtures/linkedin/README.md) - used here
@@ -94,6 +95,8 @@ async function importModule() {
 }
 
 beforeEach(() => {
+  // #438: the claim guard outlives vi.resetModules() by design.
+  releaseDocumentClaimsForTests();
   // Each test's module registers a `MutationObserver` on `document.body` at
   // import time and never disconnects it (matches every other passive
   // collector in this directory). Clearing `innerHTML` leaves that same

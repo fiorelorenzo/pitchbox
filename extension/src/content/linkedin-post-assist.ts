@@ -2,6 +2,7 @@
 // own note. Without it Svelte's runtime throws on linkedin.com's
 // `trusted-types` allowlist and this script dies before mounting (#379).
 import './shared/trusted-types-shim.js';
+import { claimDocument } from './shared/claim-document.js';
 import { api, type AcceptRefusalReason, type SuggestEvent, type SuggestUsage } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import { mountPanel, panelFor, type PanelHandle } from './shared/panel-host.js';
@@ -491,4 +492,4 @@ function init(): void {
   obs.observe(document.documentElement, { childList: true, subtree: true });
 }
 
-init();
+if (claimDocument('linkedin-post-assist')) init();

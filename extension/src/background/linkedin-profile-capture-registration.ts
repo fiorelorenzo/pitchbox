@@ -29,7 +29,12 @@ export async function registerLinkedInProfileCaptureScript(): Promise<void> {
         {
           id: LINKEDIN_PROFILE_CAPTURE_SCRIPT_ID,
           js: [profileCaptureScriptPath],
-          matches: ['https://www.linkedin.com/in/*'],
+          // Every LinkedIn page, not the URL shapes this script acts on:
+          // LinkedIn's own nav changes route with `history.pushState`, which
+          // injects nothing, so a narrow match leaves the script absent from
+          // a surface the human reached by clicking (2026-09-08, #438). The
+          // script gates itself; the LinkedIn grant is already host-wide.
+          matches: ['https://www.linkedin.com/*'],
           runAt: 'document_idle',
         },
       ]);

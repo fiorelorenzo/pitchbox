@@ -26,13 +26,12 @@ export async function registerLinkedInReplyIngestScript(): Promise<void> {
         {
           id: LINKEDIN_REPLY_INGEST_SCRIPT_ID,
           js: [replyIngestScriptPath],
-          matches: [
-            'https://www.linkedin.com/feed/update/*',
-            // The same post-detail page under its canonical URL (#379).
-            'https://www.linkedin.com/posts/*',
-            'https://www.linkedin.com/notifications*',
-            'https://www.linkedin.com/messaging*',
-          ],
+          // Every LinkedIn page, not the URL shapes this script acts on:
+          // LinkedIn's own nav changes route with `history.pushState`, which
+          // injects nothing, so a narrow match leaves the script absent from
+          // a surface the human reached by clicking (2026-09-08, #438). The
+          // script gates itself; the LinkedIn grant is already host-wide.
+          matches: ['https://www.linkedin.com/*'],
           runAt: 'document_idle',
         },
       ]);

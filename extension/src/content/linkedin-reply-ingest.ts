@@ -1,3 +1,4 @@
+import { claimDocument } from './shared/claim-document.js';
 import {
   getLinkedInAssistStates,
   postLinkedInReplySync,
@@ -206,5 +207,7 @@ function scheduleScan(): void {
   scanTimer = window.setTimeout(() => void scanAndSync(), SCAN_DEBOUNCE_MS);
 }
 
-scheduleScan();
-new MutationObserver(scheduleScan).observe(document.body, { childList: true, subtree: true });
+if (claimDocument('linkedin-reply-ingest')) {
+  scheduleScan();
+  new MutationObserver(scheduleScan).observe(document.body, { childList: true, subtree: true });
+}

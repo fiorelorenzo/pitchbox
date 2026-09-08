@@ -17,23 +17,26 @@ const commentAssistScriptPath = panelScriptOutput(PANEL_CONTENT_SCRIPTS[0]);
 // per script, so a future LinkedIn content script has exactly one place to
 // add its own.
 //
-// Same match set as linkedin-comment.ts's own registration, plus `/feed/*`
-// (2026-09-07): the classic post-detail page's own composer and stable
-// activity URN - see linkedin-comment-assist.ts's own doc comment and
-// linkedin-dom.ts's "Two frontends, one identifier" - and the main feed,
-// where the assistant now wires a composer per card, with no urn to key on
-// there (decision 1/2 of the 2026-09-07 overlay/feed rework).
+// Registered against every LinkedIn page, not the three URL shapes the
+// assistant actually acts on, and that breadth is the fix for a real defect
+// rather than laziness (2026-09-08, #438). A registered content script is
+// injected when a *document loads* at a matching URL. LinkedIn is a
+// single-page app whose own global nav is a `<button>` calling
+// `history.pushState`: measured in a signed-in Chrome, clicking Home from a
+// profile page lands on `/feed/` with no document load, so a script matched
+// on `/feed/*` alone is never injected and the assistant is simply absent
+// from the surface the human uses most. Arriving at the same URL by typing
+// it works, which is exactly why this looked like it worked.
 //
-// `/posts/*` belongs in that set as much as `/feed/update/*` (#379). It is the
-// canonical post URL: LinkedIn's own "Copia link al post" hands it out, a
-// shared link resolves to it, and content search results open it. Measured on
-// a real signed-in page: it serves the classic frontend, carries
-// `[role="article"][data-urn]` and holds the comment composer, so registering
-// only `/feed/update/*` left the assistant absent from the page a human is
-// most likely to be reading.
+// The script itself decides where it acts: `init` scans for post cards and
+// finds none anywhere else, and the post-detail diagnostic is gated on
+// `detectPageKind`. Breadth costs no new permission either - the LinkedIn
+// grant is already host-wide (`*://*.linkedin.com/*`, #317).
+//
 // The literal array is deliberate: tests/compliance/linkedin-boundary.ts
 // rule 2 derives its scan set from the text of this initializer, so hoisting
 // it into a shared constant would silently drop this file out of the check.
+
 const LINKEDIN_COMMENT_ASSIST_SCRIPT_ID = 'pitchbox-linkedin-comment-assist';
 
 export async function registerLinkedInCommentAssistScript(): Promise<void> {
@@ -49,11 +52,7 @@ export async function registerLinkedInCommentAssistScript(): Promise<void> {
         {
           id: LINKEDIN_COMMENT_ASSIST_SCRIPT_ID,
           js: [commentAssistScriptPath],
-          matches: [
-            'https://www.linkedin.com/feed/update/*',
-            'https://www.linkedin.com/posts/*',
-            'https://www.linkedin.com/feed/*',
-          ],
+          matches: ['https://www.linkedin.com/*'],
           runAt: 'document_idle',
         },
       ]);

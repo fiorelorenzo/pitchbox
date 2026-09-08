@@ -144,3 +144,49 @@ describe('LinkedIn content scripts reach both shapes of a post-detail URL (#379)
     }
   });
 });
+
+/**
+ * #438: a registered content script is injected when a document *loads* at a
+ * matching URL. LinkedIn's own global nav is a `<button>` that calls
+ * `history.pushState`, so arriving at `/feed/` by clicking Home loads no
+ * document and injects nothing - measured in a signed-in Chrome, where the
+ * assistant was simply absent from the feed while working on a post URL
+ * opened directly. Covering `/feed/` is therefore not enough on its own:
+ * the script has to be registered for whatever page the human *loaded*,
+ * which is any LinkedIn page at all.
+ */
+describe('a script survives LinkedIn own single-page navigation (#438)', () => {
+  // Pages a human plausibly loads first and then leaves by clicking, each
+  // outside the URL shapes these scripts act on.
+  const ENTRY_URLS = [
+    'https://www.linkedin.com/notifications/?filter=all',
+    'https://www.linkedin.com/in/informatizzato/',
+    'https://www.linkedin.com/messaging/thread/123/',
+    'https://www.linkedin.com/jobs/',
+    'https://www.linkedin.com/mynetwork/',
+  ];
+
+  it('registers the comment assistant on any LinkedIn page, not only the ones it acts on', async () => {
+    const { registerLinkedInCommentAssistScript } =
+      await import('../../src/background/linkedin-comment-assist-registration.js');
+    await registerLinkedInCommentAssistScript();
+    const entry = registered.find((s) => s.id === 'pitchbox-linkedin-comment-assist');
+    for (const url of ENTRY_URLS) expect(covers(entry!.matches, url)).toBe(true);
+  });
+
+  it('does the same for the collector, the capture, the send-detection and the ingest', async () => {
+    const { syncLinkedInContentScripts } = await import('../../src/background.js');
+    await syncLinkedInContentScripts();
+    for (const id of [
+      'pitchbox-linkedin-comment',
+      'pitchbox-linkedin-observe',
+      'pitchbox-linkedin-profile-capture',
+      'pitchbox-linkedin-reply-ingest',
+      'pitchbox-linkedin-post-assist',
+    ]) {
+      const entry = registered.find((s) => s.id === id);
+      expect(entry, id).toBeTruthy();
+      for (const url of ENTRY_URLS) expect(covers(entry!.matches, url), `${id} ${url}`).toBe(true);
+    }
+  });
+});

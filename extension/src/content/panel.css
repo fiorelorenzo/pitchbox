@@ -57,7 +57,10 @@
    * here too so the host is never unpositioned if that runs late. */
   top: 0;
   left: 0;
-  width: min(440px, calc(100vw - 24px));
+  /* 520px (D16): the narrowest width where the draft's 16px Inter lands
+   * at ~66 characters per line. Mirrored by `OVERLAY_WIDTH` in
+   * panel-host.ts, which needs it before layout runs. */
+  width: min(520px, calc(100vw - 24px));
   max-height: 60vh;
   /* LinkedIn's own sticky header sits around z-index 500, and its own
    * modals and toasts go higher still. Rather than chase a number that can
@@ -246,11 +249,18 @@
 .assist {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  /* 12px between sections (D16). The old 8px is what made a two-section
+   * card read as one crowded one. */
+  gap: 0.75rem;
 }
 
+/* The panel's secondary voice: the product's own hints, and the model's
+ * reasoning while the stream is open (D17). 13.5px at 1.6 rather than 13px
+ * at the inherited leading - it is read, not glanced at, and it is read in
+ * Italian, which runs ~20% longer than the English it was sized against. */
 .assist-hint {
-  font-size: 0.8125rem;
+  font-size: 0.84375rem;
+  line-height: 1.6;
   color: var(--muted-foreground);
 }
 
@@ -262,9 +272,12 @@
   color: var(--muted-foreground);
 }
 
+/* A draft that is still streaming: same size and leading as the editable
+ * box below it, so the text does not resize under the reader the moment the
+ * stream closes (D16). */
 .assist-preview {
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: 1rem;
+  line-height: 1.6;
   color: var(--foreground);
   white-space: pre-wrap;
 }
@@ -317,15 +330,18 @@
 
 .assist-textarea {
   width: 100%;
-  min-height: 4.5rem;
-  padding: 0.5rem;
+  /* 9rem, not 4.5rem (D16): a comment is 60-150 words, and the old box
+   * showed about three lines of one, so the thing the human came for
+   * arrived pre-scrolled. */
+  min-height: 9rem;
+  padding: 0.625rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--background);
   color: var(--foreground);
   font-family: inherit;
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: 1rem;
+  line-height: 1.6;
   resize: vertical;
 }
 
@@ -346,13 +362,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 2rem;
-  padding: 0 0.75rem;
+  /* 36px, up from 32px, with 14px label: the row holds the one action the
+   * whole panel exists for, and it was the smallest thing on screen. */
+  height: 2.25rem;
+  padding: 0 0.875rem;
   border: 0;
   border-radius: var(--radius-sm);
   background: var(--primary);
   color: var(--primary-foreground);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
 }
@@ -373,8 +391,80 @@
 }
 
 .assist-refusal {
-  font-size: 0.8125rem;
+  font-size: 0.84375rem;
+  line-height: 1.6;
   color: var(--destructive);
+}
+
+/* A state's own headline, in the product's voice: "No suggestion for this
+ * post", "Inserted". One step above the hint under it, and the reason
+ * `.assist-status` is no longer carrying copy it was never sized for
+ * (D18). */
+.assist-title {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--foreground);
+}
+
+/* The reasoning, once a draft exists (D17): available, quiet, and out of
+ * the way. A `<button>` rather than `<details>`/`<summary>`, because the
+ * panel needs its open state to survive a Svelte re-render mid-stream and
+ * `<details>` keeps that in the DOM node rather than in the component. */
+.assist-why {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: 0.84375rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.assist-why:hover {
+  color: var(--foreground);
+}
+
+.assist-why:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* The caret. A rotated square bracket rather than an icon file: the panel
+ * ships no SVG assets, and a text glyph would inherit LinkedIn's own font
+ * metrics through the host. */
+.assist-why-caret {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 1.5px solid currentcolor;
+  border-bottom: 1.5px solid currentcolor;
+  transform: rotate(-45deg);
+}
+
+.assist-why[aria-expanded='true'] .assist-why-caret {
+  transform: rotate(45deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .assist-why-caret {
+    transition: transform 150ms ease-out;
+  }
+}
+
+/* The expanded reasoning. Indented to the caret's own column so it reads as
+ * belonging to the line that opened it. */
+.assist-why-body {
+  margin-left: 0.875rem;
+  font-size: 0.84375rem;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+  white-space: pre-wrap;
 }
 
 @media (prefers-reduced-motion: no-preference) {
