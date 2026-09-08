@@ -5,6 +5,8 @@ import { getDb, schema } from '$lib/server/db.js';
 import { getProjectById } from '@pitchbox/shared/projects';
 import { requireOrgId } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
+import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
+import { allowedRunnerSlugs } from '@pitchbox/shared/edition';
 import {
   queryProjectRunsPage,
   parseProjectRunsCursor,
@@ -84,6 +86,12 @@ export const load: PageServerLoad = async (event) => {
             : (latestInsight.generatedAt as unknown as string),
       }
     : null;
+  // The runner picker offers only what this deployment's edition can
+  // dispatch (#410); the project's own snapshot is never filtered - an
+  // existing project keeps loading and showing its current runner even when
+  // that runner predates the guard or a since-changed edition.
+  const allowed = allowedRunnerSlugs();
+  const runners = AGENT_RUNNER_META.filter((m) => allowed.includes(m.slug));
   return {
     project,
     accounts,
@@ -94,5 +102,6 @@ export const load: PageServerLoad = async (event) => {
     recommendations,
     templates,
     latestInsight: latestInsightSerialized,
+    runners,
   };
 };

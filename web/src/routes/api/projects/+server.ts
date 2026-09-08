@@ -5,6 +5,7 @@ import { getDb, schema } from '$lib/server/db.js';
 import { resolveOrgId, requireOrgId, requireRole } from '$lib/server/auth.js';
 import { listProjects, createProjectTx, ProjectSlugConflictError } from '@pitchbox/shared/projects';
 import { resolveDefaultRunnerSlug } from '@pitchbox/shared/agents/config';
+import { isRunnerAllowed } from '@pitchbox/shared/edition';
 
 const slugRegex = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
@@ -51,6 +52,20 @@ export async function POST(event) {
   const slug = body.slug ?? slugify(body.name);
   if (!slugRegex.test(slug)) {
     return json({ error: 'invalid_slug', slug }, { status: 400 });
+  }
+
+  // An explicit runner in the request bypasses `resolveDefaultRunnerSlug`
+  // (the resolver every other caller goes through, which is edition-aware
+  // already) - the create form never sends this itself, but a direct API
+  // call still can, and that call is a new write like any other (#410).
+  if (body.defaultAgentRunner !== undefined && !isRunnerAllowed(body.defaultAgentRunner)) {
+    return json(
+      {
+        error: 'runner_not_allowed',
+        message: `Agent runner "${body.defaultAgentRunner}" is not available in this deployment's edition.`,
+      },
+      { status: 400 },
+    );
   }
 
   let accountArg: { handle: string; role: 'personal' | 'brand'; platformId: number } | undefined;

@@ -2,6 +2,7 @@ import { createAgentRunner } from '@pitchbox/shared/agents/registry';
 import type { AgentRunner } from '@pitchbox/shared/agents';
 import { loadRunnerConfig } from '@pitchbox/shared/agents/config';
 import { detectRunner, isDetectionConclusive } from '@pitchbox/shared/agents/detect';
+import { isRunnerAllowed } from '@pitchbox/shared/edition';
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { notify } from '@pitchbox/shared/notifications';
 import { classifyFailure } from '@pitchbox/shared/runlog/classify-failure';
@@ -131,6 +132,21 @@ async function dispatchRun(
   let runner: AgentRunner;
   try {
     const slug = run.agentRunner as AgentRunnerSlug;
+    // Cloud edition never dispatches to a local ACP backend, full stop - not
+    // "unless detected", because a cloud web/daemon container can have a CLI
+    // binary reachable on PATH for reasons unrelated to whether it should run
+    // there (#410: an image with `claude` on PATH made the detection probe
+    // below report it available, and this pre-flight was the only thing
+    // standing between that and a real local agent spawn on shared cloud
+    // infra). Checked before detection so a rejection never depends on what
+    // happens to be installed.
+    if (!isRunnerAllowed(slug)) {
+      throw new Error(
+        `Agent runner "${slug}" is not available in this deployment's edition: only the ` +
+          `managed Pitchbox Cloud runner can dispatch here. Change the runner in project or ` +
+          `campaign settings to continue.`,
+      );
+    }
     // Pre-flight the snapshot. A run whose runner cannot start here fails the
     // same way whatever the reason, but the message has to say so: before #219
     // a cloud-edition install dispatching 'claude-code' spawned the ACP adapter

@@ -12,6 +12,7 @@ import {
 } from '@pitchbox/shared/campaigns/server';
 import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import { campaignBelongsToOrg } from '@pitchbox/shared/orgs';
+import { isRunnerAllowed } from '@pitchbox/shared/edition';
 
 const Patch = z.object({
   name: z.string().min(1).max(120).optional(),
@@ -71,7 +72,18 @@ export async function PATCH(event: RequestEvent) {
     }
     patch.cronExpression = trimmed;
   }
-  if (parsed.data.agentRunner !== undefined) patch.agentRunner = parsed.data.agentRunner;
+  if (parsed.data.agentRunner !== undefined) {
+    if (!isRunnerAllowed(parsed.data.agentRunner)) {
+      return json(
+        {
+          error: 'runner_not_allowed',
+          message: `Agent runner "${parsed.data.agentRunner}" is not available in this deployment's edition.`,
+        },
+        { status: 400 },
+      );
+    }
+    patch.agentRunner = parsed.data.agentRunner;
+  }
   if (parsed.data.autoPost !== undefined) patch.autoPost = parsed.data.autoPost;
 
   if (parsed.data.config !== undefined) {

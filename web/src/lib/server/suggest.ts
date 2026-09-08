@@ -5,6 +5,7 @@ import { getDb } from './db.js';
 import { createAgentRunner } from '@pitchbox/shared/agents/registry';
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { loadRunnerConfig, type RunnerConfig } from '@pitchbox/shared/agents/config';
+import { isRunnerAllowed } from '@pitchbox/shared/edition';
 import {
   buildSuggestionPrompt,
   type CurrentProject,
@@ -152,6 +153,19 @@ export function runSuggestion(args: {
   const result: Promise<SuggestionResult> = (async () => {
     const db = getDb();
     if (cancelled) throw new Cancelled();
+    // Same edition boundary as a campaign run's dispatch pre-flight
+    // (runner.ts): a suggestion reads `project.defaultAgentRunner` straight
+    // off the project row, so a project whose snapshot predates the guard on
+    // the write routes (or was written before this deployment ever ran the
+    // cloud edition) would otherwise reach a local agent spawn here with no
+    // check at all (#410).
+    if (!isRunnerAllowed(args.runnerSlug)) {
+      throw new Error(
+        `Agent runner "${args.runnerSlug}" is not available in this deployment's edition: ` +
+          `only the managed Pitchbox Cloud runner can dispatch here. Change the project's ` +
+          `default runner in Settings to continue.`,
+      );
+    }
     const config = await loadRunnerConfig(db, args.runnerSlug as AgentRunnerSlug);
     if (cancelled) throw new Cancelled();
     const runner = createAgentRunner(args.runnerSlug, resolveAssistRunnerConfig(config));

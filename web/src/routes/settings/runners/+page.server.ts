@@ -6,6 +6,7 @@ import {
   loadDefaultRunnerSlug,
   type RunnerConfig,
 } from '@pitchbox/shared/agents/config';
+import { allowedRunnerSlugs } from '@pitchbox/shared/edition';
 import { getDb } from '../../../lib/server/db.js';
 
 export interface RunnerInfo {
@@ -41,7 +42,11 @@ export const load: PageServerLoad = async (event) => {
   if (isAdmin) {
     const detections = await detectAllRunners();
     const runnerConfigs = await loadRunnerConfigs(db);
-    runners = AGENT_RUNNER_META.map((m) => ({
+    // Cloud edition offers only the runner it can dispatch (#410) - a local
+    // backend never appears here to be set as instance default, matching
+    // what the campaign/project forms offer.
+    const allowed = allowedRunnerSlugs();
+    runners = AGENT_RUNNER_META.filter((m) => allowed.includes(m.slug)).map((m) => ({
       slug: m.slug,
       label: m.label,
       implemented: m.implemented,

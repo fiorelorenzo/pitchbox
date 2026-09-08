@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
@@ -605,6 +605,52 @@ describe('POST /api/extension/suggest', () => {
       expect(lastOptions?.prompt).not.toContain('whatever the panel scraped');
       expect(lastOptions?.prompt).toContain('Recent Author');
     });
+  });
+});
+
+// #410: `runSuggestion` reads `project.defaultAgentRunner` straight off the
+// project row and used to hand it to `createAgentRunner` with no check at
+// all - unlike a campaign run's dispatch, this path had no edition guard
+// whatsoever. A project whose default was hand-changed (or predates the
+// cloud edition) would otherwise reach a local agent spawn on every
+// suggestion. Calls `runSuggestion` directly rather than through the SSE
+// route: the route's per-device rate limiter is in-memory and keyed by
+// deviceId, and every test's freshly-truncated device reuses id 1, so
+// routing this through another HTTP call would eat into the fixed-window
+// budget the tone tests below also rely on for no reason - the guard being
+// tested lives in `runSuggestion` itself, before any network/auth concern.
+describe('runSuggestion refuses a local runner in the cloud edition (#410)', () => {
+  // Resets the mocked registry's recorded call state (`lastOptions` etc.) -
+  // this test never touches the DB, but the mock module state is shared
+  // across every test in this file.
+  beforeEach(reset);
+  const savedEdition = process.env.PITCHBOX_EDITION;
+  afterEach(() => {
+    if (savedEdition === undefined) delete process.env.PITCHBOX_EDITION;
+    else process.env.PITCHBOX_EDITION = savedEdition;
+  });
+
+  it('rejects before the runner is ever created', async () => {
+    process.env.PITCHBOX_EDITION = 'cloud';
+    // seedOrgProject/project creation never set defaultAgentRunner, so the
+    // column default ('claude-code') stands in for a project created before
+    // this deployment ever ran the cloud edition - passed here directly as
+    // the resolved runnerSlug, matching what the route hands `runSuggestion`.
+    const handle = runSuggestion({
+      kind: 'post_comment',
+      post: { urn: 'urn:li:activity:1', authorName: 'A', text: 'hi' },
+      currentProject: { name: 'p', description: null },
+      persona: null,
+      projects: [],
+      repos: [],
+      projectId: 1,
+      runnerSlug: 'claude-code',
+    });
+
+    await expect(handle.result).rejects.toThrow(/claude-code/);
+    await expect(handle.result).rejects.toThrow(/edition/i);
+    // The mocked registry records every call it receives - none reached it.
+    expect(lastOptions).toBeNull();
   });
 });
 
