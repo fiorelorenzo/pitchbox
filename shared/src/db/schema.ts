@@ -248,11 +248,20 @@ export const campaignRecommendations = pgTable(
   }),
 );
 
+// `project_description_refresh` (#434): a proposed re-derivation of a
+// project's description after its sources changed, or the decision on one.
+// No dedicated table - `params` carries `{ decision: 'accepted'|'declined',
+// proposedDescription, previousDescription, sourceIds }` and `status` is
+// always 'success' (the derivation itself is synchronous and deterministic,
+// never a model call - see shared/src/project-description-refresh.ts). Only
+// a decision is ever persisted; the proposal shown to an operator is
+// computed on demand and never written until accepted or declined.
+
 export const runs = pgTable(
   'runs',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction' | 'campaign_skill_generation' | 'draft_regeneration' | 'reply_drafting' | 'project_insights' | 'assist'
+    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction' | 'campaign_skill_generation' | 'draft_regeneration' | 'reply_drafting' | 'project_insights' | 'assist' | 'project_description_refresh'
     campaignId: integer('campaign_id').references(() => campaigns.id, { onDelete: 'cascade' }),
     projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     params: jsonb('params').notNull().default({}),

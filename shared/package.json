@@ -76,7 +76,8 @@
     "./agents/sdk/event-normalizer": "./src/agents/sdk/event-normalizer.ts",
     "./instance-audit": "./src/instance-audit.ts",
     "./mastodon-source": "./src/mastodon-source.ts",
-    "./hackernews-source": "./src/hackernews-source.ts"
+    "./hackernews-source": "./src/hackernews-source.ts",
+    "./project-description-refresh": "./src/project-description-refresh.ts"
   },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",
