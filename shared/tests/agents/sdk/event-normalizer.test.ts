@@ -220,6 +220,7 @@ describe('normalizeStopReason', () => {
       'error',
       'max_turn_requests',
       'refusal',
+      'quota_exceeded',
     ] as const) {
       const [event] = normalizeStopReason(reason, usage, '', 0);
       expect(event.payload).toMatchObject({ type: 'result', success: false });
@@ -274,8 +275,20 @@ describe('classifyFailure integration: SDK-specific reasons', () => {
     expect(classifyFailure(events, 1)).toBe('content_filtered');
   });
 
-  it('the four SDK markers stay distinct from each other', () => {
-    const reasons = ['error', 'cancelled', 'max_turn_requests', 'timeout', 'refusal'] as const;
+  it('classifies a mid-run budget crossing as quota_exhausted (#419)', () => {
+    const events = normalizeStopReason('quota_exceeded', usage, '', 0);
+    expect(classifyFailure(events, 1)).toBe('quota_exhausted');
+  });
+
+  it('the six SDK markers stay distinct from each other', () => {
+    const reasons = [
+      'error',
+      'cancelled',
+      'max_turn_requests',
+      'timeout',
+      'refusal',
+      'quota_exceeded',
+    ] as const;
     const classified = reasons.map((r) => classifyFailure(normalizeStopReason(r, usage, '', 0), 1));
     expect(new Set(classified).size).toBe(reasons.length);
   });

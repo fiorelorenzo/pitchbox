@@ -62,6 +62,15 @@ const DEFAULT_STEP_CEILING = 12;
 const MODEL_CATALOGUE_TTL_MS = 5 * 60 * 1000;
 let modelCatalogueCache: { value: GatewayLanguageModelEntry[]; expiresAt: number } | null = null;
 
+// Test-only escape hatch: the cache above is intentionally process-lifetime
+// in production (see the comment on it), but that means every SdkRunner
+// test in the same file/process shares one cache - a plain-catalogue test
+// that runs first would otherwise poison a later test's custom pricing for
+// up to five minutes. Not used by any production code path.
+export function __resetModelCatalogueCacheForTests(): void {
+  modelCatalogueCache = null;
+}
+
 async function loadModelCatalogue(gateway: GatewayProvider): Promise<GatewayLanguageModelEntry[]> {
   const now = Date.now();
   if (modelCatalogueCache && modelCatalogueCache.expiresAt > now) return modelCatalogueCache.value;
@@ -108,11 +117,24 @@ export class SdkRunner implements AgentRunner {
     // the real Gateway). Reading that finish reason as success would record
     // a cancelled or timed-out run as completed, so the outcome comes from
     // this flag, never from whether the loop below threw.
-    let outcome: 'cancel' | 'timeout' | null = null;
+    let outcome: 'cancel' | 'timeout' | 'quota' | null = null;
 
     const cancelFn = () => {
       if (outcome) return; // already terminal - a second cancel is a no-op
       outcome = 'cancel';
+      controller.abort();
+    };
+
+    // A separate closure, exactly like `cancelFn` above, rather than an
+    // inline `outcome = 'quota'` where it's used (inside the loop below):
+    // TypeScript's control-flow narrowing only sees same-scope assignments,
+    // and `cancelFn`/the timeout callback already sit in their own closures
+    // for that reason - an inline assignment in the loop narrowed `outcome`
+    // down to `'quota' | null` for every later read in this function,
+    // making the `stopReasonKind` ternary's `'cancel'`/`'timeout'`
+    // comparisons look like dead code to the type checker.
+    const markQuotaExceeded = () => {
+      outcome = 'quota';
       controller.abort();
     };
 
@@ -168,6 +190,15 @@ export class SdkRunner implements AgentRunner {
 
       const gateway = this.createGatewayFn({ apiKey });
       const model = gateway(modelId);
+
+      // Resolved before the stream starts, not just at the end as before
+      // #419: the mid-stream budget check below needs to price each step's
+      // usage as it accumulates, and `loadModelCatalogue` is cached process-
+      // wide anyway so moving it earlier costs nothing on a warm cache.
+      const catalogueEntries = await loadModelCatalogue(gateway);
+      const pricing: SdkModelPricing | undefined = pricingFromCatalogueEntry(
+        catalogueEntries.find((m) => m.id === modelId),
+      );
 
       // `attachMcp: false` (the in-page suggestion path) gets no tools at
       // all - nothing for it to write, and a tool loop is what a real-time
@@ -268,6 +299,20 @@ export class SdkRunner implements AgentRunner {
               if (part.type === 'finish-step') {
                 stepCount += 1;
                 stepUsage = addSdkUsage(stepUsage, part.usage);
+                // Stop the run the moment its own accumulated cost would
+                // push the org over its remaining monthly Gateway budget
+                // (#419), rather than only discovering it once the run
+                // finishes - `opts.budgetRemainingUsd` is a snapshot taken
+                // by the caller at dispatch time (shared/src/org-quota.ts).
+                // Skipped when pricing is unknown (`costUsd` null): an
+                // un-priced model can't be judged against a budget, so it
+                // runs unmetered rather than aborting on a guess.
+                if (!outcome && opts.budgetRemainingUsd != null) {
+                  const runningCostUsd = buildSdkUsage(stepUsage, { pricing }).costUsd;
+                  if (runningCostUsd != null && runningCostUsd >= opts.budgetRemainingUsd) {
+                    markQuotaExceeded();
+                  }
+                }
               } else if (part.type === 'finish') {
                 finishUsage = part.totalUsage;
                 finishReason = part.finishReason;
@@ -300,13 +345,15 @@ export class SdkRunner implements AgentRunner {
             ? 'cancelled'
             : outcome === 'timeout'
               ? 'timeout'
-              : sawErrorPart || finishReason === 'error'
-                ? 'error'
-                : finishReason === 'content-filter'
-                  ? 'refusal'
-                  : finishReason === 'tool-calls' && stepCount >= this.stepCeiling
-                    ? 'max_turn_requests'
-                    : 'end_turn';
+              : outcome === 'quota'
+                ? 'quota_exceeded'
+                : sawErrorPart || finishReason === 'error'
+                  ? 'error'
+                  : finishReason === 'content-filter'
+                    ? 'refusal'
+                    : finishReason === 'tool-calls' && stepCount >= this.stepCeiling
+                      ? 'max_turn_requests'
+                      : 'end_turn';
 
         // Only a genuine runner-level failure is a non-zero exit: whether
         // the agent actually finished its job (called the playbook's finish
@@ -317,15 +364,15 @@ export class SdkRunner implements AgentRunner {
         const exitCode =
           stopReasonKind === 'cancelled' ||
           stopReasonKind === 'timeout' ||
-          stopReasonKind === 'error'
+          stopReasonKind === 'error' ||
+          stopReasonKind === 'quota_exceeded'
             ? 1
             : 0;
 
+        // `pricing` was already resolved before the stream started (above),
+        // so the final usage is priced with the exact same table the
+        // mid-stream check used - no second catalogue fetch here.
         const usage = finishUsage ?? stepUsage ?? {};
-        const entries = await loadModelCatalogue(gateway);
-        const pricing: SdkModelPricing | undefined = pricingFromCatalogueEntry(
-          entries.find((m) => m.id === modelId),
-        );
         const usageResult = buildSdkUsage(usage, { pricing });
         const tokensUsed = usageResult.inputTokens + usageResult.outputTokens;
 
