@@ -23,7 +23,13 @@ async function triggerRun(
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        // #378: the daemon carries no browser session, so this is how it
+        // authenticates to its own web app when PITCHBOX_AUTH=on. Omitted
+        // entirely when unset, same as before this token existed.
+        ...(config.internalToken ? { authorization: `Bearer ${config.internalToken}` } : {}),
+      },
       body: JSON.stringify({
         campaignId,
         trigger: 'scheduled',

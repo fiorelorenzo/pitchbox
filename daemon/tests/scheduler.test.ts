@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { tick as schedulerTick } from '../src/scheduler.js';
+import { config } from '../src/config.js';
 
 async function reset() {
   await getDb().execute(
@@ -52,6 +53,7 @@ describe('scheduler tick', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    config.internalToken = '';
   });
 
   it('seeds next_run_at without firing when it is null', async () => {
@@ -101,6 +103,39 @@ describe('scheduler tick', () => {
     expect(row.lastRunAt).not.toBeNull();
     expect(row.consecutiveFailures).toBe(0);
     expect(row.nextRunAt!.getTime()).toBeGreaterThan(past.getTime());
+  });
+
+  it('sends the internal token as a bearer header when configured (#378)', async () => {
+    config.internalToken = 'sched-test-internal-token';
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ runId: 1 }), { status: 200 }));
+
+    const past = new Date(Date.now() - 60_000);
+    await setupCampaign({ cron: '* * * * *', nextRunAt: past });
+
+    await schedulerTick();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [, init] = fetchSpy.mock.calls[0];
+    const headers = init?.headers as Record<string, string> | undefined;
+    expect(headers?.authorization).toBe('Bearer sched-test-internal-token');
+  });
+
+  it('omits the authorization header when no internal token is configured', async () => {
+    config.internalToken = '';
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ runId: 1 }), { status: 200 }));
+
+    const past = new Date(Date.now() - 60_000);
+    await setupCampaign({ cron: '* * * * *', nextRunAt: past });
+
+    await schedulerTick();
+
+    const [, init] = fetchSpy.mock.calls[0];
+    const headers = init?.headers as Record<string, string> | undefined;
+    expect(headers?.authorization).toBeUndefined();
   });
 
   it('does not fire when next_run_at is in the future', async () => {

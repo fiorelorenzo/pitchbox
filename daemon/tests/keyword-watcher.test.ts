@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { config } from '../src/config.js';
 import {
   compilePattern,
   evaluateWatchFailure,
@@ -78,6 +79,10 @@ describe('keyword-watcher', () => {
   beforeEach(async () => {
     await reset();
     vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    config.internalToken = '';
   });
 
   describe('compilePattern', () => {
@@ -225,6 +230,44 @@ describe('keyword-watcher', () => {
         .where(eq(schema.keywordWatches.id, watch.id));
       expect(row.consecutiveFailures).toBe(0);
       expect(row.nextAttemptAfter).toBeNull();
+    });
+
+    // These two skip the `triggerRunImpl` override every other tick() test
+    // uses, so the real module-private triggerRun (and its real fetch call)
+    // runs - the internal token header lives there, not in a mock.
+    it('sends the internal token as a bearer header on the real dispatch call (#378)', async () => {
+      config.internalToken = 'kw-test-internal-token';
+      await seedWatch({ pattern: 'pitchbox' });
+      const fetchListing = vi
+        .fn()
+        .mockResolvedValue(makeChildren([{ id: 'abc', title: 'pitchbox is great' }]));
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response('{}', { status: 200 }));
+
+      await tick(fetchListing);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0];
+      const headers = init?.headers as Record<string, string> | undefined;
+      expect(headers?.authorization).toBe('Bearer kw-test-internal-token');
+    });
+
+    it('omits the authorization header when no internal token is configured', async () => {
+      config.internalToken = '';
+      await seedWatch({ pattern: 'pitchbox' });
+      const fetchListing = vi
+        .fn()
+        .mockResolvedValue(makeChildren([{ id: 'abc', title: 'pitchbox is great' }]));
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response('{}', { status: 200 }));
+
+      await tick(fetchListing);
+
+      const [, init] = fetchSpy.mock.calls[0];
+      const headers = init?.headers as Record<string, string> | undefined;
+      expect(headers?.authorization).toBeUndefined();
     });
   });
 

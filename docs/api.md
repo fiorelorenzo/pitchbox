@@ -4,7 +4,8 @@ The dashboard's `/api/*` routes power the UI and the extension. Authentication d
 
 ## Auth
 
-- **Cookie session** (`pitchbox_session`) when `PITCHBOX_AUTH=on` - covers everything **except** the two prefixes below.
+- **Cookie session** (`pitchbox_session`) when `PITCHBOX_AUTH=on` - covers everything **except** the cases below.
+- **Internal dispatch token** (`Authorization: Bearer <token>`) - the one exception to cookie auth on a non-exempt route: `POST /api/run` accepts `PITCHBOX_INTERNAL_TOKEN` in place of a session, but only when there is no session on the request and the token is configured. This is how the daemon (which has no browser session) authenticates its own scheduled/keyword-triggered dispatch - see [`auth.md`](./auth.md) (#378).
 - **Extension per-device token** (`Authorization: Bearer <token>`) - required for every `/api/extension/*` call. Each paired device gets its own token in `extension_devices`; the side panel mints one via `POST /api/extension/auto-pair` using the dashboard session cookie. There is no shared singleton token.
 - **Public** - `/api/auth/login`, `/api/auth/logout`, and `/api/extension/auto-pair` (which authenticates with the dashboard session cookie, not a bearer token).
 

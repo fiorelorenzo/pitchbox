@@ -32,6 +32,15 @@ export const config = {
   insightsIntervalMs: readIntEnv('PITCHBOX_INSIGHTS_MS', 24 * 60 * 60_000),
   /** Base URL of the web server. We POST scheduled run starts here. */
   webUrl: process.env.PITCHBOX_WEB_URL ?? 'http://127.0.0.1:5180',
+  /**
+   * Secret sent as `Authorization: Bearer <token>` on every dispatch call to
+   * the web app's own POST /api/run (scheduler.ts and keyword-watcher.ts).
+   * Required when the web app runs with PITCHBOX_AUTH=on, or the web hook
+   * rejects the dispatch with 401 and the campaign's own failure backoff
+   * eventually pauses it (#378). Empty by default, which keeps every
+   * dispatch exactly as unauthenticated as it is today.
+   */
+  internalToken: process.env.PITCHBOX_INTERNAL_TOKEN ?? '',
   /** Skip reply-poller entirely when true. */
   repliesDisabled: process.env.PITCHBOX_REPLIES_DISABLED === '1',
   /** Skip the insights worker entirely when true. */
