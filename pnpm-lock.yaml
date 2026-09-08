@@ -202,6 +202,12 @@ importers:
       '@ai-sdk/gateway':
         specifier: ^4.0.75
         version: 4.0.75(zod@4.5.4)
+      '@ai-sdk/mcp':
+        specifier: ^2.0.45
+        version: 2.0.45(zod@4.5.4)
+      ai:
+        specifier: ^7.0.93
+        version: 7.0.93(zod@4.5.4)
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2

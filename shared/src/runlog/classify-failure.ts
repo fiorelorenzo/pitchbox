@@ -17,6 +17,10 @@ export type RunFailureReason =
   | 'network'
   | 'agent_crashed'
   | 'agent_timeout'
+  | 'cancelled'
+  | 'provider_error'
+  | 'step_limit_reached'
+  | 'content_filtered'
   | 'unknown';
 
 export const RUN_FAILURE_REASONS: readonly RunFailureReason[] = [
@@ -28,6 +32,10 @@ export const RUN_FAILURE_REASONS: readonly RunFailureReason[] = [
   'network',
   'agent_crashed',
   'agent_timeout',
+  'cancelled',
+  'provider_error',
+  'step_limit_reached',
+  'content_filtered',
   'unknown',
 ] as const;
 
@@ -87,14 +95,35 @@ const STACK_TRACE_PATTERNS = [
   'traceback (most recent call last)',
 ];
 
+// Markers the SDK event normalizer (shared/src/agents/sdk/event-normalizer.ts)
+// embeds into the closing `result` event's raw/text for outcomes an ACP
+// backend never produces: a `streamText` call aborted by the client or by
+// its own timeoutMs never throws (#415, docs/cloud-runner.md), and a
+// stopWhen(stepCountIs(n)) ceiling is not a crash either - both need a
+// specific marker rather than falling through to `unknown`.
+const CANCELLED_PATTERNS = ['run cancelled: aborted by the client'];
+
+const SDK_TIMEOUT_PATTERNS = ['exceeded its time limit'];
+
+const STEP_LIMIT_PATTERNS = ['step limit reached before the agent finished'];
+
+const PROVIDER_ERROR_PATTERNS = ['provider error'];
+
+const CONTENT_FILTERED_PATTERNS = ['the model refused to continue'];
+
 /**
  * Pure classifier mapping (events, exit code) to a structured failure reason.
  *
  * Heuristic order matters: runner-missing is checked first because an ENOENT
- * looks like a generic playbook error otherwise. Quota / auth / network are
- * scanned next in priority order, and playbook_error catches anything that
- * still has a recognisable stack trace. Everything else falls back to
- * `unknown` so the UI never has to deal with a null reason on a failed run.
+ * looks like a generic playbook error otherwise. The SDK-specific markers
+ * (cancelled / timeout / step limit) are checked next since they are
+ * synthesized substrings unique to `normalizeStopReason`'s own output and
+ * never collide with anything else. Auth / quota / network are scanned
+ * before the generic `provider_error` catch-all so a provider error whose
+ * own message is actually about auth or quota still gets the more specific
+ * reason. playbook_error catches anything that still has a recognisable
+ * stack trace. Everything else falls back to `unknown` so the UI never has
+ * to deal with a null reason on a failed run.
  */
 export function classifyFailure(events: ParsedEvent[], exitCode: number | null): RunFailureReason {
   const failed = exitCode == null || exitCode !== 0;
@@ -103,9 +132,14 @@ export function classifyFailure(events: ParsedEvent[], exitCode: number | null):
   const haystack = events.map(eventHaystack).join('\n');
 
   if (RUNNER_MISSING_PATTERNS.some((p) => haystack.includes(p))) return 'runner_missing';
+  if (CANCELLED_PATTERNS.some((p) => haystack.includes(p))) return 'cancelled';
+  if (STEP_LIMIT_PATTERNS.some((p) => haystack.includes(p))) return 'step_limit_reached';
+  if (SDK_TIMEOUT_PATTERNS.some((p) => haystack.includes(p))) return 'agent_timeout';
   if (AUTH_PATTERNS.some((p) => haystack.includes(p))) return 'auth_expired';
   if (QUOTA_PATTERNS.some((p) => haystack.includes(p))) return 'quota_exhausted';
   if (NETWORK_PATTERNS.some((p) => haystack.includes(p))) return 'network';
+  if (PROVIDER_ERROR_PATTERNS.some((p) => haystack.includes(p))) return 'provider_error';
+  if (CONTENT_FILTERED_PATTERNS.some((p) => haystack.includes(p))) return 'content_filtered';
   if (STACK_TRACE_PATTERNS.some((p) => haystack.includes(p))) return 'playbook_error';
 
   return 'unknown';

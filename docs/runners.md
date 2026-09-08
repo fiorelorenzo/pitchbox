@@ -52,13 +52,17 @@ Whenever a run transitions to `failed`, Pitchbox classifies the failure into one
 | Reason                | Heuristic                                                                                               |
 | --------------------- | ------------------------------------------------------------------------------------------------------- |
 | `runner_missing`      | Exit non-zero with `command not found` / `ENOENT`                                                       |
+| `cancelled`           | SDK run aborted by the client (`normalizeStopReason('cancelled', ...)`)                                 |
+| `step_limit_reached`  | SDK run hit `stopWhen(stepCountIs(n))` before the agent finished                                        |
+| `agent_timeout`       | ACP backend did not respond within `opts.timeoutMs`, or an SDK run's own AbortSignal timeout fired      |
 | `auth_expired`        | Any event mentioning `auth`, `401`, `403`, `token expired`                                              |
 | `quota_exhausted`     | Any event mentioning `quota` or `rate limit`                                                            |
+| `network`             | `ECONNREFUSED`, `ECONNRESET`, `ENOTFOUND`, `ETIMEDOUT`, `getaddrinfo`, `fetch failed`, `socket hang up` |
+| `provider_error`      | An SDK `error` stream part closed the run without an auth/quota/network match                           |
+| `content_filtered`    | SDK run stopped on a `refusal`/content-filter finish reason                                             |
 | `playbook_error`      | Exit non-zero with a Node-style or Python stack trace                                                   |
 | `playbook_incomplete` | Exit zero, but the playbook never called the finish tool that commits its result (see below)            |
-| `network`             | `ECONNREFUSED`, `ECONNRESET`, `ENOTFOUND`, `ETIMEDOUT`, `getaddrinfo`, `fetch failed`, `socket hang up` |
 | `agent_crashed`       | ACP backend subprocess exited unexpectedly without a `stop_reason`                                      |
-| `agent_timeout`       | ACP backend did not respond within `opts.timeoutMs`                                                     |
 | `unknown`             | Default, nothing else matched                                                                           |
 
 The classifier order matters: `runner_missing` wins over `playbook_error` because an `ENOENT` will otherwise look like a generic stack trace. Order beyond that is stable and covered by `shared/tests/runlog/classify-failure.test.ts`.
