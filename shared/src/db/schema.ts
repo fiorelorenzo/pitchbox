@@ -860,6 +860,58 @@ export const operatorVoiceSamples = pgTable(
   }),
 );
 
+// The operator's voice, derived from what they have actually written
+// (#407): the same voice samples above, the messages and sent drafts that
+// went out, and the project templates - a measurement, not a model call,
+// for the same reasons `shared/src/assist/register.ts` gives (#406):
+// nondeterminism, latency on a path a human is watching, and a summary a
+// model could phrase five different ways is not something a test can pin.
+// One row per organization, same shape as `operator_profiles`.
+//
+// `source` follows `operator_profiles`' own convention: 'derived' is
+// recomputed by `refreshVoiceProfile` whenever new material arrives,
+// 'manual' is a human's hand-edited summary and is left alone by a refresh
+// until the human asks for a reset - a wrong voice profile is worse than
+// none, so an edit correcting one must survive the next capture.
+//
+// `evidence` records what the derivation actually read (ids and counts per
+// source), so the Settings page can show its reasoning and a refresh does
+// not need to re-justify itself. `traits`/`openings`/`closings`/
+// `common_words` are the measured building blocks behind `summary`'s prose;
+// kept alongside it so a future re-render of the same measurement does not
+// require re-deriving it.
+export const operatorVoiceProfiles = pgTable(
+  'operator_voice_profiles',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    /** The prose carried into the suggestion prompt. Empty when the corpus
+     * has never been large enough to say anything honest. */
+    summary: text('summary').notNull().default(''),
+    traits: jsonb('traits').notNull().default([]),
+    openings: jsonb('openings').notNull().default([]),
+    closings: jsonb('closings').notNull().default([]),
+    commonWords: jsonb('common_words').notNull().default([]),
+    wordsPerSentence: integer('words_per_sentence').notNull().default(0),
+    itemCount: integer('item_count').notNull().default(0),
+    wordCount: integer('word_count').notNull().default(0),
+    /** `{ voiceSampleIds, messageIds, draftIds, templateIds, counts }` -
+     * what this row was derived from. */
+    evidence: jsonb('evidence').notNull().default({}),
+    source: text('source').notNull().default('derived'), // 'derived' | 'manual'
+    /** Set only on a real derivation, never on a manual edit - a manual
+     * summary did not come from re-reading the corpus. */
+    derivedAt: timestamp('derived_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byOrg: uniqueIndex('operator_voice_profiles_org_unique').on(t.organizationId),
+  }),
+);
+
 // A public code repository the operator points the companion at, so a
 // suggestion can be grounded in what they actually built rather than in a
 // project description written months ago.

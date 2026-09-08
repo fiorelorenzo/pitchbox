@@ -282,6 +282,7 @@ export async function POST(event: RequestEvent) {
         post: groundedPost,
         currentProject: { name: project.name, description: project.description },
         persona: context.persona,
+        voiceProfile: context.voiceProfile,
         projects: context.projects,
         repos: context.repos,
         examples,

@@ -6,12 +6,17 @@ import {
   MAX_PROJECTS,
   README_EXCERPT_MAX,
   RETUNE_DIRECTIONS,
-  VOICE_SAMPLE_MAX,
+  VOICE_PROFILE_MAX,
   type CurrentProject,
 } from '../src/assist/suggest-prompt.js';
 import { HOUSE_STYLE_SECTION } from '../src/house-style.js';
 import { DRAFT_MARKER, SKIP_MARKER } from '../src/assist/envelope.js';
-import type { CodeRepo, OperatorPersona, ProjectBrief } from '../src/assist/context.js';
+import type {
+  CodeRepo,
+  OperatorPersona,
+  ProjectBrief,
+  VoiceProfileSummary,
+} from '../src/assist/context.js';
 
 // The prompt behind the in-page assistant. Pure, so the boundaries are worth
 // pinning: a suggestion is text that goes out under a real name, and the two
@@ -22,13 +27,18 @@ import type { CodeRepo, OperatorPersona, ProjectBrief } from '../src/assist/cont
 // public repos). The property these tests defend beyond the old ones is that
 // every new section is composed honestly: present with real content when its
 // source is present, entirely absent - not an empty heading - when it is not.
+//
+// 2026-09-08 (#407): the voice section moved from a raw sample list on
+// `persona` to a derived `voiceProfile` passed alongside it. The persona
+// fixture below carries no voice samples any more - `assist-voice-profile`
+// tests own deriving one, this file only owns rendering it into the prompt.
 
 const post = { text: 'We cut p99 in half by dropping a cache.', authorName: 'Giulia Bianchi' };
 const currentProject: CurrentProject = {
   name: 'Embertold',
   description: 'A world wiki for tabletop GMs.',
 };
-const noContext = { persona: null, projects: [], repos: [] };
+const noContext = { persona: null, voiceProfile: null, projects: [], repos: [] };
 
 const persona: OperatorPersona = {
   handle: 'giulia-bianchi',
@@ -44,10 +54,12 @@ const persona: OperatorPersona = {
     },
   ],
   notes: 'Blunt, short sentences, no hedging.',
-  voiceSamples: [
-    { text: 'Shipped campaign search today. Took three tries to get the ranking right.' },
-  ],
   capturedAt: null,
+};
+
+const voiceProfile: VoiceProfileSummary = {
+  summary:
+    'Based on 12 pieces of their own writing (640 words). Usually writes with short sentences, close to speech, first person, speaking as themselves, about 11 words per sentence. Often opens with "Shipped the". Reuses these words often: shipped, team, campaign.',
 };
 
 const projects: ProjectBrief[] = [
@@ -179,6 +191,7 @@ describe('buildSuggestionPrompt', () => {
       post,
       currentProject,
       persona,
+      voiceProfile,
       projects,
       repos,
       hint: 'anything',
@@ -189,12 +202,13 @@ describe('buildSuggestionPrompt', () => {
   });
 
   describe('companion context sections', () => {
-    it('carries persona, sibling projects and repo context when present', () => {
+    it('carries persona, voice profile, sibling projects and repo context when present', () => {
       const prompt = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
         currentProject,
         persona,
+        voiceProfile,
         projects,
         repos,
       });
@@ -202,9 +216,9 @@ describe('buildSuggestionPrompt', () => {
       expect(prompt).toContain('Founder at Embertold');
       expect(prompt).toContain('I build tools for game masters');
       expect(prompt).toContain('Blunt, short sentences, no hedging.');
-      // How they write.
-      expect(prompt).toContain('Shipped campaign search today.');
-      expect(prompt).toMatch(/match this voice, do not reuse the content/);
+      // How they write: the derived summary, not a raw post.
+      expect(prompt).toContain(voiceProfile.summary);
+      expect(prompt).toMatch(/based on what they have actually written/);
       // Every project, including the sibling not bound to this suggestion,
       // with the current one marked.
       expect(prompt).toContain('Embertold (this one)');
@@ -229,12 +243,13 @@ describe('buildSuggestionPrompt', () => {
       expect(prompt).not.toMatch(/What the operator has shipped/);
     });
 
-    it('omits the voice section when a persona exists but has no voice samples', () => {
+    it('omits the voice section when a persona exists but no profile was derived', () => {
       const prompt = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
         currentProject,
-        persona: { ...persona, voiceSamples: [] },
+        persona,
+        voiceProfile: null,
         projects: [],
         repos: [],
       });
@@ -250,6 +265,7 @@ describe('buildSuggestionPrompt', () => {
         post,
         currentProject,
         persona: { ...persona, about: longAbout },
+        voiceProfile: null,
         projects: [],
         repos: [{ ...repos[0], readmeExcerpt: longReadme }],
       });
@@ -289,6 +305,7 @@ describe('buildSuggestionPrompt', () => {
         post,
         currentProject,
         persona: null,
+        voiceProfile: null,
         projects: manyProjects,
         repos: [],
       });
@@ -302,15 +319,16 @@ describe('buildSuggestionPrompt', () => {
       expect(prompt).not.toContain(`Filler ${filler.length - 1}`);
     });
 
-    it('clamps a voice sample to the same length no matter how far past the cap the raw post runs', () => {
+    it('clamps the voice profile summary the same regardless of how far past the cap it runs', () => {
       const marker = 'ZZ-VOICE-OVERFLOW-ZZ';
-      const justOver = `${'b'.repeat(VOICE_SAMPLE_MAX + 40)}${marker}`;
-      const wayOver = `${'c'.repeat(VOICE_SAMPLE_MAX * 3)}${marker}`;
+      const justOver = `${'b'.repeat(VOICE_PROFILE_MAX + 40)}${marker}`;
+      const wayOver = `${'c'.repeat(VOICE_PROFILE_MAX * 3)}${marker}`;
       const promptJustOver = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
         currentProject,
-        persona: { ...persona, voiceSamples: [{ text: justOver }] },
+        persona: null,
+        voiceProfile: { summary: justOver },
         projects: [],
         repos: [],
       });
@@ -318,14 +336,15 @@ describe('buildSuggestionPrompt', () => {
         kind: 'post_comment',
         post,
         currentProject,
-        persona: { ...persona, voiceSamples: [{ text: wayOver }] },
+        persona: null,
+        voiceProfile: { summary: wayOver },
         projects: [],
         repos: [],
       });
-      expect(promptJustOver).toContain('b'.repeat(VOICE_SAMPLE_MAX));
+      expect(promptJustOver).toContain('b'.repeat(VOICE_PROFILE_MAX));
       expect(promptJustOver).not.toContain(marker);
       expect(promptWayOver).not.toContain(marker);
-      // A sample three times past the cap costs exactly the same as one
+      // A summary three times past the cap costs exactly the same as one
       // barely past it: the cap is a hard ceiling, not a soft trim.
       expect(promptJustOver.length).toBe(promptWayOver.length);
     });
@@ -339,6 +358,7 @@ describe('buildSuggestionPrompt', () => {
         post,
         currentProject,
         persona: null,
+        voiceProfile: null,
         projects: [],
         repos: [{ ...repos[0], readmeExcerpt: justOver }],
       });
@@ -347,6 +367,7 @@ describe('buildSuggestionPrompt', () => {
         post,
         currentProject,
         persona: null,
+        voiceProfile: null,
         projects: [],
         repos: [{ ...repos[0], readmeExcerpt: wayOver }],
       });

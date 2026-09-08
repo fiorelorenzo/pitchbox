@@ -13,11 +13,20 @@
 // source: an absent persona or an empty repo list is a smaller prompt, never a
 // guess.
 //
-// Where each piece comes from is worth stating, because one of them is
+// 2026-09-08 (#407): the voice half stopped being the raw voice-sample list.
+// `operator-voice-profile.ts` derives a summary of how the operator actually
+// writes from every voice sample, sent message, sent draft and template on
+// file, and this module carries that summary instead of the posts
+// themselves - smaller, and it describes a habit rather than quoting one
+// example of it.
+//
+// Where each piece comes from is worth stating, because some of it is
 // constrained by the compliance boundary:
-//   - persona and voice samples: captured by the extension from pages the
-//     human opened themselves (docs/linkedin-integration-design.md, rule 2),
-//     or typed by hand in Settings;
+//   - persona: captured by the extension from pages the human opened
+//     themselves (docs/linkedin-integration-design.md, rule 2), or typed by
+//     hand in Settings;
+//   - voice profile: derived from the persona's own voice samples plus
+//     messages, drafts and templates already on file - no new capture;
 //   - projects: this organization's own rows;
 //   - repositories: GitHub's public API, read server-side and cached in
 //     `github_sources`. No credential, by decision - a private repo waits for
@@ -26,18 +35,13 @@
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { schema, type Db } from '../db/client.js';
 import { PERSONAL_PROJECT_SLUG } from '../personal-project.js';
+import { loadVoiceProfile } from '../operator-voice-profile.js';
 
 export type PersonaExperience = {
   title?: string;
   company?: string;
   period?: string;
   summary?: string;
-};
-
-export type VoiceSample = {
-  text: string;
-  url?: string | null;
-  postedAt?: string | null;
 };
 
 export type OperatorPersona = {
@@ -48,10 +52,14 @@ export type OperatorPersona = {
   experiences: PersonaExperience[];
   /** Free text the operator wrote about how they want to sound. */
   notes?: string | null;
-  /** The operator's own recent posts, as examples of how they write. */
-  voiceSamples: VoiceSample[];
   /** When the profile was last read off a page, if it ever was. */
   capturedAt?: string | null;
+};
+
+/** The derived voice profile's prose, as far as the prompt needs it - see
+ * `operator-voice-profile.ts` for the full row (traits, evidence, source). */
+export type VoiceProfileSummary = {
+  summary: string;
 };
 
 export type ProjectBrief = {
@@ -76,15 +84,15 @@ export type CodeRepo = {
 
 export type CompanionContext = {
   persona: OperatorPersona | null;
+  /** Null when the corpus has never been large enough to derive anything
+   * honest - a smaller prompt, not a guessed one. */
+  voiceProfile: VoiceProfileSummary | null;
   projects: ProjectBrief[];
   repos: CodeRepo[];
 };
 
-/** How many voice samples are worth carrying. Past this the prompt grows
- * without the voice getting any clearer, and the operator waits longer for the
- * first token. */
-export const MAX_VOICE_SAMPLES = 4;
-/** Same reasoning for repositories: enough to say what this person builds. */
+/** How many repositories are worth carrying. Past this the prompt grows
+ * without saying anything new about what this person builds. */
 export const MAX_REPOS = 4;
 
 function asExperiences(value: unknown): PersonaExperience[] {
@@ -139,19 +147,7 @@ export async function loadCompanionContext(
     .where(eq(schema.operatorProfiles.organizationId, args.organizationId))
     .limit(1);
 
-  const sampleRows = profileRow
-    ? await db
-        .select()
-        .from(schema.operatorVoiceSamples)
-        .where(
-          and(
-            eq(schema.operatorVoiceSamples.organizationId, args.organizationId),
-            eq(schema.operatorVoiceSamples.excluded, false),
-          ),
-        )
-        .orderBy(desc(schema.operatorVoiceSamples.postedAt))
-        .limit(MAX_VOICE_SAMPLES)
-    : [];
+  const voiceProfileRow = await loadVoiceProfile(db, args.organizationId);
 
   const projectRows = await db
     .select()
@@ -180,16 +176,15 @@ export async function loadCompanionContext(
         experiences: asExperiences(profileRow.experiences),
         notes: profileRow.notes,
         capturedAt: profileRow.capturedAt?.toISOString() ?? null,
-        voiceSamples: sampleRows.map((s) => ({
-          text: s.text,
-          url: s.url,
-          postedAt: s.postedAt?.toISOString() ?? null,
-        })),
       }
     : null;
 
   return {
     persona,
+    // A profile that has never derived anything honest (corpus too small,
+    // or measurable but with no dominant trait/phrase/word) has an empty
+    // summary - treated the same as no row at all.
+    voiceProfile: voiceProfileRow?.summary.trim() ? { summary: voiceProfileRow.summary } : null,
     projects: projectRows.map((p) => ({
       id: p.id,
       name: p.name,

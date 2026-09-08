@@ -15,7 +15,12 @@ import {
   type SuggestionKind,
 } from '@pitchbox/shared/assist/suggest-prompt';
 import { EnvelopeSplitter, type EnvelopeChunk } from '@pitchbox/shared/assist/envelope';
-import type { CodeRepo, OperatorPersona, ProjectBrief } from '@pitchbox/shared/assist/context';
+import type {
+  CodeRepo,
+  OperatorPersona,
+  ProjectBrief,
+  VoiceProfileSummary,
+} from '@pitchbox/shared/assist/context';
 import type { AssistTone } from '@pitchbox/shared/assist/tone';
 
 /**
@@ -109,6 +114,7 @@ export function runSuggestion(args: {
   post: ObservedPost;
   currentProject: CurrentProject;
   persona: OperatorPersona | null;
+  voiceProfile: VoiceProfileSummary | null;
   projects: ProjectBrief[];
   repos: CodeRepo[];
   examples?: Array<{ title: string; body: string }>;
@@ -140,6 +146,7 @@ export function runSuggestion(args: {
     post: args.post,
     currentProject: args.currentProject,
     persona: args.persona,
+    voiceProfile: args.voiceProfile,
     projects: args.projects,
     repos: args.repos,
     examples: args.examples,

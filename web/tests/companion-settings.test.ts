@@ -6,6 +6,7 @@ import {
   actions,
   type CompanionPersona,
   type CompanionVoiceSample,
+  type CompanionVoiceProfile,
 } from '../src/routes/settings/companion/+page.server.js';
 
 // Settings -> Companion (2026-09-07 companion decisions): the loader and its
@@ -25,13 +26,14 @@ type ActionEvent = Parameters<typeof actions.saveProfile>[0];
 type LoadResult = {
   profile: CompanionPersona | null;
   voiceSamples: CompanionVoiceSample[];
-  maxVoiceSamples: number;
+  voiceProfile: CompanionVoiceProfile | null;
 };
 
 async function reset() {
   const db = getDb();
   await db.execute(
-    sql`TRUNCATE operator_voice_samples, operator_profiles, projects, memberships, users RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE operator_voice_samples, operator_profiles, operator_voice_profiles, projects,
+      memberships, users RESTART IDENTITY CASCADE`,
   );
   await db.execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
 }
@@ -81,12 +83,12 @@ describe('settings/companion load', () => {
     expect(await statusOf(() => load(loadEv(orgId, 'member')))).toBe(403);
   });
 
-  it('an admin with nothing captured yet gets a null profile and no samples', async () => {
+  it('an admin with nothing captured yet gets a null profile, no samples and no voice profile', async () => {
     const orgId = await seedOrg('comp-admin-empty');
     const result = (await load(loadEv(orgId, 'admin'))) as LoadResult;
     expect(result.profile).toBeNull();
     expect(result.voiceSamples).toEqual([]);
-    expect(result.maxVoiceSamples).toBe(4);
+    expect(result.voiceProfile).toBeNull();
   });
 
   it('never crosses an organization boundary', async () => {
@@ -99,14 +101,19 @@ describe('settings/companion load', () => {
     await getDb()
       .insert(schema.operatorVoiceSamples)
       .values({ organizationId: orgA, externalId: 'post-a', platformId, text: 'org a voice' });
+    await getDb()
+      .insert(schema.operatorVoiceProfiles)
+      .values({ organizationId: orgA, summary: 'Org A derived voice.' });
 
     const resultB = (await load(loadEv(orgB, 'admin'))) as LoadResult;
     expect(resultB.profile).toBeNull();
     expect(resultB.voiceSamples).toEqual([]);
+    expect(resultB.voiceProfile).toBeNull();
 
     const resultA = (await load(loadEv(orgA, 'admin'))) as LoadResult;
     expect(resultA.profile?.handle).toBe('a-handle');
     expect(resultA.voiceSamples).toHaveLength(1);
+    expect(resultA.voiceProfile?.summary).toBe('Org A derived voice.');
   });
 });
 
@@ -180,6 +187,104 @@ describe('settings/companion actions', () => {
       .from(schema.operatorVoiceSamples)
       .where(eq(schema.operatorVoiceSamples.id, sample.id));
     expect(toggled.excluded).toBe(true);
+  });
+
+  it('refreshVoiceProfile: a member is forbidden (403)', async () => {
+    const orgId = await seedOrg('comp-refresh-member');
+    expect(
+      await statusOf(() => actions.refreshVoiceProfile(actionEv(orgId, 'member', new FormData()))),
+    ).toBe(403);
+  });
+
+  it("refreshVoiceProfile: derives from an org's own voice samples, readable back through load, and excluding one changes it", async () => {
+    const orgId = await seedOrg('comp-refresh-admin');
+    const platformId = await linkedinPlatformId();
+    const samples = await getDb()
+      .insert(schema.operatorVoiceSamples)
+      .values([
+        {
+          organizationId: orgId,
+          externalId: 'r-1',
+          platformId,
+          text: 'Just launched the new pricing page today, the whole team is thrilled with it.',
+        },
+        {
+          organizationId: orgId,
+          externalId: 'r-2',
+          platformId,
+          text: 'Just launched a fix for the onboarding flow, our team worked hard this week.',
+        },
+        {
+          organizationId: orgId,
+          externalId: 'r-3',
+          platformId,
+          text: 'Working through customer interviews all week, learned a lot from the team lately.',
+        },
+      ])
+      .returning();
+
+    const before = (await actions.refreshVoiceProfile(
+      actionEv(orgId, 'admin', new FormData()),
+    )) as {
+      voiceProfile: CompanionVoiceProfile;
+    };
+    expect(before.voiceProfile.source).toBe('derived');
+    expect(before.voiceProfile.summary).toContain('Just launched');
+
+    const reloaded = (await load(loadEv(orgId, 'admin'))) as LoadResult;
+    expect(reloaded.voiceProfile?.summary).toBe(before.voiceProfile.summary);
+
+    // Exclude both samples that carried "Just launched" - the acceptance
+    // case, driven through the real route action rather than a helper.
+    const toggleForm1 = new FormData();
+    toggleForm1.set('sampleId', String(samples[0].id));
+    toggleForm1.set('excluded', 'true');
+    await actions.toggleVoiceSample(actionEv(orgId, 'admin', toggleForm1));
+    const toggleForm2 = new FormData();
+    toggleForm2.set('sampleId', String(samples[1].id));
+    toggleForm2.set('excluded', 'true');
+    const after = (await actions.toggleVoiceSample(actionEv(orgId, 'admin', toggleForm2))) as {
+      voiceProfile: CompanionVoiceProfile;
+    };
+    expect(after.voiceProfile.summary).not.toContain('Just launched');
+  });
+
+  it('saveVoiceProfile: a member is forbidden (403)', async () => {
+    const orgId = await seedOrg('comp-save-vp-member');
+    const form = new FormData();
+    form.set('summary', 'Dry and direct.');
+    expect(await statusOf(() => actions.saveVoiceProfile(actionEv(orgId, 'member', form)))).toBe(
+      403,
+    );
+  });
+
+  it('saveVoiceProfile marks the row manual, and a later refresh leaves it untouched until resetVoiceProfile is called', async () => {
+    const orgId = await seedOrg('comp-save-vp-admin');
+    const form = new FormData();
+    form.set('summary', 'Dry, first person, one idea per post.');
+    const saved = (await actions.saveVoiceProfile(actionEv(orgId, 'admin', form))) as {
+      voiceProfile: CompanionVoiceProfile;
+    };
+    expect(saved.voiceProfile.source).toBe('manual');
+    expect(saved.voiceProfile.summary).toBe('Dry, first person, one idea per post.');
+
+    const refreshed = (await actions.refreshVoiceProfile(
+      actionEv(orgId, 'admin', new FormData()),
+    )) as { voiceProfile: CompanionVoiceProfile };
+    expect(refreshed.voiceProfile.source).toBe('manual');
+    expect(refreshed.voiceProfile.summary).toBe('Dry, first person, one idea per post.');
+
+    const reset = (await actions.resetVoiceProfile(actionEv(orgId, 'admin', new FormData()))) as {
+      voiceProfile: CompanionVoiceProfile;
+    };
+    expect(reset.voiceProfile.source).toBe('derived');
+  });
+
+  it('resetVoiceProfile: a member is forbidden (403)', async () => {
+    const orgId = await seedOrg('comp-reset-vp-member');
+    expect(
+      await statusOf(() => actions.resetVoiceProfile(actionEv(orgId, 'member', new FormData()))),
+    ).toBe(403);
   });
 });
 
