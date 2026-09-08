@@ -164,7 +164,15 @@ export async function createProjectTx(db: Db, args: CreateProjectArgs): Promise<
 export async function updateProject(
   db: Db,
   id: number,
-  patch: { name?: string; description?: string | null; defaultAgentRunner?: string },
+  patch: {
+    name?: string;
+    description?: string | null;
+    defaultAgentRunner?: string;
+    /** Per-project voice override (#408). `null` clears it back to "inherit
+     * the org tone" - see resolveEffectiveVoice in linkedin-assist.ts. */
+    voiceTone?: string | null;
+    voiceToneNotes?: string | null;
+  },
 ): Promise<void> {
   await db
     .update(schema.projects)

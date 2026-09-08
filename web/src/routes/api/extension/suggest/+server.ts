@@ -17,7 +17,7 @@ import {
 import { loadCompanionContext } from '@pitchbox/shared/assist/context';
 import {
   loadLinkedInAssistDeviceState,
-  loadLinkedInAssistSettings,
+  resolveEffectiveVoice,
 } from '@pitchbox/shared/linkedin-assist';
 import { loadRecentObservedTarget } from '@pitchbox/shared/observed-targets';
 
@@ -240,14 +240,17 @@ export async function POST(event: RequestEvent) {
     currentProjectId: project.id,
   });
 
-  // The tone (#405) is read here, from the org's stored settings, and never
-  // from `body`: the panel is not an enforcement boundary for it, exactly as
-  // it is not for `enabled`, `killSwitch` or the reasoning/draft split. That
-  // is also what keeps a panel-level retune (#409) an explicit feature rather
-  // than something a crafted request already gets for free. Loaded from the
-  // settings rather than from the device state above, because the device
-  // state is by definition the shape the extension is allowed to see.
-  const assistSettings = await loadLinkedInAssistSettings(db, project.organizationId);
+  // The tone (#405) is read here, resolved against the project this
+  // suggestion is actually being filed under (#408) - never from `body`: the
+  // panel is not an enforcement boundary for it, exactly as it is not for
+  // `enabled`, `killSwitch` or the reasoning/draft split. That is also what
+  // keeps a panel-level retune (#409) an explicit feature rather than
+  // something a crafted request already gets for free. `project` here is the
+  // filed-under project (the bound project, or the org's `personal` project
+  // per the carve-out above), not necessarily the org's bound project the
+  // device state names - a personal suggestion and a product suggestion can
+  // therefore resolve to different voices even though they share one org.
+  const voice = await resolveEffectiveVoice(db, project.organizationId, project);
 
   let cancel: () => void = () => {};
   let settled = false;
@@ -278,8 +281,8 @@ export async function POST(event: RequestEvent) {
         repos: context.repos,
         examples,
         hint: body.hint,
-        tone: assistSettings.tone,
-        toneNotes: assistSettings.toneNotes,
+        tone: voice.tone,
+        toneNotes: voice.toneNotes,
         projectId: project.id,
         orgId: auth.organizationId ?? undefined,
         runnerSlug: project.defaultAgentRunner,

@@ -12,11 +12,19 @@ import {
 import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
+import { ASSIST_TONES, ASSIST_TONE_NOTES_MAX } from '@pitchbox/shared/linkedin-assist';
 
 const PatchBody = z.object({
   name: z.string().min(1).max(120).optional(),
   description: z.string().max(2000).nullable().optional(),
   defaultAgentRunner: z.string().min(1).optional(),
+  // Per-project voice override (#408). `null` clears it back to "inherit the
+  // org tone" - see resolveEffectiveVoice in linkedin-assist.ts. An unknown
+  // value is rejected rather than coerced, the same as the org-level tone
+  // save: the project page is the one writer, so anything else is a stale
+  // tab or a hand-built request.
+  voiceTone: z.enum(ASSIST_TONES).nullable().optional(),
+  voiceToneNotes: z.string().max(ASSIST_TONE_NOTES_MAX).nullable().optional(),
 });
 
 const DeleteBody = z.object({ confirmSlug: z.string().min(1) });
@@ -62,6 +70,19 @@ export async function PATCH(event: RequestEvent) {
       {
         error: 'runner_not_allowed',
         message: `Agent runner "${parsed.data.defaultAgentRunner}" is not available in this deployment's edition.`,
+      },
+      { status: 400 },
+    );
+  }
+  // Mirrors the org-level save (api/settings/linkedin-assist): the free-text
+  // tone is the only option whose instruction is the operator's own words,
+  // so choosing it here without writing any would silently override the org
+  // tone with an empty instruction rather than the words the operator meant.
+  if (parsed.data.voiceTone === 'custom' && !parsed.data.voiceToneNotes?.trim()) {
+    return json(
+      {
+        error: 'invalid_body',
+        message: 'describe the tone you want, or pick "Use organization default"',
       },
       { status: 400 },
     );
