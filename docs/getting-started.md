@@ -53,7 +53,7 @@ PITCHBOX_EMBED_DAEMON=1 pnpm run dev:web    # dashboard on http://127.0.0.1:5180
 pnpm -F daemon dev
 ```
 
-See [Daemon](/daemon) for when each mode makes sense. (`pnpm run dev` is a broader command that also boots a local cloud runner, the extension and the docs site; it targets the cloud edition and is covered in [Cloud runner](/cloud-runner).)
+See [Daemon](/daemon) for when each mode makes sense. (`pnpm run dev` is a broader command that also boots the extension and the docs site; it targets the cloud edition - `PITCHBOX_EDITION=cloud`, needs `AI_GATEWAY_API_KEY` - rather than a separate runner process, covered in [Cloud runner](/cloud-runner).)
 
 ## Optional: turn on authentication
 
