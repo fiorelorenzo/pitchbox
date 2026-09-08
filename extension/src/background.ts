@@ -14,7 +14,7 @@ import {
 } from './lib/storage.js';
 import { api, type DmSyncFanout } from './lib/api.js';
 import { logEvent } from './lib/activity.js';
-import { getSettings as getExtensionSettings } from './lib/settings.js';
+import { getSettings as getExtensionSettings, type ExtensionSettings } from './lib/settings.js';
 import { hasLinkedInPermission } from './lib/permissions.js';
 import linkedinCommentScriptPath from './content/linkedin-comment.ts?script';
 import linkedinObserveScriptPath from './content/linkedin-observe.ts?script';
@@ -381,10 +381,31 @@ chrome.runtime.onStartup.addListener(async () => {
 chrome.permissions.onAdded.addListener(() => void syncLinkedInContentScripts());
 chrome.permissions.onRemoved.addListener(() => void syncLinkedInContentScripts());
 
+// #402: chrome.storage.onChanged fires for every extensionSettings write, not
+// just an interval change, and applyAlarms() unconditionally clears+recreates
+// the alarm, which resets scheduledTime to a fresh full period - so toggling
+// an unrelated field (theme, a poller switch) would otherwise silently push
+// the next sync back by up to a full interval with the interval value itself
+// never having changed. Guard against the platform's own alarm state, not a
+// module-level "prior settings" snapshot: the service worker is evicted
+// between events, so anything held only in memory is gone on the next wake
+// and a guard built on it would stop guarding after the first eviction.
+// chrome.alarms itself survives that eviction, so it is the honest source of
+// what is actually scheduled right now.
+async function alarmNeedsReapply(s: ExtensionSettings): Promise<boolean> {
+  const shouldExist = s.legacyPollerEnabled || s.chatPollerEnabled;
+  const current = await chrome.alarms.get(ALARM);
+  if (!shouldExist) return current !== undefined;
+  return current === undefined || current.periodInMinutes !== s.syncIntervalMin;
+}
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (!('extensionSettings' in changes)) return;
-  void applyAlarms();
+  void (async () => {
+    const s = await getExtensionSettings();
+    if (await alarmNeedsReapply(s)) await applyAlarms();
+  })();
 });
 
 chrome.alarms.onAlarm.addListener(async (a) => {
