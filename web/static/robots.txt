@@ -1,3 +1,4 @@
-# allow crawling everything by default
+# app.pitchbox.app serves the logged-in Pitchbox dashboard, not a public
+# marketing site - nothing here is meant to be indexed.
 User-agent: *
-Disallow:
+Disallow: /
