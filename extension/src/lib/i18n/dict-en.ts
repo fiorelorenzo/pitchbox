@@ -75,6 +75,13 @@ export const en = {
   'activity.actions.clear': 'Clear',
   'activity.actions.export': 'Export JSON',
   'activity.actions.export-done': 'Exported {n} events.',
+  // #452: the row action labels resolveActivityAction's action kinds
+  // render as. 'open-reddit' has no entry of its own - it reuses
+  // dashboard.token.open-reddit, the exact button Dashboard already ships.
+  'activity.actions.retry-sync': 'Retry sync now',
+  'activity.actions.regrant-linkedin': 'Turn LinkedIn access back on',
+  'activity.actions.open-backend': 'Open backend',
+  'activity.actions.open-assist-settings': 'Open assist settings',
   'activity.retention-notice':
     '{count} entries older than {oldest} were dropped to stay within the {cap}-entry limit.',
   'activity.clear.confirm-title': 'Clear activity log?',

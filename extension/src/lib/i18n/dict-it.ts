@@ -77,6 +77,11 @@ export const it = {
   'activity.actions.clear': 'Svuota',
   'activity.actions.export': 'Esporta JSON',
   'activity.actions.export-done': 'Esportati {n} eventi.',
+  // #452: vedi il commento in dict-en.ts.
+  'activity.actions.retry-sync': 'Riprova la sync ora',
+  'activity.actions.regrant-linkedin': 'Riattiva l’accesso a LinkedIn',
+  'activity.actions.open-backend': 'Apri il backend',
+  'activity.actions.open-assist-settings': 'Apri le impostazioni assistente',
   'activity.retention-notice':
     '{count} voci precedenti a {oldest} sono state eliminate per rispettare il limite di {cap} voci.',
   'activity.clear.confirm-title': 'Svuotare il log?',
