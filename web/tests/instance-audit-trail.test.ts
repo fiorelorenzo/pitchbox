@@ -9,6 +9,7 @@ import { POST as quotaPost } from '../src/routes/api/settings/quota/+server.js';
 import { PUT as runnerConfigPut } from '../src/routes/api/settings/runner-config/+server.js';
 import { PUT as webhooksPut } from '../src/routes/api/settings/webhooks/+server.js';
 import { POST as modelFunctionsPost } from '../src/routes/api/settings/model-functions/+server.js';
+import { POST as promotePost } from '../src/routes/api/settings/admin/promote/+server.js';
 import { actions as retentionActions } from '../src/routes/settings/retention/+page.server.js';
 import { type CookieJar, runThroughHandle } from './helpers/handle-harness.js';
 
@@ -114,8 +115,20 @@ describe('instance-wide writes record an audit row', () => {
         jar,
         quotaPost as any,
       );
-    const first = { reddit: { dm: { perDay: 1, perWeek: 5 }, comment: { perDay: 1, perWeek: 5 }, post: { perDay: 1, perWeek: 5 } } };
-    const second = { reddit: { dm: { perDay: 2, perWeek: 10 }, comment: { perDay: 2, perWeek: 10 }, post: { perDay: 2, perWeek: 10 } } };
+    const first = {
+      reddit: {
+        dm: { perDay: 1, perWeek: 5 },
+        comment: { perDay: 1, perWeek: 5 },
+        post: { perDay: 1, perWeek: 5 },
+      },
+    };
+    const second = {
+      reddit: {
+        dm: { perDay: 2, perWeek: 10 },
+        comment: { perDay: 2, perWeek: 10 },
+        post: { perDay: 2, perWeek: 10 },
+      },
+    };
     expect((await post(first)).status).toBe(200);
     expect((await post(second)).status).toBe(200);
 
@@ -207,6 +220,37 @@ describe('instance-wide writes record an audit row', () => {
     const row = await lastRowFor('retention');
     expect((row.before as { drafts_days: number }).drafts_days).toBe(90);
     expect((row.after as { drafts_days: number }).drafts_days).toBe(45);
+  });
+
+  it('the promote action records who was promoted, by whom', async () => {
+    const jar = await sessionFor('iat-promoter');
+    await getDb()
+      .insert(schema.users)
+      .values({ username: 'iat-promotee', passwordHash: 'x', isInstanceAdmin: false })
+      .onConflictDoUpdate({
+        target: schema.users.username,
+        set: { isInstanceAdmin: false },
+      });
+    const [promotee] = await getDb()
+      .select()
+      .from(schema.users)
+      .where(sql`username = 'iat-promotee'`);
+
+    const res = await runThroughHandle(
+      new Request('http://localhost/api/settings/admin/promote', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ userId: promotee.id }),
+      }),
+      jar,
+      promotePost as any,
+    );
+    expect(res.status).toBe(200);
+
+    const row = await lastRowFor('user_promotion');
+    expect(row.actor).toBe('iat-promoter');
+    expect(row.before).toEqual({ username: 'iat-promotee', isInstanceAdmin: false });
+    expect(row.after).toEqual({ username: 'iat-promotee', isInstanceAdmin: true });
   });
 });
 

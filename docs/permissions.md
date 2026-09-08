@@ -113,11 +113,13 @@ each route recording it differently - and it redacts `before`/`after` itself
 (any JSON field whose name looks like a credential, and any `*url` field,
 which a webhook target can carry one inside), so a caller does not have to
 remember to. Wired into default-runner, runner-config, quota, webhooks,
-retention, and model-functions; the account-promotion action #413 is adding
-(`web/src/routes/api/settings/admin/promote/+server.ts`) is expected to call
-it too, right after `setInstanceAdmin`, once that route lands. Rendered at
-`settings/admin/audit` (gated the same way as every other page in the area
-below), most recent first.
+retention, model-functions, and the account-promotion action
+(`web/src/routes/api/settings/admin/promote/+server.ts`, #413) - every
+`requireInstanceAdmin`-gated write above records itself under key
+`default_runner`, `runner_config:<slug>`, `quota_defaults`,
+`notification_webhooks`, `retention`, `model_function:<fn>`, or
+`user_promotion`. Rendered at `settings/admin/audit` (gated the same way as
+every other page in the area below), most recent first.
 
 ### Instance admin area (#412)
 
@@ -166,8 +168,8 @@ or need a second mechanism to stop after the first grant - the promote
 action covers the same need with one write path and no standing
 configuration. `settings/admin`'s page lists every user with their
 instance-admin flag and a "Promote" button, so a promotion is visible from
-the UI instead of the database; it does not attempt to log who promoted whom
-or when - that's the instance audit trail (#414).
+the UI instead of the database; who promoted whom and when is recorded by
+the instance audit trail above (#414), under key `user_promotion`.
 
 The General settings page (four tabs behind one route) was flattened into
 seven top-level routes, one flat rail with no tabs (#254): `settings/status`,

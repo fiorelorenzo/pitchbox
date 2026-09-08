@@ -31,9 +31,9 @@ type PageData = { rows: Array<{ key: string; actor: string; before: unknown; aft
 describe('settings/admin/audit +page.server.ts load', () => {
   it('a signed-in user who is not the instance admin is forbidden (403)', async () => {
     const user = await userWith('iaap-plain', false);
-    await expect(
-      load({ locals: { user } } as unknown as LoadEvent),
-    ).rejects.toMatchObject({ status: 403 });
+    await expect(load({ locals: { user } } as unknown as LoadEvent)).rejects.toMatchObject({
+      status: 403,
+    });
   });
 
   it('the instance admin sees recorded rows, readable in operator terms', async () => {
