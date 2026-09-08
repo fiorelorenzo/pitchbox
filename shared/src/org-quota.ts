@@ -158,3 +158,105 @@ export async function setOrgQuota(db: Db, orgId: number, fields: OrgQuotaFields)
     .returning({ id: schema.organizations.id });
   return rows.length > 0;
 }
+
+/**
+ * Admit-or-refuse a single already-inserted `runs` row against
+ * `organizations.max_concurrent_runs` (#485). The old runner service
+ * enforced this from an in-memory per-org session map that disappeared
+ * with the service itself (#420); nothing replaced it, so an org could
+ * start as many simultaneous cloud runs as it could trigger.
+ *
+ * Every dispatch path (`web/src/lib/server/runner.ts`) inserts its `runs`
+ * row with `status: 'running'` before calling `dispatchRun`, so by the time
+ * this runs the caller's own row already counts itself - a plain
+ * `count > cap` after the fact would only ever refuse, never decide which
+ * of two racing dispatches gets the free slot, and a plain count taken
+ * *before* either insert is visible to the other is exactly the TOCTOU gap
+ * #485 reported (both readers see themselves as first). Both are closed by
+ * `pg_advisory_xact_lock` keyed on the org, the same primitive
+ * `withCampaignLock` (shared/src/scheduler/dispatch-lock.ts) already uses
+ * for the sibling per-campaign race: it forces every concurrent admission
+ * decision for one org through a single line, so whichever one runs the
+ * ranking query below always sees a fully-committed, stable view. Once
+ * inside the lock, every currently `running` row for the org is ranked by
+ * `id` (insertion order) and this run is admitted iff its own rank is
+ * within the cap - so of N runs racing for the org's free slots, exactly
+ * as many as the cap allows win, not "however many happened to look small"
+ * and not "all of them, because nobody's insert was visible to anybody
+ * else's read yet".
+ *
+ * A plain partial UNIQUE index (`runs_one_running_per_campaign`'s own
+ * mechanism) does not generalise here: it can express "at most one", not
+ * "at most `max_concurrent_runs`", and `max_concurrent_runs` is an
+ * operator-configured integer, not always 1. A separately maintained
+ * counter column plus an atomic `UPDATE ... RETURNING` would generalise,
+ * but only if every place a run leaves `running` (success, failure,
+ * cancellation, and dispatchRun's own early-failure branch) reliably
+ * decrements it - miss one and a slot leaks forever. Ranking the live
+ * `status = 'running'` rows needs no separate column and no decrement to
+ * remember: the moment something flips a row away from `running`, the very
+ * next admission check already sees the freed slot.
+ *
+ * Throws with a message that never contains "quota" or "rate limit" - the
+ * budget refusal in `dispatchRun` does, and `classifyFailure`
+ * (shared/src/runlog/classify-failure.ts) has to tell the two apart as
+ * `concurrency_exhausted` vs `quota_exhausted` rather than folding both
+ * into one label an operator can't act on without reading the run's raw
+ * error.
+ */
+export async function assertOrgConcurrencyAdmitted(
+  db: Db,
+  orgId: number,
+  runId: number,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [org] = await tx
+      .select({ maxConcurrentRuns: schema.organizations.maxConcurrentRuns })
+      .from(schema.organizations)
+      .where(eq(schema.organizations.id, orgId))
+      .limit(1);
+    const cap = org?.maxConcurrentRuns ?? null;
+    if (cap == null) return; // unlimited - nothing to admit against.
+
+    // Transaction-scoped: blocks any other admission decision for this org
+    // until this one commits or rolls back, and releases automatically
+    // either way - no separate cleanup path to forget.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`org-concurrency:${orgId}`}, 0))`,
+    );
+
+    const orgProjects = await tx
+      .select({ id: schema.projects.id })
+      .from(schema.projects)
+      .where(eq(schema.projects.organizationId, orgId));
+    const projectIds = orgProjects.map((p) => p.id);
+    // No projects means no runs to rank against, including this one -
+    // unreachable in practice (this run's own row implies a project) but
+    // never treat "found nothing" as "refuse".
+    if (projectIds.length === 0) return;
+
+    const running = await tx
+      .select({ id: schema.runs.id })
+      .from(schema.runs)
+      .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
+      .where(
+        and(
+          or(
+            inArray(schema.runs.projectId, projectIds),
+            inArray(schema.campaigns.projectId, projectIds),
+          ),
+          eq(schema.runs.status, 'running'),
+        ),
+      )
+      .orderBy(schema.runs.id);
+
+    const rank = running.findIndex((r) => r.id === runId) + 1; // 0 -> "not found"
+    if (rank > 0 && rank <= cap) return; // admitted - within the cap.
+
+    throw new Error(
+      `This organization already has ${cap} cloud run${cap === 1 ? '' : 's'} in progress, its ` +
+        `configured concurrency limit, and cannot start another until one finishes or an ` +
+        `operator raises the limit in Settings.`,
+    );
+  });
+}

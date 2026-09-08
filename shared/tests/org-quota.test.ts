@@ -9,8 +9,9 @@
 import { randomUUID } from 'node:crypto';
 import { describe, it, expect, afterEach } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { getDb, schema } from '../src/db/client.js';
+import { getDb, getPool, schema } from '../src/db/client.js';
 import {
+  assertOrgConcurrencyAdmitted,
   getOrgMonthToDateCostUsd,
   getOrgQuotaFields,
   getOrgQuotaSnapshot,
@@ -66,6 +67,18 @@ async function makeRun(opts: { projectId: number; costUsd: string | null; starte
     costUsd: opts.costUsd,
     startedAt: opts.startedAt,
   });
+}
+
+/** A `running` run under a bare project, for the concurrency-admission
+ * tests below - `assertOrgConcurrencyAdmitted` ranks exactly this status,
+ * unlike `makeRun` above which seeds `success` rows for the cost sum. */
+async function makeRunningRun(projectId: number): Promise<number> {
+  const db = getDb();
+  const [run] = await db
+    .insert(schema.runs)
+    .values({ kind: 'project_extraction', projectId, trigger: 'manual', status: 'running' })
+    .returning({ id: schema.runs.id });
+  return run.id;
 }
 
 /** A second project in the same org, so a campaign can be anchored to a
@@ -343,5 +356,126 @@ describe('setOrgQuota', () => {
   it('returns false for an org id that does not exist', async () => {
     const ok = await setOrgQuota(getDb(), -1, { monthlyRunBudgetUsd: 1, maxConcurrentRuns: 1 });
     expect(ok).toBe(false);
+  });
+});
+
+// #485: organizations.max_concurrent_runs went unenforced once the old
+// runner service's in-memory per-org session map disappeared with it
+// (#420). assertOrgConcurrencyAdmitted is the replacement - see its own
+// doc comment in ../src/org-quota.ts for why it ranks live `running` rows
+// under an org-scoped pg_advisory_xact_lock rather than a maintained
+// counter or a plain count-then-decide read.
+describe('assertOrgConcurrencyAdmitted', () => {
+  it('admits a run when the org is under its concurrency cap', async () => {
+    const { orgId, projectId } = await setupOrg({ maxConcurrentRuns: 2 });
+    await makeRunningRun(projectId); // one other run already occupying a slot
+    const runId = await makeRunningRun(projectId);
+
+    await expect(assertOrgConcurrencyAdmitted(getDb(), orgId, runId)).resolves.toBeUndefined();
+  });
+
+  it('refuses once the org is already at its concurrency cap, with a message that never says quota', async () => {
+    const { orgId, projectId } = await setupOrg({ maxConcurrentRuns: 1 });
+    await makeRunningRun(projectId); // fills the org's only slot
+    const runId = await makeRunningRun(projectId);
+
+    await expect(assertOrgConcurrencyAdmitted(getDb(), orgId, runId)).rejects.toThrow(
+      /concurrency limit/i,
+    );
+    await expect(assertOrgConcurrencyAdmitted(getDb(), orgId, runId)).rejects.not.toThrow(
+      /quota|rate.limit/i,
+    );
+  });
+
+  it('is unlimited when max_concurrent_runs is null, however many runs are already going', async () => {
+    const { orgId, projectId } = await setupOrg({ maxConcurrentRuns: null });
+    await makeRunningRun(projectId);
+    await makeRunningRun(projectId);
+    await makeRunningRun(projectId);
+    const runId = await makeRunningRun(projectId);
+
+    await expect(assertOrgConcurrencyAdmitted(getDb(), orgId, runId)).resolves.toBeUndefined();
+  });
+
+  it('refuses a run id that never occupied a slot, once the org is already at its cap', async () => {
+    const { orgId, projectId } = await setupOrg({ maxConcurrentRuns: 1 });
+    await makeRunningRun(projectId);
+
+    await expect(assertOrgConcurrencyAdmitted(getDb(), orgId, -1)).rejects.toThrow(
+      /concurrency limit/i,
+    );
+  });
+
+  // Ranking correctness under real concurrent execution: fire N already-
+  // `running` rows' admission checks as genuinely concurrent promises
+  // (Promise.allSettled, not two sequential awaits) and confirm exactly
+  // `cap` of them are admitted - and deterministically the `cap` with the
+  // LOWEST run id (insertion order), never an arbitrary subset. The N
+  // inserts above are themselves fired concurrently too, so array index
+  // does not track assigned id order - sort by the actual id Postgres
+  // handed back before asserting who won.
+  async function raceChecks(orgId: number, runIds: number[]) {
+    const outcomes = await Promise.allSettled(
+      runIds.map((id) => assertOrgConcurrencyAdmitted(getDb(), orgId, id)),
+    );
+    return runIds.map((id, i) => ({ id, status: outcomes[i].status })).sort((a, b) => a.id - b.id);
+  }
+
+  it('concurrently checking N running rows against cap 1 admits exactly the oldest one', async () => {
+    const { orgId, projectId } = await setupOrg({ maxConcurrentRuns: 1 });
+    const runIds = await Promise.all([1, 2, 3].map(() => makeRunningRun(projectId)));
+
+    const ranked = await raceChecks(orgId, runIds);
+
+    expect(ranked.map((r) => r.status)).toEqual(['fulfilled', 'rejected', 'rejected']);
+  });
+
+  it('concurrently checking N running rows against cap 2 admits exactly the 2 oldest', async () => {
+    const { orgId, projectId } = await setupOrg({ maxConcurrentRuns: 2 });
+    const runIds = await Promise.all([1, 2, 3, 4].map(() => makeRunningRun(projectId)));
+
+    const ranked = await raceChecks(orgId, runIds);
+
+    expect(ranked.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled', 'rejected', 'rejected']);
+  });
+
+  // The actual TOCTOU bug (#485): two dispatches deciding "may this org
+  // start a run" at the same time, each reading a snapshot that does not
+  // yet include the other. A timing race against a real (fast, local)
+  // Postgres is not reliable proof by itself - both round trips can land
+  // microseconds apart and never overlap. This instead CONTROLS the
+  // overlap: a raw client takes the exact `pg_advisory_xact_lock` key
+  // `assertOrgConcurrencyAdmitted` takes internally and holds it open, then
+  // a genuinely concurrent call into the real function is proven to block
+  // behind it rather than racing past on a plain read - and to proceed the
+  // instant the lock is released. A count-then-decide implementation with
+  // no locking at all would resolve immediately regardless of the held
+  // lock, so this fails exactly the way #485's original bug would.
+  it('a concurrent admission decision for the same org is serialized by a real Postgres lock, not an optimistic read (#485)', async () => {
+    const { orgId, projectId } = await setupOrg({ maxConcurrentRuns: 5 });
+    const runId = await makeRunningRun(projectId);
+
+    const holder = await getPool().connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `org-concurrency:${orgId}`,
+      ]);
+
+      let settled = false;
+      const checkPromise = assertOrgConcurrencyAdmitted(getDb(), orgId, runId).finally(() => {
+        settled = true;
+      });
+
+      // Give the check every chance to run if it were not actually blocked.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(settled).toBe(false);
+
+      await holder.query('COMMIT'); // releases the advisory lock
+      await expect(checkPromise).resolves.toBeUndefined();
+      expect(settled).toBe(true);
+    } finally {
+      holder.release();
+    }
   });
 });

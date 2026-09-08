@@ -12,6 +12,7 @@ export type RunFailureReason =
   | 'runner_missing'
   | 'auth_expired'
   | 'quota_exhausted'
+  | 'concurrency_exhausted'
   | 'playbook_error'
   | 'playbook_incomplete'
   | 'network'
@@ -27,6 +28,7 @@ export const RUN_FAILURE_REASONS: readonly RunFailureReason[] = [
   'runner_missing',
   'auth_expired',
   'quota_exhausted',
+  'concurrency_exhausted',
   'playbook_error',
   'playbook_incomplete',
   'network',
@@ -76,6 +78,14 @@ const QUOTA_PATTERNS = [
   'rate limit', // distinct from runlog "rate-limit" kind: this catches text mentions
   'rate-limit',
 ];
+
+// #485: the org's concurrency cap (organizations.max_concurrent_runs) is a
+// different failure than the budget above - "you already have N runs going"
+// has a different fix (wait or raise the cap) than "you are out of money
+// this month" (wait for next month or raise the budget) - so the refusal
+// text in assertOrgConcurrencyAdmitted (shared/src/org-quota.ts) deliberately
+// never says "quota" or "rate limit" and needs its own pattern here.
+const CONCURRENCY_PATTERNS = ['concurrency limit'];
 
 const NETWORK_PATTERNS = [
   'econnrefused',
@@ -137,6 +147,7 @@ export function classifyFailure(events: ParsedEvent[], exitCode: number | null):
   if (SDK_TIMEOUT_PATTERNS.some((p) => haystack.includes(p))) return 'agent_timeout';
   if (AUTH_PATTERNS.some((p) => haystack.includes(p))) return 'auth_expired';
   if (QUOTA_PATTERNS.some((p) => haystack.includes(p))) return 'quota_exhausted';
+  if (CONCURRENCY_PATTERNS.some((p) => haystack.includes(p))) return 'concurrency_exhausted';
   if (NETWORK_PATTERNS.some((p) => haystack.includes(p))) return 'network';
   if (PROVIDER_ERROR_PATTERNS.some((p) => haystack.includes(p))) return 'provider_error';
   if (CONTENT_FILTERED_PATTERNS.some((p) => haystack.includes(p))) return 'content_filtered';

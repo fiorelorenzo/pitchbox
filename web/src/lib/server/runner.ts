@@ -16,7 +16,7 @@ import {
 } from '@pitchbox/shared/draft-regenerate';
 import { startReplyDrafting } from '@pitchbox/shared/reply-drafter';
 import { getRunOrgId } from '@pitchbox/shared/orgs';
-import { getOrgQuotaSnapshot } from '@pitchbox/shared/org-quota';
+import { getOrgQuotaSnapshot, assertOrgConcurrencyAdmitted } from '@pitchbox/shared/org-quota';
 import type { ScenarioSlug } from '@pitchbox/shared/campaigns';
 import { getDb, schema } from './db.js';
 import { and, desc, eq } from 'drizzle-orm';
@@ -177,6 +177,13 @@ async function dispatchRun(
         );
       }
       budgetRemainingUsd = quota.remainingUsd;
+      // Separate from the budget check above on purpose (#485): "you're out
+      // of money this month" and "you already have N runs going" are
+      // different problems with different fixes, so assertOrgConcurrencyAdmitted
+      // throws its own differently-worded refusal rather than sharing this
+      // one's text. It races safely against any other concurrent dispatch
+      // for this org - see its own doc comment (shared/src/org-quota.ts).
+      await assertOrgConcurrencyAdmitted(db, orgId, run.id);
     }
     // Pre-flight the snapshot. A run whose runner cannot start here fails the
     // same way whatever the reason, but the message has to say so: before #219
