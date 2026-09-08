@@ -1,7 +1,7 @@
 // Exercises shared/src/project-source-sync.ts: the per-kind fetch dispatcher
 // behind a project source's "re-sync" (#432). `github`, `website` (#472) and
 // `mastodon_account`/`hackernews_author` (#437) each have a real fetcher;
-// `linkedin_*` (not implemented yet - #435) and `folder`/`git`/`upload`
+// `linkedin_company` (not implemented yet - #435) and `folder`/`git`/`upload`
 // (populated by running an extraction, not by syncing) must each come back
 // with a human-readable fetch_error instead of throwing, so an unimplemented
 // kind renders as a source you can add and see rather than a crash. The
@@ -127,7 +127,7 @@ describe('syncProjectSource: github', () => {
 });
 
 describe('syncProjectSource: kinds with no fetcher yet', () => {
-  it.each(['linkedin_company', 'linkedin_profile', 'linkedin_post'] as const)(
+  it.each(['linkedin_company'] as const)(
     '%s sets a fetch_error naming the kind, not a crash',
     async (kind) => {
       const { orgId, projectId } = await setupOrgAndProject();
@@ -286,6 +286,51 @@ describe('syncProjectSource: hackernews_author', () => {
     expect(result?.ok).toBe(false);
     expect(result?.source.fetchError).toMatch(/network error/);
   });
+// #436, spike #435: linkedin_post/linkedin_profile have no fetcher either,
+// but unlike website/linkedin_company that is permanent by design, not a
+// gap - the only lawful fill is the extension's own content script
+// (project-source-match.ts), never a server-side re-sync. A re-sync click
+// on one of these two kinds can only flip an already-filled row back to
+// pending, so the next real page visit fills it again.
+describe('syncProjectSource: linkedin_post/linkedin_profile flip back to pending, never fetch', () => {
+  it.each(['linkedin_post', 'linkedin_profile'] as const)(
+    '%s: syncing a pristine pending row leaves it pending, with no error',
+    async (kind) => {
+      const { orgId, projectId } = await setupOrgAndProject();
+      const db = getDb();
+      const created = await createProjectSource(db, orgId, projectId, kind, {
+        value: 'https://www.linkedin.com/whatever',
+        identifier: 'whatever',
+      });
+      const result = await syncProjectSource(db, orgId, created!.id);
+      expect(result?.ok).toBe(false);
+      expect(result?.source.output).toBeNull();
+      expect(result?.source.fetchedAt).toBeNull();
+      expect(result?.source.fetchError).toBeNull();
+    },
+  );
+
+  it.each(['linkedin_post', 'linkedin_profile'] as const)(
+    '%s: syncing an already-filled row clears output/fetchedAt back to pending, not an error',
+    async (kind) => {
+      const { orgId, projectId } = await setupOrgAndProject();
+      const db = getDb();
+      const created = await createProjectSource(db, orgId, projectId, kind, {
+        value: 'https://www.linkedin.com/whatever',
+        identifier: 'whatever',
+      });
+      await getDb()
+        .update(schema.projectSources)
+        .set({ output: { text: 'captured earlier' }, fetchedAt: new Date() })
+        .where(eq(schema.projectSources.id, created!.id));
+
+      const result = await syncProjectSource(db, orgId, created!.id);
+      expect(result?.ok).toBe(false);
+      expect(result?.source.output).toBeNull();
+      expect(result?.source.fetchedAt).toBeNull();
+      expect(result?.source.fetchError).toBeNull();
+    },
+  );
 });
 
 describe('syncProjectSource: extraction-only kinds', () => {

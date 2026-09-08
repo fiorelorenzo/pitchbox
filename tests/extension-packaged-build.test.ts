@@ -62,6 +62,7 @@ describe('the packaged extension', () => {
       'linkedin-comment-assist.js',
       'linkedin-post-assist.js',
       'linkedin-profile-capture.js',
+      'linkedin-source-capture.js',
     ]) {
       expect(existsSync(path.join(DIST, 'src/content', script)), script).toBe(true);
     }

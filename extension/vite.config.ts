@@ -35,6 +35,9 @@ export default defineConfig({
           // (exactly the #379 defect, caught here by
           // `tests/extension-packaged-build.test.ts`).
           'src/content/linkedin-profile-capture.ts',
+          // The pending project-source fill (#436, spike #435's "Plane
+          // 3"). Same shape and same reason as the entry above.
+          'src/content/linkedin-source-capture.ts',
         ],
       },
     }),
