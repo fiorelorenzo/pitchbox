@@ -121,6 +121,16 @@ retention, model-functions, and the account-promotion action
 `user_promotion`. Rendered at `settings/admin/audit` (gated the same way as
 every other page in the area below), most recent first.
 
+The redaction is a name-based heuristic, not a guarantee: it catches a
+field named `key`/`token`/`secret`/`password`/`credential` (any case, any
+substring) or ending in `url`, wherever it appears in `before`/`after`. A
+future instance-wide setting whose sensitive value sits in a field matching
+neither pattern - `gatewayAccount`, `smtpUser`, say - would land in the row
+unredacted. Reading `redactInstanceAuditValue`'s doc comment
+(`shared/src/instance-audit.ts`) once before adding a new instance-wide
+write is the way to catch that, not an assumption that the function
+guarantees safety on its own.
+
 ### Instance admin area (#412)
 
 `settings/admin` is a small area of its own, separate from every org-scoped

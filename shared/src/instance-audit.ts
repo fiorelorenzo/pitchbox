@@ -34,6 +34,14 @@ export type InstanceAuditRow = {
  * redact it by hand - the failure mode this guards against is a route that
  * calls `recordInstanceAudit` with its raw payload and never thinks about
  * redaction at all, which is the common case, not the exception.
+ *
+ * This is a name-based heuristic, not a guarantee: a field whose name
+ * matches none of these patterns (a hypothetical `gatewayAccount` or
+ * `smtpUser`, say) is stored as-is even if its value is sensitive. A new
+ * instance-wide write has to be read once with that in mind - either its
+ * shape genuinely holds nothing sensitive, or its field gets a name this
+ * pattern (or the `*url` one below) actually catches, or it needs its own
+ * explicit redaction before it ever reaches `recordInstanceAudit`.
  */
 const SECRET_FIELD_PATTERN = /(key|token|secret|password|credential)/i;
 
