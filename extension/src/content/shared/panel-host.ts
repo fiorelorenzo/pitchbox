@@ -38,9 +38,53 @@ import { reactiveProps } from './panel-props.svelte.js';
 // text goes into the shadow root and linkedin.com's <head> is never touched.
 import panelCss from '../panel.css?inline';
 import { ensurePanelFont } from './panel-fonts.js';
+import { ulid } from '../../lib/ulid.js';
 
 /** Marks a host element so a second mount on the same anchor is detectable. */
 const HOST_TAG = 'pitchbox-panel-host';
+
+/**
+ * Links a host to the anchor it was mounted for, and survives across a
+ * script-instance boundary a `WeakMap` cannot (#476).
+ *
+ * `mounted` below already refuses to stack a second panel when the *same*
+ * script instance calls `mountPanel` twice on one anchor - that covers a
+ * click handler firing twice, or a re-render re-arming the composer. It
+ * cannot cover a *different* instance: an extension reload leaves the
+ * pre-reload content script's isolated world running (`extensionContextAlive`
+ * in the assist scripts is exactly the tell for that), and a fresh
+ * post-reload injection gets its own new world with its own empty `mounted`.
+ * Both worlds share one DOM, though, so an attribute set on the anchor -
+ * real Element data, not a per-world JS wrapper property - is what a second
+ * instance can actually see. That is the "property, not patch" in #476:
+ * every previous form of this invariant lived in JS state that a second
+ * script instance never had access to.
+ */
+const ANCHOR_ID_ATTR = 'data-pitchbox-anchor-id';
+
+/** The stable id `anchor` is tagged with, assigning one on first use. */
+function anchorId(anchor: Element): string {
+  const existing = anchor.getAttribute(ANCHOR_ID_ATTR);
+  if (existing) return existing;
+  const id = ulid();
+  anchor.setAttribute(ANCHOR_ID_ATTR, id);
+  return id;
+}
+
+/**
+ * Removes any `pitchbox-panel-host` tagged for `id`, regardless of which
+ * script instance created it. A host from this instance is already caught by
+ * `mounted` before this runs; a host reaching here is either this instance's
+ * own record having gone missing (should not happen - `destroy()` always
+ * clears both) or another instance's, and neither case is one this instance
+ * can call `.destroy()` on, since that handle lives in a JS realm this code
+ * has no reference into. Removing the element is what actually matters for
+ * #476: it is what a human sees stacked on screen.
+ */
+function removeStaleHosts(id: string): void {
+  const stale = document.querySelectorAll(`${HOST_TAG}[${ANCHOR_ID_ATTR}="${id}"]`);
+  for (const el of stale) el.remove();
+}
 
 export type PanelHandle<Props extends Record<string, unknown>> = {
   /** Replace the component's props. No-op once destroyed. */
@@ -69,7 +113,7 @@ export type MountOptions<Props extends Record<string, unknown>> = {
   onDismiss?: () => void;
 };
 
-const mounted = new WeakMap<Element, PanelHandle<Record<string, never>>>();
+let mounted = new WeakMap<Element, PanelHandle<Record<string, never>>>();
 
 let sheet: CSSStyleSheet | null = null;
 
@@ -278,11 +322,20 @@ export function mountPanel<Props extends Record<string, unknown>>(
   const existing = mounted.get(anchor) as PanelHandle<Props> | undefined;
   if (existing?.alive) return existing;
 
+  // The check above already returns for the common case: this instance
+  // calling `mountPanel` twice on one anchor. What it cannot catch is a
+  // *different* instance's host on this same anchor (#476) - see
+  // `removeStaleHosts`'s doc comment for why that needs the DOM, not
+  // `mounted`, to find.
+  const id = anchorId(anchor);
+  removeStaleHosts(id);
+
   const host = document.createElement(HOST_TAG);
   // A custom-element name with no definition behind it is an unknown element:
   // inert, no default styling, and it cannot collide with a LinkedIn selector
   // the way a `div` with a class can.
   host.setAttribute('data-pitchbox', 'panel');
+  host.setAttribute(ANCHOR_ID_ATTR, id);
   const shadow = host.attachShadow({ mode: 'open' });
   applyStyles(shadow);
 
@@ -432,4 +485,16 @@ export function panelFor(anchor: Element): PanelHandle<Record<string, never>> | 
 /** Test seam: forget the constructed stylesheet. */
 export function resetPanelStylesForTests(): void {
   sheet = null;
+}
+
+/**
+ * Test seam: forgets every mount this realm's `mounted` map knows about,
+ * without touching the DOM. That is what a genuinely new script instance
+ * looks like from `mountPanel`'s own perspective (#476): the previous
+ * instance's hosts are still real elements in the document, but this map
+ * starts empty regardless, exactly as it would after an extension reload
+ * hands the page a fresh isolated world.
+ */
+export function forgetMountedForTests(): void {
+  mounted = new WeakMap();
 }
