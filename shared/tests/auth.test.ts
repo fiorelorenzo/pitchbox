@@ -13,6 +13,8 @@ import {
   deleteSession,
   countUsers,
   loadOrganizationForUser,
+  setInstanceAdmin,
+  listUsers,
 } from '../src/auth.js';
 
 async function reset() {
@@ -80,6 +82,35 @@ describe('shared/auth', () => {
     expect(await findUserByUsername(getDb(), 'nope')).toBeNull();
   });
 
+  it('setInstanceAdmin flips the flag on and off (#413)', async () => {
+    const userId = await createUser(getDb(), 'frank', 'a-very-long-password');
+    const [before] = await getDb().select().from(users).where(eq(users.id, userId));
+    expect(before.isInstanceAdmin).toBe(false);
+
+    await setInstanceAdmin(getDb(), userId, true);
+    const [promoted] = await getDb().select().from(users).where(eq(users.id, userId));
+    expect(promoted.isInstanceAdmin).toBe(true);
+
+    await setInstanceAdmin(getDb(), userId, false);
+    const [demoted] = await getDb().select().from(users).where(eq(users.id, userId));
+    expect(demoted.isInstanceAdmin).toBe(false);
+  });
+
+  it('listUsers reports every user with their instance-admin flag, ordered by username (#413)', async () => {
+    await createUser(getDb(), 'zack', 'a-very-long-password');
+    await createUser(getDb(), 'amy', 'a-very-long-password', { isInstanceAdmin: true });
+    const rows = await listUsers(getDb());
+    expect(rows.map((r) => r.username)).toEqual(['amy', 'zack']);
+    expect(rows.find((r) => r.username === 'amy')?.isInstanceAdmin).toBe(true);
+    expect(rows.find((r) => r.username === 'zack')?.isInstanceAdmin).toBe(false);
+  });
+
+  // Guards against a second write path for `is_instance_admin` reappearing
+  // (#413): the issue this closes was exactly that the flag could only ever
+  // be set at insert time (first login) or by hand in the database. Scanning
+  // the source rather than trusting the doc comment means a future insert-
+  // time `isInstanceAdmin:` assignment fails this test instead of silently
+  // drifting from `setInstanceAdmin`.
   it('sessions can be created, loaded, and deleted', async () => {
     const userId = await createUser(getDb(), 'bob', 'a-very-long-password');
     const sess = await createSession(getDb(), userId);

@@ -86,8 +86,10 @@ per-org `admin`/`owner` roles must never grant access to this config - only
 `requireInstanceAdmin(event)` (`web/src/lib/server/auth.ts`) does, checking
 the signed-in user's `is_instance_admin` column. A no-op when auth is off (no
 `locals.user`), same convention as `requireRole`. The first user (first-login
-bootstrap or `seed:owner`) is always the instance admin; nobody else is,
-unless flipped directly in the database.
+bootstrap or `seed:owner`) is always the instance admin. Every write to
+`is_instance_admin` - the bootstrap grant and every promotion after it - goes
+through the single `setInstanceAdmin` function (`shared/src/auth.ts`), so
+there is exactly one place to audit for who can end up with the flag (#413).
 
 `settings/default-runner` PUT, `settings/runner-config` PUT, `settings/quota`
 POST, `settings/webhooks` PUT, `webhooks/deliveries/[id]/retry` POST (also
@@ -124,6 +126,26 @@ items above it by a divider and its own heading, only when
 `isInstanceAdmin(event)` helper `requireInstanceAdmin` throws on) is true.
 As with every other rail entry, hiding the link is presentation only - the
 loaders above are the actual enforcement boundary.
+
+### Promoting an instance admin (#413)
+
+Before this, `is_instance_admin` could only ever be set at insert time: the
+first-login bootstrap or `seed:owner`, or by hand in the database on a
+deployment where the operator wasn't the first account to log in. `POST
+/api/settings/admin/promote` closes that: it takes `{ userId }`, gates on
+`requireInstanceAdmin(event)` like every other instance-wide write, and calls
+`setInstanceAdmin(db, userId, true)` (`shared/src/auth.ts`) - the same
+function `createUser` calls for the bootstrap grant, so there is exactly one
+function that ever writes this column true rather than two write paths that
+can drift apart. An allowlist read at login was the other option the issue
+raised; it isn't built, because it would need its own environment-side
+configuration on every deployment and either promote on every login forever
+or need a second mechanism to stop after the first grant - the promote
+action covers the same need with one write path and no standing
+configuration. `settings/admin`'s page lists every user with their
+instance-admin flag and a "Promote" button, so a promotion is visible from
+the UI instead of the database; it does not attempt to log who promoted whom
+or when - that's the instance audit trail (#414).
 
 The General settings page (four tabs behind one route) was flattened into
 seven top-level routes, one flat rail with no tabs (#254): `settings/status`,

@@ -1,13 +1,42 @@
 <script lang="ts">
   import * as Card from '$lib/components/ui/card';
   import * as Alert from '$lib/components/ui/alert';
+  import * as Table from '$lib/components/ui/table';
+  import { Badge } from '$lib/components/ui/badge';
+  import { Button } from '$lib/components/ui/button';
   import { Info, Bot, Gauge, Archive, Webhook } from '@lucide/svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import PageContainer from '$lib/components/PageContainer.svelte';
   import Seo from '$lib/components/Seo.svelte';
+  import { toast } from 'svelte-sonner';
+  import { invalidateAll } from '$app/navigation';
 
-  type PageData = { authOn: boolean };
+  type AdminUser = { id: number; username: string; isInstanceAdmin: boolean };
+  type PageData = { authOn: boolean; users: AdminUser[] };
   let { data }: { data: PageData } = $props();
+
+  let promoting = $state<number | null>(null);
+
+  async function promote(userId: number) {
+    promoting = userId;
+    try {
+      const res = await fetch('/api/settings/admin/promote', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        toast.error('Could not promote that user');
+        return;
+      }
+      toast.success('Promoted to instance admin');
+      await invalidateAll();
+    } catch {
+      toast.error('Could not promote that user');
+    } finally {
+      promoting = null;
+    }
+  }
 
   const links = [
     {
@@ -80,4 +109,52 @@
       </a>
     {/each}
   </div>
+
+  <Card.Root class="mt-8 max-w-3xl">
+    <Card.Header>
+      <Card.Title>Instance admins</Card.Title>
+      <Card.Description>
+        Every user on this deployment and whether they hold the instance-admin flag. Promoting a
+        user here is the supported way to grant it once the deployment's first account has
+        already claimed it (#413) - the only other way is `seed:owner` before anyone signs up.
+      </Card.Description>
+    </Card.Header>
+    <Card.Content>
+      <Table.Root>
+        <Table.Header>
+          <Table.Row>
+            <Table.Head>User</Table.Head>
+            <Table.Head>Instance admin</Table.Head>
+            <Table.Head class="text-right">Action</Table.Head>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {#each data.users as u (u.id)}
+            <Table.Row>
+              <Table.Cell class="font-medium">{u.username}</Table.Cell>
+              <Table.Cell>
+                {#if u.isInstanceAdmin}
+                  <Badge variant="default">Instance admin</Badge>
+                {:else}
+                  <Badge variant="outline" class="text-muted-foreground">Member</Badge>
+                {/if}
+              </Table.Cell>
+              <Table.Cell class="text-right">
+                {#if !u.isInstanceAdmin}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onclick={() => promote(u.id)}
+                    loading={promoting === u.id}
+                  >
+                    Promote
+                  </Button>
+                {/if}
+              </Table.Cell>
+            </Table.Row>
+          {/each}
+        </Table.Body>
+      </Table.Root>
+    </Card.Content>
+  </Card.Root>
 </PageContainer>
