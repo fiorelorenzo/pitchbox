@@ -52,15 +52,17 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vite": "^8.2.2",
     "vitepress": "^1.6.4",
-    "vitest": "4.1.9",
+    "vitest": "4.1.11",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "svelte": "^5.57.0"
   },
   "pnpm": {
     "overrides": {
-      "cookie": "^1.0.2",
+      "@crxjs/vite-plugin>rollup": "^4.0.0",
       "@esbuild-kit/core-utils>esbuild": "^0.25.0",
-      "@crxjs/vite-plugin>rollup": "^4.0.0"
+      "cookie": "^1.0.2",
+      "qs": "^6.16.0",
+      "vitepress>vite": "^6.4.3"
     }
   }
 }
