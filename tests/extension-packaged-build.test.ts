@@ -68,6 +68,27 @@ describe('the packaged extension', () => {
     }
   });
 
+  it('carries app.pitchbox.app in host_permissions and the auto-pair matches (#424)', () => {
+    // A manifest missing the new host means a fresh install never zero-click
+    // pairs there: the auto-pair content script simply never runs on the
+    // page, and the only symptom is the manual "Pair with this tab" button
+    // instead of any error. The apex/www stay listed too, transitionally,
+    // for an install already paired against the old host.
+    const manifest = JSON.parse(readFileSync(path.join(DIST, 'manifest.json'), 'utf8')) as {
+      host_permissions: string[];
+      content_scripts: { js: string[]; matches: string[] }[];
+    };
+    expect(manifest.host_permissions).toContain('https://app.pitchbox.app/*');
+    expect(manifest.host_permissions).toContain('https://pitchbox.app/*');
+
+    const autoPair = manifest.content_scripts.find((cs) =>
+      cs.js.some((f) => f.includes('auto-pair')),
+    );
+    expect(autoPair, 'auto-pair content script entry').toBeDefined();
+    expect(autoPair!.matches).toContain('https://app.pitchbox.app/*');
+    expect(autoPair!.matches).toContain('https://pitchbox.app/*');
+  });
+
   it('registers every dynamic content script as a standalone file, never as a module chunk', () => {
     // The fourth way this class of defect ships, found on 2026-09-07 while
     // adding the persona capture (#389): a new content script that is not in

@@ -34,7 +34,7 @@ x-web-common: &web-common
     PITCHBOX_EDITION: cloud
     # The SDK runner's only remote - reaches every model through the AI Gateway.
     AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?set AI_GATEWAY_API_KEY in .env}
-    ORIGIN: ${PUBLIC_WEB_ORIGIN:-https://pitchbox.app}
+    ORIGIN: ${PUBLIC_WEB_ORIGIN:-https://app.pitchbox.app}
     PITCHBOX_AUTH: ${PITCHBOX_AUTH:-off}
     PITCHBOX_OWNER_USERNAME: ${PITCHBOX_OWNER_USERNAME:-}
     PITCHBOX_OWNER_PASSWORD: ${PITCHBOX_OWNER_PASSWORD:-}

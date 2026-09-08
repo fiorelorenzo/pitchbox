@@ -50,3 +50,16 @@ This gives cloud users the zero-click experience option A provides for known ori
 - **MV3 permission ceiling does not move.** Static manifest entries are the only prompt-free path; there is no MV3 mechanism to make a dynamically-typed origin default-on. This is a documented constraint, not a limitation to design around.
 - **Migration.** No cloud user has a working pairing against the intended cloud origin today, since it was never reachable, so there is no bad state to migrate. Existing self-hosted and dev pairings made via the manual button are unaffected. The only upgrade-time change is that a fresh install visiting `pitchbox.app` signed in now actually auto-pairs instead of silently doing nothing.
 - **Security note.** The extension bearer token used across all of this is not yet organization-scoped on the routes that touch tenant data. That is a separate, higher-priority hardening item tracked privately (public placeholder **#170**); it is independent of the connection-origin work and does not block it.
+
+## Update (2026-09-08): the app moved to app.pitchbox.app (#424)
+
+The apex now serves the marketing landing page, not this app (#422), so two
+statements above are no longer true: "Production DNS only serves the apex
+`pitchbox.app` and `www`" (the "bug this design fixes" section) and
+"`pitchbox.app` and `preview.pitchbox.app` stay static, prompt-free auto-pair
+origins" (the recommendation section). The static, prompt-free set is now
+`app.pitchbox.app` and `preview.pitchbox.app`. `pitchbox.app` and
+`www.pitchbox.app` stay in the manifest transitionally, for an install already
+paired against the apex, and come out once the apex has served the landing
+page for a full release. The narrative above is left as written for the
+decision it documents; this note is the current state.

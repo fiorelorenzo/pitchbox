@@ -65,6 +65,12 @@ export default defineManifest({
       // which uses chrome.scripting.executeScript after a one-shot
       // permission grant.
       matches: [
+        'https://app.pitchbox.app/*',
+        // Transitional (#424): the app moved off the apex to
+        // app.pitchbox.app. An install already paired against the apex
+        // needs these to keep auto-pairing/syncing until it upgrades past
+        // the DNS cutover - drop once the apex has served the landing page
+        // (not this app) for a full release.
         'https://pitchbox.app/*',
         'https://www.pitchbox.app/*',
         'https://preview.pitchbox.app/*',
@@ -96,6 +102,11 @@ export default defineManifest({
     'https://www.reddit.com/*',
     'https://old.reddit.com/*',
     'https://matrix.redditspace.com/*',
+    'https://app.pitchbox.app/*',
+    // Transitional (#424), same reasoning as the auto-pair matches above:
+    // keep the apex/www granted so an already-paired install's background
+    // sync (dm-sync/chat-sync) keeps reaching it until the apex stops
+    // answering as the app.
     'https://pitchbox.app/*',
     'https://www.pitchbox.app/*',
     'https://preview.pitchbox.app/*',
