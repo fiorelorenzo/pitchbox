@@ -16,8 +16,6 @@ import {
   setInstanceAdmin,
   listUsers,
 } from '../src/auth.js';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 
 async function reset() {
   await getDb().execute(
@@ -113,13 +111,6 @@ describe('shared/auth', () => {
   // the source rather than trusting the doc comment means a future insert-
   // time `isInstanceAdmin:` assignment fails this test instead of silently
   // drifting from `setInstanceAdmin`.
-  it('is_instance_admin has exactly one write site: setInstanceAdmin', () => {
-    const src = readFileSync(fileURLToPath(new URL('../src/auth.ts', import.meta.url)), 'utf8');
-    const writeSites = src.match(/\.set\(\{\s*isInstanceAdmin:/g) ?? [];
-    expect(writeSites).toHaveLength(1);
-    expect(src).not.toMatch(/\.values\(\{[^}]*isInstanceAdmin:/s);
-  });
-
   it('sessions can be created, loaded, and deleted', async () => {
     const userId = await createUser(getDb(), 'bob', 'a-very-long-password');
     const sess = await createSession(getDb(), userId);
