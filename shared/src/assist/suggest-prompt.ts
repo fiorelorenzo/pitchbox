@@ -11,13 +11,19 @@
 //
 // 2026-09-07: rebuilt around `CompanionContext` (`shared/src/assist/context.ts`)
 // instead of one project's name and description. The assistant now knows who
-// is typing (persona, voice samples), what else they build (every project in
+// is typing (persona, voice profile), what else they build (every project in
 // the org) and what they have shipped (public repos) - see
 // docs/design/DECISIONS.md and issue #312's follow-ups for why "an assistant
 // that speaks for a product" was never the same thing as one that can write as
 // the person behind it. Every new section is composed the same way the old
 // project description was: present when its source is present, entirely
 // absent otherwise, never an empty heading.
+//
+// 2026-09-08 (#407): the voice section stopped quoting the operator's raw
+// posts and instead carries `voiceProfile`'s derived summary - a measured
+// description of how they write, not a list of examples to imitate
+// verbatim. Smaller, and it says something about the habit instead of
+// hoping the model infers one from a handful of quotes.
 //
 // The shape instruction moved here too, and it is now `envelopeInstruction()`
 // (`shared/src/assist/envelope.ts`) rather than "reply with the text itself
@@ -29,7 +35,7 @@
 
 import { HOUSE_STYLE_HEADING, HOUSE_STYLE_SECTION } from '../house-style.js';
 import { envelopeInstruction } from './envelope.js';
-import type { CodeRepo, OperatorPersona, ProjectBrief } from './context.js';
+import type { CodeRepo, OperatorPersona, ProjectBrief, VoiceProfileSummary } from './context.js';
 import { describePostRegister, readPostRegister } from './register.js';
 import { ASSIST_TONE_NOTES_MAX, DEFAULT_ASSIST_TONE, type AssistTone } from './tone.js';
 
@@ -67,14 +73,13 @@ export const MAX_EXAMPLES = 3;
  * better, and every one of these sources can be arbitrarily long (an "about"
  * section, a README, a commit message someone pasted a stack trace into). */
 const PERSONA_ABOUT_MAX = 1200;
-/** Ceiling on one voice sample's length. A captured LinkedIn post is whatever
- * length the operator posted, and operator_voice_samples.text has no length
- * constraint of its own. Verified 2026-09-08 (#443): an 874-char and a
- * 1562-char sample both come out of buildSuggestionPrompt at the same
- * clamped length, so a long sample already costs no more than a short one
- * once past this cap. Exported so the test proving that can pin the exact
- * boundary rather than only checking "shorter than the input". */
-export const VOICE_SAMPLE_MAX = 600;
+/** Ceiling on the derived voice profile's summary. Replaces the old
+ * per-sample cap (#407): a derived sentence or two describing a habit is a
+ * fraction of what four raw posts at up to 600 chars each used to cost, and
+ * the summary is generated prose (`assist/voice-profile.ts`), not a captured
+ * post with no length contract - past this it would only mean the
+ * derivation is padding rather than measuring. */
+export const VOICE_PROFILE_MAX = 500;
 /** Ceiling on a repo's README excerpt as it goes into the prompt. The cached
  * excerpt is already clamped to 1200 chars when it is fetched
  * (github-sources.ts README_EXCERPT_MAX_CHARS), a budget sized for "enough to
@@ -173,6 +178,10 @@ export function buildSuggestionPrompt(args: {
   /** Null when the operator has never captured a profile or typed one in by
    * hand - a smaller prompt, not a guessed one. */
   persona: OperatorPersona | null;
+  /** Null when the corpus has never been large enough to derive anything
+   * honest about how the operator writes - a smaller prompt, not a guessed
+   * one. */
+  voiceProfile: VoiceProfileSummary | null;
   /** Every project in the organization, including the current one. */
   projects: ProjectBrief[];
   repos: CodeRepo[];
@@ -201,7 +210,7 @@ export function buildSuggestionPrompt(args: {
    */
   retune?: RetuneDirection;
 }): string {
-  const { kind, post, currentProject, persona, projects, repos } = args;
+  const { kind, post, currentProject, persona, voiceProfile, projects, repos } = args;
   const tone: AssistTone = args.tone ?? DEFAULT_ASSIST_TONE;
   const parts: string[] = [];
 
@@ -242,18 +251,15 @@ export function buildSuggestionPrompt(args: {
     }
   }
 
-  // How they write: the operator's own recent posts, offered as real
-  // examples rather than an instruction to "sound professional". Explicit
-  // about not reusing the content, the same guard the few-shot templates
-  // below carry, because a suggestion that nails the tone but repeats
-  // someone else's sentence is still a suggestion that looks copied.
-  const voiceSamples = persona?.voiceSamples ?? [];
-  if (voiceSamples.length > 0) {
+  // How they write: a measured description of the operator's own habits
+  // (`assist/voice-profile.ts`), derived from their voice samples, sent
+  // messages, sent drafts and templates rather than quoted from any one of
+  // them (#407). No "do not reuse the content" guard here, unlike the
+  // few-shot examples below - there is no content to reuse, only a
+  // description of a pattern.
+  if (voiceProfile?.summary.trim()) {
     parts.push(
-      [
-        'How the operator writes. These are their own recent posts, offered as voice samples: match this voice, do not reuse the content.',
-        ...voiceSamples.map((s) => `- ${clamp(s.text, VOICE_SAMPLE_MAX)}`),
-      ].join('\n'),
+      `How the operator writes, based on what they have actually written: ${clamp(voiceProfile.summary, VOICE_PROFILE_MAX)}`,
     );
   }
 

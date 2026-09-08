@@ -11,6 +11,7 @@ import {
   recordVoiceSamples,
   ensureOperatorAccount,
 } from '@pitchbox/shared/operator-profile';
+import { refreshVoiceProfile } from '@pitchbox/shared/operator-voice-profile';
 
 // LI-21 (2026-09-07): the server side of the operator persona capture.
 // linkedin-profile-capture.ts reads whatever `/in/<slug>` page the human has
@@ -144,6 +145,13 @@ export async function POST({ request }: { request: Request }) {
         postedAt: p.postedAt ?? null,
       })),
     );
+    // A real new sample changes the corpus the voice profile is derived
+    // from (#407) - refresh it here rather than waiting for the human to
+    // notice in Settings. A no-op on a `source: 'manual'` row, same
+    // protection saveOperatorProfile gives the persona above.
+    if (voiceSamplesRecorded > 0) {
+      await refreshVoiceProfile(db, orgId);
+    }
   }
 
   const personalProjectId = await ensurePersonalProject(db, orgId);

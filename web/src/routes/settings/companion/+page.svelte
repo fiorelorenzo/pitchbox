@@ -6,7 +6,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Info, TriangleAlert, Plus, Trash2, UserRound, Mic, FolderGit2 } from '@lucide/svelte';
+	import { Info, TriangleAlert, Plus, Trash2, UserRound, Mic, FolderGit2, RefreshCw, RotateCcw } from '@lucide/svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import PageContainer from '$lib/components/PageContainer.svelte';
@@ -46,6 +46,20 @@
 		excluded: boolean;
 		capturedAt: string;
 	};
+	type VoiceProfile = {
+		summary: string;
+		traits: string[];
+		openings: string[];
+		closings: string[];
+		commonWords: string[];
+		wordsPerSentence: number;
+		itemCount: number;
+		wordCount: number;
+		evidenceCounts: { voiceSamples: number; messages: number; drafts: number; templates: number };
+		source: 'derived' | 'manual';
+		derivedAt: string | null;
+		updatedAt: string;
+	};
 	type GithubSource = {
 		id: number;
 		owner: string;
@@ -56,8 +70,17 @@
 		fetchedAt: string | null;
 		fetchError: string | null;
 	};
-	type PageData = { profile: Persona | null; voiceSamples: VoiceSample[]; maxVoiceSamples: number };
-	type FormResult = { profile?: Persona; toggledSampleId?: number; error?: string } | null;
+	type PageData = {
+		profile: Persona | null;
+		voiceSamples: VoiceSample[];
+		voiceProfile: VoiceProfile | null;
+	};
+	type FormResult = {
+		profile?: Persona;
+		toggledSampleId?: number;
+		voiceProfile?: VoiceProfile;
+		error?: string;
+	} | null;
 
 	let { data, form }: { data: PageData; form: FormResult } = $props();
 
@@ -101,24 +124,21 @@
 
 	// --- How you write -----------------------------------------------------
 
-	// listVoiceSamples (and this page's loader) return every sample newest
-	// first including excluded ones, so this order is exactly the order
-	// loadCompanionContext filters and truncates from - the "used" set below
-	// is a straight walk of that same list.
-	const usedSampleIds = $derived.by(() => {
-		const ids = new Set<number>();
-		let count = 0;
-		for (const s of data.voiceSamples) {
-			if (s.excluded) continue;
-			if (count >= data.maxVoiceSamples) break;
-			ids.add(s.id);
-			count++;
+	const voiceProfile = $derived(form?.voiceProfile ?? data.voiceProfile);
+	let voiceProfileSummary = $state(untrack(() => data.voiceProfile?.summary ?? ''));
+	let savingVoiceProfile = $state(false);
+	let refreshingVoiceProfile = $state(false);
+	let resettingVoiceProfile = $state(false);
+	const includedSampleCount = $derived(data.voiceSamples.filter((s) => !s.excluded).length);
+
+	$effect(() => {
+		if (form?.voiceProfile) {
+			voiceProfileSummary = form.voiceProfile.summary;
+			toast.success(
+				form.voiceProfile.source === 'manual' ? 'Voice description saved' : 'Voice profile refreshed',
+			);
 		}
-		return ids;
 	});
-	const usedCount = $derived(
-		Math.min(data.voiceSamples.filter((s) => !s.excluded).length, data.maxVoiceSamples),
-	);
 
 	let voiceFormRefs: Record<number, HTMLFormElement> = $state({});
 	let togglingSampleId = $state<number | null>(null);
@@ -335,13 +355,118 @@
 			<Card.Header>
 				<Card.Title class="flex items-center gap-2"><Mic class="size-4" /> How you write</Card.Title>
 				<Card.Description>
-					Your own recent posts, captured passively as examples of your voice. {usedCount} of {data
-						.voiceSamples.length} are used in prompts (up to {data.maxVoiceSamples}, newest first).
-					Excluding a sample keeps it here - it just stays out of the prompt - because a delete would
-					come back on the next capture.
+					A description of your writing habits, derived from what you have actually written - your
+					voice samples, outbound messages, sent drafts and project templates - rather than a raw
+					list of posts. Reviewable and editable below.
 				</Card.Description>
 			</Card.Header>
-			<Card.Content>
+			<Card.Content class="flex flex-col gap-4">
+				<div class="flex flex-col gap-3 rounded-md border border-border p-3">
+					<div class="flex flex-wrap items-center justify-between gap-2">
+						<span class="text-sm font-medium">Derived voice</span>
+						{#if voiceProfile}
+							<Badge variant={voiceProfile.source === 'manual' ? 'secondary' : 'outline'}>
+								{voiceProfile.source === 'manual' ? 'Manually edited' : 'Derived'}
+							</Badge>
+						{/if}
+					</div>
+
+					{#if !voiceProfile?.summary.trim() && voiceProfile?.source !== 'manual'}
+						<p class="text-sm text-muted-foreground">
+							Not enough of your own writing on file yet to say anything honest about how you write{#if voiceProfile}
+								&nbsp;({voiceProfile.itemCount} piece{voiceProfile.itemCount === 1 ? '' : 's'} so far, need at least 3)
+							{/if}. This looks at your voice samples, outbound messages, sent drafts and project
+							templates.
+						</p>
+					{/if}
+
+					<form
+						method="POST"
+						action="?/saveVoiceProfile"
+						use:enhance={() => {
+							savingVoiceProfile = true;
+							return async ({ update }) => {
+								await update();
+								savingVoiceProfile = false;
+							};
+						}}
+						class="flex flex-col gap-2"
+					>
+						<Textarea
+							name="summary"
+							bind:value={voiceProfileSummary}
+							rows={4}
+							placeholder="Derived automatically once you have enough voice samples, messages, drafts or templates on file..."
+						/>
+						<div>
+							<Button type="submit" size="sm" disabled={savingVoiceProfile}>Save</Button>
+						</div>
+					</form>
+
+					<div class="flex flex-wrap items-center gap-2">
+						<form
+							method="POST"
+							action="?/refreshVoiceProfile"
+							use:enhance={() => {
+								refreshingVoiceProfile = true;
+								return async ({ update }) => {
+									await update();
+									refreshingVoiceProfile = false;
+								};
+							}}
+						>
+							<Button type="submit" variant="outline" size="sm" disabled={refreshingVoiceProfile}>
+								<RefreshCw class="size-4" /> Refresh now
+							</Button>
+						</form>
+						{#if voiceProfile?.source === 'manual'}
+							<form
+								method="POST"
+								action="?/resetVoiceProfile"
+								use:enhance={() => {
+									resettingVoiceProfile = true;
+									return async ({ update }) => {
+										await update();
+										resettingVoiceProfile = false;
+									};
+								}}
+							>
+								<Button type="submit" variant="ghost" size="sm" disabled={resettingVoiceProfile}>
+									<RotateCcw class="size-4" /> Reset to derived
+								</Button>
+							</form>
+						{/if}
+					</div>
+
+					{#if voiceProfile && voiceProfile.itemCount > 0}
+						<p class="text-xs text-muted-foreground">
+							Derived from {voiceProfile.evidenceCounts.voiceSamples} voice sample{voiceProfile
+								.evidenceCounts.voiceSamples === 1
+								? ''
+								: 's'}, {voiceProfile.evidenceCounts.messages} message{voiceProfile.evidenceCounts
+								.messages === 1
+								? ''
+								: 's'}, {voiceProfile.evidenceCounts.drafts} sent draft{voiceProfile.evidenceCounts
+								.drafts === 1
+								? ''
+								: 's'} and {voiceProfile.evidenceCounts.templates} template{voiceProfile
+								.evidenceCounts.templates === 1
+								? ''
+								: 's'}{#if voiceProfile.derivedAt}
+								&nbsp;- last derived {relativeTime(voiceProfile.derivedAt)}
+							{/if}
+						</p>
+					{/if}
+				</div>
+
+				<div class="flex flex-col gap-1">
+					<span class="text-sm font-medium">Voice samples</span>
+					<p class="text-xs text-muted-foreground">
+						Your own recent posts, captured passively. {includedSampleCount} of {data.voiceSamples
+							.length} feed the derived voice above. Excluding a sample keeps it here - it just stops
+						contributing - because a delete would come back on the next capture.
+					</p>
+				</div>
 				{#if data.voiceSamples.length === 0}
 					<EmptyState
 						icon={Mic}
@@ -356,10 +481,10 @@
 									<p class="text-sm whitespace-pre-wrap">{sample.text}</p>
 									<div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
 										<span>{relativeTime(sample.postedAt ?? sample.capturedAt)}</span>
-										{#if usedSampleIds.has(sample.id)}
-											<Badge variant="secondary">Used</Badge>
-										{:else if sample.excluded}
+										{#if sample.excluded}
 											<Badge variant="outline">Excluded</Badge>
+										{:else}
+											<Badge variant="secondary">Included</Badge>
 										{/if}
 									</div>
 								</div>
