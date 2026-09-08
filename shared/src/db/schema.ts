@@ -1001,9 +1001,11 @@ export const githubSources = pgTable(
 //
 // `kind` is `ProjectSourceKind` (shared/src/project-sources.ts): today's
 // extraction inputs (`folder`, `git`, `upload`) and the GitHub cache
-// (`github`), plus `website` (#433) and the LinkedIn kinds #435 is spiking
-// (`linkedin_company`, `linkedin_profile`, `linkedin_post`) - a value nobody
-// implements yet is fine, a second copy of this list elsewhere is not.
+// (`github`), plus `website` (#433), the LinkedIn kinds #435 is spiking
+// (`linkedin_company`, `linkedin_profile`, `linkedin_post`), and two
+// read-only social adapters (#437: `mastodon_account`, `hackernews_author`)
+// - a value nobody implements yet is fine, a second copy of this list
+// elsewhere is not.
 // `config` is the kind-specific input (a path, a URL, a repo/profile
 // identifier); `output` is the kind-specific cached read (README excerpt,
 // extracted page text, ...) an extraction or a re-derivation reads from
@@ -1015,7 +1017,7 @@ export const projectSources = pgTable(
     projectId: integer('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
-    kind: text('kind').notNull(), // 'folder' | 'git' | 'upload' | 'github' | 'website' | 'linkedin_company' | 'linkedin_profile' | 'linkedin_post'
+    kind: text('kind').notNull(), // 'folder' | 'git' | 'upload' | 'github' | 'website' | 'linkedin_company' | 'linkedin_profile' | 'linkedin_post' | 'mastodon_account' | 'hackernews_author'
     config: jsonb('config').notNull().default({}),
     output: jsonb('output'),
     active: boolean('active').notNull().default(true),

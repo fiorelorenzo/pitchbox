@@ -99,3 +99,54 @@ export function submitUrl(): string {
 export function profileUrl(username: string): string {
   return `${SITE_BASE}/user?id=${encodeURIComponent(username)}`;
 }
+
+/** Candidate ids hydrated (via `${API_BASE}/item/:id.json`) before giving up
+ * on finding `limit` real stories/jobs - HN's own `submitted` list on a user
+ * mixes comments in with stories, so this over-fetches a small, fixed
+ * window rather than the whole submission history. */
+export const HN_AUTHOR_CANDIDATE_CAP = 30;
+
+/** Default (and max) number of a user's own submissions a source keeps. */
+export const HN_AUTHOR_MAX_ITEMS = 10;
+
+export type RawHnUser = {
+  id?: string;
+  /** Item ids this user has posted (stories, comments, ...), not guaranteed
+   * sorted by the HN API. */
+  submitted?: number[];
+};
+
+/**
+ * Fetches a user's most recent story/job submissions. Reuses the exact same
+ * per-item hydration `fetchListings` already does
+ * (`${API_BASE}/item/:id.json` + `normalizeItem`), just seeded from
+ * `${API_BASE}/user/:username.json`'s `submitted` list instead of a listing
+ * endpoint - no second HTTP client, no scraping, no credential. `submitted`
+ * ids are sorted descending before hydrating (HN ids are monotonically
+ * increasing, so a higher id is a later post) since the API gives no
+ * ordering guarantee. Returns an empty list for an unknown username (the
+ * API answers `null`) rather than throwing.
+ */
+export async function fetchUserSubmissions(
+  username: string,
+  options: { limit?: number } = {},
+  fetcher: Fetcher = defaultFetcher,
+): Promise<HnItem[]> {
+  const limit = Math.max(1, Math.min(options.limit ?? HN_AUTHOR_MAX_ITEMS, HN_AUTHOR_MAX_ITEMS));
+  const user = (await fetcher(
+    `${API_BASE}/user/${encodeURIComponent(username)}.json`,
+  )) as RawHnUser | null;
+  if (!user || !Array.isArray(user.submitted) || user.submitted.length === 0) return [];
+
+  const candidates = [...user.submitted].sort((a, b) => b - a).slice(0, HN_AUTHOR_CANDIDATE_CAP);
+  const raws = await Promise.all(
+    candidates.map((id) => fetcher(`${API_BASE}/item/${id}.json`) as Promise<RawHnItem>),
+  );
+  const items: HnItem[] = [];
+  for (const raw of raws) {
+    const norm = normalizeItem(raw);
+    if (norm) items.push(norm);
+    if (items.length >= limit) break;
+  }
+  return items;
+}

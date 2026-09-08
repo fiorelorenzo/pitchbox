@@ -1,29 +1,44 @@
 // Fetches (or explains why it can't fetch) one project source's content
 // (#432). A project source's `config`/`output`/`fetch_error` shape is
-// generic across all eight `PROJECT_SOURCE_KINDS` (project-sources.ts), but
-// only `github` has a real fetcher wired up here today - `website` is #433
-// and the three LinkedIn kinds are #435's spike, neither implemented in this
-// repo yet. `folder`/`git`/`upload` are populated by starting an extraction
-// run (cli/src/commands/project.ts's recordExtractionSource), not by a
-// standalone sync, since their `config.value` is a local path or an
-// ephemeral upload with nothing to re-fetch from here.
+// generic across all `PROJECT_SOURCE_KINDS` (project-sources.ts). Real
+// fetchers are wired up for `github`, `website` (#472), `mastodon_account`
+// and `hackernews_author` (#437) - the three `linkedin_*` kinds are #435's
+// spike, not implemented in this repo yet. `folder`/`git`/`upload` are
+// populated by starting an extraction run (cli/src/commands/project.ts's
+// recordExtractionSource), not by a standalone sync, since their
+// `config.value` is a local path or an ephemeral upload with nothing to
+// re-fetch from here.
 //
-// Every branch below writes back through `updateProjectSource` with either a
-// successful `output`/`fetchedAt` or a `fetchError` explaining in words why
-// it didn't - never throws, mirroring `refreshGithubSource`'s contract, so a
+// Every branch below writes back through `updateProjectSource` (directly,
+// for `github`) or through the kind's own `refresh*Source` (which does its
+// own `updateProjectSource` internally, for `website`/`mastodon_account`/
+// `hackernews_author`) with either a successful `output`/`fetchedAt` or a
+// `fetchError` explaining in words why it didn't - never throws, so a
 // re-sync click always resolves to a visible state instead of a 500.
 
 import type { Db } from './db/client.js';
 import { getProjectSource, updateProjectSource, type ProjectSourceRow } from './project-sources.js';
 import { parseRepoUrl, README_EXCERPT_MAX_CHARS, type GithubFetch } from './github-sources.js';
+import { refreshWebsiteSource, type WebsiteFetch } from './website-source.js';
+import { refreshMastodonAccountSource } from './mastodon-source.js';
+import type { MastodonPublicFetch } from './platforms/mastodon/client.js';
+import { refreshHackernewsAuthorSource, type HackernewsRawFetch } from './hackernews-source.js';
 
 export type SyncProjectSourceResult =
   { ok: true; source: ProjectSourceRow } | { ok: false; source: ProjectSourceRow };
 
 export type SyncOptions = {
-  /** Injectable fetch, defaults to the global one - tests substitute a mock
-   * so this never actually reaches GitHub. */
+  /** Injectable fetch for `github` - tests substitute a mock so this never
+   * actually reaches GitHub. */
   fetchImpl?: GithubFetch;
+  /** Injectable fetch for `website` - see `WebsiteCrawlOptions.fetchImpl`. */
+  websiteFetchImpl?: WebsiteFetch;
+  /** Injectable fetch for `mastodon_account` - see
+   * `fetchPublicAccountStatuses`'s `fetchImpl`. */
+  mastodonFetchImpl?: MastodonPublicFetch;
+  /** Injectable fetch for `hackernews_author` - see
+   * `HackernewsAuthorSourceOptions.fetchImpl`. */
+  hackernewsFetchImpl?: HackernewsRawFetch;
 };
 
 const GITHUB_API_BASE = 'https://api.github.com';
@@ -145,6 +160,22 @@ async function markUnfetchable(
   return { ok: false, source: updated ?? source };
 }
 
+/** Refreshes a source through one of the `refresh*Source` modules (which do
+ * their own `updateProjectSource` internally) and reloads the row to report
+ * `ok`/`fetchError` back - the shared shape `website`/`mastodon_account`/
+ * `hackernews_author` all need, so one helper rather than three copies. */
+async function syncViaRefresh(
+  db: Db,
+  organizationId: number,
+  source: ProjectSourceRow,
+  refresh: () => Promise<void>,
+): Promise<SyncProjectSourceResult> {
+  await refresh();
+  const updated = await getProjectSource(db, organizationId, source.id);
+  if (!updated) return { ok: false, source };
+  return { ok: updated.fetchError === null, source: updated };
+}
+
 /**
  * Fetches (or records why it can't fetch) one source. Returns null when `id`
  * does not exist or its project does not belong to `organizationId` - the
@@ -164,6 +195,17 @@ export async function syncProjectSource(
     case 'github':
       return syncGithub(db, organizationId, source, opts.fetchImpl ?? fetch);
     case 'website':
+      return syncViaRefresh(db, organizationId, source, () =>
+        refreshWebsiteSource(db, source.id, { fetchImpl: opts.websiteFetchImpl }),
+      );
+    case 'mastodon_account':
+      return syncViaRefresh(db, organizationId, source, () =>
+        refreshMastodonAccountSource(db, source.id, { fetchImpl: opts.mastodonFetchImpl }),
+      );
+    case 'hackernews_author':
+      return syncViaRefresh(db, organizationId, source, () =>
+        refreshHackernewsAuthorSource(db, source.id, { fetchImpl: opts.hackernewsFetchImpl }),
+      );
     case 'linkedin_company':
     case 'linkedin_profile':
     case 'linkedin_post':

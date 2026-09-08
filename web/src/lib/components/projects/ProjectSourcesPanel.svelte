@@ -7,14 +7,14 @@
   // extraction (cli/src/commands/project.ts's recordExtractionSource, via
   // "Run extraction" below for `git`, or the CLI for a local folder) since
   // their config is a local/ephemeral path with nothing to fetch on its
-  // own; every other kind is addable here directly by URL.
+  // own; every other kind is addable here directly by a single string value.
   //
-  // `website` (#433) and the three `linkedin_*` kinds (#435's spike) have no
-  // fetcher wired up yet - re-syncing one of those, or a folder/git/upload
-  // row, comes back with a fetch_error explaining that in words
-  // (shared/src/project-source-sync.ts) rather than crashing or pretending
-  // to have succeeded, so those kinds still render as a source you can add
-  // and see.
+  // `website`, `mastodon_account` and `hackernews_author` (#472, #437) all
+  // have a real fetcher wired up (shared/src/project-source-sync.ts); the
+  // three `linkedin_*` kinds (#435's spike) don't yet - re-syncing one of
+  // those, or a folder/git/upload row, comes back with a fetch_error
+  // explaining that in words rather than crashing or pretending to have
+  // succeeded, so those kinds still render as a source you can add and see.
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import * as AlertDialog from '$lib/components/ui/alert-dialog';
@@ -25,16 +25,16 @@
   import { relativeTime } from '$lib/utils/time';
   import { toast } from 'svelte-sonner';
   import { Trash2, RefreshCw, Play } from '@lucide/svelte';
+  import type { ProjectSourceKind } from '@pitchbox/shared/project-sources';
 
-  export type ProjectSourceKind =
-    | 'folder'
-    | 'git'
-    | 'upload'
-    | 'github'
-    | 'website'
-    | 'linkedin_company'
-    | 'linkedin_profile'
-    | 'linkedin_post';
+  // Re-exported so a consumer (the project page's load function/props) can
+  // still name this type off the panel, without this panel keeping its own
+  // second copy of the kind list to drift from `PROJECT_SOURCE_KINDS` - a
+  // type-only import, erased at build time, so it never pulls
+  // `@pitchbox/shared`'s DB-touching runtime code into the client bundle
+  // (same reasoning `AGENTS.md` gives for never importing
+  // `@pitchbox/shared/db` from client code).
+  export type { ProjectSourceKind };
 
   export type ProjectSource = {
     id: number;
@@ -69,6 +69,8 @@
     linkedin_company: 'LinkedIn company page',
     linkedin_profile: 'LinkedIn profile',
     linkedin_post: 'LinkedIn post',
+    mastodon_account: 'Mastodon account',
+    hackernews_author: 'Hacker News author',
   };
 
   // Kinds this panel's Add form can create directly: value-only sources.
@@ -77,6 +79,8 @@
     { value: 'git', label: KIND_LABEL.git },
     { value: 'github', label: KIND_LABEL.github },
     { value: 'website', label: KIND_LABEL.website },
+    { value: 'mastodon_account', label: KIND_LABEL.mastodon_account },
+    { value: 'hackernews_author', label: KIND_LABEL.hackernews_author },
     { value: 'linkedin_company', label: KIND_LABEL.linkedin_company },
     { value: 'linkedin_profile', label: KIND_LABEL.linkedin_profile },
     { value: 'linkedin_post', label: KIND_LABEL.linkedin_post },
@@ -86,12 +90,33 @@
     git: 'https://github.com/owner/repo.git or git@host:owner/repo.git',
     github: 'https://github.com/owner/repo or owner/repo',
     website: 'https://example.com',
+    mastodon_account: 'https://mastodon.social/@handle',
+    hackernews_author: 'pg or https://news.ycombinator.com/user?id=pg',
     linkedin_company: 'https://www.linkedin.com/company/example',
     linkedin_profile: 'https://www.linkedin.com/in/example',
     linkedin_post: 'https://www.linkedin.com/posts/example_activity',
   };
 
+  // `config`'s shape is kind-specific: most kinds key it `value`, but
+  // `website` keys it `url`, `mastodon_account` splits it into
+  // `instanceUrl`/`acct`, and `hackernews_author` keys it `username` - see
+  // shared/src/{website,mastodon,hackernews}-source.ts.
   function sourceValue(s: ProjectSource): string {
+    if (s.kind === 'website') {
+      const v = s.config?.url;
+      return typeof v === 'string' ? v : '';
+    }
+    if (s.kind === 'mastodon_account') {
+      const instanceUrl = s.config?.instanceUrl;
+      const acct = s.config?.acct;
+      return typeof instanceUrl === 'string' && typeof acct === 'string'
+        ? `${instanceUrl}/@${acct}`
+        : '';
+    }
+    if (s.kind === 'hackernews_author') {
+      const v = s.config?.username;
+      return typeof v === 'string' ? v : '';
+    }
     const v = s.config?.value;
     return typeof v === 'string' ? v : '';
   }

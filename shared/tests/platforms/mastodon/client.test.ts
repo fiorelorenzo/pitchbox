@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { computeRateLimitDelayMs, MastodonClient } from '../../../src/platforms/mastodon/client.js';
+import {
+  computeRateLimitDelayMs,
+  fetchPublicAccountStatuses,
+  MastodonClient,
+} from '../../../src/platforms/mastodon/client.js';
 import type {
   MastodonAccount,
   MastodonNotification,
@@ -290,5 +294,72 @@ describe('MastodonClient', () => {
     await expect(client.getStatus('77')).rejects.toThrow(/Mastodon API 429/);
     expect(fetchImpl).toHaveBeenCalledTimes(3);
     expect(sleepImpl).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('fetchPublicAccountStatuses', () => {
+  it('looks up the account then reads its statuses, with no Authorization header sent', async () => {
+    const account = fakeAccount({ id: '42', acct: 'alice' });
+    const statuses = [fakeStatus({ id: '1' }), fakeStatus({ id: '2' })];
+    const calls: Array<{ url: string; init?: { signal?: AbortSignal } }> = [];
+    const fetchImpl = vi.fn(async (url: string, init?: { signal?: AbortSignal }) => {
+      calls.push({ url, init });
+      if (url.includes('/accounts/lookup')) return jsonResponse(account);
+      return jsonResponse(statuses);
+    });
+
+    const result = await fetchPublicAccountStatuses('https://mastodon.example', 'alice', {
+      timeoutMs: 5_000,
+      fetchImpl,
+    });
+
+    expect(result.account.id).toBe('42');
+    expect(result.statuses.map((s) => s.id)).toEqual(['1', '2']);
+    expect(calls[0]!.url).toBe('https://mastodon.example/api/v1/accounts/lookup?acct=alice');
+    expect(calls[1]!.url).toBe(
+      'https://mastodon.example/api/v1/accounts/42/statuses?exclude_replies=true&exclude_reblogs=true&limit=10',
+    );
+  });
+
+  it('caps the returned statuses at `limit` even if the instance sends more back', async () => {
+    const account = fakeAccount({ id: '42' });
+    const manyStatuses = Array.from({ length: 8 }, (_, i) => fakeStatus({ id: String(i) }));
+    const fetchImpl = vi.fn(async (url: string) =>
+      url.includes('/accounts/lookup') ? jsonResponse(account) : jsonResponse(manyStatuses),
+    );
+
+    const result = await fetchPublicAccountStatuses('https://mastodon.example', 'alice', {
+      timeoutMs: 5_000,
+      limit: 3,
+      fetchImpl,
+    });
+
+    expect(result.statuses.length).toBe(3);
+  });
+
+  it('surfaces a non-ok lookup as a descriptive error instead of throwing raw JSON parse errors', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ error: 'not found' }, { status: 404 }));
+
+    await expect(
+      fetchPublicAccountStatuses('https://mastodon.example', 'ghost', {
+        timeoutMs: 5_000,
+        fetchImpl,
+      }),
+    ).rejects.toThrow(/404/);
+  });
+
+  it('reports a timeout distinctly from a network error', async () => {
+    const fetchImpl = vi.fn((_url: string, init?: { signal?: AbortSignal }) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    });
+
+    await expect(
+      fetchPublicAccountStatuses('https://mastodon.example', 'alice', {
+        timeoutMs: 20,
+        fetchImpl,
+      }),
+    ).rejects.toThrow(/timed out after 20ms/);
   });
 });

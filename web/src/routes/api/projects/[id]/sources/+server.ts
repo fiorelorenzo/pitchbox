@@ -6,6 +6,9 @@ import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 import { createProjectSource, listProjectSources } from '@pitchbox/shared/project-sources';
 import { syncProjectSource } from '@pitchbox/shared/project-source-sync';
+import { addWebsiteSource } from '@pitchbox/shared/website-source';
+import { addMastodonAccountSource } from '@pitchbox/shared/mastodon-source';
+import { addHackernewsAuthorSource } from '@pitchbox/shared/hackernews-source';
 
 // The kinds this endpoint accepts a plain `{ kind, value }` add for: every
 // `PROJECT_SOURCE_KIND` that identifies a source by a URL/identifier alone.
@@ -21,7 +24,19 @@ const ADDABLE_KINDS = [
   'linkedin_company',
   'linkedin_profile',
   'linkedin_post',
+  'mastodon_account',
+  'hackernews_author',
 ] as const;
+
+// `website`/`mastodon_account`/`hackernews_author` each need real parsing of
+// the single `value` string (a URL split into instance+handle for Mastodon,
+// a username-or-profile-URL for HN) into their own `config` shape - the
+// generic `{ value }` row below only ever suits `github`/`git`, whose sync
+// re-parses `config.value` itself (`syncGithub`), and the still-unimplemented
+// `linkedin_*` kinds, which don't read their config yet either way. Routing
+// these three through their dedicated `add*Source` (below, in `POST`) keeps
+// that parsing in one place (shared with the CLI/any other caller) instead
+// of duplicating it here as a second, drifting copy.
 
 const PostBody = z.object({
   kind: z.enum(ADDABLE_KINDS),
@@ -66,9 +81,34 @@ export async function POST(event: RequestEvent) {
   }
 
   const db = getDb();
-  const created = await createProjectSource(db, orgId, id, parsed.data.kind, {
-    value: parsed.data.value,
-  });
+  const { kind, value } = parsed.data;
+
+  if (kind === 'website') {
+    const result = await addWebsiteSource(db, orgId, id, value);
+    if (!result.ok) {
+      if (result.code === 'not_found') throw error(404, 'not_found');
+      throw error(400, result.reason);
+    }
+    return json({ source: result.source }, { status: 201 });
+  }
+  if (kind === 'mastodon_account') {
+    const result = await addMastodonAccountSource(db, orgId, id, value);
+    if (!result.ok) {
+      if (result.code === 'not_found') throw error(404, 'not_found');
+      throw error(400, result.reason);
+    }
+    return json({ source: result.source }, { status: 201 });
+  }
+  if (kind === 'hackernews_author') {
+    const result = await addHackernewsAuthorSource(db, orgId, id, value);
+    if (!result.ok) {
+      if (result.code === 'not_found') throw error(404, 'not_found');
+      throw error(400, result.reason);
+    }
+    return json({ source: result.source }, { status: 201 });
+  }
+
+  const created = await createProjectSource(db, orgId, id, kind, { value });
   if (!created) throw error(404, 'not_found');
 
   const synced = await syncProjectSource(db, orgId, created.id);

@@ -1,10 +1,16 @@
 // Exercises shared/src/project-source-sync.ts: the per-kind fetch dispatcher
-// behind a project source's "re-sync" (#432). `github` is the one kind with
-// a real fetcher today; `website`/`linkedin_*` (not implemented yet - #433,
-// #435) and `folder`/`git`/`upload` (populated by running an extraction, not
-// by syncing) must each come back with a human-readable fetch_error instead
-// of throwing, so an unimplemented kind renders as a source you can add and
-// see rather than a crash.
+// behind a project source's "re-sync" (#432). `github`, `website` (#472) and
+// `mastodon_account`/`hackernews_author` (#437) each have a real fetcher;
+// `linkedin_*` (not implemented yet - #435) and `folder`/`git`/`upload`
+// (populated by running an extraction, not by syncing) must each come back
+// with a human-readable fetch_error instead of throwing, so an unimplemented
+// kind renders as a source you can add and see rather than a crash. The
+// website/mastodon/hackernews cases here use a mocked fetchImpl (proving the
+// dispatcher routes to the right refresher and reports ok/fetch_error
+// correctly) rather than a served fixture - the caps/timeout/error-shape
+// behaviour those refreshers own is already proven against real fixture
+// servers in website-source.test.ts, mastodon-source.test.ts and
+// hackernews-source.test.ts.
 import { randomUUID } from 'node:crypto';
 import { describe, it, expect, afterEach } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -12,6 +18,10 @@ import { getDb, schema } from '../src/db/client.js';
 import { createProjectSource, getProjectSource } from '../src/project-sources.js';
 import { syncProjectSource } from '../src/project-source-sync.js';
 import type { GithubFetch } from '../src/github-sources.js';
+import type { WebsiteFetch } from '../src/website-source.js';
+import type { MastodonPublicFetch } from '../src/platforms/mastodon/client.js';
+import type { MastodonAccount, MastodonStatus } from '../src/platforms/mastodon/types.js';
+import type { HackernewsRawFetch } from '../src/hackernews-source.js';
 
 const createdOrgIds: number[] = [];
 
@@ -41,6 +51,19 @@ function fakeResponse(status: number, body: unknown) {
     status,
     headers: new Headers(),
     json: async () => body,
+  } as unknown as Response;
+}
+
+/** `crawlWebsite`'s `fetchCapped` reads `.text()` (there is no `.body`
+ * stream on this fake), not `.json()` - a separate helper from
+ * `fakeResponse` for that reason. */
+function fakeHtmlResponse(status: number, html: string) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers({ 'content-type': 'text/html' }),
+    body: null,
+    text: async () => html,
   } as unknown as Response;
 }
 
@@ -104,7 +127,7 @@ describe('syncProjectSource: github', () => {
 });
 
 describe('syncProjectSource: kinds with no fetcher yet', () => {
-  it.each(['website', 'linkedin_company', 'linkedin_profile', 'linkedin_post'] as const)(
+  it.each(['linkedin_company', 'linkedin_profile', 'linkedin_post'] as const)(
     '%s sets a fetch_error naming the kind, not a crash',
     async (kind) => {
       const { orgId, projectId } = await setupOrgAndProject();
@@ -118,6 +141,151 @@ describe('syncProjectSource: kinds with no fetcher yet', () => {
       expect(result?.source.fetchedAt).not.toBeNull();
     },
   );
+});
+
+function fakeAccount(overrides: Partial<MastodonAccount> = {}): MastodonAccount {
+  return {
+    id: '9',
+    username: 'alice',
+    acct: 'alice',
+    display_name: 'Alice',
+    url: 'https://mastodon.example/@alice',
+    note: '',
+    bot: false,
+    locked: false,
+    fields: [],
+    followers_count: 0,
+    following_count: 0,
+    statuses_count: 0,
+    created_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function fakeStatus(overrides: Partial<MastodonStatus> = {}): MastodonStatus {
+  return {
+    id: '1',
+    uri: 'https://mastodon.example/users/alice/statuses/1',
+    url: 'https://mastodon.example/@alice/1',
+    created_at: '2026-01-01T00:00:00.000Z',
+    in_reply_to_id: null,
+    in_reply_to_account_id: null,
+    content: '<p>Hello world.</p>',
+    visibility: 'public',
+    sensitive: false,
+    spoiler_text: '',
+    account: fakeAccount(),
+    mentions: [],
+    tags: [],
+    replies_count: 0,
+    reblogs_count: 0,
+    favourites_count: 0,
+    reblog: null,
+    ...overrides,
+  };
+}
+
+describe('syncProjectSource: website', () => {
+  it('a successful fetch stores output and clears fetch_error', async () => {
+    const { orgId, projectId } = await setupOrgAndProject();
+    const db = getDb();
+    const created = await createProjectSource(db, orgId, projectId, 'website', {
+      url: 'https://example.com/',
+    });
+    const websiteFetchImpl: WebsiteFetch = async () =>
+      fakeHtmlResponse(200, '<h1>Acme</h1><p>We make widgets.</p>');
+
+    const result = await syncProjectSource(db, orgId, created!.id, { websiteFetchImpl });
+    expect(result?.ok).toBe(true);
+    expect(result?.source.fetchError).toBeNull();
+    const output = result?.source.output as { text: string } | null;
+    expect(output?.text).toContain('We make widgets.');
+  });
+
+  it('a network failure records fetch_error, never throwing', async () => {
+    const { orgId, projectId } = await setupOrgAndProject();
+    const db = getDb();
+    const created = await createProjectSource(db, orgId, projectId, 'website', {
+      url: 'https://example.com/',
+    });
+    const websiteFetchImpl: WebsiteFetch = async () => {
+      throw new Error('connection refused');
+    };
+
+    const result = await syncProjectSource(db, orgId, created!.id, { websiteFetchImpl });
+    expect(result?.ok).toBe(false);
+    expect(result?.source.fetchError).toMatch(/network error/);
+  });
+});
+
+describe('syncProjectSource: mastodon_account', () => {
+  it('a successful fetch stores output and clears fetch_error', async () => {
+    const { orgId, projectId } = await setupOrgAndProject();
+    const db = getDb();
+    const created = await createProjectSource(db, orgId, projectId, 'mastodon_account', {
+      instanceUrl: 'https://mastodon.example',
+      acct: 'alice',
+    });
+    const account = fakeAccount();
+    const statuses = [fakeStatus()];
+    const mastodonFetchImpl: MastodonPublicFetch = async (url) =>
+      url.includes('/lookup') ? fakeResponse(200, account) : fakeResponse(200, statuses);
+
+    const result = await syncProjectSource(db, orgId, created!.id, { mastodonFetchImpl });
+    expect(result?.ok).toBe(true);
+    expect(result?.source.fetchError).toBeNull();
+    const output = result?.source.output as { text: string } | null;
+    expect(output?.text).toContain('Hello world.');
+  });
+
+  it('a 404 lookup (unknown handle) records fetch_error, never throwing', async () => {
+    const { orgId, projectId } = await setupOrgAndProject();
+    const db = getDb();
+    const created = await createProjectSource(db, orgId, projectId, 'mastodon_account', {
+      instanceUrl: 'https://mastodon.example',
+      acct: 'ghost',
+    });
+    const mastodonFetchImpl: MastodonPublicFetch = async () => fakeResponse(404, {});
+
+    const result = await syncProjectSource(db, orgId, created!.id, { mastodonFetchImpl });
+    expect(result?.ok).toBe(false);
+    expect(result?.source.fetchError).toMatch(/404/);
+  });
+});
+
+describe('syncProjectSource: hackernews_author', () => {
+  it('a successful fetch stores output and clears fetch_error', async () => {
+    const { orgId, projectId } = await setupOrgAndProject();
+    const db = getDb();
+    const created = await createProjectSource(db, orgId, projectId, 'hackernews_author', {
+      username: 'pg',
+    });
+    const hackernewsFetchImpl: HackernewsRawFetch = async (url) => {
+      if (url.includes('/user/')) return fakeResponse(200, { id: 'pg', submitted: [1] });
+      return fakeResponse(200, { id: 1, type: 'story', by: 'pg', title: 'Ask HN: something' });
+    };
+
+    const result = await syncProjectSource(db, orgId, created!.id, { hackernewsFetchImpl });
+    expect(result?.ok).toBe(true);
+    expect(result?.source.fetchError).toBeNull();
+    const output = result?.source.output as { text: string } | null;
+    expect(output?.text).toContain('Ask HN: something');
+  });
+
+  it('a network failure records fetch_error, never throwing', async () => {
+    const { orgId, projectId } = await setupOrgAndProject();
+    const db = getDb();
+    const created = await createProjectSource(db, orgId, projectId, 'hackernews_author', {
+      username: 'pg',
+    });
+    const hackernewsFetchImpl: HackernewsRawFetch = async () => {
+      throw new Error('connection refused');
+    };
+
+    const result = await syncProjectSource(db, orgId, created!.id, { hackernewsFetchImpl });
+    expect(result?.ok).toBe(false);
+    expect(result?.source.fetchError).toMatch(/network error/);
+  });
 });
 
 describe('syncProjectSource: extraction-only kinds', () => {

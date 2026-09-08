@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   fetchListings,
+  fetchUserSubmissions,
+  HN_AUTHOR_CANDIDATE_CAP,
   normalizeItem,
   type Fetcher,
   type RawHnItem,
@@ -82,5 +84,69 @@ describe('hackernews adapter', () => {
     expect(HN_ACCOUNT_SCHEMA.safeParse({ username: 'pg' }).success).toBe(true);
     expect(HN_ACCOUNT_SCHEMA.safeParse({ username: '' }).success).toBe(false);
     expect(HN_ACCOUNT_SCHEMA.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('fetchUserSubmissions', () => {
+  function fixtureFetcherWithUser(
+    submitted: number[],
+    extraItems: Record<number, RawHnItem> = {},
+  ): Fetcher {
+    const items = { ...RAW_FIXTURES, ...extraItems };
+    return async (url: string): Promise<unknown> => {
+      if (url.endsWith('/user/pg.json')) return { id: 'pg', submitted };
+      if (url.endsWith('/user/nobody.json')) return null;
+      const match = url.match(/\/item\/(\d+)\.json$/);
+      if (match) return items[Number(match[1])] ?? null;
+      throw new Error(`unexpected url ${url}`);
+    };
+  }
+
+  it('hydrates submitted ids newest-first and drops comments, keeping only stories/jobs', async () => {
+    const items = await fetchUserSubmissions('pg', {}, fixtureFetcherWithUser([1, 2, 3]));
+    // id 3 is a comment (dropped); ids 2 and 1 are stories, newest (higher id) first.
+    expect(items.map((i) => i.id)).toEqual([2, 1]);
+  });
+
+  it('sorts candidates newest-first (highest id) before hydrating, regardless of API order', async () => {
+    const items = await fetchUserSubmissions('pg', { limit: 1 }, fixtureFetcherWithUser([1, 2]));
+    // id 2 is the higher (newer) id; a limit of 1 must prefer it over id 1.
+    expect(items.map((i) => i.id)).toEqual([2]);
+  });
+
+  it('clamps limit to HN_AUTHOR_MAX_ITEMS regardless of what is requested', async () => {
+    const manyStoryIds = Array.from({ length: 20 }, (_, i) => 100 + i);
+    const extraItems: Record<number, RawHnItem> = {};
+    for (const id of manyStoryIds) {
+      extraItems[id] = { id, type: 'story', by: 'pg', title: `Story ${id}`, time: id };
+    }
+    const items = await fetchUserSubmissions(
+      'pg',
+      { limit: 1000 },
+      fixtureFetcherWithUser(manyStoryIds, extraItems),
+    );
+    expect(items.length).toBe(10);
+  });
+
+  it('never hydrates more than HN_AUTHOR_CANDIDATE_CAP ids even when submitted has more', async () => {
+    const manyCommentIds = Array.from({ length: 100 }, (_, i) => 200 + i);
+    let hydrateCount = 0;
+    const fetcher: Fetcher = async (url: string) => {
+      if (url.endsWith('/user/pg.json')) return { id: 'pg', submitted: manyCommentIds };
+      const match = url.match(/\/item\/(\d+)\.json$/);
+      if (match) {
+        hydrateCount += 1;
+        return { id: Number(match[1]), type: 'comment' } satisfies RawHnItem;
+      }
+      throw new Error(`unexpected url ${url}`);
+    };
+    const items = await fetchUserSubmissions('pg', {}, fetcher);
+    expect(items).toEqual([]);
+    expect(hydrateCount).toBe(HN_AUTHOR_CANDIDATE_CAP);
+  });
+
+  it('returns an empty list for an unknown username instead of throwing', async () => {
+    const items = await fetchUserSubmissions('nobody', {}, fixtureFetcherWithUser([]));
+    expect(items).toEqual([]);
   });
 });

@@ -74,7 +74,9 @@
     "./website-source": "./src/website-source.ts",
     "./agents/sdk/tools": "./src/agents/sdk/tools.ts",
     "./agents/sdk/event-normalizer": "./src/agents/sdk/event-normalizer.ts",
-    "./instance-audit": "./src/instance-audit.ts"
+    "./instance-audit": "./src/instance-audit.ts",
+    "./mastodon-source": "./src/mastodon-source.ts",
+    "./hackernews-source": "./src/hackernews-source.ts"
   },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",

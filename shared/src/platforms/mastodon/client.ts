@@ -159,3 +159,82 @@ export class MastodonClient {
     return this.request<MastodonNotification[]>(`/api/v1/notifications${query ? `?${query}` : ''}`);
   }
 }
+
+/** Minimal, structurally-compatible stand-in for `typeof fetch`, timeout-
+ * carrying (a plain `AbortSignal`) - same shape as `WebsiteFetch` in
+ * website-source.ts, for the same reason: a test double only has to satisfy
+ * this, not the full DOM `fetch` overload set. */
+export type MastodonPublicFetch = (
+  url: string,
+  init?: { signal?: AbortSignal },
+) => Promise<Response>;
+
+async function requestPublicJson<T>(
+  url: string,
+  fetchImpl: MastodonPublicFetch,
+  timeoutMs: number,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    let res: Response;
+    try {
+      res = await fetchImpl(url, { signal: controller.signal });
+    } catch (err) {
+      if (controller.signal.aborted)
+        throw new Error(`timed out after ${timeoutMs}ms`, { cause: err });
+      throw new Error(`network error: ${(err as Error).message}`, { cause: err });
+    }
+    if (!res.ok) throw new Error(`Mastodon API ${res.status} on ${url}`);
+    try {
+      return (await res.json()) as T;
+    } catch (err) {
+      if (controller.signal.aborted)
+        throw new Error(`timed out after ${timeoutMs}ms`, { cause: err });
+      throw new Error(`network error: ${(err as Error).message}`, { cause: err });
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export interface PublicAccountStatuses {
+  account: MastodonAccount;
+  statuses: MastodonStatus[];
+}
+
+/**
+ * Reads an account's recent public statuses with no bearer token: a plain
+ * GET against `accounts/lookup` then `accounts/:id/statuses`, the public
+ * REST endpoints a default-configured Mastodon instance serves un-authed.
+ * Deliberately distinct from `MastodonClient` above, which always carries a
+ * *connected account's* bearer token for posting/notifications on our own
+ * behalf - reading an arbitrary external account's public posts needs no
+ * credential and has no reason to spend one. `timeoutMs` is required (no
+ * default here): the caller (a project source) owns the cap/timeout policy,
+ * this is just the network primitive, same split as `crawlWebsite` /
+ * `fetchCapped` in website-source.ts.
+ */
+export async function fetchPublicAccountStatuses(
+  instanceUrl: string,
+  acct: string,
+  opts: { limit?: number; timeoutMs: number; fetchImpl?: MastodonPublicFetch },
+): Promise<PublicAccountStatuses> {
+  const fetchImpl = opts.fetchImpl ?? ((url, init) => fetch(url, init));
+  const limit = Math.max(1, Math.min(opts.limit ?? 10, 40));
+  const base = instanceUrl.replace(/\/+$/, '');
+
+  const account = await requestPublicJson<MastodonAccount>(
+    `${base}/api/v1/accounts/lookup?acct=${encodeURIComponent(acct)}`,
+    fetchImpl,
+    opts.timeoutMs,
+  );
+  const statuses = await requestPublicJson<MastodonStatus[]>(
+    `${base}/api/v1/accounts/${encodeURIComponent(account.id)}/statuses?exclude_replies=true&exclude_reblogs=true&limit=${limit}`,
+    fetchImpl,
+    opts.timeoutMs,
+  );
+  // Defensive: cap client-side too, rather than trusting every instance to
+  // honour the `limit` query param it was sent.
+  return { account, statuses: statuses.slice(0, limit) };
+}

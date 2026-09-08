@@ -15,10 +15,13 @@ import { projectBelongsToOrg } from './orgs.js';
 
 /**
  * Today's extraction inputs (`folder`, `git`, `upload`) and the GitHub cache
- * (`github`), plus `website` (#433) and the three LinkedIn shapes #435 is
- * spiking (a company page, a profile, a single post). A kind nobody
- * implements yet is a valid value here; siblings import this union rather
- * than keeping their own copy of the list.
+ * (`github`), plus `website` (#433), the three LinkedIn shapes #435 is
+ * spiking (a company page, a profile, a single post), and two adapters this
+ * repo already talks to reused read-only (#437): `mastodon_account` (a
+ * Mastodon account's own public posts, no credential) and
+ * `hackernews_author` (an HN user's own submissions, no credential). A kind
+ * nobody implements yet is a valid value here; siblings import this union
+ * rather than keeping their own copy of the list.
  */
 export const PROJECT_SOURCE_KINDS = [
   'folder',
@@ -29,6 +32,8 @@ export const PROJECT_SOURCE_KINDS = [
   'linkedin_company',
   'linkedin_profile',
   'linkedin_post',
+  'mastodon_account',
+  'hackernews_author',
 ] as const;
 
 export type ProjectSourceKind = (typeof PROJECT_SOURCE_KINDS)[number];
