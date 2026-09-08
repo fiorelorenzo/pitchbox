@@ -6,6 +6,7 @@ import { createAgentRunner } from '@pitchbox/shared/agents/registry';
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { loadRunnerConfig, type RunnerConfig } from '@pitchbox/shared/agents/config';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
+import { resolveFunctionModel, runnerTakesGatewayModel } from '@pitchbox/shared/ai/model-functions';
 import {
   buildSuggestionPrompt,
   type CurrentProject,
@@ -87,10 +88,20 @@ export const ASSIST_DEFAULT_MODEL = 'sonnet';
  * An explicit runner config wins: an operator who pinned a model for this
  * runner meant it, including for suggestions. Everything else, including an
  * empty string from a cleared form field, falls back to the fast default.
+ *
+ * `functionModel` is the per-function configuration (#411), and it only exists
+ * for a runner that speaks Gateway model ids. An ACP backend keeps
+ * `ASSIST_DEFAULT_MODEL` instead: `sonnet` is that CLI's own vocabulary, and
+ * `google/gemini-3.1-flash-lite` would fail the call on a local install that
+ * never asked for any of this.
  */
-export function resolveAssistRunnerConfig(config: RunnerConfig): RunnerConfig {
+export function resolveAssistRunnerConfig(
+  config: RunnerConfig,
+  functionModel?: string,
+): RunnerConfig {
   const pinned = config.model?.trim();
-  return pinned ? config : { ...config, model: ASSIST_DEFAULT_MODEL };
+  if (pinned) return config;
+  return { ...config, model: functionModel?.trim() || ASSIST_DEFAULT_MODEL };
 }
 
 export function runSuggestion(args: {
@@ -176,7 +187,17 @@ export function runSuggestion(args: {
     }
     const config = await loadRunnerConfig(db, args.runnerSlug as AgentRunnerSlug);
     if (cancelled) throw new Cancelled();
-    const runner = createAgentRunner(args.runnerSlug, resolveAssistRunnerConfig(config));
+    // Which model answers in the panel is an instance-level setting a system
+    // admin owns (#411), read here rather than baked in. Undefined for an ACP
+    // backend, which keeps the fast alias it has always used.
+    const functionModel = runnerTakesGatewayModel(args.runnerSlug)
+      ? await resolveFunctionModel(db, 'assist_suggest')
+      : undefined;
+    if (cancelled) throw new Cancelled();
+    const runner = createAgentRunner(
+      args.runnerSlug,
+      resolveAssistRunnerConfig(config, functionModel),
+    );
 
     // The agent still gets a working directory, and it must not be the repo:
     // this session has no tools attached, but a cwd it could read is a cwd it

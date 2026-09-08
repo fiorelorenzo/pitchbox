@@ -8,6 +8,11 @@ import { PUT as runnerConfigPut } from '../src/routes/api/settings/runner-config
 import { PUT as defaultRunnerPut } from '../src/routes/api/settings/default-runner/+server.js';
 import { POST as webhookRetryPost } from '../src/routes/api/webhooks/deliveries/[id]/retry/+server.js';
 import { PUT as webhooksPut } from '../src/routes/api/settings/webhooks/+server.js';
+import {
+  GET as modelFunctionsGet,
+  POST as modelFunctionsPost,
+} from '../src/routes/api/settings/model-functions/+server.js';
+import { clearModelFunctionCache } from '@pitchbox/shared/ai/model-functions';
 import { type CookieJar, runThroughHandle } from './helpers/handle-harness.js';
 
 const PASSWORD = 'correct-horse-battery';
@@ -203,6 +208,56 @@ describe('instance-admin gating on global config routes', () => {
         return webhookRetryPost(event);
       });
       expect(res.status).toBe(200);
+    });
+  });
+
+  describe('/api/settings/model-functions (via real handle)', () => {
+    // Which model does which job is instance-wide (#411): an org admin who
+    // created their own organization must not be able to swap the model every
+    // other tenant's runs go through, or read what it is.
+    it('an org admin who is not instance-admin is forbidden on the read (403)', async () => {
+      const jar = await sessionFor('iag-models-admin', 'admin', false);
+      const req = new Request('http://localhost/api/settings/model-functions');
+      await expect(runThroughHandle(req, jar, modelFunctionsGet as any)).rejects.toMatchObject({
+        status: 403,
+      });
+    });
+
+    it('an org admin who is not instance-admin is forbidden on the write (403)', async () => {
+      const jar = await sessionFor('iag-models-admin-w', 'admin', false);
+      const req = new Request('http://localhost/api/settings/model-functions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fn: 'assist_suggest', modelId: 'openai/gpt-5-mini' }),
+      });
+      await expect(runThroughHandle(req, jar, modelFunctionsPost as any)).rejects.toMatchObject({
+        status: 403,
+      });
+    });
+
+    it('an instance-admin writes it and reads the new value back (200)', async () => {
+      clearModelFunctionCache();
+      const jar = await sessionFor('iag-models-iadmin', 'admin', true);
+      const req = new Request('http://localhost/api/settings/model-functions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fn: 'assist_suggest', modelId: 'openai/gpt-5-mini' }),
+      });
+      const res = await runThroughHandle(req, jar, modelFunctionsPost as any);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ assist_suggest: 'openai/gpt-5-mini' });
+    });
+
+    it('rejects a function nobody defined instead of storing it', async () => {
+      const jar = await sessionFor('iag-models-iadmin2', 'admin', true);
+      const req = new Request('http://localhost/api/settings/model-functions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fn: 'not_a_function', modelId: 'openai/gpt-5-mini' }),
+      });
+      await expect(runThroughHandle(req, jar, modelFunctionsPost as any)).rejects.toMatchObject({
+        status: 400,
+      });
     });
   });
 });
