@@ -11,6 +11,7 @@ When on, `hooks.server.ts` checks the `pitchbox_session` cookie on every non-exe
 - HTML navigations without a valid session → redirect to `/login?next=<path>`.
 - `/api/*` calls without a valid session → `401 unauthenticated`.
 - `/api/extension/*` and `/api/auth/*` remain exempt by design. The extension authenticates with a per-device bearer token minted via `POST /api/extension/auto-pair` (which itself reads the dashboard session cookie).
+- `POST /api/run` is not exempt, but has one narrow bypass for the daemon's own scheduled/keyword-triggered dispatch (`daemon/src/scheduler.ts`, `daemon/src/keyword-watcher.ts`), which carries no browser session and never will (#378). A request with no session cookie is still accepted there if it carries `Authorization: Bearer <PITCHBOX_INTERNAL_TOKEN>`, compared in constant time. The bypass only ever applies to that one route, only when there is no session, and only when `PITCHBOX_INTERNAL_TOKEN` is configured - unset (the default), the route stays exactly as closed as every other `/api/*` route. A session, when present, always takes priority.
 
 ## First-run bootstrap
 

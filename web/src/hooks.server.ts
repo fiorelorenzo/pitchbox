@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { getDb, schema } from '$lib/server/db.js';
 import { eq } from 'drizzle-orm';
 import { loadSession } from '@pitchbox/shared/auth';
@@ -65,6 +66,44 @@ const AUTH_ON = process.env.PITCHBOX_AUTH === 'on';
 const SESSION_COOKIE = 'pitchbox_session';
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/**
+ * The daemon dispatches a scheduled or keyword-triggered campaign by POSTing
+ * this web app's own /api/run from its own process (`daemon/src/scheduler.ts`,
+ * `daemon/src/keyword-watcher.ts`), which carries no browser session and
+ * never will. Before #378 that made every such dispatch a 401 under
+ * PITCHBOX_AUTH=on, and the campaign's own failure backoff eventually paused
+ * it, recording the reason as failed dispatches rather than an auth
+ * misconfiguration.
+ *
+ * PITCHBOX_INTERNAL_TOKEN is a secret of its own, never reused from
+ * ENCRYPTION_KEY or any other secret. It is accepted only for POST /api/run,
+ * only on a request that carries no session, and only when the secret is
+ * configured - an unset secret leaves the route exactly as closed as it is
+ * today, since `safeTokenEquals`'s length guard means no supplied value can
+ * ever match an empty configured secret, and `isInternalDispatchRequest`
+ * bails out before comparing anything when INTERNAL_TOKEN is empty.
+ */
+const INTERNAL_TOKEN = process.env.PITCHBOX_INTERNAL_TOKEN ?? '';
+const INTERNAL_DISPATCH_PATH = '/api/run';
+
+// Constant-time comparison so a wrong token can't be distinguished from a
+// right one by response timing - this guards an auth boundary.
+function safeTokenEquals(supplied: string, expected: string): boolean {
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+function isInternalDispatchRequest(event: { request: Request; url: URL }): boolean {
+  if (event.url.pathname !== INTERNAL_DISPATCH_PATH) return false;
+  if (!INTERNAL_TOKEN) return false;
+  const header = event.request.headers.get('authorization') ?? '';
+  const match = /^Bearer\s+(.+)$/.exec(header);
+  if (!match) return false;
+  return safeTokenEquals(match[1], INTERNAL_TOKEN);
+}
+
 function isExemptPath(pathname: string): boolean {
   return (
     pathname.startsWith('/api/extension/') ||
@@ -124,41 +163,49 @@ export const handle = async ({ event, resolve }) => {
     const cookie = event.cookies.get(SESSION_COOKIE);
     const session = cookie ? await loadSession(getDb(), cookie) : null;
     if (!session) {
-      const next = encodeURIComponent(event.url.pathname + event.url.search);
-      // API callers get a 401 so they can react; HTML navigations get a redirect.
-      const wantsJson = event.request.headers.get('accept')?.includes('application/json');
-      if (event.url.pathname.startsWith('/api/') || wantsJson) {
-        return new Response(JSON.stringify({ error: 'unauthenticated' }), {
-          status: 401,
-          headers: { 'content-type': 'application/json' },
-        });
+      if (!isInternalDispatchRequest(event)) {
+        const next = encodeURIComponent(event.url.pathname + event.url.search);
+        // API callers get a 401 so they can react; HTML navigations get a redirect.
+        const wantsJson = event.request.headers.get('accept')?.includes('application/json');
+        if (event.url.pathname.startsWith('/api/') || wantsJson) {
+          return new Response(JSON.stringify({ error: 'unauthenticated' }), {
+            status: 401,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response(null, { status: 302, headers: { location: `/login?next=${next}` } });
       }
-      return new Response(null, { status: 302, headers: { location: `/login?next=${next}` } });
-    }
-    event.locals.user = { id: session.userId, username: session.username };
+      // Verified internal dispatch to /api/run (see INTERNAL_TOKEN above):
+      // fall through with no locals.user / locals.org, same as the
+      // AUTH_ON=off self-host path. The route handler already treats a
+      // request with no locals.org as the daemon's own dispatch caller
+      // (web/src/routes/api/run/+server.ts).
+    } else {
+      event.locals.user = { id: session.userId, username: session.username };
 
-    // Resolve active organization. Multi-tenant phase 2: every authenticated
-    // request must map to a membership. If the user has none, return 404 to
-    // avoid leaking the existence of unrelated orgs. The `/invite/*` and
-    // `/api/orgs/*/invites/*/accept` routes are exempt - a brand-new user
-    // accepting an invite has no membership yet.
-    const path = event.url.pathname;
-    const orgExempt = path.startsWith('/invite/') || path.startsWith('/api/orgs/');
-    const org = await loadActiveOrganization(
-      getDb(),
-      session.userId,
-      session.activeOrganizationId ?? null,
-    );
-    if (org) {
-      event.locals.org = org;
-    } else if (!orgExempt) {
-      if (event.url.pathname.startsWith('/api/')) {
-        return new Response(JSON.stringify({ error: 'not_found' }), {
-          status: 404,
-          headers: { 'content-type': 'application/json' },
-        });
+      // Resolve active organization. Multi-tenant phase 2: every authenticated
+      // request must map to a membership. If the user has none, return 404 to
+      // avoid leaking the existence of unrelated orgs. The `/invite/*` and
+      // `/api/orgs/*/invites/*/accept` routes are exempt - a brand-new user
+      // accepting an invite has no membership yet.
+      const path = event.url.pathname;
+      const orgExempt = path.startsWith('/invite/') || path.startsWith('/api/orgs/');
+      const org = await loadActiveOrganization(
+        getDb(),
+        session.userId,
+        session.activeOrganizationId ?? null,
+      );
+      if (org) {
+        event.locals.org = org;
+      } else if (!orgExempt) {
+        if (event.url.pathname.startsWith('/api/')) {
+          return new Response(JSON.stringify({ error: 'not_found' }), {
+            status: 404,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response('Not Found', { status: 404 });
       }
-      return new Response('Not Found', { status: 404 });
     }
   }
 
