@@ -8,6 +8,7 @@ import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 import { listProjectSources, type ProjectSourceKind } from '@pitchbox/shared/project-sources';
 import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 import { allowedRunnerSlugs } from '@pitchbox/shared/edition';
+import { computeDescriptionProposal } from '@pitchbox/shared/project-description-refresh';
 import {
   queryProjectRunsPage,
   parseProjectRunsCursor,
@@ -32,6 +33,7 @@ export const load: PageServerLoad = async (event) => {
     templates,
     latestInsight,
     sources,
+    descriptionProposal,
   ] = await Promise.all([
     db.select().from(schema.accounts).where(eq(schema.accounts.projectId, id)),
     db.select().from(schema.platforms),
@@ -54,6 +56,7 @@ export const load: PageServerLoad = async (event) => {
       .limit(1)
       .then((rows) => rows[0] ?? null),
     listProjectSources(db, orgId, id),
+    computeDescriptionProposal(db, orgId, id),
   ]);
   let {
     runs: extractionRuns,
@@ -121,5 +124,6 @@ export const load: PageServerLoad = async (event) => {
       fetchedAt: s.fetchedAt ? s.fetchedAt.toISOString() : null,
       fetchError: s.fetchError,
     })),
+    descriptionProposal,
   };
 };

@@ -53,6 +53,15 @@
   };
   type ProjectSource = import('./ProjectSourcesPanel.svelte').ProjectSource;
 
+  /** #434: a proposed re-derivation of the description from the current
+   * source set, computed on demand by the loader - never applied until the
+   * operator accepts it. Null when the live description already matches
+   * what the sources would produce, or the same text was already declined. */
+  type DescriptionProposal = {
+    proposedDescription: string;
+    previousDescription: string;
+    sourceIds: number[];
+  };
   type Props = {
     project: Project;
     extractionRuns: ExtractionRun[];
@@ -63,6 +72,7 @@
     highlightRunId?: number | null;
     runners: RunnerMeta[];
     sources: ProjectSource[];
+    descriptionProposal: DescriptionProposal | null;
   };
   let {
     project,
@@ -74,6 +84,7 @@
     highlightRunId = null,
     runners,
     sources,
+    descriptionProposal,
   }: Props = $props();
 
   // `runners` is already filtered to this deployment's edition (#410) - the
@@ -220,6 +231,54 @@
     await goto('/projects');
   }
 
+  let proposalDiffOpen = $state(false);
+
+  /**
+   * Applies the current proposal (#434). Re-posts the exact text the
+   * operator saw in the diff; the server re-verifies it against a fresh
+   * computation before writing, so a source change landing mid-review
+   * surfaces as a 409 rather than applying stale text.
+   */
+  async function acceptDescriptionProposal() {
+    if (!descriptionProposal) return;
+    const res = await fetch(`/api/projects/${project.id}/description-proposal/accept`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ proposedDescription: descriptionProposal.proposedDescription }),
+    });
+    if (!res.ok) {
+      toast.error(
+        res.status === 409
+          ? 'The sources changed since this was proposed - reopen it to see the new diff'
+          : 'Failed to apply the proposed description',
+      );
+      return;
+    }
+    proposalDiffOpen = false;
+    toast.success('Description updated');
+    await invalidateAll();
+    await tick();
+    description = project.description ?? '';
+  }
+
+  /** Discards the current proposal (#434): the description is never
+   * touched, and this exact text will not be proposed again until the
+   * active source set changes. */
+  async function declineDescriptionProposal() {
+    if (!descriptionProposal) return;
+    const res = await fetch(`/api/projects/${project.id}/description-proposal/decline`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ proposedDescription: descriptionProposal.proposedDescription }),
+    });
+    if (!res.ok) {
+      toast.error(res.status === 409 ? 'The sources already changed again' : 'Failed to decline');
+      return;
+    }
+    proposalDiffOpen = false;
+    await invalidateAll();
+  }
+
   const unsubs: Array<() => void> = [];
 
   onMount(() => {
@@ -364,6 +423,22 @@
         </div>
       {/if}
     </div>
+    {#if descriptionProposal}
+      <div
+        class="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs {TONE_BANNER_CLASS.sky}"
+      >
+        <span>Your sources changed - a new description is ready to review.</span>
+        <Button
+          type="button"
+          size="sm"
+          class={TONE_TEXT_CLASS.sky}
+          variant="outline"
+          onclick={() => (proposalDiffOpen = true)}
+        >
+          Review
+        </Button>
+      </div>
+    {/if}
     {#if extractionRunning}
       <div
         class="flex items-center gap-2 rounded-md border px-3 py-2 text-xs {TONE_BANNER_CLASS.amber}"
@@ -494,3 +569,14 @@
   before={descriptionBeforeUpdate}
   after={description}
 />
+
+{#if descriptionProposal}
+  <DescriptionDiffModal
+    open={proposalDiffOpen}
+    onOpenChange={(v) => (proposalDiffOpen = v)}
+    before={descriptionProposal.previousDescription}
+    after={descriptionProposal.proposedDescription}
+    onAccept={acceptDescriptionProposal}
+    onDecline={declineDescriptionProposal}
+  />
+{/if}
