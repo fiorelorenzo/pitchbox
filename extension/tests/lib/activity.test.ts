@@ -78,6 +78,37 @@ describe('activity log', () => {
     expect(parsed.entries[0].message).toBe('x');
   });
 
+  it('exportActivityJSON keeps message, messageParams and meta raw, not rendered', async () => {
+    // #403: the panel renders `message` through the i18n dictionaries, but
+    // the export is the diagnostic channel a human reads directly - it must
+    // keep the structured fields the panel builds a sentence from, not a
+    // pre-rendered string that throws away messageParams/meta.
+    const { logEvent, exportActivityJSON } = await load();
+    await logEvent({
+      level: 'warn',
+      source: 'linkedin-action',
+      message: 'activity.linkedin-action.assist-mounted',
+      messageParams: { pageKind: 'feed-sdui', card: 'unresolved' },
+      meta: {
+        cardResolved: false,
+        composerHadOwnText: true,
+        pageKind: 'feed-sdui',
+        url: 'https://linkedin.com/feed',
+      },
+    });
+    const blob = await exportActivityJSON();
+    const parsed = JSON.parse(await blob.text());
+    const entry = parsed.entries[0];
+    expect(entry.message).toBe('activity.linkedin-action.assist-mounted');
+    expect(entry.messageParams).toEqual({ pageKind: 'feed-sdui', card: 'unresolved' });
+    expect(entry.meta).toEqual({
+      cardResolved: false,
+      composerHadOwnText: true,
+      pageKind: 'feed-sdui',
+      url: 'https://linkedin.com/feed',
+    });
+  });
+
   describe('eviction accounting', () => {
     it('reports no drops and no misleading claim of loss below the cap', async () => {
       const { logEvent, getActivity, getActivityStats, exportActivityJSON, ACTIVITY_LOG_CAP } =

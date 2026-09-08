@@ -144,6 +144,13 @@ export const en = {
     'LinkedIn assist produced no draft to insert (skipped: {skipped}).',
   'activity.linkedin-action.suggestion-inserted':
     'Inserted an accepted suggestion into the LinkedIn composer for draft {draftId}.',
+  // #449: mounted purely from the composer click (no card selector on the
+  // critical path), so this is the one signal that the delegated listener
+  // actually fired and where on LinkedIn it fired - `card` names whether a
+  // post card could be scoped around the composer, not whether the mount
+  // itself succeeded.
+  'activity.linkedin-action.assist-mounted':
+    'Comment assist opened on the {pageKind} page, with the post card {card}.',
   'activity.linkedin-action.post-submit-not-found':
     'Could not find the LinkedIn post submit button for draft {draftId} within 15s; posting will not be tracked automatically.',
   'activity.linkedin-action.post-confirm-unavailable':
