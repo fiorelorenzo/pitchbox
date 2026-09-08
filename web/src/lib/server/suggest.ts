@@ -10,6 +10,7 @@ import {
   buildSuggestionPrompt,
   type CurrentProject,
   type ObservedPost,
+  type RetuneDirection,
   type SuggestionKind,
 } from '@pitchbox/shared/assist/suggest-prompt';
 import { EnvelopeSplitter, type EnvelopeChunk } from '@pitchbox/shared/assist/envelope';
@@ -102,6 +103,12 @@ export function runSuggestion(args: {
   examples?: Array<{ title: string; body: string }>;
   hint?: string;
   /**
+   * A retune direction (#409): the panel's own regenerate-in-a-direction
+   * control. Read straight from the request, unlike `tone`/`toneNotes` above:
+   * it names no setting, so there is nothing server-side to override it with.
+   */
+  retune?: RetuneDirection;
+  /**
    * The org's tone setting (#405). The caller reads it from
    * `loadLinkedInAssistSettings`, never from the request body: a tone in the
    * suggest payload is ignored, the same way `enabled` and `killSwitch` are
@@ -126,6 +133,7 @@ export function runSuggestion(args: {
     repos: args.repos,
     examples: args.examples,
     hint: args.hint,
+    retune: args.retune,
     tone: args.tone,
     toneNotes: args.toneNotes,
   });

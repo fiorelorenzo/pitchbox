@@ -140,6 +140,27 @@ const TONE_INSTRUCTION: Record<Exclude<AssistTone, 'match-room' | 'custom'>, str
 };
 
 /**
+ * A retune direction (#409): the panel's own control for regenerating one
+ * draft the operator did not like, along an explicit axis, without touching
+ * the org's stored tone. It travels once, with the one request that asks for
+ * it, and is never written anywhere - unlike `tone`/`toneNotes` above, which
+ * are read from settings and never trusted from the request body, this is
+ * the one thing in the assist plane the request may legitimately carry,
+ * because it names no setting at all.
+ */
+export const RETUNE_DIRECTIONS = ['drier', 'warmer', 'shorter'] as const;
+export type RetuneDirection = (typeof RETUNE_DIRECTIONS)[number];
+
+/** One sentence per direction, matching TONE_INSTRUCTION's own economy. The
+ * precedence wrapper lives at the call site, not here, so it is stated once. */
+const RETUNE_INSTRUCTION: Record<RetuneDirection, string> = {
+  drier: 'cut any warmth, enthusiasm or hedging, and say the same point in fewer, plainer words.',
+  warmer:
+    'address the author more like a person and let real interest show, without adding exclamation marks.',
+  shorter: 'say the same point in noticeably fewer words: keep only what earns its place.',
+};
+
+/**
  * Builds the single-turn prompt. Pure and synchronous: everything it needs is
  * passed in, so it is testable without a database and cannot reach one. The
  * companion context (`loadCompanionContext`) is the only async step, and it
@@ -172,6 +193,13 @@ export function buildSuggestionPrompt(args: {
   tone?: AssistTone;
   /** The operator's own words, used only when `tone` is `custom`. */
   toneNotes?: string;
+  /**
+   * A retune direction (#409): the panel's own regenerate-in-a-direction
+   * control. Unlike `tone`/`toneNotes`, this is read straight from the
+   * request - it names no setting, so there is nothing for the server to
+   * override it with. It affects this call only.
+   */
+  retune?: RetuneDirection;
 }): string {
   const { kind, post, currentProject, persona, projects, repos } = args;
   const tone: AssistTone = args.tone ?? DEFAULT_ASSIST_TONE;
@@ -329,6 +357,21 @@ export function buildSuggestionPrompt(args: {
     }
   } else {
     parts.push(TONE_INSTRUCTION[tone]);
+  }
+
+  // A retune direction (#409) sits right after the tone, ahead of the
+  // operator's typed steer: it is a request that travels with one call, not
+  // a setting, so it outranks the tone for this call only - the org's
+  // stored tone is read fresh on every other suggestion, unaffected by a
+  // retune that happened on a different draft. Wrapping it in one sentence
+  // rather than folding a clause into `TONE_INSTRUCTION` keeps that call
+  // from also rewriting the tone instruction above it, which would leave two
+  // instructions arguing about the same register instead of one overriding
+  // the other in order.
+  if (args.retune) {
+    parts.push(
+      `The operator asked you to retune this one draft, which outranks the tone above but not the house style: ${RETUNE_INSTRUCTION[args.retune]}`,
+    );
   }
 
   if (args.hint?.trim()) {

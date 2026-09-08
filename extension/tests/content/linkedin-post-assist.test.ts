@@ -307,6 +307,61 @@ describe('accept, insert, and the button the human presses', () => {
   });
 });
 
+// #409: mirrors linkedin-comment-assist.test.ts's own retune coverage.
+// `linkedin-post-assist-panel.svelte`'s own doc comment says this file
+// changes whenever that one does - this is that half of the pair, proving
+// the mirrored wiring (not just the mirrored markup) actually works here
+// too, since this is a separate content script and a separate mount.
+describe('retune (#409): regenerate the draft in a direction, without leaving the panel', () => {
+  it('drives resting to streaming to ready to retune to ready, with a different draft', async () => {
+    const { editor, modal } = renderModal();
+    suggest.mockImplementationOnce(
+      streamingSuggest('First take.', 'A short update about tonight.'),
+    );
+
+    wirePostAssist(editor, modal);
+    editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(panelText()).toContain('Suggest a post');
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(shadow().querySelector('textarea')?.value).toBe('A short update about tonight.');
+
+    suggest.mockImplementationOnce(streamingSuggest('Retuned take.', 'A shorter update.'));
+    shadow().querySelector<HTMLButtonElement>('[data-retune="shorter"]')!.click();
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(2);
+    expect(suggest.mock.calls[1][0]).toMatchObject({ retune: 'shorter' });
+    expect(shadow().querySelector('textarea')?.value).toBe('A shorter update.');
+  });
+
+  it('asks before discarding a human edit', async () => {
+    const { editor, modal } = renderModal();
+    suggest.mockImplementationOnce(streamingSuggest('', 'Original draft.'));
+    wirePostAssist(editor, modal);
+    editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    const textarea = shadow().querySelector<HTMLTextAreaElement>('textarea')!;
+    textarea.value = 'My own edited words.';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+
+    shadow().querySelector<HTMLButtonElement>('[data-retune="drier"]')!.click();
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(panelText()).toContain('This replaces what you edited.');
+    expect(shadow().querySelector('textarea')?.value).toBe('My own edited words.');
+  });
+});
+
 describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
   it('a decline names the state itself, with the reasoning folded away (D18)', async () => {
     const { editor, modal } = renderModal();

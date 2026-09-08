@@ -3,7 +3,13 @@
 // `trusted-types` allowlist and this script dies before mounting (#379).
 import './shared/trusted-types-shim.js';
 import { claimDocument } from './shared/claim-document.js';
-import { api, type AcceptRefusalReason, type SuggestEvent, type SuggestUsage } from '../lib/api.js';
+import {
+  api,
+  type AcceptRefusalReason,
+  type RetuneDirection,
+  type SuggestEvent,
+  type SuggestUsage,
+} from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import { mountPanel, panelFor, type PanelHandle } from './shared/panel-host.js';
 import { insertComposerText, hasInlineCommentError } from './linkedin-comment.js';
@@ -164,6 +170,8 @@ export type PostAssistPanelProps = {
   onRequest: () => void;
   onEditChange: (text: string) => void;
   onAccept: () => void;
+  /** #409: see `CommentAssistPanelProps.onRetune`, which this mirrors. */
+  onRetune: (direction: RetuneDirection) => void;
   onDismiss: () => void;
 };
 
@@ -305,6 +313,7 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
       }
     },
     onAccept: () => void acceptAndInsert(),
+    onRetune: (direction) => void requestSuggestion(direction),
     onDismiss: () => handle.destroy(),
   };
 
@@ -329,7 +338,7 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
     }
   }
 
-  async function requestSuggestion(): Promise<void> {
+  async function requestSuggestion(retune?: RetuneDirection): Promise<void> {
     handle.update({ state: { phase: 'streaming', status: 'reading', reasoning: '', draft: '' } });
 
     const assistRes = await api.linkedinAssist();
@@ -360,7 +369,7 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
     // observation buffer for `kind: 'post'` (see the module doc comment).
     // `post` here is informational context only.
     const res = await api.suggest(
-      { projectId: boundProjectId, kind: POST_KIND, post: { url: location.href } },
+      { projectId: boundProjectId, kind: POST_KIND, post: { url: location.href }, retune },
       (event: SuggestEvent) => {
         if (!handle.alive) return;
         switch (event.kind) {

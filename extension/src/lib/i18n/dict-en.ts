@@ -286,6 +286,17 @@ export const en = {
   'assist.comment.ready.label': 'Suggested comment (editable)',
   'assist.action.accept': 'Insert',
   'assist.action.retry': 'Try again',
+  // #409: retune this one draft in an explicit direction, without writing
+  // the org's tone setting. Shared between the comment and post panels, same
+  // as `assist.action.accept`/`assist.action.retry` above.
+  'assist.action.retune.drier': 'Drier',
+  'assist.action.retune.warmer': 'Warmer',
+  'assist.action.retune.shorter': 'Shorter',
+  // Shown only when a retune would replace a human edit still in the
+  // textarea - it never fires from `ready`, where there is nothing to lose.
+  'assist.retune.confirm.hint': 'This replaces what you edited.',
+  'assist.retune.confirm.accept': 'Retune anyway',
+  'assist.retune.confirm.cancel': 'Keep editing',
   // Collapsed disclosure toggle that reveals the model's own reasoning
   // behind the draft above - a short clickable label, not a sentence, in
   // the product's voice rather than the model's.

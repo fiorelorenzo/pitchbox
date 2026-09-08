@@ -23,6 +23,7 @@
   import PanelFrame from './panel-frame.svelte';
   import { t } from '../lib/i18n/index.js';
   import type { CommentAssistPanelProps } from './linkedin-comment-assist.js';
+  import type { RetuneDirection } from '../lib/api.js';
 
   // Destructured as `assistState`, not `state`: a local named `state`
   // makes `$state(...)` below parse as a store subscription of it
@@ -33,6 +34,7 @@
     onRequest,
     onEditChange,
     onAccept,
+    onRetune,
     onDismiss,
   }: CommentAssistPanelProps = $props();
 
@@ -43,8 +45,38 @@
    * decision about whether the reasoning is worth reading. */
   let whyOpen = $state(false);
 
+  /** #409: a retune the human asked for while `edited` is about to replace
+   * text they typed by hand, which the brief says must never happen
+   * silently. Rather than a new phase in the state machine (the panel's
+   * contract is exactly `resting`/`streaming`/`ready`/`edited`/`accepting`/
+   * `inserted`/`no_draft`/`refused`, and this is a UI decision, not a
+   * server-visible one), this is local component state: `ready` needs no
+   * confirmation (there is nothing typed to lose), `edited` holds the
+   * direction here until the human confirms or cancels. */
+  let pendingRetune = $state<RetuneDirection | null>(null);
+
   function onTextareaInput(event: Event): void {
+    // Typing again is the human choosing to keep editing rather than
+    // retune, so a stale confirmation from a moment ago must not survive it.
+    pendingRetune = null;
     onEditChange((event.currentTarget as HTMLTextAreaElement).value);
+  }
+
+  function requestRetune(direction: RetuneDirection): void {
+    if (assistState.phase === 'edited') {
+      pendingRetune = direction;
+      return;
+    }
+    onRetune(direction);
+  }
+
+  function confirmRetune(): void {
+    if (pendingRetune) onRetune(pendingRetune);
+    pendingRetune = null;
+  }
+
+  function cancelRetune(): void {
+    pendingRetune = null;
   }
 </script>
 
@@ -92,6 +124,46 @@
             {$t('assist.action.accept')}
           </button>
         </div>
+        <!-- #409: regenerate this one draft in an explicit direction, without
+             writing the org's tone setting. `pendingRetune` gates a confirm
+             step only when there is a human edit to lose (see requestRetune). -->
+        <div class="assist-row assist-row--retune">
+          <button
+            type="button"
+            class="assist-button assist-button--ghost"
+            data-retune="drier"
+            onclick={() => requestRetune('drier')}
+          >
+            {$t('assist.action.retune.drier')}
+          </button>
+          <button
+            type="button"
+            class="assist-button assist-button--ghost"
+            data-retune="warmer"
+            onclick={() => requestRetune('warmer')}
+          >
+            {$t('assist.action.retune.warmer')}
+          </button>
+          <button
+            type="button"
+            class="assist-button assist-button--ghost"
+            data-retune="shorter"
+            onclick={() => requestRetune('shorter')}
+          >
+            {$t('assist.action.retune.shorter')}
+          </button>
+        </div>
+        {#if pendingRetune}
+          <p class="assist-hint" role="alert">{$t('assist.retune.confirm.hint')}</p>
+          <div class="assist-row">
+            <button type="button" class="assist-button" onclick={confirmRetune}>
+              {$t('assist.retune.confirm.accept')}
+            </button>
+            <button type="button" class="assist-button assist-button--ghost" onclick={cancelRetune}>
+              {$t('assist.retune.confirm.cancel')}
+            </button>
+          </div>
+        {/if}
         {#if assistState.reasoning}
           <button
             type="button"

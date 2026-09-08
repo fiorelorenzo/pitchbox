@@ -280,6 +280,13 @@ export const it = {
   'assist.comment.ready.label': 'Commento suggerito (modificabile)',
   'assist.action.accept': 'Inserisci',
   'assist.action.retry': 'Riprova',
+  // #409: vedi il commento su queste chiavi in dict-en.ts.
+  'assist.action.retune.drier': 'Più asciutto',
+  'assist.action.retune.warmer': 'Più caldo',
+  'assist.action.retune.shorter': 'Più breve',
+  'assist.retune.confirm.hint': 'Questo sostituisce quello che hai modificato.',
+  'assist.retune.confirm.accept': 'Rigenera comunque',
+  'assist.retune.confirm.cancel': 'Continua a modificare',
   // See the comment on `assist.comment.why` in dict-en.ts.
   'assist.comment.why': 'Perché questo angolo',
   'assist.comment.accepting': 'Salvataggio in corso…',

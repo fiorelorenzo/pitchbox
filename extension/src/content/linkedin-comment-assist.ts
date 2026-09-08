@@ -3,7 +3,13 @@
 // linkedin.com and the panel never mounts (#379). See the module's own note.
 import './shared/trusted-types-shim.js';
 import { claimDocument } from './shared/claim-document.js';
-import { api, type AcceptRefusalReason, type SuggestEvent, type SuggestUsage } from '../lib/api.js';
+import {
+  api,
+  type AcceptRefusalReason,
+  type RetuneDirection,
+  type SuggestEvent,
+  type SuggestUsage,
+} from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import { mountPanel, panelFor, type PanelHandle } from './shared/panel-host.js';
 import { insertComposerText, watchDraftForSend } from './linkedin-comment.js';
@@ -231,6 +237,11 @@ export type CommentAssistPanelProps = {
   onRequest: () => void;
   onEditChange: (text: string) => void;
   onAccept: () => void;
+  /** #409: regenerates the current draft in `direction`, without writing the
+   * org's tone setting. Fires from `ready` or `edited`; the component itself
+   * is what decides whether a human edit needs confirming before it is
+   * thrown away - this callback only ever means "go ahead". */
+  onRetune: (direction: RetuneDirection) => void;
   onDismiss: () => void;
 };
 
@@ -360,6 +371,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
       if (handle.alive) handle.update({ state: edited });
     },
     onAccept: () => void acceptAndInsert(),
+    onRetune: (direction) => void requestSuggestion(direction),
     onDismiss: () => handle.destroy(),
   };
 
@@ -380,7 +392,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
     }
   }
 
-  async function requestSuggestion(): Promise<void> {
+  async function requestSuggestion(retune?: RetuneDirection): Promise<void> {
     if (!capturedPost) {
       setRefused('selector_health_degraded');
       return;
@@ -428,6 +440,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
           text: capturedPost.text,
           url: capturedPost.url,
         },
+        retune,
       },
       (event: SuggestEvent) => {
         if (!handle.alive) return;
