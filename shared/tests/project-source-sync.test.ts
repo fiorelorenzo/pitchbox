@@ -286,6 +286,8 @@ describe('syncProjectSource: hackernews_author', () => {
     expect(result?.ok).toBe(false);
     expect(result?.source.fetchError).toMatch(/network error/);
   });
+});
+
 // #436, spike #435: linkedin_post/linkedin_profile have no fetcher either,
 // but unlike website/linkedin_company that is permanent by design, not a
 // gap - the only lawful fill is the extension's own content script
