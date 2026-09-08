@@ -50,7 +50,15 @@ export default defineConfig({
     // The backend the extension defaults to on a fresh install. Overridable at
     // build time for a self-hosted or preview build; the user can also add
     // other backends at runtime from the side panel. See docs/extension-connection-design.md.
-    'import.meta.env.VITE_DEFAULT_BACKEND_URL': JSON.stringify(
+    //
+    // A plain identifier, not `import.meta.env.VITE_DEFAULT_BACKEND_URL`
+    // (#445): Vite owns `import.meta.env` for `VITE_`-prefixed names and
+    // fills it from `.env` files rather than the process environment, so a
+    // define under that key was silently dropped and every build carried the
+    // production fallback no matter what the environment said. `VITE_` also
+    // stays out of this name deliberately, so it cannot be reclaimed by that
+    // same mechanism later.
+    __PITCHBOX_DEFAULT_BACKEND_URL__: JSON.stringify(
       process.env.VITE_DEFAULT_BACKEND_URL || 'https://pitchbox.app',
     ),
   },

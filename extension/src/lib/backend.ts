@@ -5,10 +5,24 @@
  * further backends at runtime from the side panel; pairings are stored per
  * backend in chrome.storage.local (see storage.ts). See
  * docs/extension-connection-design.md for the full model.
+ *
+ * Read from a plain `__PITCHBOX_DEFAULT_BACKEND_URL__` define rather than
+ * `import.meta.env.VITE_DEFAULT_BACKEND_URL` (2026-09-08, #445). Vite owns
+ * `import.meta.env` for any `VITE_`-prefixed name and fills it from `.env`
+ * files, not from the process environment, so a `define` under that key was
+ * silently ignored: measured on this repo, a build with
+ * `VITE_DEFAULT_BACKEND_URL=https://preview.pitchbox.app` produced artifacts
+ * carrying `https://pitchbox.app` in every one of them, side panel and
+ * content scripts alike. The documented override did nothing, and a preview
+ * install only ever reached preview because its pairing named it explicitly.
  */
 
+declare const __PITCHBOX_DEFAULT_BACKEND_URL__: string | undefined;
+
 const RAW_DEFAULT =
-  (import.meta.env.VITE_DEFAULT_BACKEND_URL as string | undefined) || 'https://pitchbox.app';
+  (typeof __PITCHBOX_DEFAULT_BACKEND_URL__ === 'string'
+    ? __PITCHBOX_DEFAULT_BACKEND_URL__
+    : undefined) || 'https://pitchbox.app';
 
 /** The build-time default backend origin, normalized (no trailing slash). */
 export const DEFAULT_BACKEND_URL: string =
