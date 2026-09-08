@@ -526,6 +526,107 @@ describe('accept, insert, and the button the human presses', () => {
   });
 });
 
+// #409: a retune regenerates the draft in an explicit direction, without
+// leaving the panel and without writing the org's tone setting. Against the
+// real panel component, same posture as every other describe block here:
+// what the human sees is the whole feature.
+describe('retune (#409): regenerate the draft in a direction, without leaving the panel', () => {
+  it('drives resting to streaming to ready to retune to ready, with a different draft', async () => {
+    const composer = renderPost();
+    // Non-empty on purpose (#439): this is what keeps the panel at rest
+    // until the human asks, rather than auto-requesting on mount.
+    composer.textContent = 'I had already started writing this myself';
+    suggest.mockImplementationOnce(streamingSuggest('First take.', 'Congrats on the launch.'));
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(panelText()).toContain('Suggest a comment');
+    expect(suggest).not.toHaveBeenCalled();
+
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(shadow().querySelector('textarea')?.value).toBe('Congrats on the launch.');
+
+    suggest.mockImplementationOnce(
+      streamingSuggest('Retuned take.', 'A drier version of the same point.'),
+    );
+    shadow().querySelector<HTMLButtonElement>('[data-retune="drier"]')!.click();
+    await settle();
+
+    // Ready again, but from a second, distinct model call carrying the
+    // direction - not the same draft relabelled.
+    expect(suggest).toHaveBeenCalledTimes(2);
+    expect(suggest.mock.calls[1][0]).toMatchObject({ retune: 'drier' });
+    expect(shadow().querySelector('textarea')?.value).toBe('A drier version of the same point.');
+  });
+
+  it('asks before discarding a human edit, and never requests until confirmed', async () => {
+    const composer = renderPost();
+    suggest.mockImplementationOnce(streamingSuggest('', 'Original draft.'));
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    const textarea = shadow().querySelector<HTMLTextAreaElement>('textarea')!;
+    textarea.value = 'My own edited words.';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+
+    shadow().querySelector<HTMLButtonElement>('[data-retune="shorter"]')!.click();
+    await settle();
+
+    // Still just the one call - retune has not fired, and the edit is still
+    // on screen rather than silently replaced.
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(panelText()).toContain('This replaces what you edited.');
+    expect(shadow().querySelector('textarea')?.value).toBe('My own edited words.');
+
+    const cancel = [...shadow().querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === 'Keep editing',
+    );
+    cancel!.click();
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(shadow().querySelector('textarea')?.value).toBe('My own edited words.');
+    expect(panelText()).not.toContain('This replaces what you edited.');
+
+    suggest.mockImplementationOnce(streamingSuggest('', 'Shorter version.'));
+    shadow().querySelector<HTMLButtonElement>('[data-retune="shorter"]')!.click();
+    await settle();
+    const confirm = [...shadow().querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === 'Retune anyway',
+    );
+    confirm!.click();
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(2);
+    expect(suggest.mock.calls[1][0]).toMatchObject({ retune: 'shorter' });
+    expect(shadow().querySelector('textarea')?.value).toBe('Shorter version.');
+  });
+
+  it('obeys the same refusal shapes a first request does', async () => {
+    const composer = renderPost();
+    suggest.mockImplementationOnce(streamingSuggest('', 'A draft.'));
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    linkedinAssist.mockResolvedValue({
+      ok: true,
+      data: { assist: { ...ASSIST_ON.data.assist, enabled: false, killSwitch: true } },
+    });
+    shadow().querySelector<HTMLButtonElement>('[data-retune="warmer"]')!.click();
+    await settle();
+
+    expect(panelText()).toContain('An admin stopped the assistant.');
+  });
+});
+
 describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
   it('a decline says so in the product own words, with the model reasoning folded away (D18)', async () => {
     const composer = renderPost();

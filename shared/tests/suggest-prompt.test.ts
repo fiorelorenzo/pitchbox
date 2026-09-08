@@ -5,6 +5,7 @@ import {
   MAX_POST_CHARS,
   MAX_PROJECTS,
   README_EXCERPT_MAX,
+  RETUNE_DIRECTIONS,
   VOICE_SAMPLE_MAX,
   type CurrentProject,
 } from '../src/assist/suggest-prompt.js';
@@ -440,5 +441,45 @@ describe('tone (#405)', () => {
       // model reads as final.
       expect(prompt.indexOf('Your task:')).toBeLessThan(prompt.indexOf(HOUSE_STYLE_SECTION));
     }
+  });
+});
+
+// #409: the panel's own retune control - a direction the operator picked by
+// clicking a button, not typed, and never written to the org's stored tone.
+// The property worth pinning: it reaches the prompt, it says something
+// different per direction, and it is ordered so it outranks the tone
+// without deleting or rewriting the tone's own instruction.
+describe('retune (#409)', () => {
+  const args = { kind: 'post_comment' as const, post, currentProject, ...noContext };
+
+  it('adds nothing when no direction was asked for', () => {
+    const prompt = buildSuggestionPrompt(args);
+    expect(prompt).not.toContain('retune');
+  });
+
+  it('each direction says something different', () => {
+    const prompts = RETUNE_DIRECTIONS.map((retune) => buildSuggestionPrompt({ ...args, retune }));
+    expect(new Set(prompts).size).toBe(prompts.length);
+    expect(prompts[0]).toContain('fewer, plainer words');
+    expect(prompts[1]).toContain('let real interest show');
+    expect(prompts[2]).toContain('keep only what earns its place');
+  });
+
+  it('outranks the tone for this call without deleting or rewriting the tone instruction', () => {
+    const prompt = buildSuggestionPrompt({ ...args, tone: 'plain', retune: 'warmer' });
+    // The tone instruction is still there, verbatim - the retune is ordered
+    // after it and says explicitly that it outranks it, rather than a second
+    // instruction that contradicts the first.
+    expect(prompt).toContain('Write plainly');
+    expect(prompt).toContain('outranks the tone above');
+    expect(prompt.indexOf('Write plainly')).toBeLessThan(prompt.indexOf('outranks the tone above'));
+  });
+
+  it('sits under the house style, same as the tone and the operator steer', () => {
+    const prompt = buildSuggestionPrompt({ ...args, retune: 'shorter' });
+    expect(prompt).toContain(HOUSE_STYLE_SECTION);
+    expect(prompt.indexOf('outranks the tone above')).toBeLessThan(
+      prompt.indexOf(HOUSE_STYLE_SECTION),
+    );
   });
 });

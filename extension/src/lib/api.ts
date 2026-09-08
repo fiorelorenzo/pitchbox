@@ -59,6 +59,16 @@ export type SuggestUsage = {
   costUsd?: number | null;
 };
 
+/**
+ * A retune direction (#409): the panel's own control for regenerating one
+ * draft without leaving the panel, along an explicit axis, and without
+ * writing the org's tone setting. Mirrors
+ * `shared/src/assist/suggest-prompt.ts`'s `RetuneDirection` by hand rather
+ * than importing it - see this file's own note above on why the extension
+ * has no dependency on `@pitchbox/shared`.
+ */
+export type RetuneDirection = 'drier' | 'warmer' | 'shorter';
+
 /** Every `refused` value POST /api/extension/suggest can answer with, ahead of the stream.
  * `no_recent_activity` only ever answers a `kind: 'post'` request: the observation
  * buffer this project's account has filled has nothing recent enough to draft from. */
@@ -517,6 +527,9 @@ export const api = {
       kind: SuggestionKind;
       post: SuggestPost;
       hint?: string;
+      /** #409: a per-call regeneration direction, forwarded verbatim - never
+       * stored, never a substitute for a tone setting. */
+      retune?: RetuneDirection;
       platform?: string;
     },
     onEvent: (event: SuggestEvent) => void,

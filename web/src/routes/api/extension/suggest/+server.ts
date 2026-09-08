@@ -11,6 +11,7 @@ import { getAccountUsage, checkQuota, loadQuotaLimits } from '@pitchbox/shared/q
 import { mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
 import {
   MAX_POST_CHARS,
+  RETUNE_DIRECTIONS,
   type ObservedPost,
   type SuggestionKind,
 } from '@pitchbox/shared/assist/suggest-prompt';
@@ -53,6 +54,10 @@ const BodySchema = z
       url: z.string().max(2000).optional(),
     }),
     hint: z.string().max(500).optional(),
+    // #409: a panel-level retune direction, never a setting - see the
+    // comment on `assistSettings` below for why this is the one field on
+    // this plane the request may legitimately carry.
+    retune: z.enum(RETUNE_DIRECTIONS).optional(),
     platform: z.string().min(1).max(40).default('linkedin'),
   })
   .superRefine((val, ctx) => {
@@ -281,6 +286,7 @@ export async function POST(event: RequestEvent) {
         repos: context.repos,
         examples,
         hint: body.hint,
+        retune: body.retune,
         tone: voice.tone,
         toneNotes: voice.toneNotes,
         projectId: project.id,
