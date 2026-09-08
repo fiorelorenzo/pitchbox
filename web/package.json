@@ -15,6 +15,7 @@
   "dependencies": {
     "@bytemd/plugin-gfm": "^1.22.0",
     "@lucide/svelte": "^1.23.0",
+    "@pitchbox/cli": "workspace:*",
     "@pitchbox/daemon": "workspace:*",
     "@pitchbox/shared": "workspace:*",
     "@tailwindcss/vite": "^4.3.2",
