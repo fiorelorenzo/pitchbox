@@ -42,8 +42,14 @@ vi.mock('../../src/lib/log-from-content.js', () => ({
   },
 }));
 
-const { wireCommentAssist, refusalMessage, scanFeedForAssist, readAssistPostFromCard } =
-  await import('../../src/content/linkedin-comment-assist.js');
+const {
+  wireCommentAssist,
+  refusalMessage,
+  scanFeedForAssist,
+  readAssistPostFromCard,
+  delegateComposerClicks,
+  composerHasOwnText,
+} = await import('../../src/content/linkedin-comment-assist.js');
 const { findFeedPosts } = await import('../../src/content/shared/linkedin-dom.js');
 
 // `projectId` (context/grounding) and `personalProjectId` (decision 5: where
@@ -228,6 +234,126 @@ describe('one signal, not two clicks (#439)', () => {
     await settle();
 
     expect(document.querySelectorAll('pitchbox-panel-host').length).toBe(1);
+  });
+});
+
+describe('the panel mounts from the click, not from a card selector (#447)', () => {
+  // What Lorenzo's activity export showed: the scripts running on a
+  // `feed-sdui` page, `findFeedPosts` recognising nothing, and the panel
+  // never mounting - with no diagnostic, because the only one that existed
+  // fires on the classic post-detail page. Delegation is what makes the
+  // feature independent of that recognition.
+  function renderUnknownFeedVariant(): HTMLElement {
+    document.body.innerHTML = `
+      <main>
+        <div class="_someHashedClass">
+          <span>Davide Mastricci</span>
+          <div>We shipped the retry budget this week and the p99 halved. The interesting
+          part was not the cache, it was realising the budget was being spent on requests
+          nobody was waiting for.</div>
+          <form>
+            <div contenteditable="true" role="textbox" aria-label="Aggiungi un commento"></div>
+          </form>
+        </div>
+      </main>`;
+    const composer = document.querySelector<HTMLElement>(
+      '[contenteditable="true"][role="textbox"]',
+    );
+    if (!composer) throw new Error('no composer in the fixture');
+    return composer;
+  }
+
+  it('mounts and requests on a feed variant no card selector recognises', async () => {
+    const composer = renderUnknownFeedVariant();
+    expect(findFeedPosts(document)).toEqual([]);
+    suggest.mockImplementation(streamingSuggest('Because they measured it.', 'A real reply.'));
+
+    delegateComposerClicks();
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(shadows().length).toBe(1);
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(shadow().querySelector('textarea')?.value).toBe('A real reply.');
+  });
+
+  it('logs what it mounted on, so silence is never the whole report', async () => {
+    const composer = renderUnknownFeedVariant();
+    suggest.mockImplementation(streamingSuggest('r', 'd'));
+
+    delegateComposerClicks();
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    const mounted = logged.find((e) => e.message === 'activity.linkedin-action.assist-mounted') as
+      { meta?: Record<string, unknown> } | undefined;
+    expect(mounted).toBeTruthy();
+    // The structural fallback resolved a card even though no selector did.
+    expect(mounted!.meta).toMatchObject({ cardResolved: true, composerHadOwnText: false });
+  });
+
+  it('ignores a click in the post composer modal, which has its own panel', async () => {
+    document.body.innerHTML = `
+      <div role="dialog">
+        <div contenteditable="true" role="textbox"></div>
+      </div>`;
+    const composer = document.querySelector<HTMLElement>('[contenteditable="true"]')!;
+
+    delegateComposerClicks();
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(shadows().length).toBe(0);
+    expect(suggest).not.toHaveBeenCalled();
+  });
+
+  it('mounts one panel however the click arrives, delegated or wired', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(streamingSuggest('r', 'd'));
+
+    delegateComposerClicks();
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(document.querySelectorAll('pitchbox-panel-host').length).toBe(1);
+    expect(suggest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('an empty rich-text editor is empty (#447)', () => {
+  function editor(inner: string): HTMLElement {
+    document.body.innerHTML = `<div contenteditable="true" role="textbox">${inner}</div>`;
+    return document.querySelector<HTMLElement>('[contenteditable="true"]')!;
+  }
+
+  it('reads LinkedIn own empty states as empty', () => {
+    expect(composerHasOwnText(editor('<p><br></p>'))).toBe(false);
+    expect(composerHasOwnText(editor('\u200b'))).toBe(false);
+    expect(composerHasOwnText(editor('&nbsp;'))).toBe(false);
+    expect(
+      composerHasOwnText(editor('<span aria-hidden="true">Aggiungi un commento...</span>')),
+    ).toBe(false);
+    expect(composerHasOwnText(editor('<div data-placeholder="Add a comment"></div>'))).toBe(false);
+    expect(composerHasOwnText(editor('<span class="ql-placeholder">Add a comment</span>'))).toBe(
+      false,
+    );
+  });
+
+  it('still reads a half-written comment as the human own text', () => {
+    expect(composerHasOwnText(editor('<p>I was already writing this</p>'))).toBe(true);
+  });
+
+  it('does not leave the panel waiting on a placeholder-only composer', async () => {
+    const composer = renderPost();
+    composer.innerHTML = '<span aria-hidden="true">Aggiungi un commento...</span>';
+    suggest.mockImplementation(streamingSuggest('r', 'd'));
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(1);
   });
 });
 

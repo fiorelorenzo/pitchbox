@@ -11,6 +11,7 @@ import {
   detectPageKind,
   findCommentComposer,
   findFeedPosts,
+  findPostComposerModal,
   readPostAuthor,
   readPostIdentifier,
   readPostText,
@@ -274,11 +275,38 @@ function logNoDraft(skipped: boolean): void {
  */
 const lastResultFor = new WeakMap<Element, CommentAssistState>();
 
-/** True when LinkedIn's composer already holds text the human typed. Their
- * half-written comment is intent we must not generate over, so the panel
- * waits to be asked in that one case (#439). */
+/**
+ * True when LinkedIn's composer already holds text the human typed (#439:
+ * their half-written comment is intent we must not generate over, so the
+ * panel waits to be asked in that one case).
+ *
+ * Not `textContent.trim()`, which is what shipped and what can read an empty
+ * box as a full one (#447). A rich-text editor's empty state is not an empty
+ * element: LinkedIn's is a `<p><br></p>`, its placeholder is a real node in
+ * the tree on some renders, and both carry text or zero-width characters
+ * that `textContent` faithfully returns. The panel that then mounts in
+ * `resting` looks, to the human, exactly like the feature not working.
+ *
+ * So: ignore anything the editor marks as not-content (`aria-hidden`, a
+ * placeholder attribute or class), drop zero-width and non-breaking
+ * whitespace, and require at least one real character.
+ */
 export function composerHasOwnText(composer: HTMLElement): boolean {
-  return (composer.textContent ?? '').trim().length > 0;
+  const clone = composer.cloneNode(true) as HTMLElement;
+  for (const node of clone.querySelectorAll(
+    '[aria-hidden="true"], [data-placeholder], [class*="placeholder" i], [class*="Placeholder"]',
+  )) {
+    node.remove();
+  }
+  const text = (clone.textContent ?? '')
+    // Zero-width space, zero-width non-joiner, zero-width joiner, BOM and
+    // non-breaking space: an empty editor is routinely made of these. Listed
+    // as alternatives rather than one character class, because ZWJ inside a
+    // class can join its neighbours into one grapheme
+    // (`no-misleading-character-class`).
+    .replace(/\u200b|\u200c|\u200d|\ufeff|\u00a0/g, '')
+    .trim();
+  return text.length > 0;
 }
 
 /**
@@ -559,10 +587,112 @@ export function scanFeedForAssist(root: ParentNode = document): void {
   }
 }
 
+/**
+ * Mounts the panel from a click anywhere in the document that landed inside
+ * a comment composer, whether or not any card selector resolved (#447).
+ *
+ * This is the path that has to work. `scanFeedForAssist` above can only wire
+ * a composer inside a card `findFeedPosts` recognises, so one unfamiliar
+ * feed variant - and LinkedIn ships several, per session, per account - took
+ * the whole feature off the page with nothing logged. Lorenzo reported
+ * exactly that twice, and the second report came with an activity export
+ * that showed the scripts running on a `feed-sdui` page and the panel never
+ * mounting.
+ *
+ * Delegation removes the card selector from the critical path: the composer
+ * itself is the thing the human clicked, so it is the thing we listen for.
+ * A card is still resolved when it can be, because it scopes the post
+ * readers to one card on a feed; when it cannot be, the readers fall back to
+ * the document and the panel still appears. Never dispatches a click, only
+ * listens for one (compliance rule 3). Exported for testing.
+ */
+export function delegateComposerClicks(): void {
+  document.addEventListener(
+    'click',
+    (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const composer = target.closest<HTMLElement>('[contenteditable="true"][role="textbox"]');
+      if (!composer) return;
+      // The post composer modal has its own script and its own panel; this
+      // one must not answer a click in it (#315).
+      if (findPostComposerModal(document)?.contains(composer)) return;
+      const anchor = resolveAnchor(composer);
+      if (panelFor(anchor)) return;
+      composerEverFound = true;
+      const card = resolveCardFor(composer);
+      logFromContent({
+        level: 'info',
+        source: 'linkedin-action',
+        message: 'activity.linkedin-action.assist-mounted',
+        messageParams: {
+          pageKind: detectPageKind(document),
+          card: card ? 'resolved' : 'unresolved',
+        },
+        meta: {
+          script: 'linkedin-comment-assist',
+          pageKind: detectPageKind(document),
+          cardResolved: Boolean(card),
+          composerHadOwnText: composerHasOwnText(composer),
+          url: location.href,
+        },
+      });
+      mountAssistPanel(composer, card ?? undefined);
+    },
+    { capture: true },
+  );
+}
+
+/** How much prose an ancestor must hold, beyond the composer itself, before
+ * it is credible as the post the comment is about. A card's own chrome
+ * (author line, reaction counts, buttons) is well under this; a post body is
+ * comfortably over it. */
+const CARD_MIN_TEXT = 120;
+
+/** How far up the tree the structural fallback is willing to look. Deep
+ * enough for LinkedIn's nesting (measured at seven levels between composer
+ * and card on the SDUI feed), shallow enough that it cannot reach the feed
+ * container. */
+const CARD_MAX_DEPTH = 14;
+
+/**
+ * The post card `composer` belongs to, without trusting a single selector.
+ *
+ * First `findFeedPosts`, which is the recognised shape and the one that
+ * scopes the readers best. Then the known post-container roles. Then, and
+ * this is the part that matters on an unfamiliar feed variant (#447), a
+ * structural walk: the largest ancestor that still contains exactly one
+ * comment composer, which is precisely the boundary between "this post" and
+ * "the feed". Two composers means the walk has left the card, so the last
+ * single-composer ancestor is as wide as it can honestly go - grounding a
+ * suggestion in somebody else's post would be worse than not grounding it.
+ */
+function resolveCardFor(composer: HTMLElement): Element | null {
+  for (const card of findFeedPosts(document)) {
+    if (card.contains(composer)) return card;
+  }
+  const known = composer.closest('[role="article"][data-urn], [role="listitem"]');
+  if (known) return known;
+
+  let candidate: Element | null = null;
+  let node: Element | null = composer.parentElement;
+  for (let depth = 0; node && depth < CARD_MAX_DEPTH; depth += 1, node = node.parentElement) {
+    if (node.querySelectorAll('[contenteditable="true"][role="textbox"]').length > 1) break;
+    if (node.tagName === 'MAIN' || node.tagName === 'BODY') break;
+    const own = (node.textContent ?? '').replace(composer.textContent ?? '', '').trim();
+    if (own.length >= CARD_MIN_TEXT) candidate = node;
+  }
+  return candidate;
+}
+
 const COMPOSER_WAIT_MS = 15_000;
 
 function init(): void {
   resetSelectorHealth();
+  // Delegation first, and it is the load-bearing one (#447): it works on a
+  // feed variant no card selector recognises. The per-card scan below still
+  // runs, because a resolved card is what scopes the post readers.
+  delegateComposerClicks();
   scanFeedForAssist();
   // This observer never disconnects (new cards can arrive for the tab's
   // whole lifetime), so its callback can still be queued for delivery after

@@ -581,7 +581,11 @@ describe('readOwnProfile: own-profile.html (SDUI profile frontend, real capture)
 });
 
 describe('selector health: red on a broken profile selector, green on the intact capture', () => {
-  it('goes red when the topcard id LinkedIn would normally render is missing', () => {
+  it('reports the topcard as the miss, and still captures what does not need it (#448)', () => {
+    // Lorenzo's own profile rendered a shape where this selector found
+    // nothing, five rescans in a row, and the capture returned null - so
+    // `operator_profiles` stayed empty over one missing container. The
+    // topcard is now tracked on its own and only the headline depends on it.
     const broken = OWN_PROFILE_HTML.replace(
       'com.linkedin.sdui.profile.card.refEXAMPLEMEMBERTopcard',
       'com.linkedin.sdui.profile.card.refEXAMPLEMEMBERTopcardBroken',
@@ -589,11 +593,28 @@ describe('selector health: red on a broken profile selector, green on the intact
     expect(broken).not.toBe(OWN_PROFILE_HTML);
     setUrl('/in/example-person/');
     render(broken);
-    expect(readOwnProfile(document)).toBeNull();
-    const name = getSelectorHealthReport().find(
-      (e) => e.selector === 'ownProfileName' && e.pageKind === 'profile',
+
+    const capture = readOwnProfile(document);
+    expect(capture).not.toBeNull();
+    expect(capture!.displayName).toBeTruthy();
+    expect(capture!.headline).toBeNull();
+
+    const report = getSelectorHealthReport();
+    const topcard = report.find(
+      (e) => e.selector === 'ownProfileTopcard' && e.pageKind === 'profile',
     );
-    expect(name?.lastResult).toBe('miss');
+    const name = report.find((e) => e.selector === 'ownProfileName' && e.pageKind === 'profile');
+    expect(topcard?.lastResult).toBe('miss');
+    expect(name?.lastResult).toBe('match');
+  });
+
+  it('falls back to the document title when no heading names the member', () => {
+    setUrl('/in/example-person/');
+    document.title = 'Giulia Bianchi | LinkedIn';
+    render('<main><section><p>no headings anywhere in this render</p></section></main>');
+
+    const capture = readOwnProfile(document);
+    expect(capture?.displayName).toBe('Giulia Bianchi');
   });
 
   it('is green again for name against the unmodified capture', () => {
