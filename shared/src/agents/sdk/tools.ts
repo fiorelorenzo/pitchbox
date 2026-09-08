@@ -3,8 +3,7 @@
 // workspace every other one imports rather than the other way around (see
 // AGENTS.md, "DB access is centralised in shared"). This module re-exports
 // the same name and signature #416's runner imports via a lazy `import()`,
-// mirroring how `shared/src/agents/cloud.ts` reaches the private cloud
-// adapter without declaring a dependency on it.
+// so `shared` never declares a workspace dependency on `cli`.
 
 /**
  * Session binding for the Pitchbox MCP tools: which run, campaign, or project

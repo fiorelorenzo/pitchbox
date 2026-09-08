@@ -1,6 +1,7 @@
 # Build context for Dockerfile.app (the cloud-edition client stack). Keep it lean:
-# node_modules and build artifacts are recreated in the image. cloud/adapter IS
-# needed (the web bundles it); cloud/runner is not.
+# node_modules and build artifacts are recreated in the image. Neither cloud/
+# submodule is needed - the SDK runner reaches the AI Gateway directly, no
+# private adapter or runner service to bundle.
 **/node_modules
 .git
 .github
@@ -14,7 +15,7 @@ web/build
 docs/.vitepress/cache
 docs/.vitepress/dist
 extension/dist
-cloud/runner
+cloud
 private
 .claude
 .DS_Store

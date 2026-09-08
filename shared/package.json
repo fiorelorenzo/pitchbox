@@ -22,8 +22,6 @@
     "./agents/meta": "./src/agents/meta.ts",
     "./agents/detect": "./src/agents/detect.ts",
     "./agents/config": "./src/agents/config.ts",
-    "./agents/cloud/protocol": "./src/agents/cloud/protocol.ts",
-    "./agents/cloud/jwt": "./src/agents/cloud/jwt.ts",
     "./campaigns": "./src/campaigns/index.ts",
     "./campaigns/server": "./src/campaigns/server.ts",
     "./blocklist": "./src/blocklist.ts",

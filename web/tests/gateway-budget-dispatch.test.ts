@@ -125,26 +125,22 @@ function waitForRunFinished(orgId: number): Promise<void> {
 }
 
 describe('cloud run dispatch is budget-gated (#419)', () => {
-  const savedEdition = process.env.PITCHBOX_EDITION;
-  const savedRunnerUrl = process.env.PITCHBOX_RUNNER_URL;
+  const savedGatewayKey = process.env.AI_GATEWAY_API_KEY;
 
   beforeEach(async () => {
     await reset();
-    // shared/src/agents/detect.ts's cloud probe is still wired to the old
-    // WS-runner's isCloudRunnerEnabled() (PITCHBOX_EDITION + a runner URL) -
-    // stale since #416 repointed the 'cloud' slug at SdkRunner, which needs
-    // neither. Flagged to #420 (owns that file); worked around here so
-    // dispatch reaches the registry-mocked runner instead of being refused
-    // for an unrelated reason before my own budget check is ever exercised.
-    process.env.PITCHBOX_EDITION = 'cloud';
-    process.env.PITCHBOX_RUNNER_URL = 'ws://fake-runner.test';
+    // shared/src/agents/detect.ts's cloud probe (#420) gates purely on
+    // AI_GATEWAY_API_KEY being configured - vitest.config.ts blanks it for
+    // every test so a developer's real key never leaks into a test run, so
+    // it has to be set here for dispatch to reach the registry-mocked
+    // runner below rather than being refused as "not available" before this
+    // file's own budget check is ever exercised.
+    process.env.AI_GATEWAY_API_KEY = 'test-key';
     clearDetectionCache();
   });
   afterEach(() => {
-    if (savedEdition === undefined) delete process.env.PITCHBOX_EDITION;
-    else process.env.PITCHBOX_EDITION = savedEdition;
-    if (savedRunnerUrl === undefined) delete process.env.PITCHBOX_RUNNER_URL;
-    else process.env.PITCHBOX_RUNNER_URL = savedRunnerUrl;
+    if (savedGatewayKey === undefined) delete process.env.AI_GATEWAY_API_KEY;
+    else process.env.AI_GATEWAY_API_KEY = savedGatewayKey;
     clearDetectionCache();
   });
 

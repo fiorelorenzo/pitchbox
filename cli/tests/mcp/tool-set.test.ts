@@ -14,10 +14,9 @@ import { createPitchboxToolSet } from '../../src/mcp/tool-set.js';
 // construction, so a test that mocked the MCP layer would prove nothing.
 //
 // shared/src/agents/sdk/tools.ts re-exports createPitchboxToolSet from here
-// via a lazy import() (mirroring shared/src/agents/cloud.ts's private
-// cloud-adapter loader) so `shared` stays a leaf workspace with no
-// dependency on `cli`. That loader has no behaviour of its own to test - it
-// only resolves this module and delegates - so the real coverage lives here,
+// via a lazy import() so `shared` stays a leaf workspace with no dependency
+// on `cli`. That loader has no behaviour of its own to test - it only
+// resolves this module and delegates - so the real coverage lives here,
 // against the concrete implementation.
 
 interface ToolCallResult {

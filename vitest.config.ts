@@ -99,10 +99,21 @@ export default defineConfig({
     server: { deps: { inline: [/@lucide\/svelte/] } },
     globalSetup: ['./tests/global-setup.ts'],
     // Point all tests at a dedicated test database so they never truncate the
-    // user's real data.
+    // user's real data. AI_GATEWAY_API_KEY is blanked the same way and for the
+    // same reason: dotenv (shared/src/db/client.ts) loads the developer's real
+    // .env on the first `getDb()` import, and dotenv never overwrites a key
+    // vitest already set - so a real key sitting in .env for local dev/preview
+    // verification cannot leak into a run whose cloud-runner dispatch is meant
+    // to fail fast (#420 made cloud availability a live `AI_GATEWAY_API_KEY`
+    // check instead of an always-false-in-tests runner-URL check, so an
+    // unblanked key here would make those tests fire a real, unawaited Gateway
+    // call in the background - see shared/tests/agents/sdk/runner.test.ts for
+    // the tests that DO want the Gateway path exercised: they set their own
+    // fake key in beforeEach, which still wins over this baseline).
     env: {
       DATABASE_URL: testDatabaseUrl(),
       PITCHBOX_TEST_MODE: '1',
+      AI_GATEWAY_API_KEY: '',
     },
   },
 });
