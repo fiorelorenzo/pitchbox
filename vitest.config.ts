@@ -53,6 +53,16 @@ export default defineConfig({
   resolve: {
     alias: {
       $lib: fileURLToPath(new URL('./web/src/lib', import.meta.url)),
+      // The extension's own two aliases (extension/vite.config.ts), so a
+      // side-panel component can be mounted in a test under this config -
+      // which is the config CI runs. Without them such a test passes in the
+      // workspace-scoped run and fails in CI on an unresolved import, the
+      // exact shape of failure #339 already cost a bisect over.
+      // `$lib` is deliberately NOT remapped: the extension's `ui` primitives
+      // resolve `$lib/utils.js` to the web app's own `cn`, the same helper,
+      // and remapping it would break every web route test in this suite.
+      $ext: fileURLToPath(new URL('./extension/src/lib', import.meta.url)),
+      $ui: fileURLToPath(new URL('./extension/src/lib/components/ui', import.meta.url)),
     },
     // Svelte's package exports hand back its *server* build unless the
     // `browser` condition is set, and its server build throws

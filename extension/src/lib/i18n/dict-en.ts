@@ -11,7 +11,6 @@ export const en = {
   'dashboard.connection.title': 'Connection',
   'dashboard.connection.connected': 'Connected',
   'dashboard.connection.disconnected': 'Not connected',
-  'dashboard.connection.empty': 'Open your Pitchbox dashboard, sign in, then pair from that tab.',
   'dashboard.connection.pair': 'Pair with this tab',
   'dashboard.connection.pair-another': 'Pair with another tab',
   'dashboard.connection.disconnect': 'Disconnect',
@@ -212,15 +211,36 @@ export const en = {
   'settings.about.github': 'GitHub',
   'settings.about.docs': 'Documentation',
 
-  'settings.linkedin.title': 'LinkedIn access',
-  'settings.linkedin.description':
-    "Grant LinkedIn access so the in-page assistant can read the post you're viewing and suggest a comment. Nothing is requested until you grant it, and no LinkedIn credential ever leaves your browser.",
-  'settings.linkedin.granted': 'Granted',
-  'settings.linkedin.not-granted': 'Not granted',
-  'settings.linkedin.grant': 'Grant access',
-  'settings.linkedin.revoke': 'Revoke access',
-  'settings.linkedin.denied': 'Permission was not granted. You can try again anytime.',
-  'settings.linkedin.request-failed': 'Could not request LinkedIn access. Try again.',
+  // #399/#400: home states what Pitchbox can do, not what Chrome was asked
+  // for (D22). Chrome's own bubble already carries the permission language.
+  'home.access.on': 'LinkedIn access: on',
+  'home.access.off': 'LinkedIn access: off',
+  'home.access.on-detail': 'The assistant can read the post you are on and suggest a comment.',
+  'home.access.off-detail': 'Turn it on and the assistant works inside LinkedIn itself.',
+  'home.access.turn-on': 'Turn on',
+  'home.access.turn-off': 'Turn off',
+  'home.access.denied': 'Chrome did not grant access. You can ask again anytime.',
+  'home.access.request-failed': 'Could not ask Chrome for LinkedIn access. Try again.',
+
+  // The state line at the top of home, one per state lib/home-state.ts can
+  // derive. Every line names the state in words; every detail names what set
+  // it (D21).
+  'home.state.not-paired': 'Not paired',
+  'home.state.not-paired-hint': 'Open your Pitchbox dashboard, sign in, then pair from that tab.',
+  'home.state.ready': 'Ready',
+  'home.state.ready-linkedin': 'Ready on LinkedIn',
+  'home.state.linkedin-off': 'LinkedIn access is off, so nothing runs inside LinkedIn yet.',
+  'home.state.pending': 'Not synced yet',
+  'home.state.pending-detail': 'Paired with {host}. The first sync has not run yet.',
+  'home.state.degraded': 'Needs attention',
+  'home.state.sync-error': 'Sync stopped',
+  'home.state.channel-chat': 'Reddit Chat is not syncing on {host}.',
+  'home.state.channel-legacy': 'Reddit messages are not syncing on {host}.',
+  'home.state.stale': 'No sync report from {host} in the last 45 minutes.',
+  'home.state.access-revoked': 'LinkedIn access was removed',
+  'home.state.access-revoked-detail':
+    'Chrome no longer grants it, so the in-page assistant is not running. Turn it back on below.',
+  'home.sync.not-scheduled': 'No sync scheduled',
 
   'time.never': 'never',
   'time.seconds-ago': '{n}s ago',

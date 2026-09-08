@@ -36,7 +36,7 @@ export type Pairing = {
   tokenExpiresAt?: string;
 };
 
-export type PairingHealth = 'ok' | 'warn' | 'error';
+export type PairingHealth = 'ok' | 'pending' | 'warn' | 'error';
 
 // A syncStatus snapshot older than this is treated as unknown/stale rather
 // than trusted at face value - roughly 4.5x the longest configurable poller
@@ -44,7 +44,16 @@ export type PairingHealth = 'ok' | 'warn' | 'error';
 // keep showing a stale "ok" green dot indefinitely.
 const STALE_SYNC_STATUS_MS = 45 * 60 * 1000;
 
-const HEALTH_RANK: Record<PairingHealth, number> = { ok: 0, warn: 1, error: 2 };
+// #383: how long after the handshake a pairing with no sync snapshot yet is
+// "not synced yet" rather than "needs attention". The longest configurable
+// poller interval (30 min, lib/settings.ts), so the first sync is genuinely
+// still due for every valid interval; the default is 10.
+const FIRST_SYNC_GRACE_MS = 30 * 60 * 1000;
+
+// `pending` outranks `ok` on purpose: across several pairings, "one of these
+// has not synced yet" is the more informative of the two, and it can still
+// never mask a real warn or error.
+const HEALTH_RANK: Record<PairingHealth, number> = { ok: 0, pending: 1, warn: 2, error: 3 };
 
 function worseHealth(a: PairingHealth, b: PairingHealth): PairingHealth {
   return HEALTH_RANK[b] > HEALTH_RANK[a] ? b : a;
@@ -72,7 +81,18 @@ function channelHealth(status: SyncChannelStatus): PairingHealth {
  * ok, since a dead worker must not keep showing green.
  */
 export function pairingHealth(p: Pairing, now: number = Date.now()): PairingHealth {
-  if (!p.syncStatus) return 'warn';
+  if (!p.syncStatus) {
+    // #383: a missing snapshot covers two different facts. A pairing made a
+    // moment ago has simply not had its first sync yet - the poller runs at
+    // most every 30 minutes (lib/settings.ts) - and reporting that as "needs
+    // attention" is alarming and wrong, since nothing has gone wrong. Past
+    // that window the first sync should have happened and did not, which is a
+    // real warning. A pairing with no handshake at all has no age to judge,
+    // so it keeps the warning too.
+    const handshakeAt = p.lastHandshakeAt ? new Date(p.lastHandshakeAt).getTime() : NaN;
+    if (Number.isFinite(handshakeAt) && now - handshakeAt <= FIRST_SYNC_GRACE_MS) return 'pending';
+    return 'warn';
+  }
   const capturedAt = new Date(p.syncStatus.capturedAt).getTime();
   if (!Number.isFinite(capturedAt) || now - capturedAt > STALE_SYNC_STATUS_MS) return 'warn';
   return worseHealth(channelHealth(p.syncStatus.chat), channelHealth(p.syncStatus.legacy));

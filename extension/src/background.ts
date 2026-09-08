@@ -16,6 +16,7 @@ import { api, type DmSyncFanout } from './lib/api.js';
 import { logEvent } from './lib/activity.js';
 import { getSettings as getExtensionSettings, type ExtensionSettings } from './lib/settings.js';
 import { hasLinkedInPermission } from './lib/permissions.js';
+import { recordLinkedInAccess } from './lib/linkedin-access.js';
 import linkedinCommentScriptPath from './content/linkedin-comment.ts?script';
 import linkedinObserveScriptPath from './content/linkedin-observe.ts?script';
 
@@ -336,6 +337,11 @@ export async function syncLinkedInContentScripts(): Promise<void> {
   // (#438). After, not inside, the Promise.all: it reads the registry those
   // calls write.
   await injectIntoOpenLinkedInTabs();
+  // #401: the same observation, kept rather than thrown away. The worker is
+  // the only place that sees the permission leave - the panel may not even
+  // be open - and home has to be able to say so in red, so the transition
+  // goes to storage where a closed panel can still read it later.
+  await recordLinkedInAccess(await hasLinkedInPermission());
 }
 
 // #203: exported so tests can drive the install/update branch directly
