@@ -1,0 +1,209 @@
+import { eq } from 'drizzle-orm';
+import type { PgDatabase } from 'drizzle-orm/pg-core';
+import { appConfig } from '../db/schema.js';
+
+// Which model does which job (#411). Before this, the only knob was
+// `runner_configs`, keyed by runner slug and shared by every plane, which is
+// why the assist path had to hardcode its own fast default and why an operator
+// pinning a model for one purpose pinned it for all of them.
+//
+// The functions are the jobs the product actually runs, not the playbooks:
+// several playbooks draft a message and want the same model, and a job with no
+// model call of its own does not get a knob. Judging quality is the deliberate
+// omission: the rubric is evaluated inside the drafting run rather than by a
+// call of its own (`shared/src/quality-judge.ts` loads a rubric and never
+// reaches a model), so a `quality_judge` entry would be a setting nobody reads.
+// It earns one when it earns a model call.
+
+export const MODEL_FUNCTIONS = [
+  'campaign_draft',
+  'assist_suggest',
+  'project_extract',
+  'project_insights',
+  'skill_generate',
+] as const;
+
+export type ModelFunction = (typeof MODEL_FUNCTIONS)[number];
+
+export interface ModelFunctionMeta {
+  fn: ModelFunction;
+  label: string;
+  /** What the model is doing, in the operator's terms, for the admin form. */
+  description: string;
+  /**
+   * The model this function runs on when nobody configured it. One cheap fast
+   * model everywhere on purpose: the expensive default is the one that costs
+   * money on every tenant's every run before anyone has measured whether the
+   * job needs it. `google/gemini-3.1-flash-lite` is the id sazio runs its own
+   * conversation loop on.
+   */
+  defaultModelId: string;
+}
+
+const FAST_DEFAULT = 'google/gemini-3.1-flash-lite';
+
+export const MODEL_FUNCTION_META: readonly ModelFunctionMeta[] = [
+  {
+    fn: 'campaign_draft',
+    label: 'Drafting outreach',
+    description:
+      'A campaign run reading candidates and writing the drafts a human reviews in the Inbox. Also the model behind a reply draft and a regenerated draft, which are the same job with a narrower input.',
+    defaultModelId: FAST_DEFAULT,
+  },
+  {
+    fn: 'assist_suggest',
+    label: 'Answering in the panel',
+    description:
+      'The in-page companion suggesting a comment or a post while somebody waits for it. The only path here with a human watching an empty panel, so first-token latency is the constraint that matters.',
+    defaultModelId: FAST_DEFAULT,
+  },
+  {
+    fn: 'project_extract',
+    label: 'Describing a project',
+    description:
+      'Reading a repository, a folder or a website and writing what the project is. Runs rarely and its output is read by every later prompt.',
+    defaultModelId: FAST_DEFAULT,
+  },
+  {
+    fn: 'project_insights',
+    label: 'Summarising insights',
+    description: 'Turning what a project knows into the notes the drafting prompts carry.',
+    defaultModelId: FAST_DEFAULT,
+  },
+  {
+    fn: 'skill_generate',
+    label: 'Generating a campaign profile',
+    description:
+      'Writing a campaign profile from a project and a scenario, which then has to validate against that scenario schema.',
+    defaultModelId: FAST_DEFAULT,
+  },
+];
+
+export function isModelFunction(value: unknown): value is ModelFunction {
+  return typeof value === 'string' && (MODEL_FUNCTIONS as readonly string[]).includes(value);
+}
+
+/**
+ * Which function a playbook slug belongs to. Several playbooks are the same job:
+ * every commenter, poster and scout drafts outreach, and so do the reply drafter
+ * and the draft regenerator. A slug nobody mapped falls back to `campaign_draft`
+ * rather than throwing, because this resolves inside a dispatch that is already
+ * running and a new playbook is not a reason to fail the run.
+ */
+export function modelFunctionForPlaybook(slug: string): ModelFunction {
+  if (slug === 'project-extractor') return 'project_extract';
+  if (slug === 'project-insighter') return 'project_insights';
+  if (slug === 'campaign-skill-generator') return 'skill_generate';
+  return 'campaign_draft';
+}
+
+const KEY = 'model_functions';
+
+type StoredBlob = Record<string, { modelId?: unknown } | undefined>;
+
+export type ModelFunctionConfig = Record<ModelFunction, string | null>;
+
+function emptyConfig(): ModelFunctionConfig {
+  const out = {} as ModelFunctionConfig;
+  for (const fn of MODEL_FUNCTIONS) out[fn] = null;
+  return out;
+}
+
+// A short cache because this is read on every dispatch and every suggestion,
+// and the row behind it changes when an admin saves a form. The TTL is the
+// backstop for a multi-instance deployment where another process saved it; the
+// same-process save invalidates explicitly, so an admin never has to wait to
+// see their own change take effect (the acceptance criterion is "no restart",
+// not "eventually").
+const CACHE_TTL_MS = 30_000;
+let cache: { value: ModelFunctionConfig; expiresAt: number } | null = null;
+
+export function clearModelFunctionCache(): void {
+  cache = null;
+}
+
+export async function loadModelFunctionConfig(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+): Promise<ModelFunctionConfig> {
+  const now = Date.now();
+  if (cache && cache.expiresAt > now) return cache.value;
+
+  const [row] = await db.select().from(appConfig).where(eq(appConfig.key, KEY));
+  const stored = (row?.value ?? {}) as StoredBlob;
+  const value = emptyConfig();
+  for (const fn of MODEL_FUNCTIONS) {
+    const raw = stored[fn]?.modelId;
+    // jsonb holds no enum, so a hand-edited row or an older build can put
+    // anything here. An unusable value reads as unset, which lands on the coded
+    // default rather than sending a garbage model id to the Gateway.
+    if (typeof raw === 'string' && raw.trim()) value[fn] = raw.trim();
+  }
+  cache = { value, expiresAt: now + CACHE_TTL_MS };
+  return value;
+}
+
+export async function saveModelFunctionModel(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+  fn: ModelFunction,
+  modelId: string | null,
+): Promise<void> {
+  const [row] = await db.select().from(appConfig).where(eq(appConfig.key, KEY));
+  const stored = { ...((row?.value ?? {}) as StoredBlob) };
+  const trimmed = modelId?.trim();
+  if (trimmed) stored[fn] = { modelId: trimmed };
+  else delete stored[fn];
+  await db
+    .insert(appConfig)
+    .values({ key: KEY, value: stored })
+    .onConflictDoUpdate({ target: appConfig.key, set: { value: stored } });
+  clearModelFunctionCache();
+}
+
+export function defaultModelForFunction(fn: ModelFunction): string {
+  return MODEL_FUNCTION_META.find((m) => m.fn === fn)?.defaultModelId ?? FAST_DEFAULT;
+}
+
+/**
+ * The model a function runs on: what an admin configured, else the coded
+ * default. Never throws and never returns empty, because this is called inside
+ * a dispatch that is already running: a run that dies because nobody
+ * configured a function is worse than a run on a default.
+ */
+export async function resolveFunctionModel(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+  fn: ModelFunction,
+): Promise<string> {
+  const config = await loadModelFunctionConfig(db);
+  return config[fn] ?? defaultModelForFunction(fn);
+}
+
+/**
+ * Whether a runner slug takes a Gateway model id at all. Only the managed
+ * runner does: an ACP backend is a coding-agent CLI whose `model` option is
+ * that CLI's own vocabulary (`sonnet`, `opus`), so handing it
+ * `google/gemini-3.1-flash-lite` would fail the run on a deployment that never
+ * asked for any of this. This is why the resolution below returns undefined
+ * rather than a default for those: undefined means "leave today's behaviour
+ * alone", which is the operator's `runner_configs` pin if they set one and the
+ * CLI's own default if they did not.
+ */
+export function runnerTakesGatewayModel(slug: string): boolean {
+  return slug === 'cloud';
+}
+
+/**
+ * The model a dispatch should ask for, given the runner it is dispatching to
+ * and the playbook it is running. Undefined when the runner does not speak
+ * Gateway ids, so a caller can leave its config untouched.
+ */
+export async function resolveModelForRun(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+  args: { runnerSlug: string; playbookSlug: string },
+): Promise<string | undefined> {
+  if (!runnerTakesGatewayModel(args.runnerSlug)) return undefined;
+  return resolveFunctionModel(db, modelFunctionForPlaybook(args.playbookSlug));
+}

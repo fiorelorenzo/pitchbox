@@ -51,6 +51,8 @@
     "./auth": "./src/auth.ts",
     "./orgs": "./src/orgs.ts",
     "./edition": "./src/edition.ts",
+    "./ai/model-functions": "./src/ai/model-functions.ts",
+    "./ai/gateway-catalogue": "./src/ai/gateway-catalogue.ts",
     "./retention": "./src/retention.ts",
     "./observed-targets": "./src/observed-targets.ts",
     "./runlog": "./src/runlog/index.ts",
@@ -74,6 +76,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.1.0",
+    "@ai-sdk/gateway": "^4.0.75",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.3",

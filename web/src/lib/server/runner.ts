@@ -1,6 +1,7 @@
 import { createAgentRunner } from '@pitchbox/shared/agents/registry';
 import type { AgentRunner } from '@pitchbox/shared/agents';
 import { loadRunnerConfig } from '@pitchbox/shared/agents/config';
+import { resolveModelForRun } from '@pitchbox/shared/ai/model-functions';
 import { detectRunner, isDetectionConclusive } from '@pitchbox/shared/agents/detect';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
@@ -162,7 +163,19 @@ async function dispatchRun(
       );
     }
     const config = await loadRunnerConfig(db, slug);
-    runner = createAgentRunner(run.agentRunner, config);
+    // Which model does this job is an instance-level setting (#411). An
+    // explicit `runner_configs` pin still wins, since an operator who set one
+    // meant it; otherwise the function's configured model applies, and for an
+    // ACP backend nothing changes at all (`resolveModelForRun` returns
+    // undefined, because `sonnet` and `google/gemini-3.1-flash-lite` are not
+    // the same vocabulary).
+    const functionModel = await resolveModelForRun(db, {
+      runnerSlug: slug,
+      playbookSlug: opts.playbookSlug,
+    });
+    const withModel =
+      functionModel && !config.model?.trim() ? { ...config, model: functionModel } : config;
+    runner = createAgentRunner(run.agentRunner, withModel);
   } catch (err) {
     const errMsg = String(err instanceof Error ? err.message : err);
     const failureReason = await classifyFailedRun(run.id, 1, errMsg);
