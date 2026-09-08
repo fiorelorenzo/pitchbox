@@ -32,6 +32,21 @@ describe('classifyFailure', () => {
     expect(classifyFailure([ev('hit Reddit rate limit, backing off')], 1)).toBe('quota_exhausted');
   });
 
+  it('detects concurrency_exhausted on the org concurrency refusal text, distinctly from quota_exhausted (#485)', () => {
+    expect(
+      classifyFailure(
+        [
+          ev(
+            'This organization already has 2 cloud runs in progress, its configured ' +
+              'concurrency limit, and cannot start another until one finishes or an operator ' +
+              'raises the limit in Settings.',
+          ),
+        ],
+        1,
+      ),
+    ).toBe('concurrency_exhausted');
+  });
+
   it('detects network failures on common Node error codes', () => {
     expect(classifyFailure([ev('fetch failed: ECONNREFUSED 127.0.0.1:5180')], 1)).toBe('network');
     expect(classifyFailure([ev('getaddrinfo ENOTFOUND api.example.com')], 1)).toBe('network');
