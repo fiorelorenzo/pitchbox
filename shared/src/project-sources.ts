@@ -97,6 +97,28 @@ async function getSourceProjectId(db: Db, id: number): Promise<number | null> {
 }
 
 /**
+ * A single source, scoped to the caller's organization. Returns null when
+ * `id` does not exist or its project does not belong to `organizationId` -
+ * same "wrong org looks identical to missing" contract as the rest of this
+ * module. Backs the sync dispatcher (project-source-sync.ts) and the
+ * `GET .../sources/[sourceId]` read.
+ */
+export async function getProjectSource(
+  db: Db,
+  organizationId: number,
+  id: number,
+): Promise<ProjectSourceRow | null> {
+  const projectId = await getSourceProjectId(db, id);
+  if (projectId === null) return null;
+  if (!(await projectBelongsToOrg(db, projectId, organizationId))) return null;
+  const [row] = await db
+    .select()
+    .from(schema.projectSources)
+    .where(eq(schema.projectSources.id, id));
+  return row ?? null;
+}
+
+/**
  * Updates a source's config, cached output or fetch state. Returns null when
  * `id` does not exist or its project does not belong to `organizationId`.
  */

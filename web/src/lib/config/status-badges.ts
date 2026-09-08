@@ -245,6 +245,16 @@ export const ALERT_SEVERITY: Record<string, BadgeStyle> = {
   error: { label: 'Error', tone: 'rose' },
 };
 
+// A project source's own fetch state (#432, ProjectSourcesPanel.svelte):
+// 'synced' after a successful re-fetch, 'failed' when the last attempt set
+// fetch_error (including an unimplemented kind - see project-source-sync.ts),
+// 'pending' before it has ever been fetched.
+export const PROJECT_SOURCE_STATUS: Record<string, BadgeStyle> = {
+  synced: { label: 'Synced', tone: 'emerald' },
+  failed: { label: 'Failed', tone: 'rose' },
+  pending: { label: 'Never synced', tone: 'muted' },
+};
+
 export type BadgeDomain =
   | 'draft-kind'
   | 'draft-state'
@@ -260,7 +270,8 @@ export type BadgeDomain =
   | 'run-live-status'
   | 'webhook-delivery-status'
   | 'alert-severity'
-  | 'keyword-watch-status';
+  | 'keyword-watch-status'
+  | 'project-source-status';
 
 export const BADGE_DOMAIN: Record<BadgeDomain, Record<string, BadgeStyle>> = {
   'draft-kind': DRAFT_KIND,
@@ -278,6 +289,7 @@ export const BADGE_DOMAIN: Record<BadgeDomain, Record<string, BadgeStyle>> = {
   'webhook-delivery-status': WEBHOOK_DELIVERY_STATUS,
   'alert-severity': ALERT_SEVERITY,
   'keyword-watch-status': KEYWORD_WATCH_STATUS,
+  'project-source-status': PROJECT_SOURCE_STATUS,
 };
 
 /** Fallback for an unknown value - the raw string with neutral styling. */

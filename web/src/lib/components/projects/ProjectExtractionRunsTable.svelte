@@ -140,7 +140,7 @@
     {#if items.length === 0}
       <div class="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
         <p class="text-sm">No extractions yet</p>
-        <p class="text-xs">Click "Auto-extract" on the description above to start one.</p>
+        <p class="text-xs">Add a source below and run an extraction to start one.</p>
       </div>
     {:else}
       <!--
