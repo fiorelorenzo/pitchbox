@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import type { streamText } from 'ai';
 import type { createGateway } from '@ai-sdk/gateway';
-import { SdkRunner } from '../../../src/agents/sdk/runner.js';
+import { SdkRunner, __resetModelCatalogueCacheForTests } from '../../../src/agents/sdk/runner.js';
 import type { ParsedEvent } from '../../../src/runlog/types.js';
 import type { PitchboxToolSet } from '../../../src/agents/sdk/tools.js';
 
@@ -54,6 +54,20 @@ function fakeGateway() {
   return vi.fn(() => gateway) as unknown as typeof createGateway;
 }
 
+// A gateway whose catalogue prices exactly one model - the mid-stream
+// budget tests need real per-token rates so `buildSdkUsage`'s computed
+// `costUsd` is non-null and comparable against `budgetRemainingUsd`; the
+// plain `fakeGateway()` above returns an empty catalogue on purpose (every
+// existing test's cost stays null, since pricing isn't their concern).
+function fakeGatewayWithPricing(modelId: string, pricing: { input: string; output: string }) {
+  const getAvailableModels = vi.fn(async () => ({ models: [{ id: modelId, pricing }] }));
+  const gateway = Object.assign(
+    vi.fn((id: string) => ({ modelId: id }) as never),
+    { getAvailableModels },
+  );
+  return vi.fn(() => gateway) as unknown as typeof createGateway;
+}
+
 function tmpLogDir(): string {
   return mkdtempSync(join(tmpdir(), 'sdk-runner-test-'));
 }
@@ -63,6 +77,10 @@ let logDir: string;
 beforeEach(() => {
   logDir = tmpLogDir();
   process.env.AI_GATEWAY_API_KEY = 'test-key';
+  // Otherwise a plain-catalogue test's cached empty model list (5-minute
+  // TTL, process-lifetime by design) leaks into a later test that supplies
+  // its own pricing via a different fake gateway.
+  __resetModelCatalogueCacheForTests();
 });
 
 afterEach(() => {
@@ -344,5 +362,143 @@ describe('SdkRunner', () => {
     expect(res.exitCode).toBe(0);
     const resultEvent = events.find((e) => e.kind === 'result');
     expect(resultEvent?.raw).toMatch(/step limit/);
+  });
+
+  it('aborts mid-stream once its own accumulated cost crosses budgetRemainingUsd, ending as quota-exhausted with the earlier events kept', async () => {
+    const { fn: createToolSetFn } = fakeToolSet();
+    const events: ParsedEvent[] = [];
+    const runner = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGatewayWithPricing('google/gemini-3.1-flash-lite', {
+        input: '0.000002',
+        output: '0.000002',
+      }),
+      createToolSetFn,
+      streamTextFn: fakeStreamText(function (signal) {
+        return (async function* () {
+          // Real content produced before the budget trips - this must
+          // survive the abort, exactly like a real run's already-emitted
+          // events stay in run_events (#419).
+          yield { type: 'text-delta', id: '1', text: 'partial answer' };
+          // 1000 input + 1000 output tokens at $0.000002/token = $0.004,
+          // comfortably over the $0.001 budget below.
+          yield {
+            type: 'finish-step',
+            finishReason: 'tool-calls',
+            usage: { inputTokens: 1000, outputTokens: 1000, inputTokenDetails: {} },
+          };
+          // The real AI SDK ends the stream cleanly on abort rather than
+          // throwing or yielding more (docs/cloud-runner.md #415) - the
+          // runner itself is what calls `controller.abort()` here, once it
+          // sees the finish-step above cross the budget.
+          await waitForAbort(signal);
+        })();
+      }),
+    });
+    const handle = runner.run({
+      ...baseOpts(),
+      prompt: 'hi',
+      attachMcp: false,
+      budgetRemainingUsd: 0.001,
+      onParsedEvents: (evs) => {
+        events.push(...evs);
+      },
+    });
+    const res = await handle.result;
+    expect(res.exitCode).toBe(1);
+    expect(res.usage?.costUsd).toBeCloseTo(0.004, 4);
+    const assistantEvent = events.find((e) => e.kind === 'assistant');
+    expect(assistantEvent?.payload).toMatchObject({ type: 'assistant', text: 'partial answer' });
+    const resultEvent = events.find((e) => e.kind === 'result');
+    expect(resultEvent?.payload).toMatchObject({ type: 'result', success: false });
+    expect(resultEvent?.raw).toMatch(/quota exhausted/);
+    expect(resultEvent?.raw).toMatch(/monthly Gateway budget/);
+  });
+
+  it('does not abort a run that stays under its budgetRemainingUsd', async () => {
+    const { fn: createToolSetFn } = fakeToolSet();
+    const events: ParsedEvent[] = [];
+    const runner = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGatewayWithPricing('google/gemini-3.1-flash-lite', {
+        input: '0.000002',
+        output: '0.000002',
+      }),
+      createToolSetFn,
+      streamTextFn: fakeStreamText(() =>
+        gen(
+          // Same $0.004 spend as the tripping test above, but the budget
+          // here is $10 - nowhere near crossed.
+          {
+            type: 'finish-step',
+            finishReason: 'stop',
+            usage: { inputTokens: 1000, outputTokens: 1000, inputTokenDetails: {} },
+          },
+          {
+            type: 'finish',
+            finishReason: 'stop',
+            totalUsage: { inputTokens: 1000, outputTokens: 1000 },
+          },
+        ),
+      ),
+    });
+    const handle = runner.run({
+      ...baseOpts(),
+      prompt: 'hi',
+      attachMcp: false,
+      budgetRemainingUsd: 10,
+      onParsedEvents: (evs) => {
+        events.push(...evs);
+      },
+    });
+    const res = await handle.result;
+    expect(res.exitCode).toBe(0);
+    const resultEvent = events.find((e) => e.kind === 'result');
+    expect(resultEvent?.payload).toMatchObject({ type: 'result', success: true });
+  });
+
+  it('never aborts on budget when the model has no catalogue pricing, since an unknown cost cannot be judged against it', async () => {
+    const { fn: createToolSetFn } = fakeToolSet();
+    const events: ParsedEvent[] = [];
+    const runner = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      // The plain fakeGateway() below returns an empty catalogue, so
+      // buildSdkUsage's costUsd stays null however many tokens are reported.
+      createGatewayFn: fakeGateway(),
+      createToolSetFn,
+      streamTextFn: fakeStreamText(() =>
+        gen(
+          {
+            type: 'finish-step',
+            finishReason: 'stop',
+            usage: { inputTokens: 1_000_000, outputTokens: 1_000_000, inputTokenDetails: {} },
+          },
+          {
+            type: 'finish',
+            finishReason: 'stop',
+            totalUsage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+          },
+        ),
+      ),
+    });
+    const handle = runner.run({
+      ...baseOpts(),
+      prompt: 'hi',
+      attachMcp: false,
+      // A budget so small it would trip instantly if cost were treated as 0
+      // instead of unknown.
+      budgetRemainingUsd: 0.0000001,
+      onParsedEvents: (evs) => {
+        events.push(...evs);
+      },
+    });
+    const res = await handle.result;
+    expect(res.exitCode).toBe(0);
+    expect(res.usage?.costUsd).toBeNull();
+    const resultEvent = events.find((e) => e.kind === 'result');
+    expect(resultEvent?.payload).toMatchObject({ type: 'result', success: true });
   });
 });

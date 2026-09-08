@@ -16,6 +16,7 @@ import {
 } from '@pitchbox/shared/draft-regenerate';
 import { startReplyDrafting } from '@pitchbox/shared/reply-drafter';
 import { getRunOrgId } from '@pitchbox/shared/orgs';
+import { getOrgQuotaSnapshot } from '@pitchbox/shared/org-quota';
 import type { ScenarioSlug } from '@pitchbox/shared/campaigns';
 import { getDb, schema } from './db.js';
 import { and, desc, eq } from 'drizzle-orm';
@@ -129,6 +130,10 @@ async function dispatchRun(
   // run's org never changes mid-flight, so a single lookup avoids repeating
   // the join on every event.
   const orgId = await getRunOrgId(db, run.id);
+  // Snapshotted once, before the runner starts, and handed to it so it can
+  // enforce its own mid-stream abort (#419) without a DB round trip per
+  // step. Only ever set for the `cloud` slug, below.
+  let budgetRemainingUsd: number | null | undefined;
 
   let runner: AgentRunner;
   try {
@@ -147,6 +152,31 @@ async function dispatchRun(
           `managed Pitchbox Cloud runner can dispatch here. Change the runner in project or ` +
           `campaign settings to continue.`,
       );
+    }
+    // The Gateway is the product's money, not the operator's local CLI
+    // subscription (#419) - refuse before the run even starts once this
+    // org's month-to-date spend already meets or exceeds its configured
+    // budget, with a message the caller can show instead of a generic
+    // failure. Only the `cloud` slug (SdkRunner) spends against the
+    // Gateway; every other runner bills nothing to the product and is never
+    // budget-gated. `getOrgQuotaSnapshot` reads the same `runs.cost_usd`
+    // sum the dashboard and the org-quota settings page use
+    // (shared/src/org-quota.ts's `getOrgMonthToDateCostUsd`), so this check
+    // and what an operator sees always agree. The message says "quota" on
+    // purpose: classifyFailedRun folds it into the failed run's own error
+    // text, and classifyFailure's existing QUOTA_PATTERNS then tags this
+    // exact refusal `quota_exhausted` too, the same reason a mid-stream
+    // crossing gets, with no separate classifier branch needed.
+    if (slug === 'cloud' && orgId != null) {
+      const quota = await getOrgQuotaSnapshot(db, orgId);
+      if (quota.remainingUsd != null && quota.remainingUsd <= 0) {
+        throw new Error(
+          `This organization is $${Math.abs(quota.remainingUsd).toFixed(2)} over its monthly ` +
+            `Gateway quota and cannot start another cloud run until next month or until an ` +
+            `operator raises the budget in Settings.`,
+        );
+      }
+      budgetRemainingUsd = quota.remainingUsd;
     }
     // Pre-flight the snapshot. A run whose runner cannot start here fails the
     // same way whatever the reason, but the message has to say so: before #219
@@ -262,9 +292,12 @@ async function dispatchRun(
     },
     cwd: PITCHBOX_ROOT,
     timeoutMs: 15 * 60 * 1000,
-    // Only the cloud runner consumes this (to mint a per-org runner-auth JWT
-    // at dispatch time); already resolved above for the emit() calls.
+    // `orgId` is resolved above for the emit() calls; `budgetRemainingUsd`
+    // (#419) is the snapshot the pre-flight check above just took. Only the
+    // `cloud` runner (SdkRunner) reads the latter, to abort once its own
+    // accumulated cost crosses the line.
     orgId: orgId ?? undefined,
+    budgetRemainingUsd,
 
     onRawLine: () => {
       // Raw lines are already persisted to the runner's log file; no-op here.

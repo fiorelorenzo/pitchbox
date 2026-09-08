@@ -32,6 +32,17 @@ export interface AgentRunOptions {
    * other runners ignore it.
    */
   orgId?: number;
+  /**
+   * Remaining monthly USD Gateway budget for the dispatching run's
+   * organization, snapshotted at dispatch time
+   * (`shared/src/org-quota.ts`'s `getOrgQuotaSnapshot`). Null means
+   * unlimited (no budget configured, or the run has no resolved org). Only
+   * the `cloud` runner (`SdkRunner`) enforces this, aborting mid-stream once
+   * its own accumulated cost would push the org over the line (#419) -
+   * other runners spend nothing against the product's Gateway key and
+   * ignore it.
+   */
+  budgetRemainingUsd?: number | null;
   /** Called with the raw original line for each stdout/stderr chunk - optional, for forensic logging. */
   onRawLine?: (line: string) => void;
   /** Called with one or more normalized ParsedEvents extracted from that line. */

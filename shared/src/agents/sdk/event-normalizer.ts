@@ -377,14 +377,21 @@ export function normalizeSdkPart(part: unknown, raw: string, seq: number): Parse
 
 /**
  * Already-classified run outcome, decided by the runner from facts only it
- * has: which AbortSignal fired (`cancelled` vs `timeout`), whether an `error`
- * part closed the stream, whether the terminal `finish` part's finishReason
- * came back `tool-calls` with no further step (the step ceiling cut the loop
- * off before the model could act on it - #415's `stopWhen(stepCountIs(n))`),
- * or content-filter/refusal. Mirrors ACP's `AcpStopReasonKind`.
+ * has: which AbortSignal fired (`cancelled` vs `timeout` vs its own
+ * mid-stream budget check, `quota_exceeded`), whether an `error` part closed
+ * the stream, whether the terminal `finish` part's finishReason came back
+ * `tool-calls` with no further step (the step ceiling cut the loop off
+ * before the model could act on it - #415's `stopWhen(stepCountIs(n))`), or
+ * content-filter/refusal. Mirrors ACP's `AcpStopReasonKind`.
  */
 export type SdkStopReasonKind =
-  'end_turn' | 'cancelled' | 'timeout' | 'error' | 'max_turn_requests' | 'refusal';
+  | 'end_turn'
+  | 'cancelled'
+  | 'timeout'
+  | 'error'
+  | 'max_turn_requests'
+  | 'refusal'
+  | 'quota_exceeded';
 
 // Marker text embedded in the closing event's `raw`/`text` so classifyFailure
 // (shared/src/runlog/classify-failure.ts) has something distinctive to match
@@ -395,6 +402,12 @@ const STOP_REASON_TEXT: Partial<Record<SdkStopReasonKind, string>> = {
   error: 'run failed: a provider error ended the run',
   max_turn_requests: 'run stopped: step limit reached before the agent finished',
   refusal: 'run stopped: the model refused to continue',
+  // Contains "quota" on purpose - classifyFailure's QUOTA_PATTERNS matches
+  // that substring and maps it to the `quota_exhausted` failure reason with
+  // no changes needed there (#419: the runner aborts once its own
+  // accumulated cost would push the org over its remaining monthly budget).
+  quota_exceeded:
+    'run stopped: quota exhausted, the organization crossed its monthly Gateway budget mid-run',
 };
 
 /**
