@@ -4,6 +4,7 @@ import { getDb } from '$lib/server/db.js';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { loadDefaultRunnerSlug, saveDefaultRunnerSlug } from '@pitchbox/shared/agents/config';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
+import { recordInstanceAudit } from '@pitchbox/shared/instance-audit';
 import { requireInstanceAdmin, requireRole } from '$lib/server/auth.js';
 
 const Body = z.object({ slug: z.string() });
@@ -29,6 +30,14 @@ export async function PUT(event: RequestEvent) {
   if (!isRunnerAllowed(parsed.data.slug)) {
     throw error(400, 'runner_not_allowed');
   }
-  await saveDefaultRunnerSlug(getDb(), parsed.data.slug as AgentRunnerSlug);
+  const db = getDb();
+  const before = await loadDefaultRunnerSlug(db);
+  await saveDefaultRunnerSlug(db, parsed.data.slug as AgentRunnerSlug);
+  await recordInstanceAudit(db, {
+    key: 'default_runner',
+    actor: event.locals.user ?? null,
+    before: { slug: before },
+    after: { slug: parsed.data.slug },
+  });
   return json({ ok: true, slug: parsed.data.slug });
 }

@@ -4,7 +4,7 @@
   import * as Table from '$lib/components/ui/table';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
-  import { Info, Bot, Gauge, Archive, Webhook } from '@lucide/svelte';
+  import { Info, Bot, Gauge, Archive, Webhook, ScrollText } from '@lucide/svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import PageContainer from '$lib/components/PageContainer.svelte';
   import Seo from '$lib/components/Seo.svelte';
@@ -62,6 +62,12 @@
       icon: Webhook,
       label: 'Outgoing webhook',
       description: 'The dashboard-wide notification webhook URL and its delivery log.',
+    },
+    {
+      href: '/settings/admin/audit',
+      icon: ScrollText,
+      label: 'Audit log',
+      description: 'Who changed instance-wide configuration, when, and from what to what.',
     },
   ];
 </script>

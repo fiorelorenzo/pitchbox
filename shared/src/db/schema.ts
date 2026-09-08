@@ -562,6 +562,34 @@ export const appConfig = pgTable('app_config', {
   value: jsonb('value').notNull(),
 });
 
+// Instance-wide config writes (#414): a model swapped for every tenant, a
+// quota default raised, an account promoted - none of it org-scoped, so it
+// cannot live in the union `audit-feed.ts` builds from draft_events and
+// run_events (both reached through a project's organization_id, which this
+// has none of). `key` names the app_config row (or app_config-shaped
+// concern) that changed - 'default_runner', 'quota_defaults',
+// 'runner_config:<slug>', 'notification_webhooks', 'retention',
+// 'model_function:<fn>', 'user_promotion' - `before`/`after` hold the value
+// on each side of the write, run through `redactInstanceAuditValue`
+// (shared/src/instance-audit.ts) before they ever reach this table so a
+// credential-shaped field is never stored raw. `recordInstanceAudit` is the
+// one function that inserts here - see that module for why every
+// instance-wide write is expected to call it rather than writing directly.
+export const instanceAuditLog = pgTable(
+  'instance_audit_log',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    key: text('key').notNull(),
+    actor: text('actor').notNull(),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byCreated: index('instance_audit_log_created_idx').on(t.createdAt),
+  }),
+);
+
 export const daemonHeartbeats = pgTable('daemon_heartbeats', {
   module: text('module').primaryKey(),
   tickAt: timestamp('tick_at', { withTimezone: true }).notNull().defaultNow(),

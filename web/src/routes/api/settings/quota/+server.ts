@@ -2,6 +2,7 @@ import { json, error, type RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
+import { recordInstanceAudit } from '@pitchbox/shared/instance-audit';
 import { requireInstanceAdmin, requireRole } from '$lib/server/auth.js';
 
 const Window = z
@@ -44,6 +45,10 @@ export async function POST(event: RequestEvent) {
     );
 
   const db = getDb();
+  const [existing] = await db
+    .select()
+    .from(schema.appConfig)
+    .where(eq(schema.appConfig.key, 'quota_defaults'));
   await db
     .insert(schema.appConfig)
     .values({ key: 'quota_defaults', value: parsed.data })
@@ -51,5 +56,11 @@ export async function POST(event: RequestEvent) {
       target: schema.appConfig.key,
       set: { value: parsed.data },
     });
+  await recordInstanceAudit(db, {
+    key: 'quota_defaults',
+    actor: event.locals.user ?? null,
+    before: existing?.value ?? {},
+    after: parsed.data,
+  });
   return json({ ok: true });
 }

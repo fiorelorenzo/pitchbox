@@ -8,6 +8,7 @@ import {
   RETENTION_FLOOR_DAYS,
   type RetentionPolicy,
 } from '@pitchbox/shared/retention';
+import { recordInstanceAudit } from '@pitchbox/shared/instance-audit';
 
 export const load: PageServerLoad = async (event) => {
   requireRole(event, 'admin'); // viewing retention is admin-only
@@ -44,12 +45,20 @@ export const actions: Actions = {
     ) {
       return fail(400, { error: 'Invalid number' });
     }
+    const db = getDb();
+    const before = await loadRetention(db);
     // saveRetention enforces the floor server-side.
-    const saved = await saveRetention(getDb(), {
+    const saved = await saveRetention(db, {
       drafts_days,
       run_events_days,
       draft_events_days,
       webhook_deliveries_days,
+    });
+    await recordInstanceAudit(db, {
+      key: 'retention',
+      actor: event.locals.user ?? null,
+      before,
+      after: saved,
     });
     return { saved };
   },
