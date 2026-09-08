@@ -69,7 +69,8 @@
     "./scheduler/dispatch-lock": "./src/scheduler/dispatch-lock.ts",
     "./project-extraction": "./src/project-extraction/index.ts",
     "./linkedin-assist": "./src/linkedin-assist.ts",
-    "./assist-accept": "./src/assist-accept.ts"
+    "./assist-accept": "./src/assist-accept.ts",
+    "./website-source": "./src/website-source.ts"
   },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",
@@ -82,6 +83,7 @@
     "@ai-sdk/gateway": "^4.0.75",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
+    "html-to-text": "^9.0.5",
     "jose": "^6.2.3",
     "pg": "^8.23.0",
     "playwright": "^1.62.1",
@@ -90,6 +92,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@types/html-to-text": "^9.0.4",
     "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.23.13"
