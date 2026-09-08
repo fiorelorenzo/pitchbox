@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from './meta.js';
-import { isCloudRunnerEnabled } from './cloud.js';
 
 const exec = promisify(execFile);
 
@@ -67,16 +66,15 @@ export function detectRunner(slug: AgentRunnerSlug): Promise<DetectResult> {
   let pending = cache.get(slug);
   if (!pending) {
     if (slug === 'cloud') {
-      // No local binary: the cloud runner is "available" when the cloud edition
-      // is enabled and a runner URL is configured.
-      const enabled = isCloudRunnerEnabled();
+      // No local binary: the SDK runner (shared/src/agents/sdk/runner.ts) runs
+      // in-process and is "available" whenever this deployment has a Gateway
+      // credential to reach a model with - no separate service, no runner URL.
+      const enabled = !!process.env.AI_GATEWAY_API_KEY;
       pending = Promise.resolve({
         available: enabled,
         version: enabled ? 'managed' : null,
         path: null,
-        error: enabled
-          ? null
-          : 'Set PITCHBOX_EDITION=cloud and PITCHBOX_RUNNER_URL to enable the cloud runner.',
+        error: enabled ? null : 'Set AI_GATEWAY_API_KEY to enable the cloud runner.',
         detectedAt: new Date().toISOString(),
       });
     } else {

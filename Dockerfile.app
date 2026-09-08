@@ -1,15 +1,16 @@
 # syntax=docker/dockerfile:1
 #
 # Pitchbox client stack (cloud edition): the SvelteKit web app + the daemon, in
-# one image with two entrypoints. Compute runs on the cloud runner (separate
-# image); this stack holds the data, runs the local Pitchbox MCP server, and does
-# the Reddit scraping - so it needs Google Chrome.
+# one image with two entrypoints. The web dispatches every run to the in-process
+# SDK runner (shared/src/agents/sdk/runner.ts), which reaches models straight
+# through the AI Gateway - no separate compute image. This stack holds the data,
+# runs the local Pitchbox MCP server, and does the Reddit scraping - so it needs
+# Google Chrome.
 #
 # Like the rest of the repo, it runs from TS source (Vite for the web, tsx for the
-# daemon) - no bundling step. That keeps the cloud adapter + MCP server + reddit
-# stealth deps loading from node_modules as intended. Build context is the umbrella
-# root (the web's Vite alias resolves the private cloud/adapter source).
-# Local-runner users run the app without Docker (see docs).
+# daemon) - no bundling step. That keeps the MCP server + reddit stealth deps
+# loading from node_modules as intended. Local-runner users run the app without
+# Docker (see docs).
 
 FROM node:22-bookworm-slim AS app
 # Global pnpm (no corepack: it writes to HOME at runtime, which the non-root user
@@ -35,20 +36,10 @@ RUN npx playwright install --with-deps chrome \
 # 3) Bring the source.
 COPY . .
 
-# 3b) The cloud adapter is a separate package (not in the workspace); install its
-#     runtime deps (ws) so it resolves when tsx loads the adapter source at runtime.
-RUN cd cloud/adapter && pnpm install --node-linker=hoisted
-
-# 3c) Build the SvelteKit web server (adapter-node). @pitchbox/* stay external
+# 3b) Build the SvelteKit web server (adapter-node). @pitchbox/* stay external
 #     (see web/vite.config.ts) and load at runtime under tsx, which keeps their CJS
 #     deps (ajv via the MCP SDK, the reddit stealth stack) out of the ESM bundle.
 RUN pnpm -F web build
-
-# 3d) Make the cloud adapter resolvable at runtime as its real package name (the
-#     built server imports '@pitchbox/cloud-adapter'; tsx then loads its TS source).
-#     AFTER the build on purpose, so Vite keeps it external at build time.
-RUN mkdir -p /app/node_modules/@pitchbox \
- && ln -sfn /app/cloud/adapter /app/node_modules/@pitchbox/cloud-adapter
 
 # 4) Run as a non-root user. The app is owned by it so Vite's dep cache, the run
 #    scratch dirs (daemon/tmp, daemon/logs) and Playwright are all writable.

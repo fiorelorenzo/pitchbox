@@ -127,14 +127,11 @@ async function createCampaign(
 
 describe('runner snapshot defaults (#219)', () => {
   const savedEdition = process.env.PITCHBOX_EDITION;
-  const savedRunnerUrl = process.env.PITCHBOX_RUNNER_URL;
 
   beforeEach(reset);
   afterEach(() => {
     if (savedEdition === undefined) delete process.env.PITCHBOX_EDITION;
     else process.env.PITCHBOX_EDITION = savedEdition;
-    if (savedRunnerUrl === undefined) delete process.env.PITCHBOX_RUNNER_URL;
-    else process.env.PITCHBOX_RUNNER_URL = savedRunnerUrl;
     clearDetectionCache();
   });
 
@@ -181,12 +178,19 @@ describe('runner snapshot defaults (#219)', () => {
 });
 
 describe('dispatch refuses a runner this deployment cannot launch (#219)', () => {
+  const savedGatewayKey = process.env.AI_GATEWAY_API_KEY;
+
   beforeEach(reset);
+  afterEach(() => {
+    if (savedGatewayKey === undefined) delete process.env.AI_GATEWAY_API_KEY;
+    else process.env.AI_GATEWAY_API_KEY = savedGatewayKey;
+    clearDetectionCache();
+  });
 
   it('fails the run with an actionable error instead of timing out on the spawn', async () => {
-    // 'cloud' with no PITCHBOX_EDITION/PITCHBOX_RUNNER_URL is the inverse of the
-    // preview incident and is conclusively unavailable here, so nothing spawns.
-    delete process.env.PITCHBOX_EDITION;
+    // 'cloud' with no AI_GATEWAY_API_KEY is the inverse of the preview incident
+    // and is conclusively unavailable here, so nothing spawns.
+    delete process.env.AI_GATEWAY_API_KEY;
     clearDetectionCache();
     const projectId = await createProject('Unlaunchable', { defaultAgentRunner: 'cloud' });
 

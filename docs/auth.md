@@ -55,9 +55,9 @@ The schema already carries `organizations` + `memberships`. On a fresh install a
 
 ## Edition flag and private submodule
 
-`PITCHBOX_EDITION` switches between `self-hosted` (default) and `cloud`. Cloud-only code lives in a **private submodule** under `cloud/` (or `private/`) that the OSS repo never embeds - those paths are gitignored. Build tooling treats the submodule as optional: if absent, the OSS edition builds and runs unchanged; if present, cloud features are wired in at build time.
+`PITCHBOX_EDITION` switches between `self-hosted` (default) and `cloud`. A **private submodule** convention exists under `cloud/` (or `private/`, both gitignored) for cloud-only code the OSS repo never embeds, but nothing currently uses it: the cloud runner (below) needs no private code at all, and #420 retired the last thing that did (the ACP runner service's client adapter).
 
-A `cloud` agent-runner adapter is already registered alongside `claude-code` / `codex` / `opencode`. In the OSS build it throws on instantiation with an actionable message; the real implementation ships from the private submodule.
+A `cloud` agent-runner is registered alongside `claude-code` / `codex` / `opencode`; unlike those it drives its model loop in-process against the Vercel AI Gateway (`AI_GATEWAY_API_KEY`) rather than spawning a local CLI - no private submodule required.
 
 ## Phase 2: tenant isolation, invites, members
 

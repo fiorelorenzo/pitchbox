@@ -32,12 +32,8 @@ x-web-common: &web-common
     # both sides configured.
     PITCHBOX_INTERNAL_TOKEN: ${PITCHBOX_INTERNAL_TOKEN:-}
     PITCHBOX_EDITION: cloud
-    PITCHBOX_RUNNER_URL: ${PITCHBOX_RUNNER_URL:?set PITCHBOX_RUNNER_URL in .env}
-    # Per-org auth (CLD-P1, preferred): mints a JWT per dispatch when set.
-    # Falls back to the legacy static PITCHBOX_RUNNER_TOKEN when unset.
-    RUNNER_JWT_PRIVATE_KEY: ${RUNNER_JWT_PRIVATE_KEY:-}
-    RUNNER_JWT_TTL_SECONDS: ${RUNNER_JWT_TTL_SECONDS:-}
-    PITCHBOX_RUNNER_TOKEN: ${PITCHBOX_RUNNER_TOKEN:-}
+    # The SDK runner's only remote - reaches every model through the AI Gateway.
+    AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?set AI_GATEWAY_API_KEY in .env}
     ORIGIN: ${PUBLIC_WEB_ORIGIN:-https://pitchbox.app}
     PITCHBOX_AUTH: ${PITCHBOX_AUTH:-off}
     PITCHBOX_OWNER_USERNAME: ${PITCHBOX_OWNER_USERNAME:-}

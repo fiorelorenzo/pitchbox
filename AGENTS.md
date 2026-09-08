@@ -20,9 +20,8 @@ pnpm run migrate:generate            # regenerate SQL after schema.ts edits
 pnpm -F @pitchbox/shared seed:core
 
 # Dev - ONE command launches EVERYTHING (postgres + migrations + web + daemon +
-# cloud runner + extension + docs), hot-reloaded, on the host. See scripts/dev.sh.
+# extension + docs), hot-reloaded, on the host. See scripts/dev.sh.
 pnpm run dev                         # web on 127.0.0.1:5180, docs on :5181
-# RUNNER_PORT=8790 pnpm run dev      # if 8787 is taken
 pnpm run dev:web                     # just the web (or dev:extension / dev:docs)
 
 # Quality gates
@@ -177,27 +176,24 @@ runs the command works; putting the value in `.env` alone does not. Confirm it
 rather than assuming, since the fallback is silent:
 `psql "$DATABASE_URL" -c 'select current_database()'`.
 
-**`.env` has three values a second worktree can't reuse as-is.** `PITCHBOX_ROOT`
+**`.env` has two values a second worktree can't reuse as-is.** `PITCHBOX_ROOT`
 (`.env.example`) must be this worktree's own absolute path - the daemon and CLI
 use it to locate the repo when an agent spawns them from elsewhere, and a stale
 value pointing at a sibling worktree silently operates on the wrong checkout.
 `WEB_PORT` (`web/vite.config.ts` sets `strictPort: true`, so a collision fails
-loudly instead of sliding to the next port) and the runner port `scripts/dev.sh`
-reads from `RUNNER_PORT` (which _does_ auto-increment past a taken `8787`, unlike
-the web server) both need to differ if two worktrees run `pnpm run dev` at once.
-`ENCRYPTION_KEY` can be shared as-is; it only needs to be _a_ valid 32-byte hex,
-not one per worktree.
+loudly instead of sliding to the next port) needs to differ if two worktrees run
+`pnpm run dev` at once. `ENCRYPTION_KEY` can be shared as-is; it only needs to be
+_a_ valid 32-byte hex, not one per worktree.
 
-**The two `cloud/*` submodules are optional for a fresh worktree.** `git
-worktree add` doesn't populate them - that needs its own `git submodule update
---init`, against two private repos your credentials may not reach. Neither is
-required for most work: `cloud/adapter` and `cloud/runner` aren't in
-`pnpm-workspace.yaml`'s package list, and `web/vite.config.ts` only wires the
-adapter alias when `cloud/adapter/src/index.ts` actually exists on disk. `pnpm
-install`, `pnpm test`, `pnpm run dev:web`, and the local-runner edition of `pnpm
-run dev` described above all work with `cloud/` entirely absent. Only the
-default cloud-edition dev loop and `PITCHBOX_EDITION=cloud` need `cloud/runner`
-for real - `scripts/dev.sh` runs `pnpm install` inside it directly.
+**The two `cloud/*` submodules are optional for a fresh worktree, and after
+#420 nothing needs them at all.** `git worktree add` doesn't populate them -
+that needs its own `git submodule update --init`, against two private repos
+your credentials may not reach. Neither is in `pnpm-workspace.yaml`'s package
+list, and nothing in the umbrella (Vite config, Dockerfile, compose) references
+either anymore: `pnpm install`, `pnpm test`, `pnpm run dev`, `pnpm run dev:web`,
+and `pnpm run docker:dev` all work identically with `cloud/` present or entirely
+absent, including the default cloud-edition dev loop - it dispatches to the
+in-process SDK runner, not to either submodule.
 
 **Migrations are drizzle-generated, so two migration-authoring issues in one
 wave collide.** `pnpm run migrate:generate` (`drizzle-kit generate`) numbers the
@@ -251,7 +247,7 @@ pnpm workspaces monorepo (`pnpm-workspace.yaml`). All workspaces share a single 
   - `src/blocklist.ts` - `isBlocklisted` helper (global + project scope) used by `drafts:create` and the send path.
   - `src/quota.ts` / `src/quota-server.ts` - per-account usage + per-platform quota limits (loaded from `app_config.quota_defaults`, editable from Settings).
   - `src/dm-sync.ts` / `src/comment-sync.ts` - pure matchers used by the extension's `/api/extension/dm-sync` route to attribute incoming DMs and `t1` comment-replies to drafts.
-  - `src/agents/` - `AgentRunner` interface (`base.ts`) and the single ACP implementation (`acp/runner.ts`) that backs every local backend (specs in `acp/backends.ts`, event normalizer + permission policy alongside; per-runner model + maxTurns reach the claude-code backend via `_meta.claudeCode.options`). `registry.ts` maps the slugs; `cloud.ts` is the `cloud` runner, which lazily loads the private client adapter (`@pitchbox/cloud-adapter`) when `PITCHBOX_EDITION=cloud`. The OSS wire contract for the cloud runner lives in `agents/cloud/protocol.ts`.
+  - `src/agents/` - `AgentRunner` interface (`base.ts`) and the single ACP implementation (`acp/runner.ts`) that backs every local backend (specs in `acp/backends.ts`, event normalizer + permission policy alongside; per-runner model + maxTurns reach the claude-code backend via `_meta.claudeCode.options`). `registry.ts` maps the slugs; `sdk/runner.ts` is the `cloud` runner - an ordinary `AgentRunner` that drives the model loop in-process against the AI Gateway (`AI_GATEWAY_API_KEY`), no separate compute service.
   - `src/platforms/` - Reddit (Playwright-scraped) + Hacker News (Algolia) adapters + `base-reply-reader.ts` (`ReplyReader` interface; null reader is wired today).
   - `src/runlog/` - run-event types, the failure classifier (`classify-failure.ts`), and cost/usage helpers.
   - `src/crypto.ts` - `ENCRYPTION_KEY`-backed encryption for secrets at rest.
@@ -273,16 +269,15 @@ pnpm workspaces monorepo (`pnpm-workspace.yaml`). All workspaces share a single 
 
 ## Cloud runner & repo layout
 
-The cloud runner lets the agent run on managed compute without a local agent CLI. It is **compute-only**: the runner spawns the agent plus an HTTP MCP relay and tunnels every MCP frame over a WebSocket to the client, which runs the Pitchbox MCP server locally - so data and credentials never leave the client. The wire contract is OSS (`@pitchbox/shared/agents/cloud/protocol`); the runner service and the client adapter are private. Full design + end-to-end validation: [`docs/cloud-runner.md`](docs/cloud-runner.md).
+The cloud runner (`shared/src/agents/sdk/runner.ts`) drives the model loop in the same process as the rest of the app, reaching every model through the Vercel AI Gateway (`AI_GATEWAY_API_KEY`) - there is no separate compute service and nothing to relay: the Pitchbox MCP server runs in-process too, over an in-memory transport. Full design + end-to-end validation: [`docs/cloud-runner.md`](docs/cloud-runner.md).
 
-**Repo layout (umbrella).** This public repo is the umbrella. Private cloud code lives in **separate git repos under `cloud/`**: `cloud/runner` and `cloud/adapter` are tracked as **git submodules** of this umbrella (see `.gitmodules`; their content lives in the private `pitchbox-runner-service` / `pitchbox-cloud-adapter` repos, and `.gitignore` keeps any other `cloud/*` path and `private/` untracked). The runner service is at `cloud/runner/`. To land a change: commit inside the submodule and push its own remote, then bump the umbrella's submodule pointer with `git add cloud/<x>` and commit that here (never `git add` submodule content from the umbrella). Always launch agents from this repo directory: chat history is keyed by the launch path (Claude Code + Emdash), so launching from a parent/other folder loses it. The submodules use pnpm standalone and import the OSS protocol contract by relative path.
+**Repo layout (umbrella).** This public repo is the umbrella. `cloud/runner` and `cloud/adapter` are tracked as **git submodules** of this umbrella (see `.gitmodules`; their content lives in the private `pitchbox-runner-service` / `pitchbox-cloud-adapter` repos, and `.gitignore` keeps any other `cloud/*` path and `private/` untracked), retired alongside the ACP runner service (#420) - nothing in this repo builds, deploys, or imports from either submodule anymore. To land a change: commit inside the submodule and push its own remote, then bump the umbrella's submodule pointer with `git add cloud/<x>` and commit that here (never `git add` submodule content from the umbrella). Always launch agents from this repo directory: chat history is keyed by the launch path (Claude Code + Emdash), so launching from a parent/other folder loses it. The submodules use pnpm standalone and import the OSS protocol contract by relative path.
 
 **A submodule often sits in detached HEAD at the recorded gitlink.** Before
 branching inside `cloud/runner` or `cloud/adapter`, `git -C cloud/<x> checkout
 main` and verify it matches `origin/main` and the umbrella's gitlink first -
-if it looks stale, `git -C cloud/<x> reset --hard origin/main`. Regenerating
-the vendored protocol copy and the rest of the submodule workflow:
-`.claude/skills/pitchbox-cloud-submodules/SKILL.md`.
+if it looks stale, `git -C cloud/<x> reset --hard origin/main`. Rest of the
+submodule workflow: `.claude/skills/pitchbox-cloud-submodules/SKILL.md`.
 
 ## Docker (cloud-edition deployment)
 
@@ -299,8 +294,8 @@ image bundles Google Chrome (the Reddit MCP tool scrapes with Playwright
 ```bash
 # The main dev command runs everything on the HOST + postgres in Docker (see the
 # Dev section above): `pnpm run dev`. The Docker variant below runs the whole stack
-# IN Docker instead (postgres + migrations + web + daemon + cloud runner), same
-# local-Claude auth; it does NOT include the extension/docs.
+# IN Docker instead (postgres + migrations + web + daemon); it does NOT include
+# the extension/docs.
 pnpm run docker:dev
 
 # prod: restart, resource limits, optional cloudflared tunnel (--profile tunnel)
@@ -308,9 +303,8 @@ docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose
 ```
 
 The Docker stack is **cloud edition only**: it sets `PITCHBOX_EDITION=cloud` and
-dispatches every run to a cloud runner (`PITCHBOX_RUNNER_URL`), whose image lives
-in `cloud/runner/` (its own `Dockerfile` + compose). The build context is the
-umbrella root so the web's Vite alias can bundle the private `cloud/adapter`.
+dispatches every run to the in-process SDK runner, which needs `AI_GATEWAY_API_KEY`
+in `.env` to reach any model - there is no separate runner image.
 
 `pnpm run dev` (and `docker:dev`) use the **cloud** runner. To develop with a
 **local** runner edition instead (no cloud runner - the web spawns a local agent

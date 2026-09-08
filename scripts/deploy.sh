@@ -98,7 +98,7 @@ fi
 export APP_IMAGE BLUE_PORT GREEN_PORT
 COMPOSE=(docker compose -p "$PROJECT"
   -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.app.prod.yml
-  -f docker-compose.app.runner.yml -f docker-compose.bluegreen.yml "${EXTRA[@]}")
+  -f docker-compose.bluegreen.yml "${EXTRA[@]}")
 
 DEPLOY_KEEP_N="${DEPLOY_KEEP_N:-5}"
 
@@ -153,9 +153,9 @@ prune_backups() {
   return 0
 }
 
-# 1. ensure shared services are up (postgres + runner); builds runner if its image is missing
-log "ensuring postgres + runner up..."
-"${COMPOSE[@]}" up -d postgres runner
+# 1. ensure shared services are up.
+log "ensuring postgres up..."
+"${COMPOSE[@]}" up -d postgres
 
 # 2. active/idle from the caddy upstream file
 active_port="$(grep -oE '127\.0\.0\.1:[0-9]+' "$UPSTREAM" 2>/dev/null | head -1 | cut -d: -f2 || true)"
@@ -197,17 +197,12 @@ if [ -n "${squatters// /}" ]; then
   exit 1
 fi
 
-# 3. build the new images (skipped in --rollback: APP_IMAGE already points at a
-#    previously built, still-local image). Build the RUNNER too: it is a separate
-#    image (built from ./cloud/runner, not bundled into the web image) and it
-#    carries the runner side of every cloud change. It MUST be rebuilt in lockstep
-#    with the web, or a new web/adapter (protocol v2, per-frame seq) would talk to
-#    a stale runner (protocol v1, no seq) and every cloud run would fail the
-#    version handshake. It is recreated at cutover (step 11).
+# 3. build the new image (skipped in --rollback: APP_IMAGE already points at a
+#    previously built, still-local image).
 if [ "$ROLLBACK" = 1 ]; then
   log "skipping build (rollback mode)"
 else
-  log "building web + runner..."; "${COMPOSE[@]}" build "web-$idle" runner
+  log "building web..."; "${COMPOSE[@]}" build "web-$idle"
 fi
 
 # 4. start the idle color (image already built -> --no-build to skip slow re-export)
@@ -298,24 +293,9 @@ prune_images
 prune_backups
 prune_build_cache
 
-# 11. cut over daemon (singleton) to the new color; recreate runner
-log "cutting over daemon + runner..."
+# 11. cut over the daemon (singleton) to the new color.
+log "cutting over daemon..."
 ACTIVE_WEB="web-$idle" "${COMPOSE[@]}" up -d --no-deps --no-build --force-recreate daemon
-# No --force-recreate/kill/-t0 here on purpose: `up` only recreates the runner
-# if compose detects its config (e.g. image ID) actually changed, and when it
-# does, it goes through the standard graceful path - SIGTERM, wait up to
-# stop_grace_period, SIGKILL only if it didn't exit - which is what lets the
-# runner's own CLD-P4 drain (see docs/cloud-runner.md "Drain on cutover")
-# finish in-flight sessions instead of being killed mid-run. Step 3 rebuilt the
-# runner image on a normal deploy, so its image ID changed and this `up` picks
-# that up and recreates it here (a --rollback deploy skips the runner rebuild,
-# leaving it as-is). Known gap: unlike web's blue/green colors, there is only ONE
-# runner service, so this is a sequential stop-then-start, not a hot swap -
-# new session.start calls fail during the (bounded) window between the old
-# container stopping and the new one coming up, not just during the old one's
-# drain. Documented as a deliberate divergence from Caddy-style connection
-# draining in docs/cloud-runner.md.
-"${COMPOSE[@]}" up -d --no-deps --no-build runner
 
 # 12. retire the old color
 log "stopping old web-$active..."; "${COMPOSE[@]}" stop "web-$active" || true

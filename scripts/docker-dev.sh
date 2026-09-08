@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One command to run the whole cloud-edition stack in dev (Docker): postgres +
-# migrations/seed + web (Vite hot-reload) + daemon (tsx watch) + the cloud runner
-# (tsx watch). The runner uses YOUR local Claude auth.
+# migrations/seed + web (Vite hot-reload) + daemon (tsx watch). The web dispatches
+# every run to the in-process SDK runner, which reaches models through the AI
+# Gateway - no separate runner container.
 #
 #   pnpm run docker:dev            # or: bash scripts/dev.sh
 #
@@ -11,17 +12,10 @@ cd "$(dirname "$0")/.."
 
 # Dev defaults for the values the base compose requires. Throwaway - dev only.
 export ENCRYPTION_KEY="${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
-export RUNNER_TOKEN="${RUNNER_TOKEN:-devtoken}"
-export PITCHBOX_RUNNER_URL="ws://runner:8787"
-export PITCHBOX_RUNNER_TOKEN="$RUNNER_TOKEN"
 
-# The runner needs YOUR Claude credentials, inherited from this shell. On the
-# devbox CLAUDE_CODE_OAUTH_TOKEN is already exported; elsewhere run
-# `claude setup-token` and export it, or set ANTHROPIC_API_KEY.
-if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-  echo "WARNING: neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set." >&2
-  echo "         The runner won't be able to authenticate. Run 'claude setup-token'" >&2
-  echo "         and export CLAUDE_CODE_OAUTH_TOKEN (or set ANTHROPIC_API_KEY)." >&2
+if [ -z "${AI_GATEWAY_API_KEY:-}" ]; then
+  echo "WARNING: AI_GATEWAY_API_KEY is not set - the cloud runner won't be able to" >&2
+  echo "         reach any model. Export it before running." >&2
 fi
 
 # Ignore the repo root .env (it holds the LOCAL, non-Docker dev config, e.g. a

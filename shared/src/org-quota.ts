@@ -1,14 +1,23 @@
-// Per-org cloud-runner quota (CLD-P5, docs/cloud-runner-productionization-design.md
-// section 5). Computes the control-plane's snapshot of an org's remaining
-// monthly USD run budget and its concurrency cap, minted into the runner JWT's
-// `quota` claim (shared/src/agents/cloud/jwt.ts) at dispatch time. Mirrors the
+// Per-org run quota. Computes an org's remaining monthly USD run budget and
+// its concurrency cap, enforced before a run starts and while it streams
+// (shared/src/agents/sdk/runner.ts, web/src/lib/server/runner.ts). Mirrors the
 // per-account quota helper's style (shared/src/quota.ts) but is org-scoped and
 // budget/concurrency based rather than per-account daily/weekly counts.
 import { and, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
-import type { RunnerJwtQuota } from './agents/cloud/protocol.js';
 
-export type { RunnerJwtQuota };
+/**
+ * An org's quota snapshot: remaining monthly USD run budget and concurrency
+ * cap. Both fields are independently nullable: `null` means unlimited on that
+ * axis (no budget cap / no concurrency cap).
+ */
+export interface OrgQuotaSnapshot {
+  /** Org's remaining monthly USD run budget, or null if the org has no
+   * configured budget (unlimited). A value <= 0 means the org is over budget. */
+  remainingUsd: number | null;
+  /** Max concurrent runs allowed for this org, or null if unlimited. */
+  concurrencyCap: number | null;
+}
 
 /** First instant (UTC) of the calendar month containing `now`. */
 export function startOfMonthUtc(now: Date): Date {
@@ -69,21 +78,19 @@ export async function getOrgMonthToDateCostUsd(
 }
 
 /**
- * Compute an org's quota snapshot at mint time: remaining monthly USD budget
- * (null = unlimited, since `organizations.monthly_run_budget_usd` is null) and
- * its concurrency cap (null = unlimited, `organizations.max_concurrent_runs`
- * null). A `remainingUsd` of 0 or negative means the org is over budget; the
- * runner rejects `session.start` for it (CLD-P5 admission). An org that no
- * longer exists (deleted between resolving the run and minting) is treated as
- * unlimited on both axes - not the runner's decision to make from a signed
- * claim it cannot re-check; the org lookup elsewhere in the dispatch path is
- * what actually gates a run against a missing org.
+ * Compute an org's current quota snapshot: remaining monthly USD budget (null
+ * = unlimited, since `organizations.monthly_run_budget_usd` is null) and its
+ * concurrency cap (null = unlimited, `organizations.max_concurrent_runs`
+ * null). A `remainingUsd` of 0 or negative means the org is over budget. An
+ * org that no longer exists is treated as unlimited on both axes - not this
+ * function's decision to make; the org lookup elsewhere in the dispatch path
+ * is what actually gates a run against a missing org.
  */
 export async function getOrgQuotaSnapshot(
   db: Db,
   orgId: number,
   now: Date = new Date(),
-): Promise<RunnerJwtQuota> {
+): Promise<OrgQuotaSnapshot> {
   const [org] = await db
     .select({
       monthlyRunBudgetUsd: schema.organizations.monthlyRunBudgetUsd,
