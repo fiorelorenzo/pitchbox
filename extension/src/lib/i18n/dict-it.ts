@@ -164,6 +164,9 @@ export const it = {
   'activity.linkedin-collector.batch-failed':
     'Invio del batch di osservazioni LinkedIn fallito: {reason}',
   'activity.linkedin-collector.stopped': 'Collettore di osservazioni LinkedIn fermato: {reason}',
+  'activity.linkedin-collector.source-filled': 'Fonte progetto {kind} in sospeso compilata.',
+  'activity.linkedin-collector.source-fill-failed':
+    'Compilazione della fonte progetto LinkedIn fallita: {reason}',
   'activity.linkedin-collector.profile-captured': 'Profilo LinkedIn acquisito.',
   'activity.linkedin-collector.profile-refused':
     "Acquisizione profilo LinkedIn saltata: questa pagina non corrisponde all'operatore registrato.",

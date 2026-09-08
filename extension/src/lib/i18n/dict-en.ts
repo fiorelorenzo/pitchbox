@@ -169,6 +169,11 @@ export const en = {
     'LinkedIn observations sent - {inserted} new, {duplicates} duplicate, {dropped} dropped.',
   'activity.linkedin-collector.batch-failed': 'LinkedIn observation batch failed: {reason}',
   'activity.linkedin-collector.stopped': 'LinkedIn observation collector stopped: {reason}',
+  // Pending project-source fill (#436, spike #435's "Plane 3"): a
+  // linkedin_post/linkedin_profile source filled from the page the human
+  // actually opened.
+  'activity.linkedin-collector.source-filled': 'Filled a pending {kind} project source.',
+  'activity.linkedin-collector.source-fill-failed': 'LinkedIn project source fill failed: {reason}',
   // Passive operator-profile/voice-sample capture (Persona, decision 3): the
   // handle/headline/experience read off a profile page the human opened, and
   // recent posts read the same way as voice samples.
