@@ -3,6 +3,9 @@ import {
   buildSuggestionPrompt,
   MAX_EXAMPLES,
   MAX_POST_CHARS,
+  MAX_PROJECTS,
+  README_EXCERPT_MAX,
+  VOICE_SAMPLE_MAX,
   type CurrentProject,
 } from '../src/assist/suggest-prompt.js';
 import { HOUSE_STYLE_SECTION } from '../src/house-style.js';
@@ -251,6 +254,105 @@ describe('buildSuggestionPrompt', () => {
       });
       expect(prompt.length).toBeLessThan(longAbout.length + longReadme.length);
       expect(prompt).toContain('[truncated]');
+    });
+
+    it('caps the project list at MAX_PROJECTS, keeping the current and personal project', () => {
+      const filler: ProjectBrief[] = Array.from({ length: MAX_PROJECTS + 5 }, (_, i) => ({
+        id: 100 + i,
+        name: `Filler ${i}`,
+        description: `Filler project ${i}.`,
+        isPersonal: false,
+        isCurrent: false,
+      }));
+      // Current and personal are last in the input on purpose: a plain
+      // slice(0, MAX_PROJECTS) with no ranking would drop both.
+      const manyProjects: ProjectBrief[] = [
+        ...filler,
+        {
+          id: 1,
+          name: 'Embertold',
+          description: 'The bound project.',
+          isPersonal: false,
+          isCurrent: true,
+        },
+        {
+          id: 2,
+          name: 'Personal Voice',
+          description: 'The personal project.',
+          isPersonal: true,
+          isCurrent: false,
+        },
+      ];
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        currentProject,
+        persona: null,
+        projects: manyProjects,
+        repos: [],
+      });
+      const shown = manyProjects.filter((p) => prompt.includes(p.name));
+      expect(shown).toHaveLength(MAX_PROJECTS);
+      expect(prompt).toContain('Embertold (this one)');
+      expect(prompt).toContain('Personal Voice');
+      // The last filler project is the one guaranteed to fall past the cap,
+      // since only the current and personal project plus the earliest
+      // fillers fit inside MAX_PROJECTS.
+      expect(prompt).not.toContain(`Filler ${filler.length - 1}`);
+    });
+
+    it('clamps a voice sample to the same length no matter how far past the cap the raw post runs', () => {
+      const marker = 'ZZ-VOICE-OVERFLOW-ZZ';
+      const justOver = `${'b'.repeat(VOICE_SAMPLE_MAX + 40)}${marker}`;
+      const wayOver = `${'c'.repeat(VOICE_SAMPLE_MAX * 3)}${marker}`;
+      const promptJustOver = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        currentProject,
+        persona: { ...persona, voiceSamples: [{ text: justOver }] },
+        projects: [],
+        repos: [],
+      });
+      const promptWayOver = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        currentProject,
+        persona: { ...persona, voiceSamples: [{ text: wayOver }] },
+        projects: [],
+        repos: [],
+      });
+      expect(promptJustOver).toContain('b'.repeat(VOICE_SAMPLE_MAX));
+      expect(promptJustOver).not.toContain(marker);
+      expect(promptWayOver).not.toContain(marker);
+      // A sample three times past the cap costs exactly the same as one
+      // barely past it: the cap is a hard ceiling, not a soft trim.
+      expect(promptJustOver.length).toBe(promptWayOver.length);
+    });
+
+    it('clamps a README excerpt tighter than the cache-time limit, regardless of raw length', () => {
+      const marker = 'ZZ-README-OVERFLOW-ZZ';
+      const justOver = `${'d'.repeat(README_EXCERPT_MAX + 40)}${marker}`;
+      const wayOver = `${'e'.repeat(README_EXCERPT_MAX + 800)}${marker}`;
+      const promptJustOver = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        currentProject,
+        persona: null,
+        projects: [],
+        repos: [{ ...repos[0], readmeExcerpt: justOver }],
+      });
+      const promptWayOver = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        currentProject,
+        persona: null,
+        projects: [],
+        repos: [{ ...repos[0], readmeExcerpt: wayOver }],
+      });
+      expect(promptJustOver).toContain('d'.repeat(README_EXCERPT_MAX));
+      expect(promptJustOver).not.toContain(marker);
+      expect(promptWayOver).not.toContain(marker);
+      expect(promptJustOver.length).toBe(promptWayOver.length);
     });
   });
 });

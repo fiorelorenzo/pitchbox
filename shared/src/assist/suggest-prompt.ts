@@ -65,9 +65,37 @@ export const MAX_EXAMPLES = 3;
  * better, and every one of these sources can be arbitrarily long (an "about"
  * section, a README, a commit message someone pasted a stack trace into). */
 const PERSONA_ABOUT_MAX = 1200;
-const VOICE_SAMPLE_MAX = 600;
-const README_EXCERPT_MAX = 1200;
+/** Ceiling on one voice sample's length. A captured LinkedIn post is whatever
+ * length the operator posted, and operator_voice_samples.text has no length
+ * constraint of its own. Verified 2026-09-08 (#443): an 874-char and a
+ * 1562-char sample both come out of buildSuggestionPrompt at the same
+ * clamped length, so a long sample already costs no more than a short one
+ * once past this cap. Exported so the test proving that can pin the exact
+ * boundary rather than only checking "shorter than the input". */
+export const VOICE_SAMPLE_MAX = 600;
+/** Ceiling on a repo's README excerpt as it goes into the prompt. The cached
+ * excerpt is already clamped to 1200 chars when it is fetched
+ * (github-sources.ts README_EXCERPT_MAX_CHARS), a budget sized for "enough to
+ * read", not "enough to spend on every suggestion". Measured on this repo's
+ * own README (2026-09-08, #443): the sentence that says what the project
+ * actually is runs about 130 characters, and the rest of a 1200-char excerpt
+ * is Quick start commands and prerequisites - across four repos that cost
+ * ~5.8KB, 38% of a realistic prompt, on boilerplate the model cannot use in a
+ * comment or post. 400 keeps a title plus a couple of real sentences and cuts
+ * the rest. */
+export const README_EXCERPT_MAX = 400;
 const COMMIT_SUBJECT_MAX = 120;
+/** Ceiling on how many of the organization's projects reach the "what they
+ * are building" list. This was the one section with no cap at all - every
+ * project in the org went in regardless of count. Measured 2026-09-08 (#443):
+ * twelve projects, a plausible count after a few years of side projects, cost
+ * ~1.6KB on a realistic fixture even with each description already capped
+ * below, and that grows without bound as an account ages. The current
+ * project and the personal project are ranked ahead of the cut in
+ * buildSuggestionPrompt below, because those are the two a suggestion can
+ * actually depend on; the rest is honest context, not a requirement, so
+ * losing one to the cap costs nothing the suggestion needs. */
+export const MAX_PROJECTS = 6;
 /** A project mention in the "what they are building" list is a one-liner, not
  * a second copy of `CurrentProject`'s full description. */
 const PROJECT_DESCRIPTION_MAX = 300;
@@ -166,12 +194,21 @@ export function buildSuggestionPrompt(args: {
 
   // What they are building: every project in the organization, so the
   // assistant can speak honestly about the operator's other work instead of
-  // acting as if this product is the only thing they do.
+  // acting as if this product is the only thing they do. Ranked before the
+  // MAX_PROJECTS cut so the current project and the personal project always
+  // survive it regardless of how many other projects the organization has -
+  // those two are what a suggestion can actually depend on; everything else
+  // is honest context that is fine to lose past the ceiling.
   if (projects.length > 0) {
+    const rankedProjects = [...projects].sort((a, b) => {
+      const aRank = a.isCurrent ? 0 : a.isPersonal ? 1 : 2;
+      const bRank = b.isCurrent ? 0 : b.isPersonal ? 1 : 2;
+      return aRank - bRank;
+    });
     parts.push(
       [
         'What the operator is building, across the whole organization. This suggestion is filed under the project marked "(this one)":',
-        ...projects.map((p) => {
+        ...rankedProjects.slice(0, MAX_PROJECTS).map((p) => {
           const marker = p.isCurrent ? ' (this one)' : '';
           const desc = p.description?.trim()
             ? `: ${clamp(p.description, PROJECT_DESCRIPTION_MAX)}`
