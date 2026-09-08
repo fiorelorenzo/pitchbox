@@ -58,6 +58,25 @@ export function requireRole(event: RequestEvent, minRole: 'member' | 'admin' | '
 }
 
 /**
+ * Whether the signed-in user is the instance admin. True when auth is off
+ * (no `locals.user`), same no-op convention as `requireRole`: single-user
+ * self-host keeps full access. Shared by `requireInstanceAdmin` (throwing
+ * API/action gate) and the root layout loader (non-throwing, for hiding the
+ * instance-admin rail area from a caller who can't reach it anyway).
+ */
+export async function isInstanceAdmin(event: RequestEvent): Promise<boolean> {
+  const user = event.locals.user;
+  if (!user) return true; // auth off -> self-host, full access
+  const db = getDb();
+  const [row] = await db
+    .select({ isInstanceAdmin: schema.users.isInstanceAdmin })
+    .from(schema.users)
+    .where(eq(schema.users.id, user.id))
+    .limit(1);
+  return !!row?.isInstanceAdmin;
+}
+
+/**
  * Require the signed-in user to be the instance admin, else throw 403. This
  * is a separate concept from the per-org 'admin' role: any user can
  * self-create an org via POST /api/orgs and become its owner/admin, but that
@@ -67,15 +86,7 @@ export function requireRole(event: RequestEvent, minRole: 'member' | 'admin' | '
  * convention as `requireRole`.
  */
 export async function requireInstanceAdmin(event: RequestEvent): Promise<void> {
-  const user = event.locals.user;
-  if (!user) return; // auth off -> self-host, full access
-  const db = getDb();
-  const [row] = await db
-    .select({ isInstanceAdmin: schema.users.isInstanceAdmin })
-    .from(schema.users)
-    .where(eq(schema.users.id, user.id))
-    .limit(1);
-  if (!row?.isInstanceAdmin) {
+  if (!(await isInstanceAdmin(event))) {
     throw error(403, 'forbidden');
   }
 }
