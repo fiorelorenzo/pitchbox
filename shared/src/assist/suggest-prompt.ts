@@ -30,6 +30,8 @@
 import { HOUSE_STYLE_HEADING, HOUSE_STYLE_SECTION } from '../house-style.js';
 import { envelopeInstruction } from './envelope.js';
 import type { CodeRepo, OperatorPersona, ProjectBrief } from './context.js';
+import { describePostRegister, readPostRegister } from './register.js';
+import { ASSIST_TONE_NOTES_MAX, DEFAULT_ASSIST_TONE, type AssistTone } from './tone.js';
 
 /** The two kinds the in-page assistant can suggest. */
 export type SuggestionKind = 'post_comment' | 'post';
@@ -117,6 +119,27 @@ const TASK: Record<SuggestionKind, string> = {
 };
 
 /**
+ * How each named tone (#405) is asked for. Written as one sentence each,
+ * because a paragraph per option is a paragraph the model averages with
+ * everything else in the prompt.
+ *
+ * `match-room` is deliberately not in this table: it is not an instruction
+ * about a register, it is an instruction to use the register measured off the
+ * post (`readPostRegister`), and it degrades to the operator's own voice when
+ * the post is too short to measure. `custom` is not here either, since its
+ * text is the operator's own.
+ */
+const TONE_INSTRUCTION: Record<Exclude<AssistTone, 'match-room' | 'custom'>, string> = {
+  professional:
+    'Write in a professional register: full sentences, no slang, but no corporate filler either.',
+  plain:
+    'Write plainly: short sentences, ordinary words, nothing that sounds like it came from a marketing page.',
+  warm: 'Write warmly: address the author as a person, and let some enthusiasm show without exclamation marks.',
+  technical:
+    'Write technically: be specific about mechanisms, numbers and tradeoffs, and assume the reader knows the field.',
+};
+
+/**
  * Builds the single-turn prompt. Pure and synchronous: everything it needs is
  * passed in, so it is testable without a database and cannot reach one. The
  * companion context (`loadCompanionContext`) is the only async step, and it
@@ -136,8 +159,22 @@ export function buildSuggestionPrompt(args: {
   examples?: Array<{ title: string; body: string }>;
   /** Optional steer the human typed into the panel. */
   hint?: string;
+  /**
+   * The org's tone setting (#405), read server-side. Absent behaves as
+   * `match-room`, which is also the stored default, so an older caller
+   * cannot silently get a different register than the settings page shows.
+   *
+   * Never taken from a request body: a tone in the suggest payload is
+   * ignored on purpose (AGENTS.md, "a switch is enforced where the effect
+   * happens"), which is what keeps a panel-level retune an explicit feature
+   * rather than a side effect of this one.
+   */
+  tone?: AssistTone;
+  /** The operator's own words, used only when `tone` is `custom`. */
+  toneNotes?: string;
 }): string {
   const { kind, post, currentProject, persona, projects, repos } = args;
+  const tone: AssistTone = args.tone ?? DEFAULT_ASSIST_TONE;
   const parts: string[] = [];
 
   parts.push(
@@ -269,6 +306,30 @@ export function buildSuggestionPrompt(args: {
   );
 
   parts.push(`Your task: ${TASK[kind]}`);
+
+  // The tone, after the task and before the operator's steer, because that is
+  // the precedence: house style outranks the tone, the operator's typed steer
+  // outranks it too, and the tone outranks the model's own instinct.
+  if (tone === 'match-room') {
+    const room = describePostRegister(readPostRegister(post.text));
+    parts.push(
+      room
+        ? `Match the room. The post below is written like this: ${room}. Meet it roughly halfway: keep the operator's own voice, and let the post's register decide length, formality and whether a question belongs at the end. Do not copy its emoji, hashtags or list layout unless the operator's own samples use them too.`
+        : // Too short to have habits worth naming (register.ts's floor). Saying
+          // "match the room" about an unmeasurable room would have the model
+          // invent one, so this falls back to the voice we do know.
+          "Match the room. The post is too short to read a register off, so write in the operator's own voice as the samples above show it.",
+    );
+  } else if (tone === 'custom') {
+    const notes = args.toneNotes?.trim();
+    if (notes) {
+      parts.push(
+        `How the operator wants this to sound, in their words: ${clamp(notes, ASSIST_TONE_NOTES_MAX)}`,
+      );
+    }
+  } else {
+    parts.push(TONE_INSTRUCTION[tone]);
+  }
 
   if (args.hint?.trim()) {
     parts.push(

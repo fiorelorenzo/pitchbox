@@ -356,3 +356,89 @@ describe('buildSuggestionPrompt', () => {
     });
   });
 });
+
+// #405: the tone the operator picked in Settings, and #406's register reading
+// behind its default option. The property worth pinning is that the option
+// changes the instruction, that "match the room" says something specific about
+// the post rather than the phrase "match the room" on its own, and that the
+// house style still outranks all of it.
+describe('tone (#405)', () => {
+  const args = { kind: 'post_comment' as const, post, currentProject, ...noContext };
+
+  it('defaults to the mix when no tone is passed, matching the stored default', () => {
+    const prompt = buildSuggestionPrompt(args);
+    expect(prompt).toContain('Match the room');
+    expect(buildSuggestionPrompt({ ...args, tone: 'match-room' })).toBe(prompt);
+  });
+
+  it('each named register asks for something different', () => {
+    const prompts = (['professional', 'plain', 'warm', 'technical'] as const).map((tone) =>
+      buildSuggestionPrompt({ ...args, tone }),
+    );
+    expect(new Set(prompts).size).toBe(prompts.length);
+    expect(prompts[3]).toMatch(/mechanisms, numbers and tradeoffs/);
+    // A named register is an instruction about how to write, not a claim
+    // about the post: none of them may smuggle the room's reading back in.
+    for (const p of prompts) expect(p).not.toContain('Match the room');
+  });
+
+  it('the mix names what the post is actually doing, not just the words "match the room"', () => {
+    const chatty = buildSuggestionPrompt({
+      ...args,
+      tone: 'match-room',
+      post: {
+        text: "I shipped it. It's rough. Three people told me the onboarding is confusing, and they're right. What would you cut first?",
+        authorName: 'Giulia Bianchi',
+      },
+    });
+    const formal = buildSuggestionPrompt({
+      ...args,
+      tone: 'match-room',
+      post: {
+        text: 'Furthermore, the organisation remains committed to the delivery of transformational outcomes across the value chain, whilst maintaining an unwavering focus on stakeholder alignment.',
+        authorName: 'Giulia Bianchi',
+      },
+    });
+    expect(chatty).toContain('short sentences');
+    expect(chatty).toContain('asks questions of the reader');
+    expect(formal).toContain('long, built-up sentences');
+    expect(formal).toContain('formal connectives');
+    expect(chatty).not.toBe(formal);
+  });
+
+  it('falls back to the operator voice when the post is too short to read', () => {
+    const prompt = buildSuggestionPrompt({
+      ...args,
+      tone: 'match-room',
+      post: { text: 'Big news soon!', authorName: 'Giulia Bianchi' },
+    });
+    expect(prompt).toContain("write in the operator's own voice");
+    expect(prompt).not.toContain('words per sentence');
+  });
+
+  it('the free-text tone goes in as the operator wrote it, and an empty one adds nothing', () => {
+    const withNotes = buildSuggestionPrompt({
+      ...args,
+      tone: 'custom',
+      toneNotes: 'Dry, a bit impatient, never enthusiastic.',
+    });
+    expect(withNotes).toContain('Dry, a bit impatient, never enthusiastic.');
+    expect(withNotes).not.toContain('Match the room');
+
+    const empty = buildSuggestionPrompt({ ...args, tone: 'custom', toneNotes: '   ' });
+    expect(empty).not.toContain('How the operator wants this to sound');
+    expect(empty).not.toContain('Match the room');
+  });
+
+  it('keeps the house style and the envelope instruction under every tone', () => {
+    for (const tone of ['match-room', 'professional', 'plain', 'warm', 'technical'] as const) {
+      const prompt = buildSuggestionPrompt({ ...args, tone });
+      expect(prompt).toContain(HOUSE_STYLE_SECTION);
+      expect(prompt).toContain(DRAFT_MARKER);
+      // Precedence, as rendered: task, then tone, then house style last but
+      // one. A tone that lands after the house style would be the thing the
+      // model reads as final.
+      expect(prompt.indexOf('Your task:')).toBeLessThan(prompt.indexOf(HOUSE_STYLE_SECTION));
+    }
+  });
+});

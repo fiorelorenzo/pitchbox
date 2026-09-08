@@ -7,8 +7,10 @@ import { hashPassword, createSession } from '@pitchbox/shared/auth';
 import {
   ASSIST_COMMENT_CAP_CEILING,
   ASSIST_POST_CAP_CEILING,
+  ASSIST_TONE_NOTES_MAX,
   defaultLinkedInAssistSettings,
   saveLinkedInAssistSettings,
+  loadLinkedInAssistSettings,
   loadLinkedInAssistDeviceState,
 } from '@pitchbox/shared/linkedin-assist';
 import { GET, POST } from '../src/routes/api/settings/linkedin-assist/+server.js';
@@ -108,12 +110,12 @@ describe('POST /api/settings/linkedin-assist', () => {
   it('a member cannot write the setting (403), and nothing is saved', async () => {
     const { orgId, projectId } = await seedOrg('la-member-write');
     const attempt = {
+      ...defaultLinkedInAssistSettings(),
       enabled: true,
       projectId,
       collectorEnabled: true,
       dailyCommentCap: 1,
       dailyPostCap: 1,
-      killSwitch: false,
     };
     expect(await statusOf(() => POST(ev(orgId, 'member', 'POST', attempt)))).toBe(403);
     const state = await loadLinkedInAssistDeviceState(getDb(), orgId);
@@ -123,12 +125,12 @@ describe('POST /api/settings/linkedin-assist', () => {
   it('an admin can write the setting and it persists', async () => {
     const { orgId, projectId } = await seedOrg('la-admin-write');
     const body = {
+      ...defaultLinkedInAssistSettings(),
       enabled: true,
       projectId,
       collectorEnabled: true,
       dailyCommentCap: 3,
       dailyPostCap: 1,
-      killSwitch: false,
     };
     const res = await POST(ev(orgId, 'admin', 'POST', body));
     expect(res.status).toBe(200);
@@ -243,11 +245,10 @@ describe('GET /api/extension/linkedin-assist (device read path)', () => {
     // no cache invalidation step of any kind.
     await POST(
       ev(orgId, 'admin', 'POST', {
+        ...defaultLinkedInAssistSettings(),
         enabled: true,
         projectId,
         collectorEnabled: true,
-        dailyCommentCap: ASSIST_COMMENT_CAP_CEILING,
-        dailyPostCap: ASSIST_POST_CAP_CEILING,
         killSwitch: true,
       }),
     );
@@ -324,6 +325,73 @@ describe('role gate (real handle() path)', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect('enabled' in body).toBe(true);
+  });
+});
+
+// #405. The tone is a stored org setting, so the two things worth pinning here
+// are that an option the page never offered cannot be stored, and that a value
+// already in jsonb from an older build cannot reach the prompt as a literal.
+describe('tone (#405)', () => {
+  beforeEach(reset);
+
+  it('an admin can store a named tone, and it comes back', async () => {
+    const { orgId, projectId } = await seedOrg('la-tone-named');
+    const res = await POST(
+      ev(orgId, 'admin', 'POST', {
+        ...defaultLinkedInAssistSettings(),
+        enabled: true,
+        projectId,
+        tone: 'technical',
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect((await loadLinkedInAssistSettings(getDb(), orgId)).tone).toBe('technical');
+  });
+
+  it('refuses a tone the settings page never offered, rather than storing the default', async () => {
+    const { orgId, projectId } = await seedOrg('la-tone-unknown');
+    const status = await statusOf(() =>
+      POST(
+        ev(orgId, 'admin', 'POST', {
+          ...defaultLinkedInAssistSettings(),
+          projectId,
+          tone: 'swashbuckling',
+        }),
+      ),
+    );
+    expect(status).toBe(400);
+    expect((await loadLinkedInAssistSettings(getDb(), orgId)).tone).toBe('match-room');
+  });
+
+  it('refuses the free-text tone with nothing written in it', async () => {
+    const { orgId, projectId } = await seedOrg('la-tone-empty');
+    const status = await statusOf(() =>
+      POST(
+        ev(orgId, 'admin', 'POST', {
+          ...defaultLinkedInAssistSettings(),
+          projectId,
+          tone: 'custom',
+          toneNotes: '   ',
+        }),
+      ),
+    );
+    expect(status).toBe(400);
+  });
+
+  it('a tone already in jsonb that no longer exists reads back as the default', async () => {
+    const { orgId, projectId } = await seedOrg('la-tone-stale');
+    // Written past the API, the way an older build or a hand-edited row would
+    // leave it: jsonb holds no enum, so this state is reachable in production.
+    await saveLinkedInAssistSettings(getDb(), orgId, {
+      ...defaultLinkedInAssistSettings(),
+      enabled: true,
+      projectId,
+      tone: 'swashbuckling' as never,
+      toneNotes: 'x'.repeat(900),
+    });
+    const loaded = await loadLinkedInAssistSettings(getDb(), orgId);
+    expect(loaded.tone).toBe('match-room');
+    expect(loaded.toneNotes.length).toBe(ASSIST_TONE_NOTES_MAX);
   });
 });
 
