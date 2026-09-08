@@ -121,6 +121,7 @@ export type LinkedInSelectorId =
   | 'commentAuthor'
   | 'commentBody'
   | 'commentTimestamp'
+  | 'ownProfileTopcard'
   | 'ownProfileName'
   | 'ownProfileHeadline'
   | 'ownProfileAbout'
@@ -506,7 +507,15 @@ export function readPostText(
     record('postText', pageKind, text !== null);
     return text;
   }
-  return null;
+  // An unrecognised page kind is exactly what an unfamiliar LinkedIn variant
+  // looks like, and returning null here took the whole feature off the page
+  // (#447): the assist has a card to read, the human has clicked its comment
+  // box, and the only thing missing is our own classification. The generic
+  // fallback is scoped to that one card, so the worst case is reading the
+  // wrong block *inside* the post the human is answering.
+  const text = longestSubstantialText(post, post);
+  record('postText', pageKind, text !== null);
+  return text;
 }
 
 /**
@@ -940,17 +949,65 @@ function ownTextLines(scope: ParentNode): string[] {
  *   fixture - see the fixture-based test asserting exactly that, and the
  *   synthetic-markup one proving the row-reading logic itself against rows
  *   this account's profile does not have.
+ * - The name itself has its own chain, see `readOwnProfileName` below.
  */
+
+/**
+ * The profile owner's display name, from whichever of three sources this
+ * render actually has (#448).
+ *
+ * The topcard `<h2>` alone is what shipped, and Lorenzo's activity export
+ * on 2026-09-08 showed it missing five times in a row on his own profile
+ * while the same selector worked on the same URL in another browser: this
+ * page is server-driven UI and LinkedIn ships more than one shape of it.
+ * So: the topcard heading, then any `<h1>`/`<h2>` heading on the page, then
+ * the document title, which LinkedIn writes as "<name> | LinkedIn" and
+ * which no A/B variant has yet been seen without.
+ *
+ * The title is a legitimate source rather than a hack: the server-side
+ * guard is what decides whose profile this is (it compares the handle from
+ * the URL path against the persona it already holds), so this only ever
+ * names the page the human opened.
+ */
+function readOwnProfileName(topCard: Element | null, root: Document): string | null {
+  const heading = topCard ? queryDeep<Element>('h2', topCard) : null;
+  const fromTopCard = heading ? ownText(heading) || heading.textContent?.trim() || null : null;
+  if (fromTopCard) return fromTopCard;
+
+  for (const el of queryDeepAll<Element>('h1, h2', root)) {
+    const text = (ownText(el) || el.textContent?.trim() || '').trim();
+    // A heading long enough to be a headline or a section title is not a
+    // name; LinkedIn's own section headings ("Informazioni", "Attività")
+    // are short, so length alone is not the filter - a name has no
+    // sentence punctuation.
+    if (text.length > 0 && text.length <= 60 && !/[.:!?|]/.test(text)) return text;
+  }
+
+  const title = (root.title ?? '').split('|')[0]?.trim() ?? '';
+  return title.length > 0 && title.length <= 60 ? title : null;
+}
+
 export function readOwnProfile(root: Document = document): OwnProfileCapture | null {
   const topCard = queryDeep<Element>('[id$="Topcard"]', root);
-  const nameEl = topCard ? queryDeep<Element>('h2', topCard) : null;
-  const displayName = nameEl ? ownText(nameEl) || nameEl.textContent?.trim() || null : null;
+  // Tracked on its own (#448) so health reports the selector that broke
+  // rather than the field that survived it: the name has a chain of three
+  // sources now, so it can be green on a render where the topcard is gone.
+  record('ownProfileTopcard', 'profile', topCard !== null);
+  const displayName = readOwnProfileName(topCard, root);
   record('ownProfileName', 'profile', displayName !== null);
-  if (!topCard || !nameEl || !displayName) return null;
+  // The topcard is no longer required. It is where the headline comes from,
+  // and nothing else: a render without it still yields a usable persona
+  // (name, about, experience), and refusing to capture one at all is what
+  // left `operator_profiles` empty on Lorenzo's own profile page.
+  if (!displayName) return null;
 
   const handle = readOwnProfilePageHandle(root);
 
-  const headline = ownTextLines(topCard).find((line) => line !== displayName) ?? null;
+  // The headline is the topcard's own second text line, so it is the one
+  // field a render without a topcard genuinely cannot have (#448).
+  const headline = topCard
+    ? (ownTextLines(topCard).find((line) => line !== displayName) ?? null)
+    : null;
   record('ownProfileHeadline', 'profile', headline !== null);
 
   const aboutCard = queryDeep<Element>('[id$="About"]', root);
