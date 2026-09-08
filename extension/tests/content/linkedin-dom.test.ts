@@ -603,9 +603,7 @@ describe('selector health: red on a broken profile selector, green on the intact
     const topcard = report.find(
       (e) => e.selector === 'ownProfileTopcard' && e.pageKind === 'profile',
     );
-    const name = report.find(
-      (e) => e.selector === 'ownProfileName' && e.pageKind === 'profile',
-    );
+    const name = report.find((e) => e.selector === 'ownProfileName' && e.pageKind === 'profile');
     expect(topcard?.lastResult).toBe('miss');
     expect(name?.lastResult).toBe('match');
   });

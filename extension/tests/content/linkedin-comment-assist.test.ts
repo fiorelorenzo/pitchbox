@@ -256,7 +256,9 @@ describe('the panel mounts from the click, not from a card selector (#447)', () 
           </form>
         </div>
       </main>`;
-    const composer = document.querySelector<HTMLElement>('[contenteditable="true"][role="textbox"]');
+    const composer = document.querySelector<HTMLElement>(
+      '[contenteditable="true"][role="textbox"]',
+    );
     if (!composer) throw new Error('no composer in the fixture');
     return composer;
   }
@@ -283,9 +285,8 @@ describe('the panel mounts from the click, not from a card selector (#447)', () 
     composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await settle();
 
-    const mounted = logged.find(
-      (e) => e.message === 'activity.linkedin-action.assist-mounted',
-    ) as { meta?: Record<string, unknown> } | undefined;
+    const mounted = logged.find((e) => e.message === 'activity.linkedin-action.assist-mounted') as
+      { meta?: Record<string, unknown> } | undefined;
     expect(mounted).toBeTruthy();
     // The structural fallback resolved a card even though no selector did.
     expect(mounted!.meta).toMatchObject({ cardResolved: true, composerHadOwnText: false });
