@@ -1,0 +1,4 @@
+{
+  "_comment": "A migration drizzle skipped on some databases and a later migration that re-issues it. The migrate script treats the skipped one as acceptable on a database where the replacement is applied, and still fails when neither is. Keys are the skipped tag, values the tag that repairs it. See #493.",
+  "0016_operator_voice_profile": "0021_operator_voice_profiles_repair"
+}
