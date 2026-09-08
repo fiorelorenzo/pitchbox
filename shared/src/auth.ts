@@ -209,10 +209,14 @@ export async function createUser(
   opts: { isInstanceAdmin?: boolean } = {},
 ): Promise<number> {
   const passwordHash = await hashPassword(password);
-  const [row] = await db
-    .insert(users)
-    .values({ username, passwordHash, isInstanceAdmin: opts.isInstanceAdmin ?? false })
-    .returning();
+  const [row] = await db.insert(users).values({ username, passwordHash }).returning();
+  // The only place that writes `is_instance_admin` true is setInstanceAdmin
+  // below (#413): routing the bootstrap grant through it too means there is
+  // exactly one function to audit or extend, not a second insert-time path
+  // that can quietly drift from the promote path.
+  if (opts.isInstanceAdmin) {
+    await setInstanceAdmin(db, row.id, true);
+  }
   // First user implicitly joins the default org as owner. If the default org
   // doesn't exist yet (fresh install without seed:core), create it inline.
   let [org] = await db.select().from(organizations).where(eq(organizations.slug, 'default'));
@@ -234,6 +238,39 @@ export async function createUser(
     .values({ organizationId: org.id, userId: row.id, role: 'owner' })
     .onConflictDoNothing();
   return row.id;
+}
+
+/**
+ * Flip a user's instance-admin flag. The single write site for
+ * `users.is_instance_admin` (#413): `createUser` calls this for the
+ * bootstrap grant (first-login or `seed:owner`) instead of setting the
+ * column on insert, and the promote-a-user API route calls it directly for
+ * every grant after the first account has already claimed the flag. One
+ * function means one place to audit, not two write paths that can drift.
+ */
+export async function setInstanceAdmin(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+  userId: number,
+  value: boolean,
+): Promise<void> {
+  await db.update(users).set({ isInstanceAdmin: value }).where(eq(users.id, userId));
+}
+
+/**
+ * List every user with their instance-admin flag, ordered by username. Backs
+ * the `settings/admin` observability list (#413): without the instance audit
+ * trail (#414), this is the only way to confirm a promotion from the UI
+ * instead of the database.
+ */
+export async function listUsers(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+): Promise<{ id: number; username: string; isInstanceAdmin: boolean }[]> {
+  return db
+    .select({ id: users.id, username: users.username, isInstanceAdmin: users.isInstanceAdmin })
+    .from(users)
+    .orderBy(users.username);
 }
 
 export async function loadOrganizationForUser(

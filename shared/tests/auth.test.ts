@@ -13,7 +13,11 @@ import {
   deleteSession,
   countUsers,
   loadOrganizationForUser,
+  setInstanceAdmin,
+  listUsers,
 } from '../src/auth.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 async function reset() {
   await getDb().execute(
@@ -78,6 +82,42 @@ describe('shared/auth', () => {
 
   it('findUserByUsername returns null when missing', async () => {
     expect(await findUserByUsername(getDb(), 'nope')).toBeNull();
+  });
+
+  it('setInstanceAdmin flips the flag on and off (#413)', async () => {
+    const userId = await createUser(getDb(), 'frank', 'a-very-long-password');
+    const [before] = await getDb().select().from(users).where(eq(users.id, userId));
+    expect(before.isInstanceAdmin).toBe(false);
+
+    await setInstanceAdmin(getDb(), userId, true);
+    const [promoted] = await getDb().select().from(users).where(eq(users.id, userId));
+    expect(promoted.isInstanceAdmin).toBe(true);
+
+    await setInstanceAdmin(getDb(), userId, false);
+    const [demoted] = await getDb().select().from(users).where(eq(users.id, userId));
+    expect(demoted.isInstanceAdmin).toBe(false);
+  });
+
+  it('listUsers reports every user with their instance-admin flag, ordered by username (#413)', async () => {
+    await createUser(getDb(), 'zack', 'a-very-long-password');
+    await createUser(getDb(), 'amy', 'a-very-long-password', { isInstanceAdmin: true });
+    const rows = await listUsers(getDb());
+    expect(rows.map((r) => r.username)).toEqual(['amy', 'zack']);
+    expect(rows.find((r) => r.username === 'amy')?.isInstanceAdmin).toBe(true);
+    expect(rows.find((r) => r.username === 'zack')?.isInstanceAdmin).toBe(false);
+  });
+
+  // Guards against a second write path for `is_instance_admin` reappearing
+  // (#413): the issue this closes was exactly that the flag could only ever
+  // be set at insert time (first login) or by hand in the database. Scanning
+  // the source rather than trusting the doc comment means a future insert-
+  // time `isInstanceAdmin:` assignment fails this test instead of silently
+  // drifting from `setInstanceAdmin`.
+  it('is_instance_admin has exactly one write site: setInstanceAdmin', () => {
+    const src = readFileSync(fileURLToPath(new URL('../src/auth.ts', import.meta.url)), 'utf8');
+    const writeSites = src.match(/\.set\(\{\s*isInstanceAdmin:/g) ?? [];
+    expect(writeSites).toHaveLength(1);
+    expect(src).not.toMatch(/\.values\(\{[^}]*isInstanceAdmin:/s);
   });
 
   it('sessions can be created, loaded, and deleted', async () => {
