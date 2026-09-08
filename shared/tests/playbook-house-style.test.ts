@@ -70,6 +70,20 @@ describe('playbooks house style', () => {
     );
   });
 
+  it('scopes the plain-ASCII punctuation rule to punctuation, not letters (#477)', () => {
+    // #477: a retuned draft came back with Italian accents stripped ("e" for
+    // "e" with grave, "piu" for "piu" with grave). The banned-typography rule
+    // above ("Use plain ASCII instead") was ambiguous about scope, and a
+    // model told to write "plainer" (the drier retune direction) read it as
+    // licence to flatten the whole alphabet, not just the punctuation it
+    // actually lists. This is the model reading our own instruction the way
+    // it was written, so the fix is the instruction, not the model.
+    expect(HOUSE_STYLE_SECTION).toMatch(/punctuation, not letters/);
+    expect(HOUSE_STYLE_SECTION).toMatch(/never drop an accent or a diacritic/);
+    expect(HOUSE_STYLE_SECTION).toContain('\u00e8');
+    expect(HOUSE_STYLE_SECTION).toContain('pi\u00f9');
+  });
+
   it('the shared constant contains no AI typography either', () => {
     for (const [char, name] of BANNED_CHARS) {
       expect(HOUSE_STYLE_SECTION.indexOf(char), `shared constant contains ${name}`).toBe(-1);
