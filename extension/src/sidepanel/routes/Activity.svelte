@@ -16,6 +16,7 @@
     type ActivitySource,
   } from '$ext/activity';
   import { t } from '$ext/i18n';
+  import { hasLinkedInPermission } from '$ext/permissions';
 
   let events = $state<ActivityEvent[]>([]);
   let search = $state('');
@@ -31,6 +32,11 @@
   // buffer. Persisted separately from the entries so it survives a reload.
   let droppedCount = $state(0);
   let oldestRetainedTs = $derived(events.length > 0 ? events[events.length - 1].ts : null);
+  // #452: read back the same way home does (#401/LinkedInAccessRow.svelte),
+  // so a row's "turn access back on" affordance never disagrees with what
+  // home is already showing.
+  let linkedInGranted = $state(true);
+  const refreshLinkedInAccess = () => void hasLinkedInPermission().then((g) => (linkedInGranted = g));
 
   const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
     if (area !== 'local') return;
@@ -47,8 +53,15 @@
     events = await getActivity();
     droppedCount = (await getActivityStats()).droppedCount;
     chrome.storage.onChanged.addListener(handler);
+    refreshLinkedInAccess();
+    chrome.permissions.onAdded.addListener(refreshLinkedInAccess);
+    chrome.permissions.onRemoved.addListener(refreshLinkedInAccess);
   });
-  onDestroy(() => chrome.storage.onChanged.removeListener(handler));
+  onDestroy(() => {
+    chrome.storage.onChanged.removeListener(handler);
+    chrome.permissions.onAdded.removeListener(refreshLinkedInAccess);
+    chrome.permissions.onRemoved.removeListener(refreshLinkedInAccess);
+  });
 
   let filtered = $derived(
     events.filter((e) => {
@@ -131,7 +144,7 @@
   {:else}
     <div class="flex flex-col">
       {#each filtered as e (e.id)}
-        <ActivityRow event={e} />
+        <ActivityRow event={e} {linkedInGranted} />
       {/each}
     </div>
   {/if}
