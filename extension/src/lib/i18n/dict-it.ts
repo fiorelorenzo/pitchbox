@@ -145,6 +145,9 @@ export const it = {
     'LinkedIn assist non ha prodotto una bozza da inserire (skipped: {skipped}).',
   'activity.linkedin-action.suggestion-inserted':
     'Suggerimento accettato inserito nel box del commento LinkedIn per il draft {draftId}.',
+  // See the comment on `activity.linkedin-action.assist-mounted` in dict-en.ts.
+  'activity.linkedin-action.assist-mounted':
+    'Assistente commento aperto sulla pagina {pageKind}, con la card del post {card}.',
   'activity.linkedin-action.post-submit-not-found':
     'Impossibile trovare il pulsante di pubblicazione del post LinkedIn per il draft {draftId} entro 15s; la pubblicazione non verrà tracciata automaticamente.',
   'activity.linkedin-action.post-confirm-unavailable':
