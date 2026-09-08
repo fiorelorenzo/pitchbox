@@ -1,5 +1,5 @@
 import { AcpRunner } from './acp/runner.js';
-import { CloudRunner } from './cloud.js';
+import { SdkRunner } from './sdk/runner.js';
 import type { AgentRunner } from './base.js';
 import type { AgentRunnerSlug } from './meta.js';
 import type { RunnerConfig } from './config.js';
@@ -18,7 +18,7 @@ export const AGENT_RUNNERS: Record<AgentRunnerSlug, (config?: RunnerConfig) => A
   copilot: acp('copilot'),
   opencode: acp('opencode'),
   'qwen-code': acp('qwen-code'),
-  cloud: (config) => new CloudRunner(config),
+  cloud: (config) => new SdkRunner({ config }),
 };
 
 export function createAgentRunner(slug: string, config?: RunnerConfig): AgentRunner {
