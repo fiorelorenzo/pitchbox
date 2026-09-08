@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { releaseDocumentClaimsForTests } from '../../src/content/shared/claim-document.js';
 import linkedinObserveSource from '../../src/content/linkedin-observe.ts?raw';
 // Real, anonymised captures - see fixtures/linkedin/README.md. feed.html is
 // the SDUI frontend (no dedupable identifier anywhere); post-detail.html is
@@ -142,6 +143,8 @@ async function importModule() {
 }
 
 beforeEach(() => {
+  // #438: the claim guard outlives vi.resetModules() by design.
+  releaseDocumentClaimsForTests();
   document.body.innerHTML = '';
   installChromeMock();
   seedPairing();
@@ -286,6 +289,7 @@ describe('a 403 is authoritative: it stops the collector, not just the batch', (
       seedPairing();
       FakeIntersectionObserver.instances = [];
       vi.resetModules();
+      releaseDocumentClaimsForTests();
       render(POST_DETAIL_HTML);
       const { observationCalls } = installFetchMock({
         assist: assistState(),

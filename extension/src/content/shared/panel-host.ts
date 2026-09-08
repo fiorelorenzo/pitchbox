@@ -116,8 +116,14 @@ const OVERLAY_MARGIN = 12;
  * post-detail page's ~260px comment form is what made the panel unreadable
  * in the first place. Mirrored in panel.css's `:host { width }` rule; kept
  * here too because the placement math below needs it before layout runs.
+ *
+ * 520px, not the 440px D13 shipped (D16, 2026-09-08): Inter at the draft's
+ * 16px lands at about 66 characters per line here, which is the middle of
+ * the classical band, and 520 is the narrowest width that gets there. 440
+ * was fine for 14px body text and was carrying 15px over 13px instead, so
+ * it read as cramped.
  */
-const OVERLAY_WIDTH = 440;
+const OVERLAY_WIDTH = 520;
 
 /**
  * The panel's shortest useful size, and the assumed height before it has

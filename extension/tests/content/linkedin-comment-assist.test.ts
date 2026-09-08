@@ -119,7 +119,16 @@ function streamingSuggest(reasoning: string, draft: string) {
   };
 }
 
+// A content script always runs with a live `chrome.runtime` in the real
+// isolated world, and since #438 the panel checks for one before requesting
+// (a reloaded extension leaves open tabs unable to reach anything, and
+// reporting that as an unreachable backend is a lie). jsdom has no `chrome`
+// at all, so the tests have to supply the shape the browser guarantees.
+const chromeStub = { runtime: { id: 'pitchbox-test-extension' } };
+
 beforeEach(() => {
+  (globalThis as unknown as { chrome: unknown }).chrome = chromeStub;
+  chromeStub.runtime.id = 'pitchbox-test-extension';
   document.body.innerHTML = '';
   logged.length = 0;
   vi.clearAllMocks();
@@ -138,7 +147,7 @@ afterEach(async () => {
   await settle();
 });
 
-describe('the panel never appears unprompted', () => {
+describe('one signal, not two clicks (#439)', () => {
   it('mounts nothing until the human clicks into the composer', async () => {
     const composer = renderPost();
     wireCommentAssist(composer);
@@ -149,14 +158,67 @@ describe('the panel never appears unprompted', () => {
     expect(suggest).not.toHaveBeenCalled();
   });
 
-  it('mounts on the click, and still asks for nothing until the human asks', async () => {
+  it('starts the request on that same click, with no second control to press', async () => {
     const composer = renderPost();
+    suggest.mockImplementation(streamingSuggest('Because it is specific.', 'A real comment.'));
     wireCommentAssist(composer);
     composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await settle();
 
     expect(panelText()).toContain('Giulia Bianchi');
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(shadow().querySelector('textarea')?.value).toBe('A real comment.');
+  });
+
+  it('waits to be asked when the composer already holds the human own text', async () => {
+    const composer = renderPost();
+    composer.textContent = 'I had already started writing this myself';
+    suggest.mockImplementation(streamingSuggest('r', 'd'));
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
     expect(suggest).not.toHaveBeenCalled();
+    expect(shadows().length).toBe(1);
+  });
+
+  it('reopening a card it already answered costs no second model call', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(streamingSuggest('Because it is specific.', 'A real comment.'));
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(suggest).toHaveBeenCalledTimes(1);
+
+    // The human dismisses the panel, then clicks the same composer again.
+    const dismiss = [...shadow().querySelectorAll('button')].find(
+      (b) => (b.getAttribute('aria-label') ?? '').length > 0,
+    );
+    dismiss?.click();
+    await settle();
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(shadow().querySelector('textarea')?.value).toBe('A real comment.');
+  });
+
+  it('says the extension was reloaded rather than blaming the backend (#438)', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(streamingSuggest('r', 'd'));
+    // What a content script sees after its extension is reloaded under it:
+    // the context is dead, every request fails against
+    // `chrome-extension://invalid/`, and the backend is perfectly fine.
+    Reflect.deleteProperty(chromeStub.runtime, 'id');
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(suggest).not.toHaveBeenCalled();
+    expect(linkedinAssist).not.toHaveBeenCalled();
+    expect(panelText()).toContain('reload this page');
+    expect(panelText()).not.toContain('Could not reach');
   });
 
   it('mounts one panel per anchor however many times the human clicks', async () => {
@@ -197,8 +259,6 @@ describe('the suggestion, as it arrives', () => {
     wireCommentAssist(composer);
     composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await settle();
-    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
-    await settle();
 
     // Mid-stream the panel already showed the first chunk and nothing of the second.
     expect(seen[0]).toContain('First half.');
@@ -207,22 +267,72 @@ describe('the suggestion, as it arrives', () => {
     expect(shadow().querySelector('textarea')?.value).toBe('First half. Second half.');
   });
 
-  it('renders the reasoning small and separate from the draft, above it', async () => {
+  it('shows the reasoning while it waits, then folds it under the draft (D17)', async () => {
     const composer = renderPost();
-    suggest.mockImplementation(streamingSuggest('Friendly, technical tone.', 'Nice writeup!'));
+    const seen: string[] = [];
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'status', phase: 'writing' });
+        onEvent({ kind: 'chunk', text: 'Friendly, technical tone.', section: 'reasoning' });
+        await settle(2);
+        // Mid-stream: the reasoning is the only thing there is to read.
+        seen.push(panelText());
+        onEvent({ kind: 'chunk', text: 'Nice writeup!', section: 'draft' });
+        onEvent({
+          kind: 'done',
+          reasoning: 'Friendly, technical tone.',
+          draft: 'Nice writeup!',
+          skipped: false,
+          ms: 900,
+        });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
 
     wireCommentAssist(composer);
     composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await settle();
-    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+
+    expect(seen[0]).toContain('Friendly, technical tone.');
+
+    // Once the draft exists it is the draft that is on screen, and the
+    // reasoning is one collapsed line, not a paragraph above it.
+    const draftEl = shadow().querySelector('textarea');
+    expect(draftEl?.value).toBe('Nice writeup!');
+    expect(panelText()).not.toContain('Friendly, technical tone.');
+
+    const why = shadow().querySelector<HTMLButtonElement>('.assist-why');
+    expect(why).toBeTruthy();
+    expect(why!.getAttribute('aria-expanded')).toBe('false');
+    // The disclosure sits after the draft, not before it.
+    expect(draftEl!.compareDocumentPosition(why!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    why!.click();
+    await settle();
+    expect(shadow().querySelector('.assist-why-body')?.textContent).toBe(
+      'Friendly, technical tone.',
+    );
+    expect(why!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('keeps an open disclosure open while the human edits the draft', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(streamingSuggest('Because it answers their question.', 'A reply.'));
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-why')!.click();
     await settle();
 
-    const hint = shadow().querySelector<HTMLElement>('.assist-hint');
-    const draftEl = shadow().querySelector('textarea');
-    expect(hint?.textContent).toBe('Friendly, technical tone.');
-    expect(draftEl?.value).toBe('Nice writeup!');
-    // Reasoning renders before the draft in document order, not after.
-    expect(hint!.compareDocumentPosition(draftEl!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const textarea = shadow().querySelector<HTMLTextAreaElement>('textarea')!;
+    textarea.value = 'A reply, edited by hand.';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+
+    expect(shadow().querySelector('.assist-why-body')?.textContent).toBe(
+      'Because it answers their question.',
+    );
   });
 });
 
@@ -251,8 +361,6 @@ describe('accept, insert, and the button the human presses', () => {
     try {
       wireCommentAssist(composer);
       composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await settle();
-      shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
       await settle();
       shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
       await settle();
@@ -285,8 +393,6 @@ describe('accept, insert, and the button the human presses', () => {
     await settle();
     shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
     await settle();
-    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
-    await settle();
 
     expect(acceptSuggestion.mock.calls[0][0].body).toBe('A clean, short reply.');
     expect(composer.textContent).toContain('A clean, short reply.');
@@ -295,14 +401,15 @@ describe('accept, insert, and the button the human presses', () => {
 });
 
 describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
-  it('a decline (skipped) renders the reasoning and a retry, never an insert control', async () => {
+  it('a decline says so in the product own words, with the model reasoning folded away (D18)', async () => {
     const composer = renderPost();
+    const modelProse = 'This post is a job posting; commenting reads as spam here.';
     suggest.mockImplementation(
       async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
         onEvent({ kind: 'status', phase: 'writing' });
         onEvent({
           kind: 'done',
-          reasoning: 'This post is a job posting; commenting reads as spam here.',
+          reasoning: modelProse,
           draft: null,
           skipped: true,
           ms: 400,
@@ -314,14 +421,24 @@ describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
     wireCommentAssist(composer);
     composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await settle();
-    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
-    await settle();
 
-    expect(panelText()).toContain('This post is a job posting');
+    // The state is named by the product, in a title of its own; the model's
+    // prose is not the copy the human is handed.
+    const title = shadow().querySelector('.assist-title');
+    // The literal, not the key: the point of D18 is that the human reads
+    // the product's sentence, so the sentence is what the test names.
+    expect(title?.textContent?.trim()).toBe('No suggestion for this post');
+    expect(panelText()).not.toContain(modelProse);
+    // Nothing to insert, and one way forward.
     expect(panelText()).not.toContain('Insert');
     expect(shadow().querySelector('textarea')).toBeNull();
     expect(shadow().querySelectorAll('.assist-button').length).toBe(1);
     expect(shadow().querySelector('.assist-button')?.textContent?.trim()).toBe($tRetry());
+    // The reasoning is still reachable, on purpose: the decision is the
+    // feature, so it is available rather than hidden.
+    shadow().querySelector<HTMLButtonElement>('.assist-why')!.click();
+    await settle();
+    expect(shadow().querySelector('.assist-why-body')?.textContent).toBe(modelProse);
   });
 
   it('a malformed answer (not skipped) renders distinct copy from a decline, still no insert control', async () => {
@@ -343,8 +460,6 @@ describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
     wireCommentAssist(composer);
     composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await settle();
-    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
-    await settle();
 
     const skippedCopy = panelText();
 
@@ -364,8 +479,6 @@ describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
     );
     wireCommentAssist(second);
     second.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await settle();
-    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
     await settle();
 
     expect(panelText()).not.toBe(skippedCopy);
@@ -389,8 +502,6 @@ describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
 
     wireCommentAssist(composer);
     composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await settle();
-    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
     await settle();
 
     const entry = logged.find((e) => e.message === 'activity.linkedin-action.suggestion-no-draft');
@@ -427,8 +538,6 @@ describe('every refusal says which one it is', () => {
     wireCommentAssist(composer);
     composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await settle();
-    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
-    await settle();
 
     const killed = panelText();
     expect(suggest).not.toHaveBeenCalled();
@@ -441,8 +550,6 @@ describe('every refusal says which one it is', () => {
     });
     wireCommentAssist(second);
     second.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await settle();
-    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
     await settle();
 
     expect(panelText()).not.toBe(killed);
@@ -554,8 +661,6 @@ describe('per-card wiring on the feed (2026-09-07 overlay/feed rework)', () => {
     const composer = appendComposer(cards[0]);
     await settle();
     composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await settle();
-    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
     await settle();
 
     expect(suggest).toHaveBeenCalledTimes(1);

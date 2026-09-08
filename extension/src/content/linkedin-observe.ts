@@ -1,3 +1,4 @@
+import { claimDocument } from './shared/claim-document.js';
 import { api } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import {
@@ -285,4 +286,4 @@ async function init(): Promise<void> {
   }
 }
 
-void init();
+if (claimDocument('linkedin-observe')) void init();

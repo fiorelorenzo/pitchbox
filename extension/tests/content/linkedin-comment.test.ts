@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { releaseDocumentClaimsForTests } from '../../src/content/shared/claim-document.js';
 import linkedinCommentSource from '../../src/content/linkedin-comment.ts?raw';
 
 const BACKEND = 'https://backend.example';
@@ -122,6 +123,8 @@ function installClipboardMock() {
 }
 
 beforeEach(() => {
+  // #438: the claim guard outlives vi.resetModules() by design.
+  releaseDocumentClaimsForTests();
   document.body.innerHTML = '';
   document.head.innerHTML = '';
   window.history.pushState({}, '', '/');

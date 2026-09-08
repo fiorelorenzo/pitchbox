@@ -1,3 +1,4 @@
+import { claimDocument } from './shared/claim-document.js';
 import {
   readOwnProfile,
   readOwnPosts,
@@ -179,6 +180,8 @@ function scheduleScan(): void {
   scanTimer = window.setTimeout(() => void scan(), SCAN_DEBOUNCE_MS);
 }
 
-resetSelectorHealth();
-scheduleScan();
-new MutationObserver(scheduleScan).observe(document.body, { childList: true, subtree: true });
+if (claimDocument('linkedin-profile-capture')) {
+  resetSelectorHealth();
+  scheduleScan();
+  new MutationObserver(scheduleScan).observe(document.body, { childList: true, subtree: true });
+}

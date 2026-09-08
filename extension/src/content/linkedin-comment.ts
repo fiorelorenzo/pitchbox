@@ -1,3 +1,4 @@
+import { claimDocument } from './shared/claim-document.js';
 import { parseBackendUrl, parseDraftId } from '../lib/draft-param.js';
 import { api } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
@@ -279,7 +280,7 @@ export function watchDraftForSend(
   watchForCommentSubmit(watcher, targetDraftId);
 }
 
-if (draftId !== null) {
+if (draftId !== null && claimDocument('linkedin-comment')) {
   let filled = false;
 
   /**

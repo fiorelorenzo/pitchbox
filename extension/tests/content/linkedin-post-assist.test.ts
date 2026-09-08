@@ -206,7 +206,7 @@ describe('the suggestion, as it arrives', () => {
     expect(shadow().querySelector('textarea')?.value).toBe('First half. Second half.');
   });
 
-  it('renders the reasoning small and separate from the draft, above it', async () => {
+  it('folds the reasoning under the draft once one exists (D17)', async () => {
     const { editor, modal } = renderModal();
     suggest.mockImplementation(
       streamingSuggest('Upbeat, first-person recap.', 'Shipped something fun tonight.'),
@@ -218,10 +218,18 @@ describe('the suggestion, as it arrives', () => {
     shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
     await settle();
 
-    const hint = shadow().querySelector<HTMLElement>('.assist-hint');
     const draftEl = shadow().querySelector('textarea');
-    expect(hint?.textContent).toBe('Upbeat, first-person recap.');
     expect(draftEl?.value).toBe('Shipped something fun tonight.');
+    // Same shape as the comment panel: collapsed, after the draft, and the
+    // reasoning is one click away rather than on screen.
+    expect(panelText()).not.toContain('Upbeat, first-person recap.');
+    const why = shadow().querySelector<HTMLButtonElement>('.assist-why')!;
+    expect(draftEl!.compareDocumentPosition(why) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    why.click();
+    await settle();
+    expect(shadow().querySelector('.assist-why-body')?.textContent).toBe(
+      'Upbeat, first-person recap.',
+    );
   });
 });
 
@@ -300,7 +308,7 @@ describe('accept, insert, and the button the human presses', () => {
 });
 
 describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
-  it('a decline (skipped) renders the reasoning and a retry, never an insert control', async () => {
+  it('a decline names the state itself, with the reasoning folded away (D18)', async () => {
     const { editor, modal } = renderModal();
     suggest.mockImplementation(
       async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
@@ -322,7 +330,15 @@ describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
     shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
     await settle();
 
-    expect(panelText()).toContain('Nothing worth posting about right now.');
+    expect(panelText()).not.toContain('Nothing worth posting about right now.');
+    expect(shadow().querySelector('.assist-title')?.textContent?.trim()).toBe(
+      'The assistant decided not to suggest a post right now.',
+    );
+    shadow().querySelector<HTMLButtonElement>('.assist-why')!.click();
+    await settle();
+    expect(shadow().querySelector('.assist-why-body')?.textContent).toBe(
+      'Nothing worth posting about right now.',
+    );
     expect(panelText()).not.toContain('Insert');
     expect(shadow().querySelector('textarea')).toBeNull();
     expect(shadow().querySelectorAll('.assist-button').length).toBe(1);

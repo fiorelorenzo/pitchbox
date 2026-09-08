@@ -252,6 +252,10 @@ export const en = {
   'assist.comment.ready.label': 'Suggested comment (editable)',
   'assist.action.accept': 'Insert',
   'assist.action.retry': 'Try again',
+  // Collapsed disclosure toggle that reveals the model's own reasoning
+  // behind the draft above - a short clickable label, not a sentence, in
+  // the product's voice rather than the model's.
+  'assist.comment.why': 'Why this angle',
   'assist.comment.accepting': 'Saving…',
   'assist.comment.inserted.title': 'Inserted',
   'assist.comment.inserted.hint': "Press LinkedIn's own Comment button to send it.",
@@ -267,9 +271,9 @@ export const en = {
   'assist.post.inserted.hint': "Press LinkedIn's own Post button to send it.",
   // Refused is five states in the brief plus three the accept path can also
   // answer with (no_account, blocked, uncontactable, recently_contacted) and
-  // three this client detects itself (backend_unreachable, selector health,
-  // a mid-stream generation failure) - each real, each with its own remedy,
-  // never a generic failure.
+  // four this client detects itself (backend_unreachable, selector health, a
+  // mid-stream generation failure, and a dead extension context) - each
+  // real, each with its own remedy, never a generic failure.
   'assist.refusal.assist_disabled': 'The Pitchbox assistant is turned off for this workspace.',
   'assist.refusal.kill_switch': 'An admin stopped the assistant.',
   'assist.refusal.project_not_bound': 'No project is bound to the assistant yet.',
@@ -282,6 +286,14 @@ export const en = {
   'assist.refusal.selector_health_degraded':
     "LinkedIn's layout changed and Pitchbox could not read this post reliably.",
   'assist.refusal.generation_failed': 'Something went wrong while writing the suggestion.',
+  // The content script's own extension context dies on a reload/update of
+  // the extension itself while this tab stayed open - every message.send
+  // to the background worker then fails the same way `backend_unreachable`
+  // does, but the backend is fine; reusing that string would blame the
+  // wrong thing and point at a retry that cannot work. Only a page reload
+  // re-injects a live content script.
+  'assist.refusal.extension_reloaded':
+    'Pitchbox was reloaded or updated - reload this page to reconnect.',
   'assist.refusal.unknown': 'The assistant refused this request ({reason}).',
   // The post assist's own quota message: the server answers the same
   // `quota_exhausted` reason for both kinds, but the comment assist's
@@ -293,9 +305,22 @@ export const en = {
   'assist.refusal.no_recent_activity':
     'Nothing recent to draft a post from yet. Browse your network for a bit, then try again.',
   // #382: "no marker means no draft" rendered honestly - two distinct causes,
-  // two distinct messages, never an insertable blob of reasoning.
-  'assist.comment.no_draft.skipped': 'The assistant decided not to suggest a comment here.',
-  'assist.comment.no_draft.unstructured': 'The assistant did not produce a comment to insert.',
+  // two distinct messages, never an insertable blob of reasoning. #438: the
+  // model's own refusal prose used to render verbatim here; these are now a
+  // named state (title) plus one concrete next action (hint), same shape as
+  // `assist.comment.inserted.*` above. `skipped` is the model's own call
+  // that this post is not worth a comment - not a failure, so it must not
+  // read like one. `malformed` is a `done` event that ignored the required
+  // envelope - that is Pitchbox's bug, not the post's, so it owns the
+  // failure instead of describing it.
+  'assist.comment.no_draft.skipped.title': 'No suggestion for this post',
+  'assist.comment.no_draft.skipped.hint': 'Try again if this post deserves a second look.',
+  'assist.comment.no_draft.malformed.title': 'Could not generate a suggestion',
+  'assist.comment.no_draft.malformed.hint': 'Try again in a moment.',
+  // Same disclosure toggle as `assist.comment.why` above, but under the
+  // no-draft state: it asks about the decision to decline rather than
+  // about a drafted angle.
+  'assist.comment.why_skipped': 'Why no suggestion',
   'assist.post.no_draft.skipped': 'The assistant decided not to suggest a post right now.',
   'assist.post.no_draft.unstructured': 'The assistant did not produce a post to insert.',
 

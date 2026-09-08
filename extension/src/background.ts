@@ -4,6 +4,7 @@ import { registerLinkedInReplyIngestScript } from './background/linkedin-reply-i
 import { registerLinkedInCommentAssistScript } from './background/linkedin-comment-assist-registration.js';
 import { registerLinkedInPostAssistScript } from './background/linkedin-post-assist-registration.js';
 import { registerLinkedInProfileCaptureScript } from './background/linkedin-profile-capture-registration.js';
+import { injectIntoOpenLinkedInTabs } from './background/inject-open-tabs.js';
 import {
   getSettings,
   patchPairing,
@@ -249,21 +250,14 @@ export async function syncLinkedInContentScript(): Promise<void> {
         {
           id: LINKEDIN_CONTENT_SCRIPT_ID,
           js: [linkedinCommentScriptPath],
-          // `/posts/*` as well as `/feed/update/*` (#379): both serve the
-          // classic post-detail frontend that carries the composer and the
-          // activity URN, and `/posts/*` is the URL LinkedIn's own share and
-          // "copy link" hand out. `/feed/*` (2026-09-07): the in-page comment
-          // assist now wires a composer per card on the main feed too, with
-          // no urn to key on there - see linkedin-comment-assist.ts's own
-          // doc comment - so a comment submitted from the feed still needs
-          // this same script watching for its send. Literal array on
-          // purpose - the compliance checker's rule 2 reads this
-          // initializer's text.
-          matches: [
-            'https://www.linkedin.com/feed/update/*',
-            'https://www.linkedin.com/posts/*',
-            'https://www.linkedin.com/feed/*',
-          ],
+          // Every LinkedIn page, not the URL shapes this script acts on:
+          // LinkedIn's own nav changes route with `history.pushState`, which
+          // injects nothing, so a narrow match leaves the script absent from
+          // a surface the human reached by clicking (2026-09-08, #438). The
+          // script gates itself; the LinkedIn grant is already host-wide.
+          // Literal array on purpose - the compliance checker's rule 2 reads
+          // this initializer's text.
+          matches: ['https://www.linkedin.com/*'],
           runAt: 'document_idle',
         },
       ]);
@@ -297,11 +291,9 @@ export async function syncLinkedInObserveContentScript(): Promise<void> {
         {
           id: LINKEDIN_OBSERVE_CONTENT_SCRIPT_ID,
           js: [linkedinObserveScriptPath],
-          matches: [
-            'https://www.linkedin.com/feed*',
-            'https://www.linkedin.com/posts/*',
-            'https://www.linkedin.com/in/*/recent-activity*',
-          ],
+          // Same breadth, same reason as above (#438): the collector's own
+          // `findFeedPosts` is what decides there is nothing to collect.
+          matches: ['https://www.linkedin.com/*'],
           runAt: 'document_idle',
         },
       ]);
@@ -338,6 +330,12 @@ export async function syncLinkedInContentScripts(): Promise<void> {
     // module, PanelContent owns this wiring - see that module's own note).
     registerLinkedInProfileCaptureScript(),
   ]);
+  // Registration only reaches documents that load after it, so the LinkedIn
+  // tabs already open - including the one the human just came from to grant
+  // the permission - would otherwise stay scriptless until they reload
+  // (#438). After, not inside, the Promise.all: it reads the registry those
+  // calls write.
+  await injectIntoOpenLinkedInTabs();
 }
 
 // #203: exported so tests can drive the install/update branch directly

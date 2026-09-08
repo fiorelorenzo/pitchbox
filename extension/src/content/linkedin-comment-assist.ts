@@ -2,6 +2,7 @@
 // Svelte's runtime is evaluated, without which this script throws on
 // linkedin.com and the panel never mounts (#379). See the module's own note.
 import './shared/trusted-types-shim.js';
+import { claimDocument } from './shared/claim-document.js';
 import { api, type AcceptRefusalReason, type SuggestEvent, type SuggestUsage } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import { mountPanel, panelFor, type PanelHandle } from './shared/panel-host.js';
@@ -43,16 +44,22 @@ import CommentAssistPanel from './linkedin-comment-assist-panel.svelte';
  * behind the human's own "Comment" click; it disconnects the moment that
  * composer appears.
  *
- * ## Never unprompted, twice over
+ * ## One signal, not two clicks (#439)
  *
- * Mounting the panel and requesting a suggestion are two separate explicit
- * actions, not one. `wireCommentAssist` only mounts on the human's own click
- * into LinkedIn's already-rendered composer (the same signal
- * `linkedin-comment.ts`'s `wireComposerInsert` already uses to mean "the
- * human wants to comment"), and the mounted panel starts in `resting` -
- * present, nothing requested (docs/design/linkedin-assistant-brief.md,
- * "States"). Only a second click, on the panel's own "Suggest a comment"
- * control, fires the network request. Neither click is ever synthesised.
+ * The human's click into LinkedIn's own comment box is the intent signal -
+ * the same one `linkedin-comment.ts`'s `wireComposerInsert` already reads as
+ * "the human wants to comment" - and asking for a second click on a
+ * "Suggest a comment" button bought nothing: by then they had already told
+ * us. So mounting now starts the request itself, and the panel's first
+ * visible state is `streaming` rather than `resting`.
+ *
+ * Three guards keep that from becoming a surprise bill or an override:
+ * a composer that already holds the human's own text mounts in `resting`
+ * with the request behind its button, because generating over something
+ * half-written is worse than waiting to be asked; a card whose suggestion
+ * was already generated and then dismissed re-renders that result from
+ * `lastResultFor` instead of paying for it twice; and no click is ever
+ * synthesised, here or anywhere in this directory (compliance rule 3).
  *
  * ## No second send path
  *
@@ -132,7 +139,7 @@ export function readAssistPost(root: ParentNode = document): AssistPost | null {
 }
 
 /** Every refusal this panel can render, honestly and distinctly (the brief's
- * five states, plus the accept path's own three, plus three this client
+ * five states, plus the accept path's own three, plus four this client
  * detects itself). `no_recent_activity` is excluded: it only ever answers a
  * `kind: 'post'` request (#315's post composer assist grounds itself in the
  * observation buffer; this comment assist always supplies its own post
@@ -142,7 +149,8 @@ export type AssistRefusal =
   | Exclude<AcceptRefusalReason, 'no_recent_activity'>
   | 'backend_unreachable'
   | 'selector_health_degraded'
-  | 'generation_failed';
+  | 'generation_failed'
+  | 'extension_reloaded';
 
 const KNOWN_REFUSALS: Record<AssistRefusal, true> = {
   assist_disabled: true,
@@ -156,7 +164,30 @@ const KNOWN_REFUSALS: Record<AssistRefusal, true> = {
   backend_unreachable: true,
   selector_health_degraded: true,
   generation_failed: true,
+  extension_reloaded: true,
 };
+
+/**
+ * Whether this script can still reach the extension it came from.
+ *
+ * When the extension is reloaded or updated, the content scripts already
+ * running in open tabs keep running against a dead context: `chrome.runtime`
+ * loses its `id`, and every request they make is answered with
+ * `net::ERR_FAILED` against `chrome-extension://invalid/`. Measured
+ * 2026-09-08 while driving a real page after a reload: the panel reported
+ * "Could not reach the Pitchbox backend", which is a lie the human cannot
+ * act on - the backend was up and answering `curl` at the same moment. The
+ * only fix on this side of the boundary is a page reload, so the panel now
+ * says that instead (#438).
+ */
+function extensionContextAlive(): boolean {
+  try {
+    return typeof chrome !== 'undefined' && typeof chrome.runtime?.id === 'string';
+  } catch {
+    // Touching `chrome.runtime` itself throws in some invalidated contexts.
+    return false;
+  }
+}
 
 /**
  * Maps a refusal reason to its own i18n key rather than a generic failure
@@ -233,6 +264,24 @@ function logNoDraft(skipped: boolean): void {
 }
 
 /**
+ * The last terminal result per composer anchor (#439). Keyed on the element
+ * so LinkedIn recycling a feed card drops its entry with it, exactly like
+ * `wiredCards`. Reopening a card the human already generated for and then
+ * dismissed re-renders this instead of spending a second model call on the
+ * same post; a `refused` or `no_draft` outcome is deliberately not cached,
+ * since both are worth retrying (a quota resets, a kill switch is flipped
+ * back, a model given the same post twice can answer differently).
+ */
+const lastResultFor = new WeakMap<Element, CommentAssistState>();
+
+/** True when LinkedIn's composer already holds text the human typed. Their
+ * half-written comment is intent we must not generate over, so the panel
+ * waits to be asked in that one case (#439). */
+export function composerHasOwnText(composer: HTMLElement): boolean {
+  return (composer.textContent ?? '').trim().length > 0;
+}
+
+/**
  * Mounts the assist panel on `composer`'s anchor and wires its whole state
  * machine: request, edit, accept-then-insert-then-watch, refuse. One call
  * per composer click (see `wireCommentAssist` below); `mountPanel` itself is
@@ -254,15 +303,33 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
   let lastUsage: SuggestUsage | undefined;
   let lastMs: number | undefined;
 
+  // What the panel shows the instant it appears, and whether anything is
+  // asked for at all (#439): a result already generated for this card, then
+  // the human's own half-written text, then the ordinary case - straight
+  // into the request, with no button in between.
+  const cached = lastResultFor.get(anchor);
+  const initial: CommentAssistState = cached ?? { phase: 'resting' };
+  if (cached && (cached.phase === 'ready' || cached.phase === 'edited')) {
+    currentReasoning = cached.reasoning;
+    currentDraft = cached.draft;
+  }
+  const autoRequest = !cached && !composerHasOwnText(composer);
+
   const props: CommentAssistPanelProps = {
     subject: capturedPost?.authorName ?? undefined,
-    state: { phase: 'resting' },
+    state: initial,
     onRequest: () => void requestSuggestion(),
     onEditChange: (text) => {
       currentDraft = text;
-      if (handle.alive) {
-        handle.update({ state: { phase: 'edited', reasoning: currentReasoning, draft: text } });
-      }
+      // Cached so reopening the card brings back what the human had already
+      // edited, not the model's original wording (#439).
+      const edited: CommentAssistState = {
+        phase: 'edited',
+        reasoning: currentReasoning,
+        draft: text,
+      };
+      lastResultFor.set(anchor, edited);
+      if (handle.alive) handle.update({ state: edited });
     },
     onAccept: () => void acceptAndInsert(),
     onDismiss: () => handle.destroy(),
@@ -275,6 +342,8 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
     onDismiss: () => handle.destroy(),
   });
 
+  if (autoRequest) void requestSuggestion();
+
   function setRefused(reason: string): void {
     logRefusal(reason);
     const { key, params } = refusalMessage(reason);
@@ -286,6 +355,12 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
   async function requestSuggestion(): Promise<void> {
     if (!capturedPost) {
       setRefused('selector_health_degraded');
+      return;
+    }
+    // Checked before the request, not inferred from its failure: a dead
+    // context fails the same way an unreachable backend does (#438).
+    if (!extensionContextAlive()) {
+      setRefused('extension_reloaded');
       return;
     }
     handle.update({ state: { phase: 'streaming', status: 'reading', reasoning: '', draft: '' } });
@@ -350,9 +425,13 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
               });
             } else {
               currentDraft = event.draft;
-              handle.update({
-                state: { phase: 'ready', reasoning: event.reasoning, draft: event.draft },
-              });
+              const ready: CommentAssistState = {
+                phase: 'ready',
+                reasoning: event.reasoning,
+                draft: event.draft,
+              };
+              lastResultFor.set(anchor, ready);
+              handle.update({ state: ready });
             }
             break;
           case 'failed':
@@ -522,4 +601,4 @@ function init(): void {
   }, COMPOSER_WAIT_MS);
 }
 
-init();
+if (claimDocument('linkedin-comment-assist')) init();

@@ -222,7 +222,7 @@ export function envelopeInstruction(): string {
   return [
     'Answer in two parts, in this exact shape:',
     '',
-    'First, at most three sentences on what you noticed in the post and the angle you picked. Write it for the operator, not for the reader of the comment.',
+    'First, at most three sentences on what you noticed in the post and the angle you picked. Write it for the operator, not for the reader of the comment, and write it in the language the operator writes in - the same language as your draft below.',
     '',
     `Then, alone on its own line, ${DRAFT_MARKER}`,
     '',

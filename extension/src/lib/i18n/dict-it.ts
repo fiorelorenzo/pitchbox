@@ -249,6 +249,8 @@ export const it = {
   'assist.comment.ready.label': 'Commento suggerito (modificabile)',
   'assist.action.accept': 'Inserisci',
   'assist.action.retry': 'Riprova',
+  // See the comment on `assist.comment.why` in dict-en.ts.
+  'assist.comment.why': 'Perché questo angolo',
   'assist.comment.accepting': 'Salvataggio in corso…',
   'assist.comment.inserted.title': 'Inserito',
   'assist.comment.inserted.hint': 'Premi il pulsante Commenta di LinkedIn per inviarlo.',
@@ -271,12 +273,20 @@ export const it = {
     'Il layout di LinkedIn è cambiato e Pitchbox non è riuscito a leggere questo post in modo affidabile.',
   'assist.refusal.generation_failed':
     'Qualcosa è andato storto durante la scrittura del suggerimento.',
+  // See the comment on `assist.refusal.extension_reloaded` in dict-en.ts.
+  'assist.refusal.extension_reloaded':
+    'Pitchbox è stato ricaricato o aggiornato - ricarica questa pagina per riconnetterti.',
   'assist.refusal.unknown': "L'assistente ha rifiutato questa richiesta ({reason}).",
   'assist.refusal.post_quota_exhausted': 'La quota post di oggi è esaurita.',
   'assist.refusal.no_recent_activity':
     'Ancora nulla di recente da cui scrivere un post. Esplora la tua rete per un po’, poi riprova.',
-  'assist.comment.no_draft.skipped': "L'assistente ha deciso di non suggerire un commento qui.",
-  'assist.comment.no_draft.unstructured': "L'assistente non ha prodotto un commento da inserire.",
+  // #438: see the comment in dict-en.ts.
+  'assist.comment.no_draft.skipped.title': 'Nessun suggerimento per questo post',
+  'assist.comment.no_draft.skipped.hint': 'Riprova se pensi che meriti un secondo sguardo.',
+  'assist.comment.no_draft.malformed.title': 'Impossibile generare un suggerimento',
+  'assist.comment.no_draft.malformed.hint': 'Riprova tra poco.',
+  // See the comment on `assist.comment.why_skipped` in dict-en.ts.
+  'assist.comment.why_skipped': 'Perché nessun suggerimento',
   'assist.post.no_draft.skipped':
     "L'assistente ha deciso di non suggerire un post in questo momento.",
   'assist.post.no_draft.unstructured': "L'assistente non ha prodotto un post da inserire.",
