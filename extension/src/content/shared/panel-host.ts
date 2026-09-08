@@ -201,7 +201,16 @@ export function computeOverlayPlacement(
   } else {
     left = anchor.left;
     const spaceBelow = viewportHeight - anchor.bottom - OVERLAY_MARGIN;
-    if (spaceBelow >= height) {
+    // Room above, on the same terms as `available` below: a margin against
+    // the anchor and a second one against the viewport's own top edge.
+    // Compared against `spaceBelow`, not just tested against `height`
+    // (#404) - an anchor near the top of the viewport (a reply box scrolled
+    // to the top of a short or narrow window, the "start a post" modal)
+    // can leave next to nothing above it, and committing to "above" anyway
+    // pushed the panel off the top of the screen instead of the merely
+    // short-but-visible placement `below` still gives it.
+    const spaceAbove = anchor.top - OVERLAY_MARGIN * 2;
+    if (spaceBelow >= height || spaceBelow >= spaceAbove) {
       top = anchor.bottom + OVERLAY_MARGIN;
       bottom = null;
     } else {
@@ -217,15 +226,20 @@ export function computeOverlayPlacement(
   const maxLeft = Math.max(viewportWidth - width - OVERLAY_MARGIN, minLeft);
   left = Math.min(Math.max(left, minLeft), maxLeft);
 
-  // The hard ceiling `panel.css`'s `max-height` is set to. No floor here on
-  // purpose (there used to be one, at `OVERLAY_MIN_HEIGHT` - it is what
-  // caused the overflow above): `top`/`bottom` above are already chosen so
-  // the *current* height fits, so the ceiling only needs to stop the panel
-  // growing past that same room before the next `ResizeObserver` tick can
-  // react to it.
+  // The hard ceiling `panel.css`'s `max-height` is set to. No floor at
+  // `OVERLAY_MIN_HEIGHT` here on purpose - it is what caused the overflow
+  // above (`top`/`bottom` are already chosen so the *current* height fits,
+  // so the ceiling only needs to stop the panel growing past that same room
+  // before the next `ResizeObserver` tick can react to it) - but `available`
+  // can still go negative when neither side has room to spare (#404), and a
+  // negative `max-height` is not a valid CSS length: the browser drops the
+  // whole declaration and the panel renders at `panel.css`'s unclamped 60vh
+  // default instead, at whichever `top`/`bottom` was picked for a height
+  // that was never going to fit there. Flooring at zero keeps the box
+  // honestly tiny rather than invisible off-screen at full size.
   const available =
     top !== null ? viewportHeight - top - OVERLAY_MARGIN : anchor.top - OVERLAY_MARGIN * 2;
-  const maxHeight = Math.min(viewportHeight * OVERLAY_MAX_HEIGHT_RATIO, available);
+  const maxHeight = Math.max(0, Math.min(viewportHeight * OVERLAY_MAX_HEIGHT_RATIO, available));
 
   return { left, top, bottom, maxHeight };
 }

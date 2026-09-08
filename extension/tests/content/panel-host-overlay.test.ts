@@ -218,6 +218,33 @@ describe('computeOverlayPlacement', () => {
     // top edge to make room.
     expect(grown.top!).toBeLessThan(anchor.top);
   });
+
+  it('stays below the anchor, clamped to whatever room is left, rather than flipping above an anchor near the top of the viewport (#404)', () => {
+    // Measured on a real LinkedIn feed at 700x700: a tall composer (a
+    // "start a post" modal, or a reply box scrolled to the top of a short
+    // or narrow window) starting at the very top of the viewport leaves
+    // only 88px below it and, before this fix, `anchor.top - 24` for the
+    // "above" branch this used to flip to: -24, an invalid CSS length that
+    // made the browser drop `max-height` entirely and render the panel at
+    // its full unclamped size, positioned off the top of the screen.
+    const anchor = { top: 0, left: 20, right: 420, bottom: 600 };
+    const viewport = { width: 700, height: 700 };
+
+    const p = computeOverlayPlacement(anchor, viewport.width, viewport.height, 108);
+    expect(p.top).toBe(anchor.bottom + 12);
+    expect(p.bottom).toBeNull();
+    expect(p.maxHeight).toBeGreaterThan(0);
+    expect(p.top! + p.maxHeight).toBeLessThanOrEqual(viewport.height);
+  });
+
+  it('never returns a negative max-height, even when neither side has room to spare (#404)', () => {
+    // A degenerate anchor that leaves next to nothing on either side: the
+    // old formula for the "above" branch's `available` produced -24, and
+    // `Math.min` propagated that straight through with no floor.
+    const anchor = { top: 0, left: 0, right: 250, bottom: 690 };
+    const p = computeOverlayPlacement(anchor, 700, 700, 108);
+    expect(p.maxHeight).toBeGreaterThanOrEqual(0);
+  });
 });
 
 describe('mountPanel, overlay wiring', () => {
