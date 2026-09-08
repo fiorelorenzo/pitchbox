@@ -71,7 +71,8 @@
     "./linkedin-assist": "./src/linkedin-assist.ts",
     "./assist-accept": "./src/assist-accept.ts",
     "./website-source": "./src/website-source.ts",
-    "./agents/sdk/tools": "./src/agents/sdk/tools.ts"
+    "./agents/sdk/tools": "./src/agents/sdk/tools.ts",
+    "./agents/sdk/event-normalizer": "./src/agents/sdk/event-normalizer.ts"
   },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",
@@ -82,6 +83,8 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.1.0",
     "@ai-sdk/gateway": "^4.0.75",
+    "@ai-sdk/mcp": "^2.0.45",
+    "ai": "^7.0.93",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "html-to-text": "^9.0.5",
