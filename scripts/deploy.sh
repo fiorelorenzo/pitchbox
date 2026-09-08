@@ -39,7 +39,7 @@ ROLLBACK=0
 # a stale image kept serving preview.pitchbox.app behind a green health check.
 case "$ENV" in
   prod)
-    DIR=/opt/apps/pitchbox; PROJECT=pitchbox; DOMAIN=pitchbox.app
+    DIR=/opt/apps/pitchbox; PROJECT=pitchbox; DOMAIN=app.pitchbox.app
     BLUE_PORT=5180; GREEN_PORT=5181
     UPSTREAM=/etc/caddy/upstreams/pitchbox-prod.conf; EXTRA=()
     ;;
@@ -56,7 +56,7 @@ log(){ echo "[deploy $ENV $REF] $*"; }
 ENV_FILE="$DIR/.env"
 
 # 0a. PITCHBOX_AUTH guard: this script only ever deploys to a real public
-#     domain (pitchbox.app / preview.pitchbox.app), or to whatever the operator
+#     domain (app.pitchbox.app / preview.pitchbox.app), or to whatever the operator
 #     points PUBLIC_WEB_ORIGIN at in .env. Deploying a dashboard with no login
 #     onto the public internet is the unsafe default we must not silently
 #     allow, so fail closed unless PITCHBOX_AUTH=on (or explicitly overridden).

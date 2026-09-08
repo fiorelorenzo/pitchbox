@@ -20,7 +20,7 @@ export const it = {
   'dashboard.connection.add-toggle': 'Aggiungi con un codice',
   'dashboard.connection.add-hint':
     'Genera un codice dalla dashboard (Impostazioni -> Integrazioni), poi collega senza aprire quella scheda.',
-  'dashboard.connection.backend-placeholder': 'https://pitchbox.app',
+  'dashboard.connection.backend-placeholder': 'https://app.pitchbox.app',
   'dashboard.connection.code-placeholder': 'Codice di pairing',
   'dashboard.connection.connect': 'Collega',
   'dashboard.connection.connecting': 'Collegamento...',

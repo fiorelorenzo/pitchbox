@@ -20,7 +20,7 @@ export const en = {
   'dashboard.connection.add-toggle': 'Add with a pairing code',
   'dashboard.connection.add-hint':
     'Get a code from your dashboard (Settings -> Integrations), then connect without opening that tab.',
-  'dashboard.connection.backend-placeholder': 'https://pitchbox.app',
+  'dashboard.connection.backend-placeholder': 'https://app.pitchbox.app',
   'dashboard.connection.code-placeholder': 'Pairing code',
   'dashboard.connection.connect': 'Connect',
   'dashboard.connection.connecting': 'Connecting...',

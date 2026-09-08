@@ -62,7 +62,7 @@ export default defineConfig({
     // stays out of this name deliberately, so it cannot be reclaimed by that
     // same mechanism later.
     __PITCHBOX_DEFAULT_BACKEND_URL__: JSON.stringify(
-      process.env.VITE_DEFAULT_BACKEND_URL || 'https://pitchbox.app',
+      process.env.VITE_DEFAULT_BACKEND_URL || 'https://app.pitchbox.app',
     ),
   },
   resolve: {

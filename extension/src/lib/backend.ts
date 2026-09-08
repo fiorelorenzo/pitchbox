@@ -22,11 +22,11 @@ declare const __PITCHBOX_DEFAULT_BACKEND_URL__: string | undefined;
 const RAW_DEFAULT =
   (typeof __PITCHBOX_DEFAULT_BACKEND_URL__ === 'string'
     ? __PITCHBOX_DEFAULT_BACKEND_URL__
-    : undefined) || 'https://pitchbox.app';
+    : undefined) || 'https://app.pitchbox.app';
 
 /** The build-time default backend origin, normalized (no trailing slash). */
 export const DEFAULT_BACKEND_URL: string =
-  normalizeBackendUrl(RAW_DEFAULT) ?? 'https://pitchbox.app';
+  normalizeBackendUrl(RAW_DEFAULT) ?? 'https://app.pitchbox.app';
 
 /**
  * Validate and normalize a user-entered backend URL: require an http(s)
