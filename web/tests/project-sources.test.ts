@@ -163,6 +163,147 @@ describe('api/projects/[id]/sources', () => {
     });
   });
 
+  describe('POST: website / mastodon_account / hackernews_author', () => {
+    it('adds a website source, storing config.url (not config.value) and real fetched text', async () => {
+      const { orgId, projectId } = await seedOrgWithProject(`ps-post-website-${Date.now()}`);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'text/html' }),
+          body: null,
+          text: async () => '<h1>Acme</h1><p>We make widgets.</p>',
+        })) as unknown as typeof fetch,
+      );
+      const event = ev(orgId, 'admin', projectId, {
+        method: 'POST',
+        body: { kind: 'website', value: 'https://example.com/' },
+      });
+      const res = await POST(event);
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as {
+        source: {
+          kind: string;
+          config: unknown;
+          fetchError: string | null;
+          output: { text: string };
+        };
+      };
+      expect(body.source.kind).toBe('website');
+      expect(body.source.config).toEqual({ url: 'https://example.com/' });
+      expect(body.source.fetchError).toBeNull();
+      expect(body.source.output.text).toContain('We make widgets.');
+    });
+
+    it('rejects an invalid website URL with 400 and creates nothing', async () => {
+      const { orgId, projectId } = await seedOrgWithProject(`ps-post-website-bad-${Date.now()}`);
+      const event = ev(orgId, 'admin', projectId, {
+        method: 'POST',
+        body: { kind: 'website', value: 'ftp://example.com' },
+      });
+      await expect(POST(event)).rejects.toMatchObject({ status: 400 });
+      expect(await countSources(projectId)).toBe(0);
+    });
+
+    it('adds a mastodon_account source, splitting the profile URL into instanceUrl/acct', async () => {
+      const { orgId, projectId } = await seedOrgWithProject(`ps-post-mastodon-${Date.now()}`);
+      const account = { id: '9', acct: 'alice', display_name: 'Alice' };
+      const statuses = [{ id: '1', content: '<p>Hello world.</p>' }];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) =>
+          String(url).includes('/lookup')
+            ? fakeResponse(200, account)
+            : fakeResponse(200, statuses),
+        ),
+      );
+      const event = ev(orgId, 'admin', projectId, {
+        method: 'POST',
+        body: { kind: 'mastodon_account', value: 'https://mastodon.social/@alice' },
+      });
+      const res = await POST(event);
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as {
+        source: { kind: string; config: unknown; fetchError: string | null };
+      };
+      expect(body.source.kind).toBe('mastodon_account');
+      expect(body.source.config).toEqual({ instanceUrl: 'https://mastodon.social', acct: 'alice' });
+      expect(body.source.fetchError).toBeNull();
+    });
+
+    it('rejects a non-profile Mastodon URL with 400 and creates nothing', async () => {
+      const { orgId, projectId } = await seedOrgWithProject(`ps-post-mastodon-bad-${Date.now()}`);
+      const event = ev(orgId, 'admin', projectId, {
+        method: 'POST',
+        body: { kind: 'mastodon_account', value: 'https://example.com' },
+      });
+      await expect(POST(event)).rejects.toMatchObject({ status: 400 });
+      expect(await countSources(projectId)).toBe(0);
+    });
+
+    it('adds a hackernews_author source from a bare username, not a URL', async () => {
+      const { orgId, projectId } = await seedOrgWithProject(`ps-post-hn-${Date.now()}`);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) =>
+          String(url).includes('/user/')
+            ? fakeResponse(200, { id: 'pg', submitted: [1] })
+            : fakeResponse(200, { id: 1, type: 'story', by: 'pg', title: 'Ask HN: something' }),
+        ),
+      );
+      const event = ev(orgId, 'admin', projectId, {
+        method: 'POST',
+        body: { kind: 'hackernews_author', value: 'pg' },
+      });
+      const res = await POST(event);
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as {
+        source: { kind: string; config: unknown; output: { text: string } };
+      };
+      expect(body.source.kind).toBe('hackernews_author');
+      expect(body.source.config).toEqual({ username: 'pg' });
+      expect(body.source.output.text).toContain('Ask HN: something');
+    });
+
+    it('rejects an invalid HN username with 400 and creates nothing', async () => {
+      const { orgId, projectId } = await seedOrgWithProject(`ps-post-hn-bad-${Date.now()}`);
+      const event = ev(orgId, 'admin', projectId, {
+        method: 'POST',
+        body: { kind: 'hackernews_author', value: 'https://news.ycombinator.com/item?id=1' },
+      });
+      await expect(POST(event)).rejects.toMatchObject({ status: 400 });
+      expect(await countSources(projectId)).toBe(0);
+    });
+
+    it('re-syncs a mastodon_account source through .../sync', async () => {
+      const { orgId, projectId } = await seedOrgWithProject(`ps-sync-mastodon-${Date.now()}`);
+      const [source] = await getDb()
+        .insert(schema.projectSources)
+        .values({
+          projectId,
+          kind: 'mastodon_account',
+          config: { instanceUrl: 'https://mastodon.example', acct: 'alice' },
+        })
+        .returning();
+      const account = { id: '9', acct: 'alice', display_name: 'Alice' };
+      const statuses = [{ id: '1', content: '<p>Fresh post.</p>' }];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) =>
+          String(url).includes('/lookup')
+            ? fakeResponse(200, account)
+            : fakeResponse(200, statuses),
+        ),
+      );
+      const event = ev(orgId, 'admin', projectId, { method: 'POST', sourceId: String(source.id) });
+      const res = await SYNC(event);
+      const body = (await res.json()) as { ok: boolean; source: { output: { text: string } } };
+      expect(body.ok).toBe(true);
+      expect(body.source.output.text).toContain('Fresh post.');
+    });
+  });
+
   describe('POST .../sync', () => {
     it('rejects a member with 403', async () => {
       const { orgId, projectId } = await seedOrgWithProject(`ps-sync-member-${Date.now()}`);
