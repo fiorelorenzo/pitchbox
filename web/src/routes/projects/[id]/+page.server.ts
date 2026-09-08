@@ -5,6 +5,7 @@ import { getDb, schema } from '$lib/server/db.js';
 import { getProjectById } from '@pitchbox/shared/projects';
 import { requireOrgId } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
+import { listProjectSources, type ProjectSourceKind } from '@pitchbox/shared/project-sources';
 import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 import { allowedRunnerSlugs } from '@pitchbox/shared/edition';
 import {
@@ -23,29 +24,37 @@ export const load: PageServerLoad = async (event) => {
   const project = await getProjectById(db, id);
   if (!project) throw error(404, 'project not found');
   const cursor = parseProjectRunsCursor(url);
-  const [accounts, platforms, extractionRunsPage, recommendations, templates, latestInsight] =
-    await Promise.all([
-      db.select().from(schema.accounts).where(eq(schema.accounts.projectId, id)),
-      db.select().from(schema.platforms),
-      queryProjectRunsPage(db, id, cursor),
-      db
-        .select()
-        .from(schema.campaignRecommendations)
-        .where(eq(schema.campaignRecommendations.projectId, id))
-        .orderBy(desc(schema.campaignRecommendations.createdAt)),
-      db
-        .select()
-        .from(schema.templates)
-        .where(eq(schema.templates.projectId, id))
-        .orderBy(desc(schema.templates.createdAt)),
-      db
-        .select()
-        .from(schema.projectInsights)
-        .where(eq(schema.projectInsights.projectId, id))
-        .orderBy(desc(schema.projectInsights.generatedAt))
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-    ]);
+  const [
+    accounts,
+    platforms,
+    extractionRunsPage,
+    recommendations,
+    templates,
+    latestInsight,
+    sources,
+  ] = await Promise.all([
+    db.select().from(schema.accounts).where(eq(schema.accounts.projectId, id)),
+    db.select().from(schema.platforms),
+    queryProjectRunsPage(db, id, cursor),
+    db
+      .select()
+      .from(schema.campaignRecommendations)
+      .where(eq(schema.campaignRecommendations.projectId, id))
+      .orderBy(desc(schema.campaignRecommendations.createdAt)),
+    db
+      .select()
+      .from(schema.templates)
+      .where(eq(schema.templates.projectId, id))
+      .orderBy(desc(schema.templates.createdAt)),
+    db
+      .select()
+      .from(schema.projectInsights)
+      .where(eq(schema.projectInsights.projectId, id))
+      .orderBy(desc(schema.projectInsights.generatedAt))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    listProjectSources(db, orgId, id),
+  ]);
   let {
     runs: extractionRuns,
     totalCount: extractionRunsTotalCount,
@@ -103,5 +112,14 @@ export const load: PageServerLoad = async (event) => {
     templates,
     latestInsight: latestInsightSerialized,
     runners,
+    sources: sources.map((s) => ({
+      id: s.id,
+      kind: s.kind as ProjectSourceKind,
+      config: s.config as Record<string, unknown>,
+      output: s.output as Record<string, unknown> | null,
+      active: s.active,
+      fetchedAt: s.fetchedAt ? s.fetchedAt.toISOString() : null,
+      fetchError: s.fetchError,
+    })),
   };
 };

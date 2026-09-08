@@ -91,6 +91,7 @@
     {isAdmin}
     {highlightRunId}
     runners={data.runners}
+    sources={data.sources}
   />
 {:else if tab === 'accounts'}
   <ProjectAccountsTab

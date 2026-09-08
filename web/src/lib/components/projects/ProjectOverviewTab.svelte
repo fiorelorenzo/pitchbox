@@ -8,7 +8,7 @@
   import { toast } from 'svelte-sonner';
   import DeleteProjectDialog from './DeleteProjectDialog.svelte';
   import Markdown from '$lib/components/Markdown.svelte';
-  import ExtractDescriptionDialog from './ExtractDescriptionDialog.svelte';
+  import ProjectSourcesPanel from './ProjectSourcesPanel.svelte';
   import DescriptionDiffModal from './DescriptionDiffModal.svelte';
   import ProjectExtractionRunsTable from './ProjectExtractionRunsTable.svelte';
   import CampaignRecommendationsList, {
@@ -51,6 +51,8 @@
     error: string | null;
     params: { source?: { kind: string; value: string } } | null;
   };
+  type ProjectSource = import('./ProjectSourcesPanel.svelte').ProjectSource;
+
   type Props = {
     project: Project;
     extractionRuns: ExtractionRun[];
@@ -60,6 +62,7 @@
     isAdmin: boolean;
     highlightRunId?: number | null;
     runners: RunnerMeta[];
+    sources: ProjectSource[];
   };
   let {
     project,
@@ -70,6 +73,7 @@
     isAdmin,
     highlightRunId = null,
     runners,
+    sources,
   }: Props = $props();
 
   // `runners` is already filtered to this deployment's edition (#410) - the
@@ -123,11 +127,11 @@
   ];
   let saving = $state(false);
   let deleteOpen = $state(false);
+  let sourcesPanelEl = $state<HTMLDivElement | null>(null);
   // Gates loading the bytemd editor stack: only fetched once the user
   // actually starts editing, keeping the read path free of it.
   let editingDescription = $state(false);
 
-  let extractOpen = $state(false);
   let diffOpen = $state(false);
   let runningRunId = $state<number | null>(null);
   let descriptionAtLaunch = $state<string>('');
@@ -162,16 +166,16 @@
   $effect(() => {
     extractionRunsState = extractionRuns;
   });
-  // svelte-ignore state_referenced_locally
-  let initialSource = $state<{ kind: 'folder' | 'git'; value: string } | undefined>(
-    (() => {
-      const last = extractionRuns[0]?.params?.source;
-      if (last && (last.kind === 'folder' || last.kind === 'git') && typeof last.value === 'string') {
-        return { kind: last.kind, value: last.value };
-      }
-      return undefined;
-    })(),
-  );
+
+  // Bubbled up from ProjectSourcesPanel's "Run extraction with this source"
+  // (git sources only) - same handling ExtractDescriptionDialog's onLaunched
+  // used to do before the dialog was replaced by the sources panel (#432).
+  async function onExtractionLaunched(runId: number) {
+    runningRunId = runId;
+    descriptionAtLaunch = description;
+    await invalidateAll();
+    extractionRunsState = extractionRuns;
+  }
 
   async function save() {
     if (voiceTone === 'custom' && !voiceToneNotes.trim()) {
@@ -352,10 +356,10 @@
             type="button"
             variant="outline"
             size="sm"
-            onclick={() => (extractOpen = true)}
+            onclick={() => sourcesPanelEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
             disabled={extractionRunning}
           >
-            Auto-extract
+            Manage sources
           </Button>
         </div>
       {/if}
@@ -392,12 +396,18 @@
         <div class="flex flex-col gap-1">
           <h3 class="text-sm font-medium">No description yet</h3>
           <p class="text-xs text-muted-foreground max-w-md">
-            The description grounds the agent during scouting and drafting. Auto-extract pulls one
-            from your codebase or a public Git repo, or start from a blank template.
+            The description grounds the agent during scouting and drafting. Add a source below and
+            run an extraction, or start from a blank template.
           </p>
         </div>
         <div class="flex gap-2">
-          <Button type="button" size="lg" onclick={() => (extractOpen = true)}>Auto-extract</Button>
+          <Button
+            type="button"
+            size="lg"
+            onclick={() => sourcesPanelEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          >
+            Manage sources
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -412,6 +422,15 @@
         </div>
       </div>
     {/if}
+  </div>
+
+  <div bind:this={sourcesPanelEl}>
+    <ProjectSourcesPanel
+      projectId={project.id}
+      {sources}
+      {isAdmin}
+      {onExtractionLaunched}
+    />
   </div>
 
   <ProjectExtractionRunsTable
@@ -467,19 +486,6 @@
   slug={project.slug}
   onConfirm={remove}
   onClose={() => (deleteOpen = false)}
-/>
-
-<ExtractDescriptionDialog
-  open={extractOpen}
-  onOpenChange={(v) => (extractOpen = v)}
-  projectId={project.id}
-  {initialSource}
-  onLaunched={async (runId) => {
-    runningRunId = runId;
-    descriptionAtLaunch = description;
-    await invalidateAll();
-    extractionRunsState = extractionRuns;
-  }}
 />
 
 <DescriptionDiffModal
