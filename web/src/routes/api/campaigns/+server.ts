@@ -7,6 +7,7 @@ import { runCampaignSkillGeneration } from '$lib/server/runner.js';
 import { previewCron } from '@pitchbox/daemon/cron';
 import { requireOrgId } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
+import { isRunnerAllowed } from '@pitchbox/shared/edition';
 import { SCENARIO_SLUGS } from '@pitchbox/shared/campaigns';
 
 const Body = z.object({
@@ -42,6 +43,21 @@ export async function POST(event: RequestEvent) {
     .from(schema.projects)
     .where(eq(schema.projects.id, body.projectId));
   if (!project) return json({ error: 'project_not_found' }, { status: 400 });
+
+  // The campaign's actual runner, explicit or inherited from the project - a
+  // new campaign resolving to a disallowed slug is a new write either way,
+  // even when the value only arrived by inheriting the project's own
+  // snapshot (which itself may predate this guard or this edition).
+  const effectiveRunner = body.agentRunner ?? project.defaultAgentRunner;
+  if (!isRunnerAllowed(effectiveRunner)) {
+    return json(
+      {
+        error: 'runner_not_allowed',
+        message: `Agent runner "${effectiveRunner}" is not available in this deployment's edition.`,
+      },
+      { status: 400 },
+    );
+  }
 
   const [platform] = await db
     .select()

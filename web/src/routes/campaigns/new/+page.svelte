@@ -12,7 +12,6 @@
 		platformSupportsAutoPost,
 		type ScenarioSlug,
 	} from '@pitchbox/shared/campaigns';
-	import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 	import CampaignRecommendationsList, {
 		type Recommendation,
 	} from '$lib/components/projects/CampaignRecommendationsList.svelte';
@@ -46,11 +45,20 @@
 	);
 	let name = $state(untrack(() => data.preselected?.name ?? ''));
 	// Pre-select the first available runner. Because the runner list is cloud-first
-	// (AGENT_RUNNER_META), this picks the cloud runner whenever it is configured, so
-	// the user just sees the cloud runner in use. Falls back to claude-code when no
-	// runner is detected as available yet.
+	// (AGENT_RUNNER_META) and `data.runners` is already filtered to this
+	// deployment's edition (#410), this picks the cloud runner whenever it is
+	// configured. Falls back to claude-code when it is one of the allowed
+	// runners and none is detected as available yet, or to whatever heads the
+	// (edition-filtered) list otherwise - cloud edition never falls through to
+	// a slug it cannot dispatch.
 	let runner = $state<string>(
-		untrack(() => data.runners.find((r) => r.available)?.slug ?? 'claude-code'),
+		untrack(
+			() =>
+				data.runners.find((r) => r.available)?.slug ??
+				data.runners.find((r) => r.slug === 'claude-code')?.slug ??
+				data.runners[0]?.slug ??
+				'claude-code',
+		),
 	);
 	let objective = $state(untrack(() => data.preselected?.objective ?? ''));
 	let cron = $state('');
@@ -88,14 +96,14 @@
 			label: s.label,
 		})),
 	);
-	const runnerOptions = AGENT_RUNNER_META.map((m) => {
-		const det = data.runners.find((r) => r.slug === m.slug);
-		const available = det?.available ?? false;
-		let label = m.label;
-		if (!m.implemented) label = `${m.label} (not available yet)`;
-		else if (!available) label = `${m.label} (not installed)`;
-		return { value: m.slug, label, disabled: !available };
-	});
+	const runnerOptions = $derived(
+		data.runners.map((r) => {
+			let label = r.label;
+			if (!r.implemented) label = `${r.label} (not available yet)`;
+			else if (!r.available) label = `${r.label} (not installed)`;
+			return { value: r.slug, label, disabled: !r.available };
+		}),
+	);
 	const selectedScenarioDescription = $derived(
 		SCENARIO_META.find((s) => s.slug === scenarioSlug)?.description ?? '',
 	);

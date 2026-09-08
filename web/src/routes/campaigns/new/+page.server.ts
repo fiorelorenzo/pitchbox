@@ -5,6 +5,7 @@ import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
 import { detectAllRunners } from '@pitchbox/shared/agents/detect';
 import { listProjects } from '@pitchbox/shared/projects';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
+import { allowedRunnerSlugs } from '@pitchbox/shared/edition';
 import { resolveOrgId } from '$lib/server/auth.js';
 
 export const load: PageServerLoad = async (event) => {
@@ -55,8 +56,12 @@ export const load: PageServerLoad = async (event) => {
         .orderBy(desc(schema.campaignRecommendations.createdAt))
     : [];
 
+  // Cloud edition offers only the runner it can actually dispatch (#410) -
+  // filtering the meta list here, not just disabling entries, so the picker
+  // never even shows a local backend as a (greyed-out) choice.
+  const allowed = allowedRunnerSlugs();
   const detections = await detectAllRunners();
-  const runners = AGENT_RUNNER_META.map((m) => ({
+  const runners = AGENT_RUNNER_META.filter((m) => allowed.includes(m.slug)).map((m) => ({
     slug: m.slug,
     label: m.label,
     implemented: m.implemented,

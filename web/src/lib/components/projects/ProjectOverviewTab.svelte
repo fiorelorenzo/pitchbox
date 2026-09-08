@@ -15,16 +15,11 @@
     type Recommendation,
   } from './CampaignRecommendationsList.svelte';
   import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
-  import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
   import { TONE_BANNER_CLASS, TONE_TEXT_CLASS } from '$lib/config/status-badges';
   import StreamStatusBanner from '$lib/realtime/StreamStatusBanner.svelte';
   import { getSseManager } from '$lib/realtime/sse';
 
-  const RUNNER_OPTIONS = AGENT_RUNNER_META.map((m) => ({
-    value: m.slug,
-    label: m.implemented ? m.label : `${m.label} (not available yet)`,
-    disabled: !m.implemented,
-  }));
+  type RunnerMeta = { slug: string; label: string; implemented: boolean };
 
   type Project = {
     id: number;
@@ -53,6 +48,7 @@
     recommendations: Recommendation[];
     isAdmin: boolean;
     highlightRunId?: number | null;
+    runners: RunnerMeta[];
   };
   let {
     project,
@@ -62,7 +58,29 @@
     recommendations,
     isAdmin,
     highlightRunId = null,
+    runners,
   }: Props = $props();
+
+  // `runners` is already filtered to this deployment's edition (#410) - the
+  // list an admin can pick from. The project's own snapshot might predate
+  // that guard (or a since-changed edition), so it stays visible here as a
+  // disabled option rather than the select silently rendering blank for a
+  // real, persisted value.
+  const RUNNER_OPTIONS = $derived.by(() => {
+    const opts = runners.map((m) => ({
+      value: m.slug,
+      label: m.implemented ? m.label : `${m.label} (not available yet)`,
+      disabled: !m.implemented,
+    }));
+    if (!opts.some((o) => o.value === project.defaultAgentRunner)) {
+      opts.push({
+        value: project.defaultAgentRunner,
+        label: `${project.defaultAgentRunner} (not available in this edition)`,
+        disabled: true,
+      });
+    }
+    return opts;
+  });
 
   // svelte-ignore state_referenced_locally
   let name = $state(project.name);

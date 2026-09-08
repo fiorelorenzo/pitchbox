@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getDb } from '$lib/server/db.js';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { loadDefaultRunnerSlug, saveDefaultRunnerSlug } from '@pitchbox/shared/agents/config';
+import { isRunnerAllowed } from '@pitchbox/shared/edition';
 import { requireInstanceAdmin, requireRole } from '$lib/server/auth.js';
 
 const Body = z.object({ slug: z.string() });
@@ -24,6 +25,9 @@ export async function PUT(event: RequestEvent) {
   if (!parsed.success) throw error(400, 'invalid_body');
   if (!AGENT_RUNNER_META.some((m) => m.slug === parsed.data.slug && m.implemented)) {
     throw error(400, 'runner_not_implemented');
+  }
+  if (!isRunnerAllowed(parsed.data.slug)) {
+    throw error(400, 'runner_not_allowed');
   }
   await saveDefaultRunnerSlug(getDb(), parsed.data.slug as AgentRunnerSlug);
   return json({ ok: true, slug: parsed.data.slug });

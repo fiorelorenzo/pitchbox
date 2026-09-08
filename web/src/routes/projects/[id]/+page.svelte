@@ -90,6 +90,7 @@
     recommendations={data.recommendations}
     {isAdmin}
     {highlightRunId}
+    runners={data.runners}
   />
 {:else if tab === 'accounts'}
   <ProjectAccountsTab

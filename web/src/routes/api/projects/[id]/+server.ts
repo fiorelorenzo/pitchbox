@@ -11,6 +11,7 @@ import {
 } from '@pitchbox/shared/projects';
 import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
+import { isRunnerAllowed } from '@pitchbox/shared/edition';
 
 const PatchBody = z.object({
   name: z.string().min(1).max(120).optional(),
@@ -53,6 +54,18 @@ export async function PATCH(event: RequestEvent) {
   const db = getDb();
   const project = await getProjectById(db, id);
   if (!project) return json({ error: 'not_found' }, { status: 404 });
+  if (
+    parsed.data.defaultAgentRunner !== undefined &&
+    !isRunnerAllowed(parsed.data.defaultAgentRunner)
+  ) {
+    return json(
+      {
+        error: 'runner_not_allowed',
+        message: `Agent runner "${parsed.data.defaultAgentRunner}" is not available in this deployment's edition.`,
+      },
+      { status: 400 },
+    );
+  }
   await updateProject(db, id, parsed.data);
   return json({ ok: true });
 }
