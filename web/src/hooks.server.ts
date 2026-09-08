@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { loadSession } from '@pitchbox/shared/auth';
 import { loadActiveOrganization } from '@pitchbox/shared/orgs';
 import { extensionCorsHeaders } from '$lib/server/extension-cors.js';
+import { trustedOriginSet } from '$lib/trusted-origins.js';
 
 /**
  * One-shot cleanup on server boot.
@@ -120,12 +121,22 @@ function isExemptPath(pathname: string): boolean {
   );
 }
 
+const TRUSTED_ORIGIN_SET = trustedOriginSet();
+
 /**
  * Reject cross-origin mutations to /api/* (except extension routes which
  * have their own bearer-token auth and explicit allowed origins). Same-origin
  * dashboard fetches pass through unchanged. This is the lightweight CSRF
  * defence - we don't need a per-request token because every state-changing
  * route is fetch-only (no plain HTML forms).
+ *
+ * `event.url` is built from adapter-node's ORIGIN, not from the request's
+ * Host header, so "same origin" here means "the origin this deployment says
+ * it serves" and every other host answered by the same server looks
+ * cross-site. That is why the same allowlist SvelteKit's own form check gets
+ * (`csrf.trustedOrigins`) has to apply here too: without it, moving ORIGIN
+ * to app.pitchbox.app turned every mutation from a browser still on the
+ * apex into a 403 nothing explained (#501).
  */
 function blocksCrossOriginMutation(event: { request: Request; url: URL }): boolean {
   if (!event.url.pathname.startsWith('/api/')) return false;
@@ -139,7 +150,8 @@ function blocksCrossOriginMutation(event: { request: Request; url: URL }): boole
   } catch {
     return true;
   }
-  return originUrl.host !== event.url.host;
+  if (originUrl.host === event.url.host) return false;
+  return !TRUSTED_ORIGIN_SET.has(originUrl.origin);
 }
 
 export const handle = async ({ event, resolve }) => {
