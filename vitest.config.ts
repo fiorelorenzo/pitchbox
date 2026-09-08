@@ -88,6 +88,15 @@ export default defineConfig({
     // tsx (~2.5s) per call; chained start→finish runs exceed the 5s default
     // under CPU load. Give them headroom.
     testTimeout: 30000,
+    // #452: @lucide/svelte ships one raw, uncompiled .svelte file per icon
+    // under node_modules (e.g. dist/icons/loader-circle.svelte, pulled in by
+    // $ui/button's loading state). Vitest externalises node_modules by
+    // default, so importing one hits Node's own ESM loader instead of this
+    // config's svelte() plugin and fails with "Unknown file extension
+    // .svelte" before a single test runs - the failure mode that made
+    // mounting any component using Button impossible here. Inlining routes
+    // it through the plugin like any workspace source file instead.
+    server: { deps: { inline: [/@lucide\/svelte/] } },
     globalSetup: ['./tests/global-setup.ts'],
     // Point all tests at a dedicated test database so they never truncate the
     // user's real data.

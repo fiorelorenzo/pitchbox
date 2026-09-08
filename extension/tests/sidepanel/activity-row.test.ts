@@ -5,15 +5,6 @@ import { mount, unmount } from 'svelte';
 import ActivityRow from '../../src/sidepanel/components/ActivityRow.svelte';
 import type { ActivityEvent } from '../../src/lib/activity.js';
 
-// See fixtures/button-stub.svelte for why this is mocked rather than real.
-// The dynamic import is vitest's own required shape for a vi.mock factory
-// (vi.mock calls are hoisted above every static import in this file, so a
-// top-level `import` of the stub here would run before vi.mock installs it).
-vi.mock('$ui/button', async () => {
-  const stub = await import('./fixtures/button-stub.svelte');
-  return { Button: stub.default };
-});
-
 /**
  * #452: an activity error/warn row that has exactly one action offers it as
  * a button; a row that does not stays a sentence with nothing to click.
