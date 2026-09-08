@@ -26,6 +26,36 @@ export type LinkedInAssistState = {
   dailyPostCap: number;
 };
 
+// #436, spike #435's "Plane 3": types mirror the server's own zod schemas
+// (web/src/routes/api/extension/project-source-match/+server.ts) rather
+// than importing them, matching every other api.ts shape on this file.
+
+export type ProjectSourceMatchKind = 'linkedin_post' | 'linkedin_profile';
+
+export type ProjectSourcePostOutput = {
+  urn: string;
+  authorName?: string | null;
+  authorHandle?: string | null;
+  text: string;
+  url?: string;
+  capturedAt?: string;
+};
+
+export type ProjectSourceProfileOutput = {
+  handle: string;
+  displayName?: string | null;
+  headline?: string | null;
+  about?: string | null;
+  experiences?: Array<{
+    title?: string | null;
+    company?: string | null;
+    period?: string | null;
+    summary?: string | null;
+  }>;
+  url?: string;
+  capturedAt?: string;
+};
+
 // #314's in-page assist: POST /api/extension/suggest (SSE) and its accept
 // half, POST /api/extension/suggest/accept. Types mirror the server's own
 // zod schemas (web/src/routes/api/extension/suggest{,/accept}/+server.ts)
@@ -502,6 +532,48 @@ export const api = {
     const p = await pickPairing(backendUrl);
     if (!p) return { ok: false, status: 0, error: 'not configured' };
     return postJson(p, '/api/extension/observations', { platform: 'linkedin', projectId, items });
+  },
+
+  /**
+   * GET /api/extension/project-source-match (#436, spike #435's "Plane 3"):
+   * whether the page linkedin-source-capture.ts just landed on matches a
+   * pending `linkedin_post`/`linkedin_profile` project source in this org,
+   * before anything is read from the DOM. No backendUrl-targeted variant
+   * beyond the single-pairing default, matching `linkedinAssist` above.
+   */
+  matchProjectSource: async (
+    kind: ProjectSourceMatchKind,
+    identifier: string,
+    backendUrl?: string,
+  ): Promise<ApiResult<{ match: { sourceId: number } | null }>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    const query = `kind=${encodeURIComponent(kind)}&identifier=${encodeURIComponent(identifier)}`;
+    return getJson(p, `/api/extension/project-source-match?${query}`);
+  },
+
+  /**
+   * POST /api/extension/project-source-match: fills a matched pending
+   * source with what the page actually rendered. `data.ok` is false, not a
+   * failed `ApiResult`, when the match no longer applies by the time this
+   * lands (the row was deleted, refreshed back to pending, or already
+   * filled by another tab) - an expected outcome, not an error.
+   */
+  fillProjectSource: async (
+    sourceId: number,
+    kind: ProjectSourceMatchKind,
+    identifier: string,
+    output: ProjectSourcePostOutput | ProjectSourceProfileOutput,
+    backendUrl?: string,
+  ): Promise<ApiResult<{ ok: boolean }>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    return postJson(p, '/api/extension/project-source-match', {
+      sourceId,
+      kind,
+      identifier,
+      output,
+    });
   },
 
   /**

@@ -2,12 +2,20 @@
 // (#432). A project source's `config`/`output`/`fetch_error` shape is
 // generic across all `PROJECT_SOURCE_KINDS` (project-sources.ts). Real
 // fetchers are wired up for `github`, `website` (#472), `mastodon_account`
-// and `hackernews_author` (#437) - the three `linkedin_*` kinds are #435's
-// spike, not implemented in this repo yet. `folder`/`git`/`upload` are
-// populated by starting an extraction run (cli/src/commands/project.ts's
-// recordExtractionSource), not by a standalone sync, since their
-// `config.value` is a local path or an ephemeral upload with nothing to
-// re-fetch from here.
+// and `hackernews_author` (#437). `linkedin_company` has none yet (#435's
+// spike - the selector work is unstarted). `linkedin_post`/`linkedin_profile`
+// have no fetcher here either, on purpose and permanently: docs/linkedin-integration-design.md's
+// "Plane 3" decided the only lawful fill is the extension's own content
+// script reading a page the human actually opened
+// (extension/src/content/linkedin-source-capture.ts,
+// shared/src/project-source-match.ts) - a server-side fetch of linkedin.com
+// is rule 4 of the compliance boundary. A re-sync click on one of those two
+// kinds can therefore only flip an already-filled row back to pending, never
+// fetch anything itself - see `resetLinkedInSourceToPending` below.
+// `folder`/`git`/`upload` are populated by starting an extraction run
+// (cli/src/commands/project.ts's recordExtractionSource), not by a
+// standalone sync, since their `config.value` is a local path or an
+// ephemeral upload with nothing to re-fetch from here.
 //
 // Every branch below writes back through `updateProjectSource` (directly,
 // for `github`) or through the kind's own `refresh*Source` (which does its
@@ -177,6 +185,31 @@ async function syncViaRefresh(
 }
 
 /**
+ * `linkedin_post`/`linkedin_profile` re-sync (#436, spike #435): there is no
+ * server-side fetcher to run for either kind, and there never will be - the
+ * only lawful fill is the extension's content script reading a page the
+ * human actually opened (docs/linkedin-integration-design.md, "Plane 3").
+ * A re-sync click here can only flip an already-filled row back to pending -
+ * `output`/`fetchedAt`/`fetchError` all cleared - so the next real visit to
+ * that URL fills it again through `fillProjectSourceFromCapture`
+ * (project-source-match.ts). `ok` is false because nothing was fetched just
+ * now, not because anything failed - a caller must not render this as an
+ * error the way it renders a real `fetchError`.
+ */
+async function resetLinkedInSourceToPending(
+  db: Db,
+  organizationId: number,
+  source: ProjectSourceRow,
+): Promise<SyncProjectSourceResult> {
+  const updated = await updateProjectSource(db, organizationId, source.id, {
+    output: null,
+    fetchedAt: null,
+    fetchError: null,
+  });
+  return { ok: false, source: updated ?? source };
+}
+
+/**
  * Fetches (or records why it can't fetch) one source. Returns null when `id`
  * does not exist or its project does not belong to `organizationId` - the
  * caller turns that into a 404, matching every other lookup in
@@ -207,14 +240,15 @@ export async function syncProjectSource(
         refreshHackernewsAuthorSource(db, source.id, { fetchImpl: opts.hackernewsFetchImpl }),
       );
     case 'linkedin_company':
-    case 'linkedin_profile':
-    case 'linkedin_post':
       return markUnfetchable(
         db,
         organizationId,
         source,
         `No fetcher is wired up for ${source.kind} sources yet.`,
       );
+    case 'linkedin_post':
+    case 'linkedin_profile':
+      return resetLinkedInSourceToPending(db, organizationId, source);
     case 'folder':
     case 'git':
     case 'upload':

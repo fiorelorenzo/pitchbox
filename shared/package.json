@@ -70,6 +70,8 @@
     "./linkedin-assist": "./src/linkedin-assist.ts",
     "./assist-accept": "./src/assist-accept.ts",
     "./website-source": "./src/website-source.ts",
+    "./platforms/linkedin": "./src/platforms/linkedin/index.ts",
+    "./project-source-match": "./src/project-source-match.ts",
     "./agents/sdk/tools": "./src/agents/sdk/tools.ts",
     "./agents/sdk/event-normalizer": "./src/agents/sdk/event-normalizer.ts",
     "./instance-audit": "./src/instance-audit.ts",

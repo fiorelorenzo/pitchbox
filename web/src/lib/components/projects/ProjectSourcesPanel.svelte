@@ -10,11 +10,17 @@
   // own; every other kind is addable here directly by a single string value.
   //
   // `website`, `mastodon_account` and `hackernews_author` (#472, #437) all
-  // have a real fetcher wired up (shared/src/project-source-sync.ts); the
-  // three `linkedin_*` kinds (#435's spike) don't yet - re-syncing one of
-  // those, or a folder/git/upload row, comes back with a fetch_error
-  // explaining that in words rather than crashing or pretending to have
-  // succeeded, so those kinds still render as a source you can add and see.
+  // have a real fetcher wired up (shared/src/project-source-sync.ts).
+  //
+  // `linkedin_post`/`linkedin_profile` (#436, spike #435) are different: a
+  // fresh one is honestly pending, never failed - nothing here fetches it,
+  // the extension's own content script fills it the next time the human
+  // opens the matching LinkedIn page, and a re-sync click can only clear an
+  // already-filled row back to pending for a second visit, never fetch
+  // anything itself. `linkedin_company` is a real `ProjectSourceKind` but
+  // deliberately left out of `ADD_KIND_OPTIONS` below - the selector work to
+  // fill one hasn't shipped, so offering the button would create a row that
+  // can only ever say "waiting for you to open it", forever.
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import * as AlertDialog from '$lib/components/ui/alert-dialog';
@@ -75,13 +81,13 @@
 
   // Kinds this panel's Add form can create directly: value-only sources.
   // `folder`/`upload` are excluded - see the file header comment.
+  // `linkedin_company` is excluded too, on purpose - see the same comment.
   const ADD_KIND_OPTIONS: Array<{ value: ProjectSourceKind; label: string }> = [
     { value: 'git', label: KIND_LABEL.git },
     { value: 'github', label: KIND_LABEL.github },
     { value: 'website', label: KIND_LABEL.website },
     { value: 'mastodon_account', label: KIND_LABEL.mastodon_account },
     { value: 'hackernews_author', label: KIND_LABEL.hackernews_author },
-    { value: 'linkedin_company', label: KIND_LABEL.linkedin_company },
     { value: 'linkedin_profile', label: KIND_LABEL.linkedin_profile },
     { value: 'linkedin_post', label: KIND_LABEL.linkedin_post },
   ];
@@ -92,7 +98,6 @@
     website: 'https://example.com',
     mastodon_account: 'https://mastodon.social/@handle',
     hackernews_author: 'pg or https://news.ycombinator.com/user?id=pg',
-    linkedin_company: 'https://www.linkedin.com/company/example',
     linkedin_profile: 'https://www.linkedin.com/in/example',
     linkedin_post: 'https://www.linkedin.com/posts/example_activity',
   };
@@ -127,6 +132,13 @@
     return 'pending';
   }
 
+  // The two kinds a content script fills passively, never a server fetch
+  // (#436, spike #435) - used to keep the add/re-sync toasts and the table's
+  // pending caption honest instead of implying a fetch that never happens.
+  function isPassivelyFilledLinkedInSource(kind: ProjectSourceKind): boolean {
+    return kind === 'linkedin_post' || kind === 'linkedin_profile';
+  }
+
   let addKind = $state<ProjectSourceKind>('git');
   let addValue = $state('');
   let adding = $state(false);
@@ -155,7 +167,9 @@
       }
       sourcesState = [...sourcesState, body.source as ProjectSource];
       addValue = '';
-      if (body.source?.fetchError) {
+      if (isPassivelyFilledLinkedInSource(body.source?.kind)) {
+        toast.info('Waiting for you to open that page on linkedin.com.');
+      } else if (body.source?.fetchError) {
         toast.warning(`Added, but the first sync failed: ${body.source.fetchError}`);
       } else {
         toast.success('Source added');
@@ -179,8 +193,12 @@
       sourcesState = sourcesState.map((s) => (s.id === source.id ? (body.source as ProjectSource) : s));
       if (body.ok) {
         toast.success('Synced');
+      } else if (body.source?.fetchError) {
+        toast.warning(body.source.fetchError);
+      } else if (isPassivelyFilledLinkedInSource(source.kind)) {
+        toast.info('Flipped back to pending - open that page on linkedin.com again to refill it.');
       } else {
-        toast.warning(body.source?.fetchError ?? 'Sync failed');
+        toast.warning('Sync failed');
       }
     } finally {
       syncingId = null;
@@ -291,6 +309,10 @@
                   {#if s.fetchError}
                     <span class="max-w-64 text-[11px] text-rose-600 dark:text-rose-400" title={s.fetchError}>
                       {s.fetchError}
+                    </span>
+                  {:else if status(s) === 'pending' && isPassivelyFilledLinkedInSource(s.kind)}
+                    <span class="max-w-64 text-[11px] text-muted-foreground">
+                      Waiting for you to open that page on linkedin.com.
                     </span>
                   {/if}
                 </div>

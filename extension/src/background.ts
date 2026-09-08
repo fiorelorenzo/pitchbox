@@ -4,6 +4,7 @@ import { registerLinkedInReplyIngestScript } from './background/linkedin-reply-i
 import { registerLinkedInCommentAssistScript } from './background/linkedin-comment-assist-registration.js';
 import { registerLinkedInPostAssistScript } from './background/linkedin-post-assist-registration.js';
 import { registerLinkedInProfileCaptureScript } from './background/linkedin-profile-capture-registration.js';
+import { registerLinkedInSourceCaptureScript } from './background/linkedin-source-capture-registration.js';
 import { injectIntoOpenLinkedInTabs } from './background/inject-open-tabs.js';
 import {
   getSettings,
@@ -330,6 +331,9 @@ export async function syncLinkedInContentScripts(): Promise<void> {
     // same pattern for the same reason (Persona owns the registration
     // module, PanelContent owns this wiring - see that module's own note).
     registerLinkedInProfileCaptureScript(),
+    // #436's own pending project-source fill (spike #435's "Plane 3"), same
+    // pattern for the same reason.
+    registerLinkedInSourceCaptureScript(),
   ]);
   // Registration only reaches documents that load after it, so the LinkedIn
   // tabs already open - including the one the human just came from to grant
