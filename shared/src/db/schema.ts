@@ -869,6 +869,13 @@ export const operatorVoiceSamples = pgTable(
 // is out of scope until the optional GitHub App lands. `fetch_error` is kept
 // so a repo that stopped resolving says so in Settings instead of quietly
 // contributing nothing to every prompt.
+//
+// Organization-wide only (#431): this table used to carry an optional
+// `project_id`, but nothing ever set it - every real caller
+// (`/settings/companion`, `assist/context.ts`) reads across the whole org,
+// never one project. A repo a project itself cites as a source is a
+// `project_sources` row of kind 'github' instead (see below), so there is
+// exactly one place that answers "what are this project's sources".
 export const githubSources = pgTable(
   'github_sources',
   {
@@ -876,8 +883,6 @@ export const githubSources = pgTable(
     organizationId: integer('organization_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
-    /** Optional: a repo that belongs to one project rather than the operator. */
-    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     owner: text('owner').notNull(),
     repo: text('repo').notNull(),
     url: text('url').notNull(),
@@ -895,5 +900,51 @@ export const githubSources = pgTable(
   },
   (t) => ({
     byOrgRepo: uniqueIndex('github_sources_org_repo_unique').on(t.organizationId, t.owner, t.repo),
+  }),
+);
+
+// A project's set of sources (#431/#398): a project used to be described
+// from exactly one thing at a time, chosen fresh on every extraction run
+// (`cli/src/commands/project.ts`'s `folder` | `git` | `upload`, held only in
+// `runs.params` and gone once the run's temp dir is cleaned up). This table
+// makes a source a durable row instead, so a project can hold several at
+// once, an extraction run's source survives past that one run, and a source
+// can be removed without losing the others.
+//
+// Org scoping reaches this table the same way it reaches `campaigns`,
+// `drafts` and `accounts`: through `projects.organization_id`, never a
+// column of its own. `contact_history.organization_id` is the one place that
+// pattern is broken, and only because its project link can go null when its
+// draft is pruned (#263) - a project_sources row has no such path (its own
+// `project_id` is `NOT NULL` and cascades with the project), so there is no
+// reason to duplicate the pattern here.
+//
+// `kind` is `ProjectSourceKind` (shared/src/project-sources.ts): today's
+// extraction inputs (`folder`, `git`, `upload`) and the GitHub cache
+// (`github`), plus `website` (#433) and the LinkedIn kinds #435 is spiking
+// (`linkedin_company`, `linkedin_profile`, `linkedin_post`) - a value nobody
+// implements yet is fine, a second copy of this list elsewhere is not.
+// `config` is the kind-specific input (a path, a URL, a repo/profile
+// identifier); `output` is the kind-specific cached read (README excerpt,
+// extracted page text, ...) an extraction or a re-derivation reads from
+// instead of re-fetching on every prompt.
+export const projectSources = pgTable(
+  'project_sources',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // 'folder' | 'git' | 'upload' | 'github' | 'website' | 'linkedin_company' | 'linkedin_profile' | 'linkedin_post'
+    config: jsonb('config').notNull().default({}),
+    output: jsonb('output'),
+    active: boolean('active').notNull().default(true),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }),
+    fetchError: text('fetch_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byProject: index('project_sources_project_idx').on(t.projectId, t.active),
   }),
 );

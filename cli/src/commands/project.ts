@@ -1,7 +1,13 @@
 import { Command } from 'commander';
-import { getDb, schema } from '@pitchbox/shared/db';
+import { getDb, schema, type Db } from '@pitchbox/shared/db';
 import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
 import { SCENARIO_META, RecommendationItemSchema } from '@pitchbox/shared/campaigns';
+import {
+  createProjectSource,
+  listProjectSources,
+  updateProjectSource,
+  type ProjectSourceKind,
+} from '@pitchbox/shared/project-sources';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { readFile, readdir, realpath, stat, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -42,6 +48,24 @@ type Source =
   | { kind: 'upload'; value: string };
 
 /**
+ * Reads and validates the `source` a run's `params` jsonb carries. `params`
+ * is `unknown` at the type level (it is stored data, not compiler-checked),
+ * so this narrows with `in`/`typeof` rather than trusting a cast; returns
+ * undefined when the field is missing or does not match `Source`'s shape.
+ */
+function readRunSource(params: unknown): Source | undefined {
+  if (!params || typeof params !== 'object' || !('source' in params)) return undefined;
+  const source = params.source;
+  if (!source || typeof source !== 'object' || !('kind' in source) || !('value' in source)) {
+    return undefined;
+  }
+  const { kind, value } = source;
+  if (typeof value !== 'string') return undefined;
+  if (kind === 'folder' || kind === 'git' || kind === 'upload') return { kind, value };
+  return undefined;
+}
+
+/**
  * Where this run's source tree lives ON THE CLIENT. `clone: true` is the
  * extraction's first call, which materialises a git source; every later call
  * (list/read) resolves the same path without touching the network.
@@ -50,7 +74,7 @@ async function resolveSourcePath(
   run: typeof schema.runs.$inferSelect,
   opts: { clone?: boolean } = {},
 ): Promise<string> {
-  const source = (run.params as { source?: Source }).source;
+  const source = readRunSource(run.params);
   if (!source) throw new Error('run has no source in params');
 
   if (source.kind === 'git') {
@@ -68,7 +92,7 @@ async function resolveSourcePath(
       throw new Error(`${source.kind} ${source.value} is not a readable directory`);
     return source.value;
   }
-  throw new Error(`unsupported source kind: ${(source as { kind: string }).kind}`);
+  throw new Error('unsupported source kind');
 }
 
 /** Load the extraction run behind a source-access call, or explain why it isn't one. */
@@ -79,6 +103,43 @@ async function loadExtractionRun(runId: number): Promise<typeof schema.runs.$inf
   if (run.kind !== 'project_extraction')
     throw new Error(`run ${runId} is not a project_extraction run`);
   return run;
+}
+
+/**
+ * Records the source an extraction run used as a `project_sources` row
+ * (#431), so it survives past this one run instead of living only in
+ * `runs.params`, which the caller clears once the run's temp dir is
+ * cleaned up. Re-running from the same folder/git URL/upload path updates
+ * the existing row's `fetchedAt` rather than piling up a duplicate.
+ */
+async function recordExtractionSource(
+  db: Db,
+  organizationId: number,
+  projectId: number,
+  source: Source,
+): Promise<void> {
+  const kind: ProjectSourceKind = source.kind;
+  const existing = await listProjectSources(db, organizationId, projectId);
+  const match = existing.find((s) => {
+    if (s.kind !== kind) return false;
+    const config = s.config;
+    return (
+      !!config && typeof config === 'object' && 'value' in config && config.value === source.value
+    );
+  });
+  if (match) {
+    await updateProjectSource(db, organizationId, match.id, {
+      fetchedAt: new Date(),
+      fetchError: null,
+    });
+  } else {
+    const created = await createProjectSource(db, organizationId, projectId, kind, {
+      value: source.value,
+    });
+    if (created) {
+      await updateProjectSource(db, organizationId, created.id, { fetchedAt: new Date() });
+    }
+  }
 }
 
 // Core project-extraction / insights logic, extracted so both the CLI and the
@@ -96,6 +157,8 @@ export async function projectExtractStart(runId: number) {
   if (!project) throw new Error(`project ${run.projectId} not found`);
 
   const sourcePath = await resolveSourcePath(run, { clone: true });
+  const source = readRunSource(run.params);
+  if (source) await recordExtractionSource(db, project.organizationId, project.id, source);
 
   const scenarios = SCENARIO_META.map((s) => ({
     slug: s.slug,
@@ -256,10 +319,10 @@ export async function projectExtractFinish(
   });
 
   // Best-effort cleanup of any temp dir created for the run.
-  const source = (run.params as { source?: { kind: string; value?: string } }).source;
+  const source = readRunSource(run.params);
   if (source?.kind === 'git') {
     await rm(`/tmp/pitchbox-extract-${runId}`, { recursive: true, force: true }).catch(() => {});
-  } else if (source?.kind === 'upload' && typeof source.value === 'string') {
+  } else if (source?.kind === 'upload') {
     await rm(source.value, { recursive: true, force: true }).catch(() => {});
   }
 
