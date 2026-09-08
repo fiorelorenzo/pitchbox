@@ -35,8 +35,18 @@ function walk(dir: string): string[] {
 
 let files: string[] = [];
 
+const OVERRIDE_BACKEND = 'https://preview-invariant.pitchbox.app';
+
 beforeAll(() => {
-  execFileSync('pnpm', ['exec', 'vite', 'build'], { cwd: EXT_ROOT, stdio: 'pipe' });
+  // Built with the override set, so the same run proves both that the
+  // artifacts exist and that a self-hosted or preview build actually points
+  // where it was told to (#445: the documented variable was silently
+  // dropped, and every build carried the production default).
+  execFileSync('pnpm', ['exec', 'vite', 'build'], {
+    cwd: EXT_ROOT,
+    stdio: 'pipe',
+    env: { ...process.env, VITE_DEFAULT_BACKEND_URL: OVERRIDE_BACKEND },
+  });
   files = walk(DIST);
 }, 300_000);
 
@@ -135,5 +145,18 @@ describe('the packaged extension', () => {
     const js = readFileSync(path.join(DIST, 'src/content/auto-pair.js'), 'utf8');
     expect(js).not.toMatch(/\bimport\s*\(/);
     expect(js).toContain('/api/extension/auto-pair');
+  });
+
+  it('bakes the requested default backend into the build, not the production fallback', () => {
+    // #445: `VITE_DEFAULT_BACKEND_URL` was passed as a
+    // `import.meta.env.VITE_*` define, which Vite fills from `.env` files
+    // instead, so the override was dropped and every artifact carried
+    // `https://pitchbox.app`. A preview install still reached preview because
+    // its pairing named the backend explicitly, which is what hid this: the
+    // default only decides where a fresh, unpaired install talks.
+    const carriers = files.filter(
+      (f) => f.endsWith('.js') && readFileSync(f, 'utf8').includes(OVERRIDE_BACKEND),
+    );
+    expect(carriers.map((f) => path.relative(DIST, f)).length).toBeGreaterThan(0);
   });
 });
