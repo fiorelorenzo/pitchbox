@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Component } from 'svelte';
-import { mountPanel, panelFor } from '../../src/content/shared/panel-host.js';
+import {
+  mountPanel,
+  panelFor,
+  forgetMountedForTests,
+} from '../../src/content/shared/panel-host.js';
 
 /**
  * Lifecycle and isolation for the in-page panel host.
@@ -147,6 +151,42 @@ describe('mountPanel', () => {
     const second = mountPanel({ anchor: b, component: Probe, props: { label: 'b' } });
     expect(second).not.toBe(first);
     expect(document.querySelectorAll('pitchbox-panel-host').length).toBe(2);
+  });
+
+  it('replaces a stale host left by another script instance on the same anchor (#476)', () => {
+    // Reproduces the real defect: an extension reload leaves the pre-reload
+    // content script's isolated world running, with its own `mounted` map
+    // that a fresh post-reload instance never sees, but both worlds share
+    // one DOM. `forgetMountedForTests` simulates that world boundary without
+    // an actual second realm - the anchor and the stale host both stay real
+    // DOM nodes, only this module's own bookkeeping forgets them.
+    const anchor = anchorEl();
+    const stale = mountPanel({ anchor, component: Probe, props: { label: 'stale' } });
+    forgetMountedForTests();
+
+    const fresh = mountPanel({ anchor, component: Probe, props: { label: 'fresh' } });
+
+    expect(fresh).not.toBe(stale);
+    const hosts = document.querySelectorAll('pitchbox-panel-host');
+    expect(hosts.length).toBe(1);
+    expect(hosts[0]).toBe(fresh.shadow.host);
+  });
+
+  it("a superseded panel's own update cannot render it back over the live one (#476)", () => {
+    const anchor = anchorEl();
+    const stale = mountPanel({ anchor, component: Probe, props: { label: 'stale' } });
+    forgetMountedForTests();
+    const live = mountPanel({ anchor, component: Probe, props: { label: 'live' } });
+
+    // The superseded handle is still a live JS object in its own (simulated)
+    // realm: its in-flight request can still resolve and call update() on it
+    // well after being superseded. That must not put its content back on
+    // screen, even though update() itself does not throw or refuse.
+    expect(() => stale.update({ label: 'stale, updated after being superseded' })).not.toThrow();
+
+    expect(document.querySelectorAll('pitchbox-panel-host').length).toBe(1);
+    expect(document.body.contains(stale.shadow.host)).toBe(false);
+    expect(document.querySelector('pitchbox-panel-host')).toBe(live.shadow.host);
   });
 
   it('mounts even when the FontFace API is missing', () => {
