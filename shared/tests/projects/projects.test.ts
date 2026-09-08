@@ -69,6 +69,32 @@ describe('projects helpers', () => {
     expect(p?.description).toBe('desc');
   });
 
+  // #408: a fresh project has no voice override (both columns null,
+  // resolveEffectiveVoice's "inherit" case), updateProject can set one, and
+  // setting voiceTone back to null clears it rather than leaving a stale
+  // voiceToneNotes value orphaned behind it.
+  it('updateProject round-trips a voice override and can clear it back to null', async () => {
+    const pid = await platformId('reddit');
+    const { id } = await createProjectTx(getDb(), {
+      slug: 'voice-upd',
+      name: 'A',
+      account: { handle: 'h', role: 'personal', platformId: pid },
+    });
+    const fresh = await getProjectById(getDb(), id);
+    expect(fresh?.voiceTone).toBeNull();
+    expect(fresh?.voiceToneNotes).toBeNull();
+
+    await updateProject(getDb(), id, { voiceTone: 'custom', voiceToneNotes: 'Dry, no hype.' });
+    const withOverride = await getProjectById(getDb(), id);
+    expect(withOverride?.voiceTone).toBe('custom');
+    expect(withOverride?.voiceToneNotes).toBe('Dry, no hype.');
+
+    await updateProject(getDb(), id, { voiceTone: null, voiceToneNotes: null });
+    const cleared = await getProjectById(getDb(), id);
+    expect(cleared?.voiceTone).toBeNull();
+    expect(cleared?.voiceToneNotes).toBeNull();
+  });
+
   it('deleteProject with matching slug cascades children', async () => {
     const pid = await platformId('reddit');
     const { id } = await createProjectTx(getDb(), {

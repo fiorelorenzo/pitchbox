@@ -96,9 +96,17 @@ export async function loadLinkedInAssistSettings(
   // back to the default rather than reaching the prompt as a literal - the
   // prompt would otherwise instruct the model in a register nobody chose.
   if (!isAssistTone(merged.tone)) merged.tone = DEFAULT_ASSIST_TONE;
-  merged.toneNotes =
-    typeof merged.toneNotes === 'string' ? merged.toneNotes.slice(0, ASSIST_TONE_NOTES_MAX) : '';
+  merged.toneNotes = clampToneNotes(merged.toneNotes);
   return merged;
+}
+
+/** Trims a stored tone-notes value to the shared ceiling, and coerces
+ * anything that arrived as a non-string (a stale or hand-edited row) to an
+ * empty one rather than letting it reach a prompt. Shared by the org
+ * settings load above and the project-override resolver below, so the two
+ * do not drift on what "clamp" means. */
+function clampToneNotes(value: unknown): string {
+  return typeof value === 'string' ? value.slice(0, ASSIST_TONE_NOTES_MAX) : '';
 }
 
 export async function saveLinkedInAssistSettings(
@@ -167,4 +175,41 @@ export async function loadLinkedInAssistDeviceState(
     dailyCommentCap: settings.dailyCommentCap,
     dailyPostCap: settings.dailyPostCap,
   };
+}
+
+/** The tone and notes actually used for a suggestion (#408). */
+export type EffectiveVoice = {
+  tone: AssistTone;
+  toneNotes: string;
+};
+
+/**
+ * Resolves the voice a suggestion should be written in, given the project it
+ * is actually being filed under - not the org's bound project, which the
+ * personal-project carve-out (2026-09-07) already lets a request diverge
+ * from. Precedence: the project's own override if it set one, else the org's
+ * `linkedin_assist` tone, which itself already falls back to
+ * `DEFAULT_ASSIST_TONE` when nothing was ever saved (`loadLinkedInAssistSettings`
+ * above) - so this is the one place all three levels collapse into a single
+ * answer, rather than each caller re-deriving the fallback chain itself.
+ *
+ * `project` only needs its two voice columns, not a full row, so a caller
+ * that already selected the project (the suggest route does, to enforce the
+ * binding) can pass it straight through with no second query.
+ *
+ * An unrecognised `voiceTone` (a column written by an older build, or a
+ * value nobody offers anymore) is treated the same as unset - it falls
+ * through to the org setting rather than reaching a prompt as a literal,
+ * mirroring how `loadLinkedInAssistSettings` treats a stale jsonb tone.
+ */
+export async function resolveEffectiveVoice(
+  db: Db,
+  organizationId: number,
+  project: { voiceTone: string | null; voiceToneNotes: string | null },
+): Promise<EffectiveVoice> {
+  if (isAssistTone(project.voiceTone)) {
+    return { tone: project.voiceTone, toneNotes: clampToneNotes(project.voiceToneNotes) };
+  }
+  const settings = await loadLinkedInAssistSettings(db, organizationId);
+  return { tone: settings.tone, toneNotes: settings.toneNotes };
 }

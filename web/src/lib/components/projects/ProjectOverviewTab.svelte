@@ -16,6 +16,12 @@
   } from './CampaignRecommendationsList.svelte';
   import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
   import { TONE_BANNER_CLASS, TONE_TEXT_CLASS } from '$lib/config/status-badges';
+  import {
+    ASSIST_TONES,
+    ASSIST_TONE_NOTES_MAX,
+    isAssistTone,
+    type AssistTone,
+  } from '@pitchbox/shared/assist/tone';
   import StreamStatusBanner from '$lib/realtime/StreamStatusBanner.svelte';
   import { getSseManager } from '$lib/realtime/sse';
 
@@ -27,6 +33,11 @@
     name: string;
     description: string | null;
     defaultAgentRunner: string;
+    /** Per-project voice override (#408). Both null means "inherit the
+     * organization's linkedin_assist tone" - see resolveEffectiveVoice in
+     * shared/src/linkedin-assist.ts. */
+    voiceTone: string | null;
+    voiceToneNotes: string | null;
   };
   type ExtractionRun = {
     id: number;
@@ -88,6 +99,28 @@
   let description = $state(project.description ?? '');
   // svelte-ignore state_referenced_locally
   let runner = $state(project.defaultAgentRunner);
+  // 'inherit' means both DB columns are null: this project falls back to the
+  // organization's linkedin_assist tone (#408). An unrecognised stored value
+  // (a stale column from an older build) is treated the same as unset,
+  // mirroring resolveEffectiveVoice's own fallback.
+  // svelte-ignore state_referenced_locally
+  let voiceTone = $state<AssistTone | 'inherit'>(
+    isAssistTone(project.voiceTone) ? project.voiceTone : 'inherit',
+  );
+  // svelte-ignore state_referenced_locally
+  let voiceToneNotes = $state(project.voiceToneNotes ?? '');
+  const VOICE_TONE_LABELS: Record<AssistTone, string> = {
+    'match-room': 'Match the room',
+    professional: 'Professional',
+    plain: 'Plain',
+    warm: 'Warm',
+    technical: 'Technical',
+    custom: 'In my own words',
+  };
+  const VOICE_OPTIONS: Array<{ value: AssistTone | 'inherit'; label: string }> = [
+    { value: 'inherit', label: 'Use organization default' },
+    ...ASSIST_TONES.map((t) => ({ value: t, label: VOICE_TONE_LABELS[t] })),
+  ];
   let saving = $state(false);
   let deleteOpen = $state(false);
   // Gates loading the bytemd editor stack: only fetched once the user
@@ -141,6 +174,10 @@
   );
 
   async function save() {
+    if (voiceTone === 'custom' && !voiceToneNotes.trim()) {
+      toast.error('Describe the tone you want, or pick "Use organization default"');
+      return;
+    }
     saving = true;
     try {
       const res = await fetch(`/api/projects/${project.id}`, {
@@ -150,6 +187,8 @@
           name,
           description: description || null,
           defaultAgentRunner: runner,
+          voiceTone: voiceTone === 'inherit' ? null : voiceTone,
+          voiceToneNotes: voiceTone === 'inherit' ? null : voiceToneNotes,
         }),
       });
       if (!res.ok) {
@@ -255,6 +294,34 @@
         disabled={!isAdmin}
       />
     </label>
+  </div>
+
+  <div class="grid gap-4 md:grid-cols-3">
+    <label class="flex flex-col gap-1 text-xs">
+      Voice
+      <SelectField
+        value={voiceTone}
+        onValueChange={(v) => (voiceTone = v as AssistTone | 'inherit')}
+        options={VOICE_OPTIONS}
+        fullWidth
+        disabled={!isAdmin}
+      />
+      <span class="text-xs text-muted-foreground">
+        How a suggestion for this project should sound. Left at the default, it follows the
+        organization's LinkedIn assist tone (Settings &gt; LinkedIn assist).
+      </span>
+    </label>
+    {#if voiceTone === 'custom'}
+      <label class="flex flex-col gap-1 text-xs md:col-span-2">
+        In your own words
+        <Input
+          maxlength={ASSIST_TONE_NOTES_MAX}
+          placeholder="Direct, a bit dry, no enthusiasm I would not say out loud"
+          bind:value={voiceToneNotes}
+          disabled={!isAdmin}
+        />
+      </label>
+    {/if}
   </div>
 
   <div class="flex flex-col gap-2">

@@ -168,9 +168,11 @@
 			<Card.Header>
 				<Card.Title>Tone</Card.Title>
 				<Card.Description>
-					How a suggestion should sound. The house style outranks every option here, so none of
-					them can ask for the typography Pitchbox never emits, and a tone sent by the extension
-					is ignored: this page is where it is decided.
+					How a suggestion should sound, by default. The house style outranks every option here,
+					so none of them can ask for the typography Pitchbox never emits, and a tone sent by the
+					extension is ignored: this page and the project page are where it is decided. Any
+					project can override this for itself - open the project and look for Voice - so a
+					product does not have to sound like your personal account.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">

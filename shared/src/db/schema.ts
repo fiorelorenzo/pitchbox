@@ -150,6 +150,15 @@ export const projects = pgTable(
     name: text('name').notNull(),
     description: text('description'),
     defaultAgentRunner: text('default_agent_runner').notNull().default('claude-code'),
+    // Per-project voice override (#408): null on both means "inherit the
+    // org's linkedin_assist tone", the same way an unset app_config row does
+    // - see resolveEffectiveVoice in linkedin-assist.ts, the one place that
+    // fallback is decided. Not an enum: the tone vocabulary lives in
+    // assist/tone.ts and this column can otherwise drift the same way the
+    // org setting's jsonb can, which resolveEffectiveVoice already guards
+    // against by falling through on an unrecognised value.
+    voiceTone: text('voice_tone'),
+    voiceToneNotes: text('voice_tone_notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
