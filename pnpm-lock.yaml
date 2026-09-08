@@ -104,6 +104,9 @@ importers:
 
   daemon:
     dependencies:
+      '@pitchbox/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@pitchbox/shared':
         specifier: workspace:*
         version: link:../shared
@@ -257,6 +260,9 @@ importers:
       '@lucide/svelte':
         specifier: ^1.23.0
         version: 1.23.0(svelte@5.57.0(@typescript-eslint/types@8.62.1))
+      '@pitchbox/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@pitchbox/daemon':
         specifier: workspace:*
         version: link:../daemon

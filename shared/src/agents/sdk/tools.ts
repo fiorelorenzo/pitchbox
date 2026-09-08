@@ -39,16 +39,28 @@ async function importToolSetModule(): Promise<ToolSetModule> {
     // via cli's exports map when present, tsx/vitest fallback below.
     return (await import('@pitchbox/cli/mcp/tool-set')) as ToolSetModule;
   } catch (primaryErr) {
-    try {
-      const spec = ['..', '..', '..', '..', 'cli', 'src', 'mcp', 'tool-set.js'].join('/');
-      // Intentionally dynamic (tsx/vitest-only fallback); tell Vite not to try to analyze it.
-      return (await import(/* @vite-ignore */ spec)) as ToolSetModule;
-    } catch {
-      // The path fallback only applies to the unbundled tsx/vitest case; in
-      // a bundled build it never resolves. Surface the primary error - it's
-      // the real cause.
-      throw primaryErr;
+    // Two fallbacks, both for an unbundled run: the relative source path
+    // (tsx and vitest, where nothing is bundled and the specifier above may
+    // not resolve), and the same file under `PITCHBOX_ROOT`, which is what
+    // works from a bundled server whose chunk sits under `web/build/`.
+    // #491: the deployed cloud edition had neither, because the specifier
+    // cannot resolve from a workspace that does not declare `cli`, and every
+    // campaign run failed with "Cannot find package '@pitchbox/cli'".
+    const candidates = [
+      ['..', '..', '..', '..', 'cli', 'src', 'mcp', 'tool-set.js'].join('/'),
+      ...(process.env.PITCHBOX_ROOT
+        ? [`${process.env.PITCHBOX_ROOT}/cli/src/mcp/tool-set.ts`]
+        : []),
+    ];
+    for (const spec of candidates) {
+      try {
+        // Intentionally dynamic; tell Vite not to try to analyze it.
+        return (await import(/* @vite-ignore */ spec)) as ToolSetModule;
+      } catch {
+        // Try the next candidate. The primary error is the one worth raising.
+      }
     }
+    throw primaryErr;
   }
 }
 
