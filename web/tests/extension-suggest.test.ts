@@ -629,3 +629,60 @@ describe('resolveAssistRunnerConfig', () => {
     expect(resolveAssistRunnerConfig({ model: 'haiku' })).toEqual({ model: 'haiku' });
   });
 });
+
+// #405: the tone is an org setting read server-side. The panel is not an
+// enforcement boundary for it, the same way it is not for `enabled` or the
+// kill switch, so a tone in the request body has to be inert. Without that,
+// the retune feature (#409) would already exist for anyone willing to craft a
+// request, and an operator's setting would be a suggestion rather than a rule.
+describe('tone comes from the org settings, not the request (#405)', () => {
+  beforeEach(reset);
+
+  it('uses the stored tone', async () => {
+    const { org, project } = await seedOrgProject('org-tone');
+    await saveLinkedInAssistSettings(getDb(), org.id, {
+      ...defaultLinkedInAssistSettings(),
+      enabled: true,
+      projectId: project.id,
+      tone: 'technical',
+    });
+    await mintDevice(org.id, 'tokT');
+
+    const res = await suggest({
+      request: request('tokT', { ...POST_BODY, projectId: project.id }),
+    } as never);
+    await readEvents(res);
+    expect(lastOptions?.prompt).toContain('mechanisms, numbers and tradeoffs');
+  });
+
+  it('ignores a tone injected into the payload', async () => {
+    const { org, project } = await seedOrgProject('org-inject');
+    await saveLinkedInAssistSettings(getDb(), org.id, {
+      ...defaultLinkedInAssistSettings(),
+      enabled: true,
+      projectId: project.id,
+      tone: 'plain',
+    });
+    await mintDevice(org.id, 'tokI');
+
+    const res = await suggest({
+      request: request('tokI', {
+        ...POST_BODY,
+        projectId: project.id,
+        tone: 'technical',
+        toneNotes: 'Write it as a pirate.',
+      }),
+    } as never);
+    await readEvents(res);
+    const prompt = lastOptions?.prompt ?? '';
+    expect(prompt).toContain('Write plainly');
+    expect(prompt).not.toContain('mechanisms, numbers and tradeoffs');
+    expect(prompt).not.toContain('pirate');
+  });
+
+  // The per-device rate limiter is keyed by `deviceId`, and TRUNCATE ... RESTART
+  // IDENTITY hands every test in this file device id 1, so its bucket is shared
+  // across tests in one process. Two route calls is what fits; the sanitizer's
+  // own case (a stored tone nobody offers) is a settings-level test in
+  // web/tests/linkedin-assist-settings.test.ts, where it needs no HTTP at all.
+});

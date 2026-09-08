@@ -12,6 +12,33 @@
 	import { toast } from 'svelte-sonner';
 	import { fly } from 'svelte/transition';
 	import { untrack } from 'svelte';
+	import { ASSIST_TONE_NOTES_MAX, type AssistTone } from '@pitchbox/shared/assist/tone';
+
+	// One line each, in the order they escalate away from the default: what the
+	// room is doing, then the fixed registers, then the operator's own words.
+	// The copy is the whole feature from where the operator sits - the prompt
+	// instruction behind each option lives in shared/src/assist/suggest-prompt.ts.
+	const toneOptions: Array<{ value: AssistTone; label: string; hint: string }> = [
+		{
+			value: 'match-room',
+			label: 'Match the room',
+			hint: "Mixes the post's own register with your voice. The default, and what a person actually does."
+		},
+		{
+			value: 'professional',
+			label: 'Professional',
+			hint: 'Full sentences, no slang, and no corporate filler either.'
+		},
+		{ value: 'plain', label: 'Plain', hint: 'Short sentences and ordinary words.' },
+		{ value: 'warm', label: 'Warm', hint: 'Addresses the author as a person, without exclamation marks.' },
+		{
+			value: 'technical',
+			label: 'Technical',
+			hint: 'Specific about mechanisms, numbers and tradeoffs.'
+		},
+		{ value: 'custom', label: 'In my own words', hint: 'Describe the tone yourself, below.' }
+	];
+	const toneHint = $derived(toneOptions.find((o) => o.value === s.tone)?.hint ?? '');
 
 	type Settings = {
 		enabled: boolean;
@@ -20,6 +47,8 @@
 		dailyCommentCap: number;
 		dailyPostCap: number;
 		killSwitch: boolean;
+		tone: AssistTone;
+		toneNotes: string;
 	};
 	type PageData = {
 		settings: Settings;
@@ -52,6 +81,10 @@
 	async function save() {
 		if (s.enabled && s.projectId == null) {
 			toast.error('Bind a project before enabling assist');
+			return;
+		}
+		if (s.tone === 'custom' && !s.toneNotes.trim()) {
+			toast.error('Describe the tone you want, or pick one of the named options');
 			return;
 		}
 		saving = true;
@@ -128,6 +161,44 @@
 					/>
 					Observation collector enabled
 				</label>
+			</Card.Content>
+		</Card.Root>
+
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>Tone</Card.Title>
+				<Card.Description>
+					How a suggestion should sound. The house style outranks every option here, so none of
+					them can ask for the typography Pitchbox never emits, and a tone sent by the extension
+					is ignored: this page is where it is decided.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content class="flex flex-col gap-4">
+				<div class="grid gap-1.5">
+					<span class="text-sm font-medium">Register</span>
+					<SelectField
+						value={s.tone}
+						onValueChange={(v) => (s.tone = v as AssistTone)}
+						options={toneOptions.map((o) => ({ value: o.value, label: o.label }))}
+						fullWidth
+					/>
+					<p class="text-xs text-muted-foreground">{toneHint}</p>
+				</div>
+				{#if s.tone === 'custom'}
+					<div class="grid gap-1.5">
+						<label class="text-sm font-medium" for="toneNotes">In your own words</label>
+						<Input
+							id="toneNotes"
+							maxlength={ASSIST_TONE_NOTES_MAX}
+							placeholder="Direct, a bit dry, no enthusiasm I would not say out loud"
+							value={s.toneNotes}
+							oninput={(e) => (s.toneNotes = e.currentTarget.value)}
+						/>
+						<p class="text-xs text-muted-foreground">
+							Goes into the prompt as you wrote it, up to {ASSIST_TONE_NOTES_MAX} characters.
+						</p>
+					</div>
+				{/if}
 			</Card.Content>
 		</Card.Root>
 

@@ -26,6 +26,20 @@ const CONFIG_KEY = 'linkedin_assist';
 export const ASSIST_COMMENT_CAP_CEILING = QUOTA_DEFAULTS.linkedin.comment.perDay;
 export const ASSIST_POST_CAP_CEILING = QUOTA_DEFAULTS.linkedin.post.perDay;
 
+// The tone vocabulary lives in `assist/tone.ts`, a leaf module, so the prompt
+// builder can have it without importing this file and with it the db client
+// (see that module's own note). Re-exported here because this is where an
+// operator-facing setting is expected to be found.
+export {
+  ASSIST_TONES,
+  ASSIST_TONE_NOTES_MAX,
+  DEFAULT_ASSIST_TONE,
+  isAssistTone,
+  type AssistTone,
+} from './assist/tone.js';
+import { DEFAULT_ASSIST_TONE, isAssistTone, ASSIST_TONE_NOTES_MAX } from './assist/tone.js';
+import type { AssistTone } from './assist/tone.js';
+
 export type LinkedInAssistSettings = {
   /** Whether the in-page assistant may be used at all. Off by default: a fresh install must not start collecting. */
   enabled: boolean;
@@ -44,6 +58,10 @@ export type LinkedInAssistSettings = {
    * is no cache between this flag and the read path, so that is automatic.
    */
   killSwitch: boolean;
+  /** How a suggestion should sound (#405). Defaults to `match-room`. */
+  tone: AssistTone;
+  /** The operator's own sentence, used only when `tone` is `custom`. */
+  toneNotes: string;
 };
 
 export function defaultLinkedInAssistSettings(): LinkedInAssistSettings {
@@ -54,6 +72,8 @@ export function defaultLinkedInAssistSettings(): LinkedInAssistSettings {
     dailyCommentCap: ASSIST_COMMENT_CAP_CEILING,
     dailyPostCap: ASSIST_POST_CAP_CEILING,
     killSwitch: false,
+    tone: DEFAULT_ASSIST_TONE,
+    toneNotes: '',
   };
 }
 
@@ -70,7 +90,15 @@ export async function loadLinkedInAssistSettings(
     .limit(1);
   const blob = (row?.value ?? {}) as StoredBlob;
   const stored = blob[String(organizationId)];
-  return { ...defaultLinkedInAssistSettings(), ...stored };
+  const merged = { ...defaultLinkedInAssistSettings(), ...stored };
+  // jsonb holds no enum, so a value written by an older build, a hand-edited
+  // row or a future option name can arrive here. An unrecognised tone falls
+  // back to the default rather than reaching the prompt as a literal - the
+  // prompt would otherwise instruct the model in a register nobody chose.
+  if (!isAssistTone(merged.tone)) merged.tone = DEFAULT_ASSIST_TONE;
+  merged.toneNotes =
+    typeof merged.toneNotes === 'string' ? merged.toneNotes.slice(0, ASSIST_TONE_NOTES_MAX) : '';
+  return merged;
 }
 
 export async function saveLinkedInAssistSettings(

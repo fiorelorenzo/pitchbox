@@ -34,6 +34,8 @@
     "./assist/suggest-prompt": "./src/assist/suggest-prompt.ts",
     "./assist/envelope": "./src/assist/envelope.ts",
     "./assist/context": "./src/assist/context.ts",
+    "./assist/register": "./src/assist/register.ts",
+    "./assist/tone": "./src/assist/tone.ts",
     "./operator-profile": "./src/operator-profile.ts",
     "./github-sources": "./src/github-sources.ts",
     "./personal-project": "./src/personal-project.ts",

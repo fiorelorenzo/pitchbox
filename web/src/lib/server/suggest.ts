@@ -13,6 +13,7 @@ import {
 } from '@pitchbox/shared/assist/suggest-prompt';
 import { EnvelopeSplitter, type EnvelopeChunk } from '@pitchbox/shared/assist/envelope';
 import type { CodeRepo, OperatorPersona, ProjectBrief } from '@pitchbox/shared/assist/context';
+import type { AssistTone } from '@pitchbox/shared/assist/tone';
 
 /**
  * Runs one suggestion: a single-turn agent invocation with no playbook, no MCP
@@ -99,6 +100,14 @@ export function runSuggestion(args: {
   repos: CodeRepo[];
   examples?: Array<{ title: string; body: string }>;
   hint?: string;
+  /**
+   * The org's tone setting (#405). The caller reads it from
+   * `loadLinkedInAssistSettings`, never from the request body: a tone in the
+   * suggest payload is ignored, the same way `enabled` and `killSwitch` are
+   * enforced here rather than trusted from the extension.
+   */
+  tone?: AssistTone;
+  toneNotes?: string;
   projectId: number;
   orgId?: number;
   runnerSlug: string;
@@ -116,6 +125,8 @@ export function runSuggestion(args: {
     repos: args.repos,
     examples: args.examples,
     hint: args.hint,
+    tone: args.tone,
+    toneNotes: args.toneNotes,
   });
 
   // `cancel()` can arrive before the runner exists: resolving its config and

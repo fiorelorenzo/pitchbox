@@ -6,6 +6,8 @@ import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 import {
   ASSIST_COMMENT_CAP_CEILING,
   ASSIST_POST_CAP_CEILING,
+  ASSIST_TONES,
+  ASSIST_TONE_NOTES_MAX,
   loadLinkedInAssistSettings,
   saveLinkedInAssistSettings,
 } from '@pitchbox/shared/linkedin-assist';
@@ -24,6 +26,12 @@ const Body = z.object({
   dailyCommentCap: z.number().int().min(0).max(ASSIST_COMMENT_CAP_CEILING),
   dailyPostCap: z.number().int().min(0).max(ASSIST_POST_CAP_CEILING),
   killSwitch: z.boolean(),
+  // #405. An unknown value is rejected rather than coerced: the settings page
+  // is the one writer, so a value it did not offer means a stale tab or a
+  // hand-built request, and silently storing the default would tell the
+  // operator their choice was saved.
+  tone: z.enum(ASSIST_TONES),
+  toneNotes: z.string().max(ASSIST_TONE_NOTES_MAX),
 });
 
 export async function GET(event: RequestEvent) {
@@ -54,6 +62,12 @@ export async function POST(event: RequestEvent) {
   const db = getDb();
   if (body.projectId != null && !(await projectBelongsToOrg(db, body.projectId, orgId))) {
     throw error(400, 'project not found in this organization');
+  }
+  // The free-text tone is the only option whose instruction is the operator's
+  // own words, so choosing it without writing any would silently fall back to
+  // no tone instruction at all.
+  if (body.tone === 'custom' && !body.toneNotes.trim()) {
+    throw error(400, 'describe the tone you want, or pick one of the named options');
   }
 
   await saveLinkedInAssistSettings(db, orgId, body);
