@@ -7,14 +7,19 @@
   "bin": {
     "pitchbox": "./dist/index.js"
   },
+  "exports": {
+    "./mcp/tool-set": "./src/mcp/tool-set.ts"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/mcp": "^2.0.45",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@pitchbox/shared": "workspace:*",
+    "ai": "^7.0.93",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
