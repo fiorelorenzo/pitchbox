@@ -96,6 +96,35 @@ instance-admin gate runs), `settings/retention` form action (saving only -
 viewing the page, and the three GET routes above, stay `requireRole(event,
 'admin')`).
 
+### Instance admin area (#412)
+
+`settings/admin` is a small area of its own, separate from every org-scoped
+settings route above: it gates on `requireInstanceAdmin(event)` (not
+`requireRole`), so an org owner who is not the instance admin gets 403 from
+a direct request the same as a member would. Unlike the rest of `settings/`
+(each route above gates itself in its own loader), this gate lives once in
+`web/src/routes/settings/admin/+layout.server.ts` rather than per page: the
+area is expected to grow a sibling route (#411's per-function model
+configuration) and a shared layout gate protects a new page under it without
+that page needing to repeat the check. `settings/admin` itself is a landing
+page that links out to the instance-wide config that already lived on
+org-shaped pages before this area existed - `runners`, `quota`, `retention`,
+and the outgoing webhook on `/notifications` - rather than moving or
+duplicating them; each of those keeps the write gate described above. With
+auth off, `requireInstanceAdmin` is a no-op (no `locals.user`) the same way
+`requireRole` is, so the lone self-host operator - who already owns every
+organization on the instance - reaches this area too; that is a deliberate
+reading of the no-op convention, not an oversight; it does not change while
+auth is off.
+
+The settings rail (`web/src/routes/settings/+layout.svelte`) shows an
+"Instance admin" entry, visually separated from the organization-scoped
+items above it by a divider and its own heading, only when
+`data.isInstanceAdmin` (root `+layout.server.ts`, backed by the same
+`isInstanceAdmin(event)` helper `requireInstanceAdmin` throws on) is true.
+As with every other rail entry, hiding the link is presentation only - the
+loaders above are the actual enforcement boundary.
+
 The General settings page (four tabs behind one route) was flattened into
 seven top-level routes, one flat rail with no tabs (#254): `settings/status`,
 `settings/runners`, `settings/extension`, `settings/quota`,

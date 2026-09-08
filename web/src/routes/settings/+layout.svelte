@@ -2,7 +2,18 @@
   import type { Snippet } from 'svelte';
   import type { LayoutData } from './$types';
   import { page } from '$app/stores';
-  import { Activity, Bot, Puzzle, Gauge, Building2, Archive, ShieldCheck, Sparkles, BrainCircuit } from '@lucide/svelte';
+  import {
+    Activity,
+    Bot,
+    Puzzle,
+    Gauge,
+    Building2,
+    Archive,
+    ShieldCheck,
+    Sparkles,
+    BrainCircuit,
+    ShieldCog,
+  } from '@lucide/svelte';
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
@@ -38,6 +49,15 @@
       { href: '/settings/security', label: 'Security', icon: ShieldCheck, show: data.isAdmin },
     ].filter((i) => i.show),
   );
+
+  // #412: a tenth entry, kept out of `items` above and rendered as its own
+  // group below a divider rather than folded into the organization-scoped
+  // list - it belongs to the operator of the deployment, not to any one
+  // organization, and gates on `data.isInstanceAdmin` (requireInstanceAdmin)
+  // rather than the per-org `isAdmin`/`authOn` flags every item above uses.
+  // True with auth off too (self-host operator owns everything), same
+  // no-op convention as the org-scoped items.
+  const showAdminArea = $derived(data.isInstanceAdmin);
 
   function isActive(href: string): boolean {
     return $page.url.pathname.startsWith(href);
@@ -75,6 +95,26 @@
         {item.label}
       </a>
     {/each}
+    {#if showAdminArea}
+      <div class="my-2 hidden border-t border-border md:block" role="separator"></div>
+      <p
+        class="hidden px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground md:block"
+      >
+        Instance admin
+      </p>
+      <a
+        href="/settings/admin"
+        aria-current={isActive('/settings/admin') ? 'page' : undefined}
+        class={`flex flex-none items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+          isActive('/settings/admin')
+            ? 'bg-accent font-medium text-foreground'
+            : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+        }`}
+      >
+        <ShieldCog class="size-4 flex-none" />
+        Instance admin
+      </a>
+    {/if}
   </nav>
   <div class="min-w-0 flex-1">
     {@render children()}
