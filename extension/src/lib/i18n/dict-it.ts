@@ -11,8 +11,6 @@ export const it = {
   'dashboard.connection.title': 'Connessione',
   'dashboard.connection.connected': 'Connesso',
   'dashboard.connection.disconnected': 'Non connesso',
-  'dashboard.connection.empty':
-    'Apri la dashboard di Pitchbox, accedi, poi abbina da quella scheda.',
   'dashboard.connection.pair': 'Abbina questo tab',
   'dashboard.connection.pair-another': 'Abbina un altro tab',
   'dashboard.connection.disconnect': 'Disconnetti',
@@ -207,15 +205,40 @@ export const it = {
   'settings.about.github': 'GitHub',
   'settings.about.docs': 'Documentazione',
 
-  'settings.linkedin.title': 'Accesso a LinkedIn',
-  'settings.linkedin.description':
-    'Concedi l’accesso a LinkedIn per permettere all’assistente in pagina di leggere il post che stai visualizzando e suggerire un commento. Non viene richiesto nulla finché non lo concedi, e nessuna credenziale di LinkedIn lascia mai il tuo browser.',
-  'settings.linkedin.granted': 'Concesso',
-  'settings.linkedin.not-granted': 'Non concesso',
-  'settings.linkedin.grant': 'Concedi accesso',
-  'settings.linkedin.revoke': 'Revoca accesso',
-  'settings.linkedin.denied': 'Permesso non concesso. Puoi riprovare quando vuoi.',
-  'settings.linkedin.request-failed': 'Impossibile richiedere l’accesso a LinkedIn. Riprova.',
+  // Vedi dict-en.ts: home dice cosa può fare Pitchbox, non cosa è stato
+  // chiesto a Chrome (D22).
+  'home.access.on': 'Accesso a LinkedIn: attivo',
+  'home.access.off': 'Accesso a LinkedIn: non attivo',
+  'home.access.on-detail':
+    'L’assistente può leggere il post che stai guardando e suggerire un commento.',
+  'home.access.off-detail': 'Attivalo e l’assistente lavora dentro LinkedIn.',
+  'home.access.turn-on': 'Attiva',
+  'home.access.turn-off': 'Disattiva',
+  'home.access.denied': 'Chrome non ha concesso l’accesso. Puoi richiederlo quando vuoi.',
+  'home.access.request-failed': 'Impossibile chiedere a Chrome l’accesso a LinkedIn. Riprova.',
+
+  // La riga di stato in cima a home, una per ogni stato che
+  // lib/home-state.ts sa derivare: la riga nomina lo stato, il dettaglio
+  // nomina chi lo ha causato (D21).
+  'home.state.not-paired': 'Nessun collegamento',
+  'home.state.not-paired-hint':
+    'Apri la dashboard di Pitchbox, accedi, poi collega da quella scheda.',
+  'home.state.ready': 'Tutto pronto',
+  'home.state.ready-linkedin': 'Pronto su LinkedIn',
+  'home.state.linkedin-off':
+    'L’accesso a LinkedIn non è attivo, quindi dentro LinkedIn non gira ancora nulla.',
+  'home.state.pending': 'Prima sincronizzazione non ancora fatta',
+  'home.state.pending-detail':
+    'Collegato a {host}. La prima sincronizzazione non è ancora partita.',
+  'home.state.degraded': 'Richiede attenzione',
+  'home.state.sync-error': 'Sincronizzazione bloccata',
+  'home.state.channel-chat': 'Reddit Chat non si sincronizza su {host}.',
+  'home.state.channel-legacy': 'I messaggi di Reddit non si sincronizzano su {host}.',
+  'home.state.stale': 'Nessun report di sincronizzazione da {host} negli ultimi 45 minuti.',
+  'home.state.access-revoked': 'L’accesso a LinkedIn è stato rimosso',
+  'home.state.access-revoked-detail':
+    'Chrome non lo concede più, quindi l’assistente in pagina non sta girando. Riattivalo qui sotto.',
+  'home.sync.not-scheduled': 'Nessuna sincronizzazione programmata',
 
   'time.never': 'mai',
   'time.seconds-ago': '{n}s fa',

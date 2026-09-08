@@ -1,19 +1,24 @@
-<!-- Connection card: shows paired backends and lets the user pair or disconnect. -->
+<!-- The paired backends on home (#400): one row per backend with the actions
+     that clear a red state on it (test, disconnect), plus the two ways to add
+     one. Was ConnectionCard until #399: the card chrome and its own health
+     badge are gone, because home now states the aggregate once above this
+     list (D21 in docs/design/DECISIONS.md) and a second badge here would be
+     the same answer told twice.
+
+     The permission request stays in this component and stays synchronous
+     after the click: chrome.permissions.request only works inside a user
+     gesture, so nothing may be awaited between the click and the request. -->
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { Card, CardContent, CardHeader, CardTitle } from '$ui/card';
   import { Button } from '$ui/button';
   import { Input } from '$ui/input';
   import * as AlertDialog from '$ui/alert-dialog';
   import { t } from '$ext/i18n';
   import { api } from '$ext/api';
   import {
-    getSettings as getStorage,
     patchPairing,
     removePairing,
     upsertPairing,
     pairingHealth,
-    overallHealth,
     type Pairing,
     type PairingHealth,
   } from '$ext/storage';
@@ -35,16 +40,18 @@
   // second time. `?iife` is self-contained, so every injection executes.
   import autoPairScriptPath from '../../content/auto-pair.ts?iife';
 
-  let pairings = $state<Pairing[]>([]);
+  // Home owns the pairings and hands them down, rather than this component
+  // keeping a second copy. It kept one until #400's own verification caught
+  // the consequence on a real panel: home's state line said "Not paired"
+  // while this list still rendered the old rows with their Test connection
+  // and Disconnect buttons, because the copy here only refreshed on mount.
+  // Two readers of the same storage key will always drift; one reader
+  // cannot. `onchange` is how a mutation made here gets back up.
+  let { pairings, onchange }: { pairings: Pairing[]; onchange: () => Promise<void> | void } =
+    $props();
+
   let busy = $state(false);
   let err = $state<string | null>(null);
-
-  // #178: worst-of health across every pairing, honestly derived from
-  // syncStatus (see pairingHealth/overallHealth in storage.ts) - never
-  // hardcoded. null means "no pairings", the separate disconnected state.
-  let cardHealth: PairingHealth | null = $derived(
-    pairings.length > 0 ? overallHealth(pairings) : null,
-  );
 
   // #186: consent for the "Pair with this tab" flow. Gathering the target
   // tab/origin and opening the dialog is synchronous with the click; the
@@ -69,11 +76,11 @@
   let testPending = $state<Record<string, boolean>>({});
   let testResults = $state<Record<string, ConnectionTestResult>>({});
 
+  // Every mutation below routes through home, which re-reads storage and
+  // hands a fresh `pairings` back down.
   async function refresh() {
-    const s = await getStorage();
-    pairings = s.pairings;
+    await onchange();
   }
-  onMount(refresh);
 
   function shortHost(url: string) {
     try {
@@ -91,23 +98,23 @@
     return `${Math.floor(ms / 86_400_000)}d`;
   }
 
-  // #178: badge/dot colors driven by the honest worst-of health derived from
-  // syncStatus (see pairingHealth/overallHealth in storage.ts), never
-  // hardcoded to green.
-  function healthBadgeClass(h: PairingHealth): string {
-    if (h === 'error') return 'border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400';
-    if (h === 'warn')
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400';
-    return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
-  }
+  // Per-row dot only. The aggregate badge this component used to carry moved
+  // to home's state line (D21); what is left here answers "which of these
+  // backends is the unhappy one", which the aggregate cannot say.
+  //
+  // #383: `pending` is a fourth state, not a shade of warn. A pairing made a
+  // moment ago has not synced yet, and painting that amber is what made a
+  // successful pairing read as a fault.
   function healthDotClass(h: PairingHealth): string {
     if (h === 'error') return 'bg-red-500';
     if (h === 'warn') return 'bg-amber-500';
+    if (h === 'pending') return 'bg-muted-foreground/60';
     return 'bg-emerald-500';
   }
   function healthLabel(h: PairingHealth): string {
     if (h === 'error') return $t('dashboard.connection.sync-error');
     if (h === 'warn') return $t('dashboard.connection.degraded');
+    if (h === 'pending') return $t('home.state.pending');
     return $t('dashboard.connection.connected');
   }
 
@@ -307,193 +314,178 @@
   }
 </script>
 
-<Card>
-  <CardHeader class="flex flex-row items-center justify-between gap-2 space-y-0">
-    <CardTitle>{$t('dashboard.connection.title')}</CardTitle>
-    <span
-      class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium {cardHealth
-        ? healthBadgeClass(cardHealth)
-        : 'border-muted-foreground/30 bg-muted text-muted-foreground'}"
-    >
-      <span
-        class="size-1.5 rounded-full {cardHealth
-          ? healthDotClass(cardHealth)
-          : 'bg-muted-foreground/60'}"
-      ></span>
-      {cardHealth ? healthLabel(cardHealth) : $t('dashboard.connection.disconnected')}
-    </span>
-  </CardHeader>
-  <CardContent class="flex flex-col gap-3">
-    {#if pairings.length === 0}
-      <p class="text-sm text-muted-foreground">{$t('dashboard.connection.empty')}</p>
-      <p class="text-xs text-muted-foreground">
-        {$t('dashboard.connection.default-hint', { url: shortHost(DEFAULT_BACKEND_URL) })}
-      </p>
-      <Button disabled={busy} onclick={pair}>
-        {busy ? $t('dashboard.connection.pairing') : $t('dashboard.connection.pair')}
+<div class="flex flex-col gap-3">
+  {#if pairings.length === 0}
+    <!-- No "open your dashboard and pair from that tab" line here: home's
+         state line above says exactly that, and printing it twice is what the
+         first render of this surface actually did. -->
+    <p class="text-xs text-muted-foreground">
+      {$t('dashboard.connection.default-hint', { url: shortHost(DEFAULT_BACKEND_URL) })}
+    </p>
+    <Button disabled={busy} onclick={pair}>
+      {busy ? $t('dashboard.connection.pairing') : $t('dashboard.connection.pair')}
+    </Button>
+  {:else}
+    <div class="flex flex-col divide-y divide-border rounded-md border bg-muted/30">
+      {#each pairings as p (p.backendUrl)}
+        {@const health = pairingHealth(p)}
+        {@const testResult = testResults[p.backendUrl]}
+        <div class="flex flex-col gap-2 px-3 py-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex min-w-40 flex-1 flex-col gap-0.5">
+              <div class="flex items-center gap-2">
+                <span
+                  class="size-2 shrink-0 rounded-full {healthDotClass(health)}"
+                  title={healthLabel(health)}
+                  aria-hidden="true"
+                ></span>
+                <span class="truncate text-sm font-medium" title={p.backendUrl}>
+                  {shortHost(p.backendUrl)}
+                </span>
+              </div>
+              {#if p.orgName || p.deviceLabel}
+                <div class="truncate pl-4 text-xs text-muted-foreground">
+                  {[p.orgName, p.deviceLabel].filter(Boolean).join(' · ')}
+                </div>
+              {/if}
+              <div class="truncate pl-4 text-xs text-muted-foreground">
+                {$t('dashboard.connection.handshake-ago', { ago: fmtAgo(p.lastHandshakeAt) })}
+                ·
+                {$t('dashboard.connection.sync-ago', { ago: fmtAgo(p.lastDmSyncAt) })}
+              </div>
+              {#if testResult}
+                <div
+                  class="pl-4 text-xs {testResult.ok
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-destructive'}"
+                >
+                  {testResult.ok
+                    ? $t('dashboard.connection.test-ok', { version: testResult.version })
+                    : $t('dashboard.connection.test-fail', { reason: testResult.error })}
+                </div>
+              {/if}
+            </div>
+            <div class="ml-auto flex shrink-0 items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={testPending[p.backendUrl]}
+                onclick={() => testConnection(p)}
+              >
+                {testPending[p.backendUrl]
+                  ? $t('dashboard.connection.testing')
+                  : $t('dashboard.connection.test')}
+              </Button>
+              <Button variant="ghost" size="sm" onclick={() => disconnect(p.backendUrl)}>
+                {$t('dashboard.connection.disconnect')}
+              </Button>
+            </div>
+          </div>
+          {#if !p.consentAckAt}
+            <div
+              class="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-700 dark:text-amber-400"
+            >
+              <p class="font-medium">
+                {$t('dashboard.connection.consent-review-title', {
+                  host: shortHost(p.backendUrl),
+                })}
+              </p>
+              <p class="mt-0.5 text-muted-foreground">
+                {$t('dashboard.connection.consent-body')}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                class="mt-1.5"
+                onclick={() => acknowledgeConsent(p.backendUrl)}
+              >
+                {$t('dashboard.connection.consent-ack')}
+              </Button>
+            </div>
+          {/if}
+        </div>
+      {/each}
+    </div>
+    <Button variant="outline" disabled={busy} onclick={pair}>
+      {busy ? $t('dashboard.connection.pairing') : $t('dashboard.connection.pair-another')}
+    </Button>
+  {/if}
+  <div class="flex flex-col gap-2 border-t pt-3">
+    {#if !showAdd}
+      <Button variant="ghost" size="sm" class="self-start" onclick={() => (showAdd = true)}>
+        {$t('dashboard.connection.add-toggle')}
       </Button>
     {:else}
-      <div class="flex flex-col divide-y divide-border rounded-md border bg-muted/30">
-        {#each pairings as p (p.backendUrl)}
-          {@const health = pairingHealth(p)}
-          {@const testResult = testResults[p.backendUrl]}
-          <div class="flex flex-col gap-2 px-3 py-2.5">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex min-w-40 flex-1 flex-col gap-0.5">
-                <div class="flex items-center gap-2">
-                  <span
-                    class="size-2 shrink-0 rounded-full {healthDotClass(health)}"
-                    title={healthLabel(health)}
-                    aria-hidden="true"
-                  ></span>
-                  <span class="truncate text-sm font-medium" title={p.backendUrl}>
-                    {shortHost(p.backendUrl)}
-                  </span>
-                </div>
-                {#if p.orgName || p.deviceLabel}
-                  <div class="truncate pl-4 text-xs text-muted-foreground">
-                    {[p.orgName, p.deviceLabel].filter(Boolean).join(' · ')}
-                  </div>
-                {/if}
-                <div class="truncate pl-4 text-xs text-muted-foreground">
-                  {$t('dashboard.connection.handshake-ago', { ago: fmtAgo(p.lastHandshakeAt) })}
-                  ·
-                  {$t('dashboard.connection.sync-ago', { ago: fmtAgo(p.lastDmSyncAt) })}
-                </div>
-                {#if testResult}
-                  <div
-                    class="pl-4 text-xs {testResult.ok
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-destructive'}"
-                  >
-                    {testResult.ok
-                      ? $t('dashboard.connection.test-ok', { version: testResult.version })
-                      : $t('dashboard.connection.test-fail', { reason: testResult.error })}
-                  </div>
-                {/if}
-              </div>
-              <div class="ml-auto flex shrink-0 items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={testPending[p.backendUrl]}
-                  onclick={() => testConnection(p)}
-                >
-                  {testPending[p.backendUrl]
-                    ? $t('dashboard.connection.testing')
-                    : $t('dashboard.connection.test')}
-                </Button>
-                <Button variant="ghost" size="sm" onclick={() => disconnect(p.backendUrl)}>
-                  {$t('dashboard.connection.disconnect')}
-                </Button>
-              </div>
-            </div>
-            {#if !p.consentAckAt}
-              <div
-                class="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-700 dark:text-amber-400"
-              >
-                <p class="font-medium">
-                  {$t('dashboard.connection.consent-review-title', {
-                    host: shortHost(p.backendUrl),
-                  })}
-                </p>
-                <p class="mt-0.5 text-muted-foreground">
-                  {$t('dashboard.connection.consent-body')}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  class="mt-1.5"
-                  onclick={() => acknowledgeConsent(p.backendUrl)}
-                >
-                  {$t('dashboard.connection.consent-ack')}
-                </Button>
-              </div>
-            {/if}
-          </div>
-        {/each}
-      </div>
-      <Button variant="outline" disabled={busy} onclick={pair}>
-        {busy ? $t('dashboard.connection.pairing') : $t('dashboard.connection.pair-another')}
-      </Button>
-    {/if}
-    <div class="flex flex-col gap-2 border-t pt-3">
-      {#if !showAdd}
-        <Button variant="ghost" size="sm" class="self-start" onclick={() => (showAdd = true)}>
-          {$t('dashboard.connection.add-toggle')}
+      <p class="text-xs text-muted-foreground">{$t('dashboard.connection.add-hint')}</p>
+      <Input bind:value={formUrl} placeholder={$t('dashboard.connection.backend-placeholder')} />
+      <Input bind:value={formCode} placeholder={$t('dashboard.connection.code-placeholder')} />
+      <div class="flex gap-2">
+        <Button disabled={addBusy} onclick={reviewConnect}>
+          {addBusy ? $t('dashboard.connection.connecting') : $t('dashboard.connection.connect')}
         </Button>
-      {:else}
-        <p class="text-xs text-muted-foreground">{$t('dashboard.connection.add-hint')}</p>
-        <Input bind:value={formUrl} placeholder={$t('dashboard.connection.backend-placeholder')} />
-        <Input bind:value={formCode} placeholder={$t('dashboard.connection.code-placeholder')} />
-        <div class="flex gap-2">
-          <Button disabled={addBusy} onclick={reviewConnect}>
-            {addBusy ? $t('dashboard.connection.connecting') : $t('dashboard.connection.connect')}
-          </Button>
-          <Button variant="ghost" disabled={addBusy} onclick={() => (showAdd = false)}>
-            {$t('dashboard.connection.cancel')}
-          </Button>
-        </div>
-      {/if}
-    </div>
-    {#if err}
-      <p class="text-xs text-destructive">{err}</p>
+        <Button variant="ghost" disabled={addBusy} onclick={() => (showAdd = false)}>
+          {$t('dashboard.connection.cancel')}
+        </Button>
+      </div>
     {/if}
+  </div>
+  {#if err}
+    <p class="text-xs text-destructive">{err}</p>
+  {/if}
 
-    <AlertDialog.Root bind:open={confirmPairOpen}>
-      <AlertDialog.Content>
-        <AlertDialog.Header>
-          <AlertDialog.Title>
-            {$t('dashboard.connection.consent-title', {
-              host: pendingPairTarget ? shortHost(pendingPairTarget.origin) : '',
-            })}
-          </AlertDialog.Title>
-          <AlertDialog.Description>
-            {$t('dashboard.connection.consent-body')}
-          </AlertDialog.Description>
-        </AlertDialog.Header>
-        <AlertDialog.Footer>
-          <AlertDialog.Cancel
-            onclick={() => {
-              confirmPairOpen = false;
-              pendingPairTarget = null;
-            }}
-          >
-            {$t('dashboard.connection.cancel')}
-          </AlertDialog.Cancel>
-          <AlertDialog.Action variant="default" onclick={confirmPair}>
-            {$t('dashboard.connection.consent-confirm')}
-          </AlertDialog.Action>
-        </AlertDialog.Footer>
-      </AlertDialog.Content>
-    </AlertDialog.Root>
+  <AlertDialog.Root bind:open={confirmPairOpen}>
+    <AlertDialog.Content>
+      <AlertDialog.Header>
+        <AlertDialog.Title>
+          {$t('dashboard.connection.consent-title', {
+            host: pendingPairTarget ? shortHost(pendingPairTarget.origin) : '',
+          })}
+        </AlertDialog.Title>
+        <AlertDialog.Description>
+          {$t('dashboard.connection.consent-body')}
+        </AlertDialog.Description>
+      </AlertDialog.Header>
+      <AlertDialog.Footer>
+        <AlertDialog.Cancel
+          onclick={() => {
+            confirmPairOpen = false;
+            pendingPairTarget = null;
+          }}
+        >
+          {$t('dashboard.connection.cancel')}
+        </AlertDialog.Cancel>
+        <AlertDialog.Action variant="default" onclick={confirmPair}>
+          {$t('dashboard.connection.consent-confirm')}
+        </AlertDialog.Action>
+      </AlertDialog.Footer>
+    </AlertDialog.Content>
+  </AlertDialog.Root>
 
-    <AlertDialog.Root bind:open={confirmCodeOpen}>
-      <AlertDialog.Content>
-        <AlertDialog.Header>
-          <AlertDialog.Title>
-            {$t('dashboard.connection.consent-title', {
-              host: pendingCode ? new URL(pendingCode.url).host : '',
-            })}
-          </AlertDialog.Title>
-          <AlertDialog.Description>
-            {$t('dashboard.connection.consent-body')}
-          </AlertDialog.Description>
-        </AlertDialog.Header>
-        <AlertDialog.Footer>
-          <AlertDialog.Cancel
-            onclick={() => {
-              confirmCodeOpen = false;
-              pendingCode = null;
-            }}
-          >
-            {$t('dashboard.connection.cancel')}
-          </AlertDialog.Cancel>
-          <AlertDialog.Action variant="default" onclick={confirmConnectWithCode}>
-            {$t('dashboard.connection.consent-confirm')}
-          </AlertDialog.Action>
-        </AlertDialog.Footer>
-      </AlertDialog.Content>
-    </AlertDialog.Root>
-  </CardContent>
-</Card>
+  <AlertDialog.Root bind:open={confirmCodeOpen}>
+    <AlertDialog.Content>
+      <AlertDialog.Header>
+        <AlertDialog.Title>
+          {$t('dashboard.connection.consent-title', {
+            host: pendingCode ? new URL(pendingCode.url).host : '',
+          })}
+        </AlertDialog.Title>
+        <AlertDialog.Description>
+          {$t('dashboard.connection.consent-body')}
+        </AlertDialog.Description>
+      </AlertDialog.Header>
+      <AlertDialog.Footer>
+        <AlertDialog.Cancel
+          onclick={() => {
+            confirmCodeOpen = false;
+            pendingCode = null;
+          }}
+        >
+          {$t('dashboard.connection.cancel')}
+        </AlertDialog.Cancel>
+        <AlertDialog.Action variant="default" onclick={confirmConnectWithCode}>
+          {$t('dashboard.connection.consent-confirm')}
+        </AlertDialog.Action>
+      </AlertDialog.Footer>
+    </AlertDialog.Content>
+  </AlertDialog.Root>
+</div>
