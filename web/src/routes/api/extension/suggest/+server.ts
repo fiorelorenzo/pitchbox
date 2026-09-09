@@ -307,17 +307,51 @@ export async function POST(event: RequestEvent) {
       cancel = handle.cancel;
 
       handle.result
-        .then((res) => {
+        .then(async (res) => {
           if (settled) return;
           settled = true;
-          send('done', {
-            reasoning: res.reasoning,
-            draft: res.draft,
-            skipped: res.skipped,
-            usage: res.usage,
-            ms: res.ms,
-          });
-          controller.close();
+
+          // #522: ledgered the moment the suggestion finishes, not only if
+          // a human later accepts it - see the header comment on this
+          // route and shared/src/org-quota.ts's getOrgMonthToDateCostUsd.
+          // A ledger write failing must never keep the human from getting
+          // their answer, so it's caught and logged rather than left to
+          // reject this handler (which would also skip 'done' below).
+          await db
+            .insert(schema.assistUsage)
+            .values({
+              organizationId: auth.organizationId,
+              projectId: project.id,
+              deviceId: auth.deviceId,
+              platformId: platform.id,
+              kind: body.kind,
+              agentRunner: project.defaultAgentRunner,
+              model: res.model ?? null,
+              inputTokens: res.usage?.inputTokens ?? null,
+              outputTokens: res.usage?.outputTokens ?? null,
+              cacheReadTokens: res.usage?.cacheReadTokens ?? null,
+              cacheCreationTokens: res.usage?.cacheCreationTokens ?? null,
+              costUsd: res.usage?.costUsd != null ? res.usage.costUsd.toFixed(4) : null,
+            })
+            .catch((err: unknown) => {
+              console.error('failed to record assist usage:', err);
+            });
+
+          try {
+            send('done', {
+              reasoning: res.reasoning,
+              draft: res.draft,
+              skipped: res.skipped,
+              usage: res.usage,
+              ms: res.ms,
+            });
+            controller.close();
+          } catch (err) {
+            // The panel disconnected while the usage write above was in
+            // flight - the suggestion is already ledgered, there's simply
+            // nobody left to deliver it to.
+            console.error('failed to deliver done event:', err);
+          }
         })
         .catch((err: unknown) => {
           if (settled) return;

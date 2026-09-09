@@ -169,6 +169,13 @@
       "when": 1788960000011,
       "tag": "0024_password_reset_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788960000012,
+      "tag": "0025_supreme_molecule_man",
+      "breakpoints": true
     }
   ]
 }

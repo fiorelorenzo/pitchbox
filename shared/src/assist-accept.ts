@@ -24,6 +24,7 @@ import {
   DEFAULT_DEDUP_POLICY,
 } from './contact-dedup.js';
 import { checkQuota, getAccountUsage, loadQuotaLimits, mapDraftKindToQuotaKind } from './quota.js';
+import { resolvePricingForRunner, computeCostUsd } from './runlog/usage.js';
 import type { DraftKind } from './quota-types.js';
 
 export interface AcceptSuggestionUsage {
@@ -189,7 +190,40 @@ export async function acceptSuggestionIntoDraft(
     };
   }
 
-  const costUsd = input.usage?.costUsd != null ? input.usage.costUsd.toFixed(4) : null;
+  // #522: `input.usage` is a client-reported block - the extension's own
+  // copy of the `usage` a /suggest `done` event carried, echoed back here
+  // because a suggestion is never persisted server-side until accept. That
+  // was harmless when it only annotated a draft; it stopped being harmless
+  // once assistant spend counts against a budget (shared/src/org-quota.ts's
+  // getOrgMonthToDateCostUsd). The authoritative figure for that budget now
+  // lives in `assist_usage`, written from the server's own AgentRunner
+  // result the moment the suggestion's stream finished
+  // (web/src/routes/api/extension/suggest/+server.ts) - never from the
+  // client - so this run's own `cost_usd` is left null rather than trusted
+  // from the device, and org-quota's sum excludes `kind = 'assist'` runs
+  // for exactly that reason: counting this row too would double the
+  // suggestion's cost. What the device reported and what this repo's own
+  // price table recomputes from its token counts are both kept on `params`
+  // instead - visible for audit (a device that lies is visible, not
+  // authoritative), never read back into a spend decision.
+  const pricing = resolvePricingForRunner(input.agentRunner, undefined);
+  const recomputedCostUsd = input.usage
+    ? computeCostUsd(
+        {
+          inputTokens: input.usage.inputTokens ?? undefined,
+          outputTokens: input.usage.outputTokens ?? undefined,
+          cacheReadTokens: input.usage.cacheReadTokens ?? undefined,
+          cacheCreationTokens: input.usage.cacheCreationTokens ?? undefined,
+        },
+        pricing,
+      )
+    : null;
+  const reportedCostUsd = input.usage?.costUsd ?? null;
+  const params = {
+    ...(input.runParams ?? {}),
+    ...(recomputedCostUsd != null ? { recomputedCostUsd } : {}),
+    ...(reportedCostUsd != null ? { reportedCostUsd } : {}),
+  };
 
   const written = await db.transaction(async (tx) => {
     const [run] = await tx
@@ -209,8 +243,8 @@ export async function acceptSuggestionIntoDraft(
         outputTokens: input.usage?.outputTokens ?? null,
         cacheReadTokens: input.usage?.cacheReadTokens ?? null,
         cacheCreationTokens: input.usage?.cacheCreationTokens ?? null,
-        costUsd,
-        params: input.runParams ?? {},
+        costUsd: null,
+        params,
       })
       .returning({ id: schema.runs.id });
 

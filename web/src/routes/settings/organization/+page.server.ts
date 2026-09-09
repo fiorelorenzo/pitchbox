@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '../../../lib/server/db.js';
 import { resolveOrgId } from '../../../lib/server/auth.js';
 import { listOrgMembers, listPendingInvites } from '@pitchbox/shared/orgs';
-import { getOrgMonthToDateCostUsd, getOrgQuotaSnapshot } from '@pitchbox/shared/org-quota';
+import { getOrgMonthToDateSpend, getOrgQuotaSnapshot } from '@pitchbox/shared/org-quota';
 
 export const load: PageServerLoad = async (event) => {
   const authOn = process.env.PITCHBOX_AUTH === 'on';
@@ -44,17 +44,21 @@ export const load: PageServerLoad = async (event) => {
     monthlyRunBudgetUsd: number | null;
     maxConcurrentRuns: number | null;
     monthToDateCostUsd: number;
+    campaignUsd: number;
+    assistantUsd: number;
     remainingUsd: number | null;
   } | null = null;
   if (canManage && org) {
-    const [monthToDateCostUsd, snapshot] = await Promise.all([
-      getOrgMonthToDateCostUsd(db, orgId),
+    const [spend, snapshot] = await Promise.all([
+      getOrgMonthToDateSpend(db, orgId),
       getOrgQuotaSnapshot(db, orgId),
     ]);
     quota = {
       monthlyRunBudgetUsd: org.monthlyRunBudgetUsd == null ? null : Number(org.monthlyRunBudgetUsd),
       maxConcurrentRuns: org.maxConcurrentRuns,
-      monthToDateCostUsd,
+      monthToDateCostUsd: spend.totalUsd,
+      campaignUsd: spend.campaignUsd,
+      assistantUsd: spend.assistantUsd,
       remainingUsd: snapshot.remainingUsd,
     };
   }

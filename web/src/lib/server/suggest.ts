@@ -48,6 +48,12 @@ export interface SuggestionResult {
   /** True when the model explicitly declined to write a draft. */
   skipped: boolean;
   ms: number;
+  /** The model this suggestion actually asked for - resolveAssistRunnerConfig's
+   * result, so an unpinned runner reports ASSIST_DEFAULT_MODEL rather than
+   * undefined. Carried through so a caller that ledgers usage (#522's
+   * assist_usage row) knows which model to price it against, even on a
+   * suggestion whose cost couldn't be computed at all. */
+  model?: string;
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -201,10 +207,8 @@ export function runSuggestion(args: {
       ? await resolveFunctionModel(db, 'assist_suggest')
       : undefined;
     if (cancelled) throw new Cancelled();
-    const runner = createAgentRunner(
-      args.runnerSlug,
-      resolveAssistRunnerConfig(config, functionModel),
-    );
+    const resolvedConfig = resolveAssistRunnerConfig(config, functionModel);
+    const runner = createAgentRunner(args.runnerSlug, resolvedConfig);
 
     // The agent still gets a working directory, and it must not be the repo:
     // this session has no tools attached, but a cwd it could read is a cwd it
@@ -261,6 +265,7 @@ export function runSuggestion(args: {
         draft: envelope.draft,
         skipped: envelope.skipped,
         ms: Date.now() - started,
+        model: resolvedConfig.model,
         usage: run.usage
           ? {
               inputTokens: run.usage.inputTokens,
