@@ -61,7 +61,11 @@ const UNLIMITED_METRIC: UsageMetric = { used: 0, limit: null, remaining: null };
  * suggestions) and the existing cost helper - six queries total, none of
  * which grow with how many projects the org has.
  */
-export async function getOrgUsage(db: Db, orgId: number, period: Period): Promise<OrgUsageSnapshot> {
+export async function getOrgUsage(
+  db: Db,
+  orgId: number,
+  period: Period,
+): Promise<OrgUsageSnapshot> {
   const entitlements = await resolveEntitlements(db, orgId);
   if (entitlements.source === 'self-host') {
     return {
@@ -127,7 +131,9 @@ export async function getOrgUsage(db: Db, orgId: number, period: Period): Promis
         : db
             .select({ n: count() })
             .from(schema.accounts)
-            .where(and(inArray(schema.accounts.projectId, projectIds), eq(schema.accounts.active, true)))
+            .where(
+              and(inArray(schema.accounts.projectId, projectIds), eq(schema.accounts.active, true)),
+            )
             .then(([r]) => Number(r?.n ?? 0)),
       db
         .select({ n: count() })
@@ -158,7 +164,10 @@ export async function getOrgUsage(db: Db, orgId: number, period: Period): Promis
           and(
             eq(schema.extensionDevices.organizationId, orgId),
             isNull(schema.extensionDevices.revokedAt),
-            or(isNull(schema.extensionDevices.expiresAt), gt(schema.extensionDevices.expiresAt, now)),
+            or(
+              isNull(schema.extensionDevices.expiresAt),
+              gt(schema.extensionDevices.expiresAt, now),
+            ),
           ),
         )
         .then(([r]) => Number(r?.n ?? 0)),

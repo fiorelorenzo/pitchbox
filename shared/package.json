@@ -95,7 +95,7 @@
     "./billing/customer": "./src/billing/customer.ts",
     "./billing/checkout": "./src/billing/checkout.ts",
     "./billing/portal": "./src/billing/portal.ts",
-    "./billing/webhook": "./src/billing/webhook.ts"
+    "./billing/webhook": "./src/billing/webhook.ts",
     "./usage": "./src/usage.ts"
   },
   "scripts": {

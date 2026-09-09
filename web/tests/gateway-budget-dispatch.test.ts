@@ -201,7 +201,11 @@ describe('cloud run dispatch is budget-gated (#419)', () => {
     // Not the same call as the write above: this re-reads via the exact
     // helper the dashboard and the org-quota settings page call, proving the
     // two never diverge rather than just re-asserting the row we just wrote.
-    const monthToDate = await getOrgPeriodCostUsd(getDb(), orgId, await billingPeriodFor(getDb(), orgId));
+    const monthToDate = await getOrgPeriodCostUsd(
+      getDb(),
+      orgId,
+      await billingPeriodFor(getDb(), orgId),
+    );
     expect(monthToDate).toBeCloseTo(2.5, 4);
   });
 
@@ -230,7 +234,11 @@ describe('cloud run dispatch is budget-gated (#419)', () => {
     expect(secondRun?.status).toBe('failed');
     expect(secondRun?.failureReason).toBe('quota_exhausted');
 
-    const monthToDate = await getOrgPeriodCostUsd(getDb(), orgId, await billingPeriodFor(getDb(), orgId));
+    const monthToDate = await getOrgPeriodCostUsd(
+      getDb(),
+      orgId,
+      await billingPeriodFor(getDb(), orgId),
+    );
     expect(monthToDate).toBeCloseTo(3, 4);
   });
 });

@@ -5,6 +5,8 @@ import { createInvite, findOrgBySlug, isOrgAdmin } from '@pitchbox/shared/orgs';
 import { createMailTransport } from '@pitchbox/shared/mail/registry';
 import { loadMailEnv } from '@pitchbox/shared/mail/env';
 import { renderPlainTextMail } from '@pitchbox/shared/mail/template';
+import { billingPeriodFor } from '@pitchbox/shared/org-quota';
+import { getOrgUsage } from '@pitchbox/shared/usage';
 
 const Body = z.object({
   email: z.email().optional(),
@@ -52,6 +54,22 @@ export async function POST(event: import('@sveltejs/kit').RequestEvent) {
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
     return json({ error: 'invalid_body', issues: parsed.error.issues }, { status: 400 });
+  }
+  // #548: an invite is a seat the moment it's pending, not only once
+  // accepted - otherwise the seat limit is bypassed by inviting ten people
+  // at once (shared/src/usage.ts's getOrgUsage already counts it that way).
+  const period = await billingPeriodFor(db, org.id);
+  const usage = await getOrgUsage(db, org.id, period);
+  if (usage.seats.limit != null && usage.seats.used >= usage.seats.limit) {
+    return json(
+      {
+        error: 'plan_limit_reached',
+        metric: 'seats',
+        limit: usage.seats.limit,
+        used: usage.seats.used,
+      },
+      { status: 402 },
+    );
   }
   const invite = await createInvite(db, {
     organizationId: org.id,

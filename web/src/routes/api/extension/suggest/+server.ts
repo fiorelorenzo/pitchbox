@@ -25,6 +25,8 @@ import {
   resolveEffectiveVoice,
 } from '@pitchbox/shared/linkedin-assist';
 import { loadRecentObservedTarget } from '@pitchbox/shared/observed-targets';
+import { billingPeriodFor } from '@pitchbox/shared/org-quota';
+import { getOrgUsage } from '@pitchbox/shared/usage';
 
 // The real-time plane. What makes the in-page assistant a separate subsystem
 // rather than a view onto campaigns:
@@ -184,6 +186,23 @@ export async function POST(event: RequestEvent) {
     )
     .limit(1);
   if (!project) throw error(404, 'project not found');
+
+  // #548: the plan's own suggestions-per-period ceiling. Read before the
+  // platform daily quota below so a plan refusal never pays for a wasted
+  // query, and returned in the same renderable-200 shape as every other
+  // refusal on this route (self-host resolves fully unlimited, so this
+  // never fires there).
+  const period = await billingPeriodFor(db, project.organizationId);
+  const usage = await getOrgUsage(db, project.organizationId, period);
+  if (usage.suggestions.limit != null && usage.suggestions.used >= usage.suggestions.limit) {
+    return json({
+      refused: 'plan_limit_reached',
+      metric: 'suggestions',
+      limit: usage.suggestions.limit,
+      used: usage.suggestions.used,
+      upgradeUrl: '/settings/billing',
+    });
+  }
 
   // Suggesting what cannot be sent wastes the human's attention and a model
   // call, so the platform's own daily quota is a precondition and not a

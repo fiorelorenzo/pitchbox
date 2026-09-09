@@ -6,6 +6,8 @@ import { resolveOrgId, requireOrgId, requireRole } from '$lib/server/auth.js';
 import { listProjects, createProjectTx, ProjectSlugConflictError } from '@pitchbox/shared/projects';
 import { resolveDefaultRunnerSlug } from '@pitchbox/shared/agents/config';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
+import { billingPeriodFor } from '@pitchbox/shared/org-quota';
+import { getOrgUsage } from '@pitchbox/shared/usage';
 
 const slugRegex = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
@@ -87,6 +89,22 @@ export async function POST(event) {
   const organizationId = await requireOrgId(event);
   requireRole(event, 'admin');
 
+  // #548: a project is a structural, non-period-bound axis - the count is
+  // "how many exist right now", so `period` only matters for the
+  // period-bound axes this same snapshot also carries.
+  const period = await billingPeriodFor(db, organizationId);
+  const usage = await getOrgUsage(db, organizationId, period);
+  if (usage.projects.limit != null && usage.projects.used >= usage.projects.limit) {
+    return json(
+      {
+        error: 'plan_limit_reached',
+        metric: 'projects',
+        limit: usage.projects.limit,
+        used: usage.projects.used,
+      },
+      { status: 402 },
+    );
+  }
   try {
     const out = await createProjectTx(db, {
       slug,

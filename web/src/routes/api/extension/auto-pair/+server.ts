@@ -4,6 +4,8 @@ import { loadSession } from '@pitchbox/shared/auth';
 import { loadActiveOrganization } from '@pitchbox/shared/orgs';
 import { getDb, schema } from '$lib/server/db.js';
 import { mintDeviceToken } from '$lib/server/extension-auth.js';
+import { billingPeriodFor } from '@pitchbox/shared/org-quota';
+import { getOrgUsage } from '@pitchbox/shared/usage';
 
 /**
  * One-shot pairing endpoint for the browser extension.
@@ -75,6 +77,26 @@ export async function POST({
   // #196: fail loudly instead of minting an orphaned (null-org) device - no
   // row is inserted below this point.
   if (!organizationId) throw error(409, 'no_org');
+
+  // #548: the plan's own device-count ceiling. Checked before minting a
+  // token so a refused pairing never leaves an unusable token floating
+  // around client-side.
+  const period = await billingPeriodFor(db, organizationId);
+  const usage = await getOrgUsage(db, organizationId, period);
+  if (
+    usage.extensionDevices.limit != null &&
+    usage.extensionDevices.used >= usage.extensionDevices.limit
+  ) {
+    return json(
+      {
+        error: 'plan_limit_reached',
+        metric: 'extensionDevices',
+        limit: usage.extensionDevices.limit,
+        used: usage.extensionDevices.used,
+      },
+      { status: 402 },
+    );
+  }
 
   // #200: the client wants to show which org/device a pairing belongs to,
   // not just a bare token - look up the org name alongside minting the

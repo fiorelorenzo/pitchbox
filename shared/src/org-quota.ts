@@ -189,7 +189,9 @@ function calendarMonthPeriod(now: Date): Period {
 }
 
 function monthsBetweenUtc(from: Date, to: Date): number {
-  return (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + (to.getUTCMonth() - from.getUTCMonth());
+  return (
+    (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + (to.getUTCMonth() - from.getUTCMonth())
+  );
 }
 
 /**
@@ -248,7 +250,11 @@ export function resolveBillingPeriod(
  * org-quota settings page and every plan-limit check meter "this period"
  * against - see `resolveBillingPeriod` for the pure resolution rule.
  */
-export async function billingPeriodFor(db: Db, orgId: number, now: Date = new Date()): Promise<Period> {
+export async function billingPeriodFor(
+  db: Db,
+  orgId: number,
+  now: Date = new Date(),
+): Promise<Period> {
   const [row] = await db
     .select({
       orgCreatedAt: schema.organizations.createdAt,
