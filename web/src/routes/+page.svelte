@@ -16,9 +16,11 @@
 	import Seo from '$lib/components/Seo.svelte';
 	import StatCard from '$lib/components/StatCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import OnboardingBanner from '$lib/components/OnboardingBanner.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { relativeTime } from '$lib/utils/time';
 	import PageContainer from '$lib/components/PageContainer.svelte';
+	import type { OnboardingStepId } from '@pitchbox/shared/onboarding';
 
 	type Run = {
 		id: number;
@@ -46,6 +48,7 @@
 		data,
 	}: {
 		data: {
+			onboarding: { status: string; currentStep: OnboardingStepId | null } | null;
 			stats: {
 				pending: number;
 				approved: number;
@@ -90,6 +93,10 @@
 	title="Home"
 	description="Outreach overview - drafts awaiting review, recent runs, campaign status."
 />
+
+{#if data.onboarding}
+	<OnboardingBanner currentStep={data.onboarding.currentStep} />
+{/if}
 
 <!-- Primary stats -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">

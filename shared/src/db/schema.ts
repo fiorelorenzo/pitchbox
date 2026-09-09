@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   pgTable,
   serial,
@@ -1345,5 +1346,67 @@ export const projectSources = pgTable(
   },
   (t) => ({
     byProject: index('project_sources_project_idx').on(t.projectId, t.active),
+  }),
+);
+
+// Onboarding state (#516): a per-(user, org) row rather than a jsonb blob on
+// `users`, because a person can own their own org and later join a second
+// one with a different setup state - a completed org and an empty one are
+// not the same fact about the same person, and a `users` column would
+// conflate them. `organizationId` is always set (self-host with auth off
+// still resolves the seeded `default` org - see resolveOrgId);
+// `userId` is null only for that self-host, no-login case, where there is
+// no `users` row to key on at all. The `*_no_user_unique` index below is
+// what keeps a race between two anonymous self-host requests from
+// inserting two rows for the same org - Postgres treats every NULL as
+// distinct, so an ordinary unique index on (user_id, organization_id)
+// would not catch that (same trick as `users.email`, see above).
+//
+// `status` is the explicit lifecycle `OnboardingStatus`
+// (shared/src/onboarding.ts): `not_started` -> `in_progress` -> `skipped` |
+// `completed`, with `skipped` -> `in_progress` a valid transition too (the
+// Settings "Start again" action, restartOnboarding). A skip is a recorded
+// decision, not the absence of a row: otherwise "never started" and "said
+// no thanks" are indistinguishable and the flow would come back to haunt
+// someone who deliberately dismissed it.
+//
+// `currentStep` is a navigation pointer, not a completion record - which
+// step is complete is never read from here, it is recomputed live from the
+// real state of the org (a project with a source, a connected account, a
+// paired extension device, a draft) every time a caller asks
+// (`computeOnboardingSteps`, shared/src/onboarding.ts). That is what keeps
+// this table from becoming the "said done but the underlying thing is
+// missing" failure mode the issue calls out: nothing here can go stale
+// about *whether* a step is done, only about *where the person last was*.
+//
+// `version` is the onboarding sequence version the row was started or
+// restarted under (`ONBOARDING_VERSION`). It is written, not yet compared
+// against on read - so that changing the step list later is a decision an
+// implementer makes deliberately (re-offer a stale `completed` row, or
+// leave it alone) instead of an accident silently re-triggering for every
+// existing account.
+export const onboardingState = pgTable(
+  'onboarding_state',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('not_started'),
+    currentStep: text('current_step'),
+    version: integer('version').notNull().default(1),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    skippedAt: timestamp('skipped_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byUserOrg: uniqueIndex('onboarding_state_user_org_unique')
+      .on(t.userId, t.organizationId)
+      .where(sql`${t.userId} IS NOT NULL`),
+    byOrgNoUser: uniqueIndex('onboarding_state_org_no_user_unique')
+      .on(t.organizationId)
+      .where(sql`${t.userId} IS NULL`),
   }),
 );

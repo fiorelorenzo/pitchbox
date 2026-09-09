@@ -1,18 +1,52 @@
+import type { RequestEvent } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
 import { and, desc, eq, gte, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
+import {
+  getOnboardingSnapshot,
+  startOnboarding,
+  type OnboardingStepId,
+} from '@pitchbox/shared/onboarding';
 
-export async function load(event: import('@sveltejs/kit').RequestEvent) {
+export async function load(event: RequestEvent) {
   const db = getDb();
 
   const orgId = await resolveOrgId(event);
+
+  // #516: a fresh identity's first dashboard visit is what starts the
+  // onboarding flow and, when there is genuinely something to do, redirects
+  // into it - `startOnboarding` is a no-op past `not_started`, so this fires
+  // at most once per (user, org). A pre-populated org (nothing left to walk
+  // through) reads straight through to `completed` instead and this page
+  // renders normally with no redirect at all.
+  let onboarding: { status: string; currentStep: OnboardingStepId | null } | null = null;
+  if (orgId != null) {
+    const identity = { organizationId: orgId, userId: event.locals.user?.id ?? null };
+    const ctx = {
+      authOn: process.env.PITCHBOX_AUTH === 'on',
+      username: event.locals.user?.username ?? null,
+    };
+    let snapshot = await getOnboardingSnapshot(db, identity, ctx);
+    if (snapshot.status === 'not_started') {
+      snapshot = await startOnboarding(db, identity, ctx);
+      if (snapshot.status === 'in_progress') {
+        throw redirect(302, '/onboarding');
+      }
+    }
+    if (snapshot.status === 'in_progress') {
+      onboarding = { status: snapshot.status, currentStep: snapshot.currentStep };
+    }
+  }
+
   const projects = await listProjects(db, { organizationId: orgId });
   const projectIds = projects.map((p) => p.id);
 
   // No projects in this org - nothing to show, and `inArray(x, [])` is a SQL error.
   if (projectIds.length === 0) {
     return {
+      onboarding,
       stats: {
         pending: 0,
         approved: 0,
@@ -232,6 +266,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     });
 
   return {
+    onboarding,
     stats: {
       pending: draftCountsRow?.pending ?? 0,
       approved: draftCountsRow?.approved ?? 0,
