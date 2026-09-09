@@ -9,6 +9,9 @@ import { requireOrgId, requireVerifiedEmail } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
 import { SCENARIO_SLUGS } from '@pitchbox/shared/campaigns';
+import { billingPeriodFor } from '@pitchbox/shared/org-quota';
+import { getOrgUsage } from '@pitchbox/shared/usage';
+import { isOrgReadOnly } from '@pitchbox/shared/plans';
 
 const Body = z.object({
   projectId: z.number().int().positive(),
@@ -38,6 +41,16 @@ export async function POST(event: RequestEvent) {
   const orgId = await requireOrgId(event);
   if (!(await projectBelongsToOrg(db, body.projectId, orgId))) throw error(404, 'not_found');
   await requireVerifiedEmail(event);
+
+  // #554: a failed payment past its grace window refuses a new campaign -
+  // campaigns carry no plan-limit ceiling of their own (the catalogue meters
+  // projects/runs/suggestions/seats/devices, not campaign count), so this is
+  // the only plan gate this route needs.
+  const period = await billingPeriodFor(db, orgId);
+  const usage = await getOrgUsage(db, orgId, period);
+  if (isOrgReadOnly(usage.entitlements)) {
+    return json({ error: 'plan_payment_required' }, { status: 402 });
+  }
 
   const [project] = await db
     .select()

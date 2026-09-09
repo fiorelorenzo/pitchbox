@@ -8,6 +8,9 @@ import { RateLimiter } from '$lib/server/rate-limit.js';
 import { emit } from '$lib/server/events.js';
 import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist';
 import { acceptSuggestionIntoDraft } from '@pitchbox/shared/assist-accept';
+import { billingPeriodFor } from '@pitchbox/shared/org-quota';
+import { getOrgUsage } from '@pitchbox/shared/usage';
+import { isOrgReadOnly } from '@pitchbox/shared/plans';
 
 // The other half of the real-time plane (#313): `POST /api/extension/suggest`
 // produces text nobody has committed to anything yet; this endpoint is what
@@ -81,6 +84,15 @@ export async function POST(event: RequestEvent) {
     )
     .limit(1);
   if (!project) throw error(404, 'project not found');
+
+  // #554: a failed payment past its grace window refuses an accept the same
+  // way it refuses the suggestion that preceded it - a suggestion nobody can
+  // request cannot legitimately be committed to a draft either.
+  const period = await billingPeriodFor(db, project.organizationId);
+  const usage = await getOrgUsage(db, project.organizationId, period);
+  if (isOrgReadOnly(usage.entitlements)) {
+    return json({ refused: 'plan_payment_required' });
+  }
 
   const [platform] = await db
     .select()

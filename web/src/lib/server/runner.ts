@@ -7,7 +7,7 @@ import {
   gateModelForPlan,
   runnerTakesGatewayModel,
 } from '@pitchbox/shared/ai/model-functions';
-import { resolveEntitlements } from '@pitchbox/shared/plans';
+import { resolveEntitlements, isOrgReadOnly } from '@pitchbox/shared/plans';
 import { detectRunner, isDetectionConclusive } from '@pitchbox/shared/agents/detect';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
@@ -230,6 +230,16 @@ async function dispatchRun(
     if (orgId != null) {
       const period = await billingPeriodFor(db, orgId);
       const usage = await getOrgUsage(db, orgId, period);
+      // #554: a failed payment past its grace window refuses before the
+      // plan's own run-count ceiling below - an org that is both over its
+      // limit and read-only gets the read-only message, since fixing the
+      // payment is the only action that unblocks it either way.
+      if (isOrgReadOnly(usage.entitlements)) {
+        throw new Error(
+          `This organization is read-only because of a failed payment and cannot start ` +
+            `another run until the payment method is fixed in the customer portal.`,
+        );
+      }
       if (usage.runs.limit != null && usage.runs.used > usage.runs.limit) {
         throw new Error(
           `This organization has reached its plan limit of ${usage.runs.limit} run${

@@ -27,6 +27,7 @@ import {
 import { loadRecentObservedTarget } from '@pitchbox/shared/observed-targets';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
+import { isOrgReadOnly } from '@pitchbox/shared/plans';
 
 // The real-time plane. What makes the in-page assistant a separate subsystem
 // rather than a view onto campaigns:
@@ -187,13 +188,19 @@ export async function POST(event: RequestEvent) {
     .limit(1);
   if (!project) throw error(404, 'project not found');
 
+  const period = await billingPeriodFor(db, project.organizationId);
+  const usage = await getOrgUsage(db, project.organizationId, period);
+  // #554: a failed payment past its grace window refuses before the plan's
+  // own suggestions ceiling below, same renderable-200 shape, distinct code
+  // so the panel (#556) can render "fix your payment" rather than "upgrade".
+  if (isOrgReadOnly(usage.entitlements)) {
+    return json({ refused: 'plan_payment_required', upgradeUrl: '/settings/billing' });
+  }
   // #548: the plan's own suggestions-per-period ceiling. Read before the
   // platform daily quota below so a plan refusal never pays for a wasted
   // query, and returned in the same renderable-200 shape as every other
   // refusal on this route (self-host resolves fully unlimited, so this
   // never fires there).
-  const period = await billingPeriodFor(db, project.organizationId);
-  const usage = await getOrgUsage(db, project.organizationId, period);
   if (usage.suggestions.limit != null && usage.suggestions.used >= usage.suggestions.limit) {
     return json({
       refused: 'plan_limit_reached',

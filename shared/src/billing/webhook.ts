@@ -11,6 +11,8 @@ import type { Db } from '../db/client.js';
 import { recordInstanceAudit } from '../instance-audit.js';
 import { normalizePlanId, type PlanId } from '../plans.js';
 import { setOrgPlan } from '../orgs.js';
+import { notify } from '../notifications.js';
+import { pastDueSince, graceEndsAt } from './grace.js';
 import type {
   StripeClient,
   StripeEvent,
@@ -131,7 +133,10 @@ export async function syncSubscriptionFromStripe(
     }
 
     const [existing] = await tx
-      .select({ currentPeriodEnd: orgSubscriptions.currentPeriodEnd })
+      .select({
+        currentPeriodEnd: orgSubscriptions.currentPeriodEnd,
+        status: orgSubscriptions.status,
+      })
       .from(orgSubscriptions)
       .where(eq(orgSubscriptions.organizationId, org.id))
       .limit(1);
@@ -186,6 +191,35 @@ export async function syncSubscriptionFromStripe(
         stripeSubscriptionId: sub.id,
       },
     });
+
+    // #554: the grace window's own banner/notification name a real date, so
+    // it is stamped once, the moment the subscription actually enters
+    // `past_due` - never on a Smart Retries reattempt that leaves it
+    // `past_due` again (existing?.status already `past_due` skips this), and
+    // never for a grant (docs/billing.md: a grant survives whatever Stripe
+    // says about the same org, including a failed payment).
+    if (
+      org.planSource !== 'grant' &&
+      sub.status === 'past_due' &&
+      existing?.status !== 'past_due'
+    ) {
+      const since = (await pastDueSince(tx, sub.id)) ?? new Date();
+      const until = graceEndsAt(since);
+      await notify(
+        tx,
+        {
+          kind: 'billing_payment_failed',
+          title: 'Payment failed - grace period started',
+          severity: 'warning',
+          body:
+            `We could not process your latest payment. Your plan keeps working until ` +
+            `${until.toISOString().slice(0, 10)}; update your payment method in the customer ` +
+            `portal before then to avoid the account going read-only.`,
+          payload: { graceEndsAt: until.toISOString() },
+        },
+        org.id,
+      );
+    }
 
     await markProcessed(tx, eventId);
     return {
