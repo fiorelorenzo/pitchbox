@@ -2,13 +2,41 @@ import { json } from '@sveltejs/kit';
 import { z } from 'zod';
 import { getDb } from '$lib/server/db.js';
 import { createInvite, findOrgBySlug, isOrgAdmin } from '@pitchbox/shared/orgs';
+import { createMailTransport } from '@pitchbox/shared/mail/registry';
+import { loadMailEnv } from '@pitchbox/shared/mail/env';
+import { renderPlainTextMail } from '@pitchbox/shared/mail/template';
 
 const Body = z.object({
   email: z.email().optional(),
   role: z.enum(['owner', 'admin', 'member']).default('member'),
 });
 
-export async function POST(event) {
+/**
+ * Builds the invite email body. The link is built from `origin` - the
+ * caller's own `event.url.origin`, which adapter-node resolves from the
+ * ORIGIN env var (see `web/src/lib/trusted-origins.js`) rather than a
+ * hardcoded host, so a deployment on any domain gets a link that works.
+ */
+function inviteMail(args: {
+  to: string;
+  orgName: string;
+  role: string;
+  origin: string;
+  token: string;
+  expiresAt: Date;
+}) {
+  const url = `${args.origin}/invite/${args.token}`;
+  const rendered = renderPlainTextMail(
+    `You're invited to join ${args.orgName} on Pitchbox`,
+    `You've been invited to join ${args.orgName} on Pitchbox as ${args.role}.\n\n` +
+      `Accept the invite: ${url}\n\n` +
+      `This invite expires on ${args.expiresAt.toDateString()}. If you weren't ` +
+      `expecting this, you can ignore this email.`,
+  );
+  return { to: args.to, subject: rendered.subject, text: rendered.text, html: rendered.html };
+}
+
+export async function POST(event: import('@sveltejs/kit').RequestEvent) {
   const user = event.locals.user;
   if (!user) return json({ error: 'unauthenticated' }, { status: 401 });
   const slug = event.params.slug as string;
@@ -32,5 +60,27 @@ export async function POST(event) {
     createdByUserId: user.id,
   });
   const url = `${event.url.origin}/invite/${invite.token}`;
-  return json({ token: invite.token, url, expiresAt: invite.expiresAt }, { status: 201 });
+  // The link stays the fallback regardless of a mail attempt (#510): a
+  // self-host with nothing configured selects the null transport, which
+  // logs and drops rather than delivering anywhere, so `emailSent` tells
+  // the UI whether a real transport actually took it.
+  let emailSent = false;
+  if (parsed.data.email) {
+    const transport = createMailTransport(loadMailEnv());
+    await transport.send(
+      inviteMail({
+        to: parsed.data.email,
+        orgName: org.name,
+        role: parsed.data.role,
+        origin: event.url.origin,
+        token: invite.token,
+        expiresAt: invite.expiresAt,
+      }),
+    );
+    emailSent = transport.name !== 'null';
+  }
+  return json(
+    { token: invite.token, url, expiresAt: invite.expiresAt, emailSent },
+    { status: 201 },
+  );
 }
