@@ -8,6 +8,7 @@ import { load as analyticsLoad } from '../src/routes/analytics/+page.server.js';
 import { load as newCampaignLoad } from '../src/routes/campaigns/new/+page.server.js';
 import { GET as extensionDevicesGet } from '../src/routes/api/settings/extension-devices/+server.js';
 import { DELETE as extensionDeviceDelete } from '../src/routes/api/settings/extension-devices/[id]/+server.js';
+import { skipOnboarding } from '@pitchbox/shared/onboarding';
 
 /**
  * Cross-org exclusion for the unscoped list/aggregate loaders and the
@@ -40,6 +41,17 @@ async function seedOrgWithProject(slug: string) {
       defaultAgentRunner: 'claude-code',
     })
     .returning();
+  // #609: the home loader now gates a first-ever visit on the onboarding
+  // wizard, and its "project" step means an active source, not just a
+  // project shell - without this, `homeLoad` below redirects to
+  // `/onboarding` instead of rendering the dashboard this file tests.
+  // This org is meant to read as pre-populated (nothing left to walk
+  // through), same posture as every other fixture below it.
+  await db.insert(schema.projectSources).values({
+    projectId: project.id,
+    kind: 'github',
+    config: { value: `${slug}/repo` },
+  });
   const [platform] = await db
     .select()
     .from(schema.platforms)
@@ -217,6 +229,17 @@ describe('route guards on aggregate/list loaders and extension-devices', () => {
         .insert(schema.organizations)
         .values({ slug: 'rga-empty', name: 'rga-empty' })
         .returning();
+      // #609: an org with nothing set up at all is exactly what the
+      // onboarding wizard exists to catch on a first visit - `homeLoad`
+      // would redirect before ever computing the aggregates this test
+      // means to check. That redirect is its own concern (onboarding.test.ts
+      // owns it); mark this org as having deliberately opted out so the
+      // loader falls through to the zero-state logic under test.
+      await skipOnboarding(
+        getDb(),
+        { organizationId: org.id, userId: null },
+        { authOn: false, username: null },
+      );
       const data = await homeLoad(fakeEvent(org.id));
       expect(data).toMatchObject({
         campaigns: [],

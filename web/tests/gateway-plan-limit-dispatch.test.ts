@@ -18,6 +18,7 @@ import type {
 } from '@pitchbox/shared/agents';
 import type { RunnerConfig } from '@pitchbox/shared/agents/config';
 import { clearDetectionCache } from '@pitchbox/shared/agents/detect';
+import { subscribe } from '../src/lib/server/events.js';
 
 let createCalls = 0;
 const fakeResult: AgentRunResult = { exitCode: 0, logPath: '/dev/null' };
@@ -111,6 +112,29 @@ async function runRow(runId: number) {
   return row;
 }
 
+/** dispatchRun's completion write runs off `handle.result`'s own promise
+ * chain, outside runCampaign's own await for a real dispatch - `run:finished`
+ * is emitted right after that write, on the realtime bus every SSE client
+ * already relies on, so subscribing to it is the actual completion signal
+ * rather than a guessed delay. A pre-flight refusal (the org already over
+ * its plan limit) never reaches this: it fails synchronously inside
+ * runCampaign's own await, before dispatchRun ever calls the runner. Every
+ * test below that admits the run (createCalls becomes 1) has to wait on
+ * this before it ends, or dispatchRun's background write (including its
+ * `assist_usage`-shaped notify() on a later failure) can still be running
+ * when the next file's `TRUNCATE ... CASCADE` truncates the org it's
+ * writing to - see #616.
+ */
+function waitForRunFinished(orgId: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const unsubscribe = subscribe(orgId, (evt) => {
+    if (evt.kind !== 'run:finished') return;
+    unsubscribe();
+    resolve();
+  });
+  return promise;
+}
+
 describe('cloud run dispatch is plan-run-count-gated (#548)', () => {
   const savedGatewayKey = process.env.AI_GATEWAY_API_KEY;
   const savedEdition = process.env.PITCHBOX_EDITION;
@@ -148,44 +172,56 @@ describe('cloud run dispatch is plan-run-count-gated (#548)', () => {
   });
 
   it('admits a run when it is exactly the last one the plan allows this period', async () => {
-    const { campaignId } = await seedCloudCampaign('plan-limit-exact', {
+    const { orgId, campaignId } = await seedCloudCampaign('plan-limit-exact', {
       plan: 'free',
       existingRuns: freeLimit - 1, // this dispatch's own row makes exactly `limit`
     });
 
+    const finished = waitForRunFinished(orgId);
     const { runId } = await runCampaign(campaignId);
+    await finished;
     const run = await runRow(runId);
 
     expect(createCalls).toBe(1);
-    expect(run?.status).not.toBe('failed');
+    // The fake runner never creates a draft or calls run:finish, so
+    // dispatchRun's own "ended its turn without creating a draft" check
+    // marks the run failed once it settles - same posture as
+    // gateway-budget-dispatch.test.ts's identical fake. What this test
+    // proves is admission (the plan-limit gate let it reach the runner at
+    // all), not agent completion semantics.
+    expect(run?.status).not.toBe('running');
   });
 
   it('an org well under its plan limit proceeds normally', async () => {
-    const { campaignId } = await seedCloudCampaign('plan-limit-under', {
+    const { orgId, campaignId } = await seedCloudCampaign('plan-limit-under', {
       plan: 'free',
       existingRuns: 2,
     });
 
+    const finished = waitForRunFinished(orgId);
     const { runId } = await runCampaign(campaignId);
+    await finished;
     const run = await runRow(runId);
 
     expect(createCalls).toBe(1);
-    expect(run?.status).not.toBe('failed');
+    expect(run?.status).not.toBe('running');
   });
 
   // The regression that would make this feature unshippable: a self-host
   // install must never be refused, however many runs it has recorded.
   it('a self-host install refuses nothing, however many runs the org already has this period', async () => {
     delete process.env.PITCHBOX_EDITION;
-    const { campaignId } = await seedCloudCampaign('plan-limit-self-host', {
+    const { orgId, campaignId } = await seedCloudCampaign('plan-limit-self-host', {
       plan: 'free',
       existingRuns: freeLimit + 50, // wildly over the free plan's count
     });
 
+    const finished = waitForRunFinished(orgId);
     const { runId } = await runCampaign(campaignId);
+    await finished;
     const run = await runRow(runId);
 
     expect(createCalls).toBe(1);
-    expect(run?.status).not.toBe('failed');
+    expect(run?.status).not.toBe('running');
   });
 });

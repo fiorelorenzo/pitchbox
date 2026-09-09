@@ -15,6 +15,7 @@ import type {
 } from '@pitchbox/shared/agents';
 import type { RunnerConfig } from '@pitchbox/shared/agents/config';
 import { clearDetectionCache } from '@pitchbox/shared/agents/detect';
+import { subscribe } from '../src/lib/server/events.js';
 
 let createCalls = 0;
 const fakeResult: AgentRunResult = { exitCode: 0, logPath: '/dev/null' };
@@ -140,6 +141,28 @@ async function runRow(runId: number) {
   return row;
 }
 
+/** dispatchRun's completion write runs off `handle.result`'s own promise
+ * chain, outside runCampaign's own await for a real dispatch - `run:finished`
+ * is emitted right after that write, on the realtime bus every SSE client
+ * already relies on, so subscribing to it is the actual completion signal
+ * rather than a guessed delay. A pre-flight refusal (already read-only past
+ * the grace window) never reaches this: it fails synchronously inside
+ * runCampaign's own await, before dispatchRun ever calls the runner. The
+ * test below that admits the run (createCalls becomes 1) has to wait on
+ * this before it ends, or dispatchRun's background write can still be
+ * running when the next file's `TRUNCATE ... CASCADE` truncates the org
+ * it's writing to - see #616.
+ */
+function waitForRunFinished(orgId: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const unsubscribe = subscribe(orgId, (evt) => {
+    if (evt.kind !== 'run:finished') return;
+    unsubscribe();
+    resolve();
+  });
+  return promise;
+}
+
 describe('cloud run dispatch is read-only-gated by a failed payment (#554)', () => {
   const savedGatewayKey = process.env.AI_GATEWAY_API_KEY;
   const savedEdition = process.env.PITCHBOX_EDITION;
@@ -175,12 +198,20 @@ describe('cloud run dispatch is read-only-gated by a failed payment (#554)', () 
   });
 
   it('admits a run while still inside the grace window', async () => {
-    const { campaignId } = await seedPastDueCampaign('payment-required-grace', 3);
+    const { orgId, campaignId } = await seedPastDueCampaign('payment-required-grace', 3);
 
+    const finished = waitForRunFinished(orgId);
     const { runId } = await runCampaign(campaignId);
+    await finished;
     const run = await runRow(runId);
 
     expect(createCalls).toBe(1);
-    expect(run?.status).not.toBe('failed');
+    // The fake runner never creates a draft or calls run:finish, so
+    // dispatchRun's own "ended its turn without creating a draft" check
+    // marks the run failed once it settles - same posture as
+    // gateway-budget-dispatch.test.ts's identical fake. What this test
+    // proves is admission (still inside the grace window let it reach the
+    // runner at all), not agent completion semantics.
+    expect(run?.status).not.toBe('running');
   });
 });
