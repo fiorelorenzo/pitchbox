@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '../src/db/client.js';
 import { applyStripeEvent, limitsFromProductMetadata } from '../src/billing/webhook.js';
+import { GRACE_PERIOD_DAYS } from '../src/billing/grace.js';
 import type { StripeClient, StripeProduct, StripeSubscription } from '../src/stripe/client.js';
 import { isOrgReadOnly, resolveEntitlements } from '../src/plans.js';
 import { billingPeriodFor } from '../src/org-quota.js';
@@ -673,7 +674,7 @@ describe('applyStripeEvent - grace window and read-only (#554)', () => {
 
     const entitlementsAfterFirst = await resolveEntitlements(getDb(), org.id);
     expect(entitlementsAfterFirst.graceEndsAt?.getTime()).toBe(
-      firstEventRow.receivedAt.getTime() + 7 * 24 * 60 * 60 * 1000,
+      firstEventRow.receivedAt.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000,
     );
     // Inside the freshly-granted window: not read-only yet.
     expect(isOrgReadOnly(entitlementsAfterFirst)).toBe(false);

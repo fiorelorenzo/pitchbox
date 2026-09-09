@@ -18,6 +18,7 @@ import { getDb, schema } from '../src/db/client.js';
 import { ensureStripeCustomer } from '../src/billing/customer.js';
 import { createCheckoutSession, UnknownPriceError } from '../src/billing/checkout.js';
 import { createPortalSession, NoStripeCustomerError } from '../src/billing/portal.js';
+import { GRACE_PERIOD_DAYS } from '../src/billing/grace.js';
 import type { StripeClient, StripeCustomer } from '../src/stripe/client.js';
 import { isOrgReadOnly, resolveEntitlements } from '../src/plans.js';
 
@@ -173,7 +174,12 @@ describe('createPortalSession', () => {
       limitPremiumModels: false,
     });
     const failedEventId = `evt_${randomUUID()}`;
-    const failedAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    // Past the grace window by a day, expressed against the constant rather
+    // than as a literal: this test asserted 10 days ago while the window was
+    // 7, so it silently stopped testing "read-only" when the window became
+    // the 14 days the published terms promise (#612) and started asserting
+    // the opposite of its own name.
+    const failedAt = new Date(Date.now() - (GRACE_PERIOD_DAYS + 1) * 24 * 60 * 60 * 1000);
     await db.insert(schema.stripeEvents).values({
       id: failedEventId,
       type: 'invoice.payment_failed',
