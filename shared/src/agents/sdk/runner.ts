@@ -8,7 +8,7 @@
 import { mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { streamText, stepCountIs, type ToolSet } from 'ai';
+import { streamText, stepCountIs, type ToolSet, type PrepareStepFunction } from 'ai';
 import {
   createGateway,
   type GatewayProvider,
@@ -200,11 +200,18 @@ export class SdkRunner implements AgentRunner {
         catalogueEntries.find((m) => m.id === modelId),
       );
 
-      // `attachMcp: false` (the in-page suggestion path) gets no tools at
-      // all - nothing for it to write, and a tool loop is what a real-time
-      // path cannot afford (mirrors AcpRunner's `mcpServers: []` case).
+      // A direct tool set (#566, the in-page assistant's own plane) wins
+      // over the campaign MCP server entirely - it has nothing to do with a
+      // `runs` row and must never share the campaign server's connection or
+      // its 26 mostly-writer tools. `attachMcp: false` (still used by a
+      // suggestion that carries no tool set at all) keeps its old meaning:
+      // nothing for it to write, and a tool loop is what a real-time path
+      // cannot afford.
       let toolSet: PitchboxToolSet | undefined;
-      if (opts.attachMcp !== false) {
+      let tools: ToolSet | undefined;
+      if (opts.tools) {
+        tools = opts.tools as ToolSet;
+      } else if (opts.attachMcp !== false) {
         // Session binding read from the per-run env `dispatchRun` builds
         // (PITCHBOX_RUN_ID etc, web/src/lib/server/runner.ts) - there is no
         // child process to forward it to here, unlike the ACP backend, and
@@ -216,7 +223,43 @@ export class SdkRunner implements AgentRunner {
           campaignId: posInt(opts.env.PITCHBOX_CAMPAIGN_ID),
           projectId: posInt(opts.env.PITCHBOX_PROJECT_ID) ?? posInt(opts.env.PROJECT_ID),
         });
+        tools = toolSet?.tools as ToolSet | undefined;
       }
+
+      // The step/time/token budget (#566, docs/design/in-page-agent.md
+      // section 2) is a nudge, not a hard stop: once any threshold trips,
+      // the next step is offered no tools at all, so the model must answer
+      // with whatever it already gathered instead of calling another one.
+      // `stepNumber` is zero-based and `steps` holds only the steps already
+      // completed (ai's own `prepareStep` contract), so this fires on the
+      // step *at* the index budget - "five tool steps plus the writing
+      // turn" reads as steps 0-4 free, step 5 forced text-only.
+      const loopBudget = opts.toolLoopBudget;
+      const loopStartedAt = Date.now();
+      const prepareStep: PrepareStepFunction<ToolSet> | undefined = loopBudget
+        ? ({ stepNumber, steps, instructions }) => {
+            const elapsedMs = Date.now() - loopStartedAt;
+            const tokensSoFar = steps.reduce((sum, step) => sum + (step.usage.inputTokens ?? 0), 0);
+            const overBudget =
+              stepNumber >= loopBudget.maxSteps - 1 ||
+              elapsedMs >= loopBudget.softBudgetMs ||
+              tokensSoFar >= loopBudget.tokenBudget;
+            if (!overBudget) return undefined;
+            // `instructions` only carries a plain string in this runner's
+            // own usage (a suggestion never sets `system`) - a structured
+            // `SystemModelMessage`/array is left behind rather than merged,
+            // since nothing here produces one today.
+            const base = typeof instructions === 'string' ? instructions : undefined;
+            const nudge =
+              'You are at your step, time, or token budget for this answer. Do not call ' +
+              'any more tools. Write your best answer now using only what you have already ' +
+              'gathered.';
+            return {
+              toolChoice: 'none' as const,
+              instructions: base ? `${base}\n\n${nudge}` : nudge,
+            };
+          }
+        : undefined;
 
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
       try {
@@ -273,8 +316,9 @@ export class SdkRunner implements AgentRunner {
             model,
             system,
             messages: [{ role: 'user', content: userText }],
-            tools: toolSet?.tools as ToolSet | undefined,
+            tools,
             stopWhen: stepCountIs(this.stepCeiling),
+            prepareStep,
             abortSignal: controller.signal,
           });
 

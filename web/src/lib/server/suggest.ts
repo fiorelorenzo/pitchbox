@@ -34,6 +34,15 @@ import {
   enforceHouseStyle,
   type StyleFinding,
 } from '@pitchbox/shared/style-check';
+import { ASSIST_TOOLS } from '@pitchbox/shared/assist/tools';
+import { buildAssistToolSet } from '@pitchbox/shared/assist/loop';
+import {
+  ASSIST_HARD_TIMEOUT_MS,
+  ASSIST_MAX_STEPS,
+  ASSIST_SOFT_BUDGET_MS,
+  ASSIST_TOKEN_BUDGET,
+} from '@pitchbox/shared/assist/budget';
+import { resolveDeviceOrgId } from './extension-auth.js';
 
 /**
  * Runs one suggestion: a single-turn agent invocation with no playbook, no MCP
@@ -92,8 +101,8 @@ export interface SuggestionHandle {
 }
 
 /** A suggestion the human is waiting on has a much shorter patience than a
- * campaign run. Past this the answer is not worth having. */
-const SUGGESTION_TIMEOUT_MS = 90_000;
+ * campaign run - `ASSIST_HARD_TIMEOUT_MS` (`shared/src/assist/budget.ts`) is
+ * the ceiling, not the target. */
 
 /**
  * The model a suggestion asks for when an operator has not pinned one for
@@ -166,7 +175,7 @@ async function runStyleRewrite(
       slug: 'assist-style-rewrite',
       env: {},
       cwd,
-      timeoutMs: SUGGESTION_TIMEOUT_MS,
+      timeoutMs: ASSIST_HARD_TIMEOUT_MS,
       orgId,
       onTextChunk: (chunk) => {
         rawText += chunk;
@@ -294,9 +303,11 @@ export function runSuggestion(args: {
     const runner = createAgentRunner(args.runnerSlug, resolvedConfig);
 
     // The agent still gets a working directory, and it must not be the repo:
-    // this session has no tools attached, but a cwd it could read is a cwd it
-    // should not have. An empty temp directory is the smallest thing that
-    // satisfies the ACP `session/new` contract.
+    // even with the assist tool set attached below, nothing here reads or
+    // writes the filesystem or a shell - the tools are the only capability
+    // added (docs/design/in-page-agent.md, section 1). An empty temp
+    // directory is the smallest thing that satisfies the ACP `session/new`
+    // contract.
     const cwd = await mkdtemp(join(tmpdir(), 'pitchbox-suggest-'));
     // Last gate before the spawn, and the one that matters most: past here a
     // process exists and only the handle can stop it.
@@ -304,6 +315,33 @@ export function runSuggestion(args: {
       await rm(cwd, { recursive: true, force: true }).catch(() => {});
       throw new Cancelled();
     }
+
+    // #566: the in-page assistant's own tool surface (`shared/src/assist/
+    // tools.ts`, #567), wired in for the SDK runner via `opts.tools` -
+    // `buildAssistToolSet` wraps every handler with the cancellation and
+    // per-tool timeout enforcement (`shared/src/assist/loop.ts`). `AcpRunner`
+    // ignores `opts.tools`/`opts.toolLoopBudget` entirely (its own assist MCP
+    // entry point, `cli/bin/pitchbox-assist-mcp`, is a separate wiring), so
+    // an ACP-backed suggestion keeps today's single, tool-less turn.
+    //
+    // The org id comes from the device's auth, falling back to the seeded
+    // `default` organization exactly as the LinkedIn assist gate already
+    // does (`resolveDeviceOrgId`) - a self-host with auth off still gets the
+    // loop rather than losing it because there is no device-bound org to
+    // scope tools to. Only a genuinely unseeded database (`toolOrgId` still
+    // null) falls back to no tools at all, the same shape this suggestion
+    // had before this issue.
+    const toolOrgId = await resolveDeviceOrgId(db, args.orgId ?? null);
+    const toolSet =
+      toolOrgId != null
+        ? buildAssistToolSet(ASSIST_TOOLS, {
+            db,
+            orgId: toolOrgId,
+            boundProjectId: args.projectId,
+            observedTarget: args.post,
+            operator: args.persona,
+          })
+        : undefined;
 
     // `rawText` is the whole response, unsplit - used only to tell an actual
     // zero-text turn (a real failure) apart from a well-formed response whose
@@ -319,8 +357,19 @@ export function runSuggestion(args: {
         slug: `assist-${args.kind}`,
         env: {},
         cwd,
-        timeoutMs: SUGGESTION_TIMEOUT_MS,
+        timeoutMs: ASSIST_HARD_TIMEOUT_MS,
         orgId: args.orgId,
+        tools: toolSet,
+        // Only meaningful alongside `tools` - `SdkRunner` gates its own
+        // `prepareStep` enforcement on this being set, so the two travel
+        // together or not at all (docs/design/in-page-agent.md, section 2).
+        toolLoopBudget: toolSet
+          ? {
+              maxSteps: ASSIST_MAX_STEPS,
+              softBudgetMs: ASSIST_SOFT_BUDGET_MS,
+              tokenBudget: ASSIST_TOKEN_BUDGET,
+            }
+          : undefined,
         onTextChunk: (chunk) => {
           rawText += chunk;
           // `args.onChunk?.(splitter.push(chunk))` looks equivalent but is

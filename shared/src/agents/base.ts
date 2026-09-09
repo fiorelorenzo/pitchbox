@@ -22,6 +22,34 @@ export interface AgentRunOptions {
    * tool loop is exactly what a real-time path cannot afford.
    */
   attachMcp?: boolean;
+  /**
+   * A tool set to attach directly, bypassing the campaign Pitchbox MCP
+   * server (`attachMcp`'s tool set) - the in-page assistant's own tool
+   * surface (`shared/src/assist/tools.ts`, #566) is a different plane with
+   * different authority (docs/design/in-page-agent.md section 1) and must
+   * never share the campaign server's connection or its 26 mostly-writer
+   * tools. Wins over `attachMcp` when set. Only the `cloud` runner
+   * (`SdkRunner`) reads this; `AcpRunner`'s tool surface for the same plane
+   * is wired through a separate stdio MCP entry point instead.
+   */
+  tools?: Record<string, unknown>;
+  /**
+   * Step/time/token budget for a native tool-calling loop (#566), enforced
+   * only by the `cloud` runner (`SdkRunner`) - `AcpRunner` ignores it exactly
+   * as it ignores `budgetRemainingUsd`, since its own coding-agent CLI drives
+   * its own turn loop. Past `maxSteps` steps, `softBudgetMs` wall-clock time
+   * since this run started, or `tokenBudget` input tokens accumulated across
+   * steps, the next step is offered no tools at all: the model is told to
+   * answer with whatever it already gathered rather than keep spending
+   * (docs/design/in-page-agent.md section 2). This is the soft nudge;
+   * `timeoutMs` above stays the hard wall-clock ceiling that aborts the
+   * whole run regardless of what streamed.
+   */
+  toolLoopBudget?: {
+    maxSteps: number;
+    softBudgetMs: number;
+    tokenBudget: number;
+  };
   slug: string;
   env: Record<string, string>;
   cwd: string;
