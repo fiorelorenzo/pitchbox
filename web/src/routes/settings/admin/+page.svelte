@@ -5,7 +5,7 @@
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import { SelectField } from '$lib/components/ui/select-field';
-  import { Info, Bot, Gauge, Archive, Webhook, ScrollText } from '@lucide/svelte';
+  import { Info, Bot, Gauge, Archive, Webhook, ScrollText, CircleDollarSign } from '@lucide/svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import PageContainer from '$lib/components/PageContainer.svelte';
   import Seo from '$lib/components/Seo.svelte';
@@ -85,6 +85,12 @@
       icon: Gauge,
       label: 'Quota',
       description: 'Per-platform posting quota defaults shared by every organization.',
+    },
+    {
+      href: '/settings/admin/spend-ceiling',
+      icon: CircleDollarSign,
+      label: 'Spend ceiling',
+      description: 'Instance-wide Gateway ceiling and the caps a self-registered organization starts with.',
     },
     {
       href: '/settings/retention',

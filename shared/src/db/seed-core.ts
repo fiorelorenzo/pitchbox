@@ -5,7 +5,11 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensurePersonalProject } from '../personal-project.js';
-import { ORG_QUOTA_DEFAULTS_FALLBACK } from '../org-quota.js';
+import {
+  ORG_QUOTA_DEFAULTS_FALLBACK,
+  SELF_REGISTRATION_QUOTA_DEFAULTS_FALLBACK,
+  INSTANCE_QUOTA_CEILING_FALLBACK,
+} from '../org-quota.js';
 
 export const QUOTA_DEFAULTS = {
   reddit: {
@@ -150,6 +154,23 @@ export async function seedCore() {
   await db
     .insert(schema.appConfig)
     .values({ key: 'org_quota_defaults', value: ORG_QUOTA_DEFAULTS_FALLBACK })
+    .onConflictDoNothing();
+  // #540: the two gates on opening registration (#423) - a self-created
+  // org's own defaults, lower than org_quota_defaults above, and the
+  // instance-wide ceiling summed across every organization. Seeded the
+  // same way as org_quota_defaults so a fresh install ships with a real
+  // cap on both axes rather than waiting on an operator to visit the
+  // instance admin area first.
+  await db
+    .insert(schema.appConfig)
+    .values({
+      key: 'self_registration_quota_defaults',
+      value: SELF_REGISTRATION_QUOTA_DEFAULTS_FALLBACK,
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.appConfig)
+    .values({ key: 'instance_quota_ceiling', value: INSTANCE_QUOTA_CEILING_FALLBACK })
     .onConflictDoNothing();
 
   const missingSlugs: string[] = [];

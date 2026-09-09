@@ -12,6 +12,10 @@ import {
   GET as modelFunctionsGet,
   POST as modelFunctionsPost,
 } from '../src/routes/api/settings/model-functions/+server.js';
+import {
+  GET as spendCeilingGet,
+  PUT as spendCeilingPut,
+} from '../src/routes/api/settings/admin/spend-ceiling/+server.js';
 import { clearModelFunctionCache } from '@pitchbox/shared/ai/model-functions';
 import { type CookieJar, runThroughHandle } from './helpers/handle-harness.js';
 
@@ -258,6 +262,53 @@ describe('instance-admin gating on global config routes', () => {
       await expect(runThroughHandle(req, jar, modelFunctionsPost as any)).rejects.toMatchObject({
         status: 400,
       });
+    });
+  });
+
+  describe('/api/settings/admin/spend-ceiling (via real handle)', () => {
+    // #540: the instance-wide ceiling and the self-registration defaults
+    // are exactly the config a self-created-org admin must never reach -
+    // they are meant to bound that admin's own org, among every other one.
+    const body = {
+      instanceMonthlyBudgetUsd: 250,
+      selfRegistrationMonthlyRunBudgetUsd: 5,
+      selfRegistrationMaxConcurrentRuns: 1,
+    };
+
+    it('an org admin who is not instance-admin is forbidden on the read (403)', async () => {
+      const jar = await sessionFor('iag-spend-admin-r', 'admin', false);
+      const req = new Request('http://localhost/api/settings/admin/spend-ceiling');
+      await expect(runThroughHandle(req, jar, spendCeilingGet as any)).rejects.toMatchObject({
+        status: 403,
+      });
+    });
+
+    it('an org admin who is not instance-admin is forbidden on the write (403)', async () => {
+      const jar = await sessionFor('iag-spend-admin-w', 'admin', false);
+      const req = new Request('http://localhost/api/settings/admin/spend-ceiling', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      await expect(runThroughHandle(req, jar, spendCeilingPut as any)).rejects.toMatchObject({
+        status: 403,
+      });
+    });
+
+    it('an instance-admin writes it and reads the new values back (200)', async () => {
+      const jar = await sessionFor('iag-spend-iadmin', 'admin', true);
+      const putReq = new Request('http://localhost/api/settings/admin/spend-ceiling', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const putRes = await runThroughHandle(putReq, jar, spendCeilingPut as any);
+      expect(putRes.status).toBe(200);
+
+      const getReq = new Request('http://localhost/api/settings/admin/spend-ceiling');
+      const getRes = await runThroughHandle(getReq, jar, spendCeilingGet as any);
+      expect(getRes.status).toBe(200);
+      expect(await getRes.json()).toMatchObject(body);
     });
   });
 });

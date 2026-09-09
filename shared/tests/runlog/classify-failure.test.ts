@@ -47,6 +47,21 @@ describe('classifyFailure', () => {
     ).toBe('concurrency_exhausted');
   });
 
+  it('detects instance_quota_exhausted on the instance ceiling refusal text, distinctly from quota_exhausted and concurrency_exhausted (#540)', () => {
+    expect(
+      classifyFailure(
+        [
+          ev(
+            'This deployment is $1.50 over its instance-wide monthly Gateway ceiling and ' +
+              'cannot start another cloud run until next month or until an operator raises ' +
+              'the ceiling in Settings.',
+          ),
+        ],
+        1,
+      ),
+    ).toBe('instance_quota_exhausted');
+  });
+
   it('detects network failures on common Node error codes', () => {
     expect(classifyFailure([ev('fetch failed: ECONNREFUSED 127.0.0.1:5180')], 1)).toBe('network');
     expect(classifyFailure([ev('getaddrinfo ENOTFOUND api.example.com')], 1)).toBe('network');

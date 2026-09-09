@@ -16,7 +16,11 @@ import {
 } from '@pitchbox/shared/draft-regenerate';
 import { startReplyDrafting } from '@pitchbox/shared/reply-drafter';
 import { getRunOrgId } from '@pitchbox/shared/orgs';
-import { getOrgQuotaSnapshot, assertOrgConcurrencyAdmitted } from '@pitchbox/shared/org-quota';
+import {
+  getOrgQuotaSnapshot,
+  assertOrgConcurrencyAdmitted,
+  getInstanceQuotaSnapshot,
+} from '@pitchbox/shared/org-quota';
 import type { ScenarioSlug } from '@pitchbox/shared/campaigns';
 import { getDb, schema } from './db.js';
 import { and, desc, eq } from 'drizzle-orm';
@@ -168,6 +172,22 @@ async function dispatchRun(
     // exact refusal `quota_exhausted` too, the same reason a mid-stream
     // crossing gets, with no separate classifier branch needed.
     if (slug === 'cloud' && orgId != null) {
+      // #540: checked before the per-org budget below, and with its own
+      // wording and its own classifyFailure reason
+      // (`instance_quota_exhausted`) - opening registration (#423) turns a
+      // per-org cap into an unbounded instance-wide one, and an operator
+      // reading a failed run has to be able to tell "this tenant is out of
+      // budget" (on them) from "the instance is out of budget" (on me).
+      // The message says "instance-wide" rather than "quota" on purpose,
+      // so it never collides with QUOTA_PATTERNS below.
+      const instanceQuota = await getInstanceQuotaSnapshot(db);
+      if (instanceQuota.remainingUsd != null && instanceQuota.remainingUsd <= 0) {
+        throw new Error(
+          `This deployment is $${Math.abs(instanceQuota.remainingUsd).toFixed(2)} over its ` +
+            `instance-wide monthly Gateway ceiling and cannot start another cloud run until ` +
+            `next month or until an operator raises the ceiling in Settings.`,
+        );
+      }
       const quota = await getOrgQuotaSnapshot(db, orgId);
       if (quota.remainingUsd != null && quota.remainingUsd <= 0) {
         throw new Error(

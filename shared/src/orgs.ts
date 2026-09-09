@@ -12,7 +12,7 @@ import {
   users,
 } from './db/schema.js';
 import { ensurePersonalProject } from './personal-project.js';
-import { loadOrgQuotaDefaults } from './org-quota.js';
+import { loadOrgQuotaDefaults, loadSelfRegistrationQuotaDefaults } from './org-quota.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = PgDatabase<any, any, any>;
@@ -370,12 +370,29 @@ export async function loadActiveOrganization(
  * function entirely (inserted directly by createUser/seed-core) and keeps
  * its unlimited, unconfigured caps - it is the single-tenant self-host
  * fallback, not a self-created tenant.
+ *
+ * `quotaSource` (#540) picks which `app_config` defaults the new org
+ * starts with. Defaults to `'invited'` (`org_quota_defaults`), what
+ * `POST /api/orgs` always passes implicitly: that caller already has an
+ * account on this instance, invited or not. The register route's no-invite
+ * branch alone passes `'self_registration'`
+ * (`self_registration_quota_defaults`), a separate, lower key so raising
+ * what an invited or paying tenant gets never also raises what a stranger
+ * who just typed an email into `/register` gets.
  */
 export async function createOrganization(
   db: Db,
-  args: { slug: string; name: string; ownerUserId: number },
+  args: {
+    slug: string;
+    name: string;
+    ownerUserId: number;
+    quotaSource?: 'invited' | 'self_registration';
+  },
 ): Promise<{ id: number; slug: string; role: string }> {
-  const quotaDefaults = await loadOrgQuotaDefaults(db);
+  const quotaDefaults =
+    args.quotaSource === 'self_registration'
+      ? await loadSelfRegistrationQuotaDefaults(db)
+      : await loadOrgQuotaDefaults(db);
   const [org] = await db
     .insert(organizations)
     .values({
