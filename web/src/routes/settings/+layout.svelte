@@ -10,6 +10,7 @@
     Gauge,
     KeyRound,
     Building2,
+    CreditCard,
     Archive,
     ShieldCheck,
     Sparkles,
@@ -19,18 +20,23 @@
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
-  // Flat rail of eleven (#254 shipped seven; LI-19/#316 added LinkedIn assist;
+  // Flat rail of twelve (#254 shipped seven; LI-19/#316 added LinkedIn assist;
   // 2026-09-07's companion decisions added Companion; #506 added Password;
-  // #516 added Onboarding). Status/Agent runners/Browser extension/Quota
-  // never 403 - each loader gates its own data set (member sees an "Admin
-  // access required" card instead of a thrown error) - so they're always
-  // shown, same as General used to be. Password and Onboarding are
-  // self-service (gated on being signed in / having an org context at all,
-  // not an org role - docs/permissions.md) rather than admin-only.
-  // Organization needs an org context (auth on); Retention, Security,
-  // LinkedIn assist and Companion loaders call requireRole(event, 'admin')
-  // and do throw, so those stay role-filtered here too. The server loaders
-  // enforce the real rule; this only hides links that would otherwise 403.
+  // #516 added Onboarding; #555 added Billing). Status/Agent runners/Browser
+  // extension/Quota never 403 - each loader gates its own data set (member
+  // sees an "Admin access required" card instead of a thrown error) - so
+  // they're always shown, same as General used to be. Password and
+  // Onboarding are self-service (gated on being signed in / having an org
+  // context at all, not an org role - docs/permissions.md) rather than
+  // admin-only. Organization needs an org context (auth on); Retention,
+  // Security, LinkedIn assist, Companion and Billing loaders call
+  // requireRole(event, 'admin') and do throw, so those stay role-filtered
+  // here too. Billing additionally needs `data.isCloud`: self-host has no
+  // plan concept at all (shared/src/plans.ts's resolveEntitlements is
+  // unlimited there before it ever looks at a plan), so the link does not
+  // exist rather than opening onto a page with nothing to show. The server
+  // loaders enforce the real rule; this only hides links that would
+  // otherwise 403 or land on a dead page.
   const items = $derived(
     [
       { href: '/settings/status', label: 'Status', icon: Activity, show: true },
@@ -52,6 +58,12 @@
         show: data.isAdmin,
       },
       { href: '/settings/organization', label: 'Organization', icon: Building2, show: data.authOn },
+      {
+        href: '/settings/billing',
+        label: 'Billing',
+        icon: CreditCard,
+        show: data.isAdmin && data.isCloud,
+      },
       { href: '/settings/retention', label: 'Retention', icon: Archive, show: data.isAdmin },
       { href: '/settings/security', label: 'Security', icon: ShieldCheck, show: data.isAdmin },
     ].filter((i) => i.show),

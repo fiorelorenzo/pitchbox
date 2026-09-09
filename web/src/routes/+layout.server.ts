@@ -3,6 +3,7 @@ import { getDb } from '$lib/server/db.js';
 import { listUserOrganizations } from '@pitchbox/shared/orgs';
 import { isInstanceAdmin } from '$lib/server/auth.js';
 import { resolveEntitlements, isOrgReadOnly } from '@pitchbox/shared/plans';
+import { currentEdition } from '@pitchbox/shared/edition';
 
 /**
  * Root layout loader. Exposes server-wide flags every page may need: `authOn`
@@ -47,6 +48,11 @@ export const load: LayoutServerLoad = async (event) => {
     orgs,
     isAdmin,
     isInstanceAdmin: await isInstanceAdmin(event),
+    // #555: the settings rail's Billing entry - self-host has no plan
+    // concept at all (shared/src/plans.ts's resolveEntitlements is
+    // unlimited before it ever looks at Stripe or the catalogue there), so
+    // the link is edition-gated the same way `organization` is auth-gated.
+    isCloud: currentEdition() === 'cloud',
     billing,
   };
 };
