@@ -8,6 +8,7 @@ import { resolveDefaultRunnerSlug } from '@pitchbox/shared/agents/config';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
+import { checkUsageThresholds } from '@pitchbox/shared/usage-notifications';
 import { isOrgReadOnly } from '@pitchbox/shared/plans';
 
 const slugRegex = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
@@ -95,6 +96,13 @@ export async function POST(event) {
   // period-bound axes this same snapshot also carries.
   const period = await billingPeriodFor(db, organizationId);
   const usage = await getOrgUsage(db, organizationId, period);
+  // #557: a courtesy notification never blocks project creation, admitted
+  // or refused by the checks below.
+  try {
+    await checkUsageThresholds(db, organizationId, usage, period);
+  } catch (err) {
+    console.error('[projects] checkUsageThresholds failed:', err);
+  }
   // #554: a failed payment past its grace window refuses before the plan's
   // own project limit below.
   if (isOrgReadOnly(usage.entitlements)) {

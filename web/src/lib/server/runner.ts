@@ -29,6 +29,7 @@ import {
   billingPeriodFor,
 } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
+import { checkUsageThresholds } from '@pitchbox/shared/usage-notifications';
 import type { ScenarioSlug } from '@pitchbox/shared/campaigns';
 import { getDb, schema } from './db.js';
 import { and, desc, eq } from 'drizzle-orm';
@@ -230,6 +231,17 @@ async function dispatchRun(
     if (orgId != null) {
       const period = await billingPeriodFor(db, orgId);
       const usage = await getOrgUsage(db, orgId, period);
+      // #557: 80%/100% of any metered axis, once per threshold per period -
+      // checked here since this is the single place every dispatch already
+      // computes the org's usage snapshot for enforcement. A courtesy
+      // notification never blocks the run it warns about, admitted or
+      // refused by the checks below, so a failure here is logged and
+      // swallowed rather than allowed to fail the dispatch itself.
+      try {
+        await checkUsageThresholds(db, orgId, usage, period);
+      } catch (err) {
+        console.error('[runner] checkUsageThresholds failed:', err);
+      }
       // #554: a failed payment past its grace window refuses before the
       // plan's own run-count ceiling below - an org that is both over its
       // limit and read-only gets the read-only message, since fixing the

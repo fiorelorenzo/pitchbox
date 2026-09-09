@@ -101,6 +101,7 @@
     "./billing/webhook": "./src/billing/webhook.ts",
     "./billing/grace": "./src/billing/grace.ts",
     "./usage": "./src/usage.ts",
+    "./usage-notifications": "./src/usage-notifications.ts",
     "./onboarding": "./src/onboarding.ts"
   },
   "scripts": {
