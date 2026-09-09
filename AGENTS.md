@@ -378,66 +378,33 @@ Two things worth stating here so nobody re-derives them mid-task. First, the ext
 
 **An in-page LinkedIn panel cannot be verified against a local backend, and the reason is Chrome, not the code.** Point the built extension at `http://127.0.0.1:<port>` and the panel mounts, reads the post and then sits in "Reading the post..." forever, with no error anywhere: the content script's own `fetch` to the loopback backend fails with a bare `Failed to fetch`, while the same call from the background worker returns 200. That asymmetry is Chrome's Private Network Access rule. A public HTTPS document (`https://www.linkedin.com`) reaching a loopback address needs a preflight carrying `Access-Control-Request-Private-Network: true`, answered with `Access-Control-Allow-Private-Network: true`; `web/src/lib/server/extension-cors.ts` answers the ordinary CORS preflight and not that header, so the request never leaves the page. Measured 2026-09-08 on Chrome 149 while verifying #409. Do not add the header to make a test pass: it would tell every public site on the internet that this deployment's loopback API exists. Verify the panel against `preview.pitchbox.app` after the change deploys, and use a local backend only for the pieces that run in the worker or in a test.
 
-## The GitHub Project is the source of truth
+## Linear is the source of truth
 
-Current state and future roadmap live on **Project #3 "Pitchbox roadmap"** (owner `fiorelorenzo`), not in this file and not in a chat transcript. Keeping it current is part of doing the work, not paperwork at the end: the board is how Lorenzo sees where the project stands without reading session logs, so a board that lags reality is worse than no board.
+Current state and future roadmap live in Linear (`linear.app/fiorelorenzo`), not in this file and not in a chat transcript. Keeping it current is part of doing the work, not paperwork at the end: it is how Lorenzo sees where the project stands without reading session logs.
+
+**Structure.** The `pitchbox` initiative is the standing view of this repo; it does not close. Work ships through one of four projects, each a release or a body of work with an end: `pitchbox v1.4 - Maintenance and dependency hygiene`, `pitchbox v1.8 - Landing and project knowledge sources`, `pitchbox v2.0 - Monetization: plans, billing and limits`, `pitchbox v2.1 - The assistant as an agent`. A project closes when it ships, which is what lets its issues archive.
+
+**A project milestone is what used to be an epic issue.** Epics are not issues in Linear: a milestone costs no issue slot and shows progress natively. Keep a parent issue only for a deliverable that genuinely splits into sub-deliverables within a single agent run's reach. Every issue belongs to a project milestone unless it genuinely belongs to no body of work, in which case it carries no project at all.
+
+**One issue is one agent run is one PR is one worktree.** That equivalence is load-bearing: it is what makes the worktree removable at the end of a run and the PR reviewable.
 
 **Status is a claim about reality, keep it true.**
 
-- Before you write code for an issue, move it to `In Progress`. If what you are about to do has no issue, create one first (see below), then start.
+- Before you write code for an issue, move it to `In Progress`. If what you are about to do has no issue, create one first, then start.
 - Move it to `Done` only when the change is merged and verified, not when the code is written. Merged but something is still open? Say so in a comment and leave it `In Progress`.
-- Board fields, the same four on every one of Lorenzo's roadmap boards on purpose: `Status` (`Todo` / `In Progress` / `Done`), `Priority` (P0-P3), `Effort` (S/M/L/XL) and `Parallel` (Yes/No, whether a parallel agent can take the issue without colliding with other work). Set all four on anything you file. Never write a value that is not already an option, read the schema instead of guessing, and never add, rename or drop a field on this board alone: the convention is shared across the projects.
+- The team's statuses are `Backlog`, `Todo`, `In Progress`, `In Review`, `Done`, `Canceled`. `In Review` is where an issue sits while its PR is open.
 
 **Comment when a reader would want to know.** A decision taken, an approach tried and abandoned, a blocker hit, a surprise in the code, a scope change, a finding that invalidates the issue as written. One comment per meaningful turn in the work, not one per commit, and no routine progress narration.
 
 **File the work you discover.** When something real surfaces mid-task or in a conversation with Lorenzo (a bug you noticed on the way, a follow-up the fix implies, an idea worth doing later), open an issue for it instead of silently widening the current change or letting it evaporate. Then say in the current issue that you split it out, with a link.
 
-**Conventions for a new issue.** Match what the board already shows, do not invent a parallel style:
+**Conventions for a new issue.** Match what the workspace already shows, do not invent a parallel style:
 
-- Title in conventional-commit form with the affected workspaces as scope, lowercase after the colon: `fix(web,shared): new projects snapshot a runner the deployment cannot launch`. A plain descriptive sentence is acceptable when no single scope fits.
-- Labels follow one taxonomy, identical in every repo: exactly one `type:*` (`feature`, `fix`, `refactor`, `test`, `chore`, `ci`, `docs`, `design`, `security`, `spike`), exactly one of `priority:P0`-`priority:P3`, and one or more `area:*` naming the surfaces the change touches. `epic` and `flagship` (an epic, and headline work) are the only unprefixed labels. Priority is deliberately in two places, the `Priority` board field and the `priority:*` label, so set both.
-- `area:*` values here: `cli-mcp`, `cloud`, `daemon`, `deploy`, `docs`, `extension`, `playbooks`, `shared`, `tests`, `web`. Add one only when the surface really is new, and never reintroduce an unprefixed or differently shaped label.
-- Milestone: one of the `v0.10`/`v1.0`/`v1.1`/`v1.2`/`v1.3` milestones, when the work belongs to one.
-- **Every issue hangs off an epic, with no exceptions, and that includes an issue filed in the middle of an agent run.** Epics are titled `[Epic] Name` and carry the `epic` label. Look for an open one before creating another: `gh issue list -R fiorelorenzo/pitchbox --label epic --state open`. Keep them coarse, one per coherent theme or area (for example `[Epic] Cloud runner productionization`), and parent the issue to it. Close an epic only when every child is closed; if the work it named is done but follow-ups discovered along the way still hang off it, leave it open and say so in a comment. While you are in an unparented issue anyway, give it a parent too. An issue with no parent is a defect in the board, and it is a defect that accumulates in exactly one way: an agent files a real finding mid-run, sets its labels and its four fields, and forgets the one step that is a separate GraphQL mutation. On 2026-08-23 an audit found 58 of this repo's 228 issues orphaned, the worst of the six boards, every one of them filed that way. **So parent it in the same turn you create it**, and when a subagent files something on your behalf, parenting it is yours rather than theirs.
+- Title in conventional-commit form with the affected workspaces as scope, lowercase after the colon: `fix(web,shared): new projects snapshot a runner the deployment cannot launch`. A plain descriptive sentence is acceptable when no single scope fits. This convention still applies to the Linear issue title as well as the eventual PR title.
+- Labels come from two mutually exclusive groups plus flat labels, set on every issue you file. Group `repo` (`pitchbox`, `sazio`, `canonry`) - use `pitchbox` here, exactly one. Group `type` (`feature`, `fix`, `refactor`, `test`, `chore`, `ci`, `docs`, `design`, `security`, `spike`) - exactly one, since Linear allows only one label per group on an issue. Flat `area:*` labels, one or more, naming the surfaces the change touches: `cli-mcp`, `cloud`, `daemon`, `deploy`, `docs`, `extension`, `playbooks`, `shared`, `tests`, `web`. Add a new `area:*` value only when the surface really is new. Flat `flagship` marks headline work; flat `parallel` marks an issue a parallel agent can take without colliding with other work.
+- Priority is Linear's native field, not a label: 1 Urgent, 2 High, 3 Medium, 4 Low. Effort is Linear's native estimate field. Set both alongside the project, the milestone and the labels in the same `save_issue` call - an issue missing one of these is a mistake, not an accident of a second call being skipped.
+- Project and milestone: assign the project this work belongs to and, inside it, the milestone (the former epic) it serves. An issue with neither is only correct when it genuinely belongs to no body of work.
 
-  The audit, worth running at the end of any run that filed issues. It pages 100 at a time, so re-run it with `-f c=<endCursor>` until `hasNextPage` is false; empty output on every page is the passing state.
+**PRs stay on GitHub.** Linear's in-app PR review is a Business-plan feature this workspace is not on, so review happens on GitHub as before, and Linear links the PR through the branch name.
 
-  ```bash
-  gh api graphql -f query='query($c:String){repository(owner:"fiorelorenzo",name:"pitchbox"){
-    issues(first:100,after:$c,states:[OPEN,CLOSED]){pageInfo{hasNextPage endCursor}
-    nodes{number parent{number} labels(first:20){nodes{name}}}}}}' \
-    --jq '.data.repository.issues.nodes[] | select(.parent==null)
-          | select([.labels.nodes[].name] | index("epic") | not) | .number'
-  ```
-
-```bash
-# Read the schema, never guess an option value
-gh project field-list 3 --owner fiorelorenzo --format json
-gh api repos/fiorelorenzo/pitchbox/milestones --jq '.[].title'
-
-# Fill these three in; everything below runs as written, no placeholders to edit
-ISSUE=123                 # the issue you are working on
-EPIC=456                  # its parent epic
-STATUS="In Progress"      # Todo | In Progress | Done
-
-PROJECT_ID=$(gh project view 3 --owner fiorelorenzo --format json --jq '.id')
-STATUS_FIELD=$(gh project field-list 3 --owner fiorelorenzo --format json \
-  --jq '.fields[] | select(.name=="Status") | .id')
-OPTION_ID=$(gh project field-list 3 --owner fiorelorenzo --format json \
-  --jq ".fields[] | select(.name==\"Status\") | .options[] | select(.name==\"$STATUS\") | .id")
-ITEM_ID=$(gh project item-list 3 --owner fiorelorenzo --format json --limit 500 \
-  --jq ".items[] | select(.content.number==$ISSUE) | .id")
-gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" \
-  --field-id "$STATUS_FIELD" --single-select-option-id "$OPTION_ID"
-
-# New issue: create, put it on the board, hang it off its epic.
-# `gh issue create` prints the new issue's URL, so capture it and reuse it.
-ISSUE_URL=$(gh issue create -R fiorelorenzo/pitchbox --title "fix(cloud): ..." --body "..." \
-  --label "area:cloud,type:fix,priority:P1")
-gh project item-add 3 --owner fiorelorenzo --url "$ISSUE_URL"
-gh api graphql -f query='mutation($p:ID!,$c:ID!){addSubIssue(input:{issueId:$p,subIssueId:$c}){subIssue{number}}}' \
-  -f p="$(gh issue view $EPIC -R fiorelorenzo/pitchbox --json id --jq '.id')" \
-  -f c="$(gh issue view "$ISSUE_URL" --json id --jq '.id')"
-```
-
-`item-edit` is idempotent, so re-setting a value that is already correct is a fine way to make sure the board is right. An issue can have only one parent: to move it to a different epic, pass `replaceParent: true` in the same mutation.
+**The old GitHub Project board and every closed GitHub issue are a read-only archive.** Only the open non-epic issues were migrated to Linear; nothing syncs between the two systems in either direction, and a two-way sync must never be added.
