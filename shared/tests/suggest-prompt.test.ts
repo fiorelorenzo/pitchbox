@@ -145,9 +145,14 @@ describe('buildSuggestionPrompt', () => {
   });
 
   it('caps the few-shot examples', () => {
+    // None of these bodies share vocabulary with `post.text`, so this also
+    // exercises the recency fallback (example-selection.ts) - the property
+    // this test pins is still just the cap, not the mode.
     const examples = Array.from({ length: MAX_EXAMPLES + 4 }, (_, i) => ({
+      id: i + 1,
       title: `ex-${i}`,
       body: `body ${i}`,
+      createdAt: new Date(2026, 0, i + 1),
     }));
     const prompt = buildSuggestionPrompt({
       kind: 'post_comment',

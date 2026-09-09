@@ -26,6 +26,7 @@ import type {
   ProjectBrief,
   VoiceProfileSummary,
 } from '@pitchbox/shared/assist/context';
+import type { ExampleCandidate } from '@pitchbox/shared/assist/example-selection';
 import type { AssistTone } from '@pitchbox/shared/assist/tone';
 import type { AgentRunner } from '@pitchbox/shared/agents';
 import {
@@ -191,7 +192,7 @@ export function runSuggestion(args: {
   voiceProfile: VoiceProfileSummary | null;
   projects: ProjectBrief[];
   repos: CodeRepo[];
-  examples?: Array<{ title: string; body: string }>;
+  examples?: ExampleCandidate[];
   hint?: string;
   /**
    * A retune direction (#409): the panel's own regenerate-in-a-direction

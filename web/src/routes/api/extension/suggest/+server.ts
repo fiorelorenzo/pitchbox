@@ -317,12 +317,16 @@ export async function POST(event: RequestEvent) {
     groundedPost = { ...body.post, text: body.post.text as string };
   }
 
+  // #578: id and createdAt travel too, not just title/body -
+  // `buildSuggestionPrompt` (`shared/src/assist/example-selection.ts`) picks
+  // which of these actually reach the prompt, by topical closeness to
+  // `groundedPost` rather than by this array's order.
   const examples = (
     await loadActiveTemplates(db, {
       projectId: project.id,
       kind: body.kind === 'post' ? 'post' : 'comment',
     })
-  ).map((t) => ({ title: t.title, body: t.body }));
+  ).map((t) => ({ id: t.id, title: t.title, body: t.body, createdAt: t.createdAt }));
 
   // Everything the companion is allowed to know beyond this one post:
   // the operator's own persona and voice, every project in the org, and the
