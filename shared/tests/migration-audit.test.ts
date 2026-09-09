@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, unlinkSync, cpSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it, afterEach } from 'vitest';
 import {
   findMissingMigrations,
+  findSnapshotChainDrift,
   readJournalMigrations,
   readSupersededMigrations,
   type JournalMigration,
@@ -96,5 +100,41 @@ describe('migration audit (#493)', () => {
       const replacementWhen = journal.find((m) => m.tag === replacement)?.when ?? 0;
       expect(replacementWhen).toBeGreaterThan(skippedWhen);
     }
+  });
+});
+
+describe('snapshot chain drift (#527)', () => {
+  const tmpDirs: string[] = [];
+  afterEach(() => {
+    while (tmpDirs.length > 0) rmSync(tmpDirs.pop()!, { recursive: true, force: true });
+  });
+
+  it('finds no drift in the real repo chain', () => {
+    expect(findSnapshotChainDrift(migrationsFolder)).toBeNull();
+  });
+
+  it('fails when the newest migration in the journal has no snapshot', () => {
+    // Reproduces #527 directly: copy the real chain, then remove the
+    // snapshot for the newest migration the way it was actually missing
+    // (0024_password_reset_tokens never had one committed until this fix).
+    const dir = mkdtempSync(join(tmpdir(), 'pb-snapshot-drift-'));
+    tmpDirs.push(dir);
+    cpSync(migrationsFolder, dir, { recursive: true });
+    unlinkSync(join(dir, 'meta', '0024_snapshot.json'));
+
+    const drift = findSnapshotChainDrift(dir);
+    expect(drift).toEqual({ latestJournalIdx: 24, latestSnapshotIdx: 23 });
+  });
+
+  it('does not flag a migration that legitimately has no snapshot of its own', () => {
+    // 0021 and 0022 are real journal entries with no drizzle-visible schema
+    // change, so a real `generate` run never produced a snapshot for them
+    // either - only the newest migration's snapshot matters.
+    const dir = mkdtempSync(join(tmpdir(), 'pb-snapshot-drift-'));
+    tmpDirs.push(dir);
+    cpSync(migrationsFolder, dir, { recursive: true });
+    unlinkSync(join(dir, 'meta', '0020_snapshot.json'));
+
+    expect(findSnapshotChainDrift(dir)).toBeNull();
   });
 });

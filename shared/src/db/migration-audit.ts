@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
 // Drizzle applies a migration only when its journal `when` is greater than the
 // newest `when` already recorded in the database, and prints "migrations
@@ -83,4 +83,70 @@ export function findMissingMigrations(args: {
       return !replacement || !appliedTags.has(replacement);
     })
     .sort((a, b) => a.idx - b.idx);
+}
+
+/** Migration indices the journal records, in no particular order. Reads only
+ * `_journal.json`, not the `.sql` files themselves, so it works without a
+ * real migrations directory on disk (see the test for this). */
+function readJournalIndices(migrationsFolder: string): number[] {
+  const journal: unknown = JSON.parse(
+    readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8'),
+  );
+  const entries =
+    journal && typeof journal === 'object' && 'entries' in journal ? journal.entries : [];
+  const out: number[] = [];
+  for (const raw of Array.isArray(entries) ? entries : []) {
+    if (raw && typeof raw === 'object' && 'idx' in raw && typeof raw.idx === 'number') {
+      out.push(raw.idx);
+    }
+  }
+  return out;
+}
+
+const SNAPSHOT_FILE_RE = /^(\d{4})_snapshot\.json$/;
+
+/** Migration indices that have a committed `meta/<idx>_snapshot.json`. */
+function readSnapshotIndices(migrationsFolder: string): number[] {
+  return readdirSync(`${migrationsFolder}/meta`)
+    .map((name) => SNAPSHOT_FILE_RE.exec(name))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => Number(m[1]));
+}
+
+export interface SnapshotChainDrift {
+  /** The highest migration index the journal actually records. */
+  latestJournalIdx: number;
+  /** The highest migration index with a committed snapshot, or null if none exist. */
+  latestSnapshotIdx: number | null;
+}
+
+/**
+ * `drizzle-kit generate` diffs `schema.ts` against whichever `meta/*_snapshot.json`
+ * sorts last by filename - not against the journal, and not against every
+ * migration in between. A snapshot that was never committed for the newest
+ * migration makes `generate` diff against a stale state and re-emit DDL for
+ * whatever landed after it, including tables that already exist (#527: the
+ * chain stopped at `0018_snapshot.json` for six migrations - `0019`-`0024` -
+ * each hand-authored because `generate` was already unusable, and `generate`
+ * tried to re-`CREATE TABLE` `instance_audit_log` and `operator_voice_profiles`,
+ * both already applied everywhere).
+ *
+ * Not every journal entry needs its own snapshot - a migration with no
+ * drizzle-visible schema change (`0015`'s data backfill, `0021`'s idempotent
+ * repair, `0022`'s hand-authored CHECK constraint) never gets one from a real
+ * `generate` run either, the same way `0019` - never created at all - never
+ * gets a journal entry. What has to hold is that the *last* migration in the
+ * journal has a snapshot: that is the base the next `generate` will actually
+ * diff against. `null` means the chain reaches the newest migration; a fresh
+ * schema change should re-authenticate that immediately, not a month later
+ * when someone tries to run `generate` and gets nonsense back.
+ */
+export function findSnapshotChainDrift(migrationsFolder: string): SnapshotChainDrift | null {
+  const journalIndices = readJournalIndices(migrationsFolder);
+  if (journalIndices.length === 0) return null;
+  const latestJournalIdx = Math.max(...journalIndices);
+  const snapshotIndices = readSnapshotIndices(migrationsFolder);
+  const latestSnapshotIdx = snapshotIndices.length > 0 ? Math.max(...snapshotIndices) : null;
+  if (latestSnapshotIdx === latestJournalIdx) return null;
+  return { latestJournalIdx, latestSnapshotIdx };
 }
