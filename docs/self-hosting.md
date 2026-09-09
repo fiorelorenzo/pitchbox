@@ -21,13 +21,77 @@ Pitchbox is designed to run on a single VPS or a beefy laptop. The architecture 
 
 The **`AgentRunner`** box is pluggable. With a local runner (Claude Code, Codex, …) the web spawns an ACP agent CLI in-process, as drawn. With the default `cloud` runner it instead drives the model loop in-process against the AI Gateway (no separate runner process, no relay), so no agent CLI runs on this host and your data stays local. See [Agent runners](./runners.md) and [Cloud runner](./cloud-runner.md). The daemon loops (scheduler, reply poller, retention, keyword-watcher, webhook-sender, insights) can also run embedded in the web process via `PITCHBOX_EMBED_DAEMON=1` instead of as a separate process.
 
+## Authentication and accounts
+
+Off by default (`PITCHBOX_AUTH` unset) - no login, every visitor is the sole
+operator with full access, the point of a single-user self-host. Turn it on
+with `PITCHBOX_AUTH=on`; see [Authentication](./auth.md) for the full
+session, rate-limit and registration model.
+
+With it on, an account can come from four places: the first-run bootstrap
+(whoever submits the first `POST /api/auth/login` claims the owner account),
+`pitchbox seed:owner` run right after migrations so the owner is claimed
+before the URL is reachable, self-service registration at `/register`, or an
+invite an admin sends from `/settings/organization`. Self-registration is
+gated by a three-state policy - `open` / `invite` / `off` - stored in
+`app_config.registration_policy` and set from `/settings/admin` (instance
+admin only). **The default, and what a fresh deployment gets with nothing
+configured, is `invite`** - a self-host that wants nobody to register at all
+sets it to `off` and creates accounts only through `seed:owner` or
+`pitchbox user:create` (see [CLI reference](./cli.md)).
+
+## Outbound email
+
+Invites and password reset send mail through one pluggable transport
+(`@pitchbox/shared/mail`), selected by environment variable and read fresh
+at send time - never persisted to the database:
+
+```bash
+# MAIL_PROVIDER selects a real transport explicitly ('resend' or 'smtp').
+# Unset, unrecognized, or missing the provider's required credential(s)
+# below all fall back to the null transport, not a failed send.
+# MAIL_PROVIDER=resend
+
+# Sender address for every outbound email, "Name <addr>" or a bare address.
+# Optional: defaults to "Pitchbox <no-reply@pitchbox.app>".
+# MAIL_FROM=
+
+# --- resend (MAIL_PROVIDER=resend) ------------------------------------------
+# RESEND_API_KEY=
+
+# --- smtp (MAIL_PROVIDER=smtp) - self-host escape hatch ---------------------
+# SMTP_HOST=
+# SMTP_PORT=587
+# SMTP_SECURE=false
+# SMTP_USER=
+# SMTP_PASS=
+```
+
+**The null transport is the default, and it is a supported state, not a
+missing feature.** With nothing set above, a self-host keeps working: an
+invite or reset request never throws, it just logs what it would have sent
+(`[mail] null transport - would send "..." to ...`) and drops it. Nobody
+actually receives the email, so an invite's copyable link
+(`/settings/organization`) stays the only way to deliver it, and a lost
+password recovers through `pitchbox user:reset-password` (see [CLI
+reference](./cli.md)) rather than a reset email that will never arrive.
+
+Every outbound link is built from the request's own origin
+(`event.url.origin`), which `adapter-node` resolves from the `ORIGIN` env
+var behind a reverse proxy, so a deployment on any domain gets working links
+with no code change. The instance at `https://app.pitchbox.app` is one
+example: its apex, `pitchbox.app`, is still answered by the same deployment
+while the two are transitionally both trusted origins, so a caller still on
+the apex during that migration gets a link back to the apex rather than to
+`app.pitchbox.app`.
+
 ## Backups
 
 `pg_dump pitchbox` is enough. Everything that matters lives in Postgres:
 
 - Campaigns, runs, drafts, contact history, blocklist, messages.
 - Encrypted account credentials (`accounts.cookie_session`), for the platforms that have one. LinkedIn accounts carry no credential at all: see [LinkedIn](/platforms/linkedin).
-- App config (`app_config`) - quota defaults, runner configs, default runner, retention policy, notification webhooks. Extension auth uses per-device tokens in `extension_devices`, not a singleton here.
+- App config (`app_config`) - quota defaults, runner configs, default runner, retention policy, notification webhooks, registration policy. Extension auth uses per-device tokens in `extension_devices`, not a singleton here.
 - Built-in and user playbooks.
 
 `ENCRYPTION_KEY` is **not** in Postgres - keep it in `.env` or a secret store, and snapshot it alongside backups or you'll lose access to encrypted columns.

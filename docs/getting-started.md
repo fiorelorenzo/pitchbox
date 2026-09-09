@@ -64,7 +64,14 @@ echo 'PITCHBOX_AUTH=on' >> .env
 pnpm run dev
 ```
 
-The first user you create via `/login` becomes the admin.
+Whoever submits that first `/login` form claims the owner account (also the
+instance admin). After that, more accounts come from an invite an owner or
+admin sends from `/settings/organization`, from self-service registration at
+`/register` (invite-only by default - see [Authentication](/auth)), or from
+`pitchbox user:create` on the CLI (see [CLI reference](/cli)). Invite and
+password-reset emails need a mail transport configured; with nothing set,
+Pitchbox logs what it would have sent and drops it - see
+[Self-hosting](/self-hosting) for the env vars and the CLI fallback.
 
 ## Command palette
 

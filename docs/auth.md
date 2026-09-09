@@ -8,45 +8,92 @@ PITCHBOX_AUTH=on
 
 When on, `hooks.server.ts` checks the `pitchbox_session` cookie on every non-exempt request:
 
-- HTML navigations without a valid session → redirect to `/login?next=<path>`.
+- HTML navigations without a valid session → redirect to `/login?next=<path>` (or to `/register?next=<path>` for an `/invite/<token>` link - an invite is an account nobody has yet).
 - `/api/*` calls without a valid session → `401 unauthenticated`.
-- `/api/extension/*` and `/api/auth/*` remain exempt by design. The extension authenticates with a per-device bearer token minted via `POST /api/extension/auto-pair` (which itself reads the dashboard session cookie).
+- `/api/extension/*` is exempt by design - the extension authenticates with a per-device bearer token minted via `POST /api/extension/auto-pair` (which itself reads the dashboard session cookie). Only part of `/api/auth/*` is exempt, not the whole prefix: `login`, `logout`, `register`, `password/forgot` and `password/reset` have to be reachable with no session by definition. `password` (self-service change, below), `unlock` and `failures` stay behind session resolution like every other `/api/*` route - `/login`, `/register` and `/reset` (plus `/reset/<token>`) are exempt the same way on the HTML side.
 - `POST /api/run` is not exempt, but has one narrow bypass for the daemon's own scheduled/keyword-triggered dispatch (`daemon/src/scheduler.ts`, `daemon/src/keyword-watcher.ts`), which carries no browser session and never will (#378). A request with no session cookie is still accepted there if it carries `Authorization: Bearer <PITCHBOX_INTERNAL_TOKEN>`, compared in constant time. The bypass only ever applies to that one route, only when there is no session, and only when `PITCHBOX_INTERNAL_TOKEN` is configured - unset (the default), the route stays exactly as closed as every other `/api/*` route. A session, when present, always takes priority.
 
 ## First-run bootstrap
 
 On a brand-new install the `users` table is empty and the initial owner account is created the first time credentials are submitted to `POST /api/auth/login`; every later login then verifies with scrypt against the stored `password_hash`.
 
-For any internet-facing deployment, claim the owner account (or seed it from deploy credentials) before the URL is reachable, so the initial account is never left unclaimed by an operator. Run `pitchbox seed:owner` right after migrations in the deploy pipeline: it reads `PITCHBOX_OWNER_USERNAME` and `PITCHBOX_OWNER_PASSWORD` from the environment and creates the owner (plus its default-org owner membership) through the same `createUser()` path the login bootstrap uses. It is a no-op (logs and exits 0) if a user already exists or either env var is unset, so it's safe to run on every deploy.
+For any internet-facing deployment, claim the owner account (or seed it from deploy credentials) before the URL is reachable, so the initial account is never left unclaimed by an operator. Run `pitchbox seed:owner` right after migrations in the deploy pipeline: it reads `PITCHBOX_OWNER_USERNAME` and `PITCHBOX_OWNER_PASSWORD` from the environment and creates the owner (plus its default-org owner membership) through the same `createUser()` path the login bootstrap uses. It is a no-op (logs and exits 0) if a user already exists or either env var is unset, so it's safe to run on every deploy. This is the only way the _first_ account comes into existence; once one exists, Registration, an org invite, and the CLI below are the others.
 
 ## Registration
 
-`POST /api/auth/register` (#504) creates an account for anyone, since the
-decision of 2026-09-09 opened sign-up: `username`, `password` and `email`
-(required, unique on a normalized - trimmed, lowercased - value, #507), plus
-an optional `token` when the visitor arrived via `/invite/<token>`. It never
-goes through `createUser()`: that helper always joins the single-tenant
-`default` org as owner, which would make every stranger who registers an
-owner of it. Instead, in one transaction:
+`POST /api/auth/register` (#504) creates an account with `username`,
+`password` and `email` (required, unique on a normalized - trimmed,
+lowercased - value, #507), plus an optional `token` when the visitor arrived
+via `/invite/<token>`. Whether it succeeds at all is gated by a three-state,
+instance-wide policy (#505, `shared/src/registration-policy.ts`,
+`app_config.registration_policy`), read fresh on every call so a change from
+Settings takes effect with no redeploy:
+
+- `open` - anyone can register, with or without an invite token.
+- `invite` - a registration must carry a valid invite token. **This is the
+  code default**, and what a fresh deployment gets with nothing configured -
+  a self-host operator turning `PITCHBOX_AUTH=on` is usually making the app
+  reachable for themselves and their invitees, not the public.
+- `off` - no registration at all; accounts come only from `seed:owner` or the
+  CLI (see "Account recovery from the shell" below).
+
+An instance admin changes it from `/settings/admin` (`GET`/`POST
+/api/settings/admin/registration`, see [permissions.md](./permissions.md)) -
+never the code default, which stays `invite`. A closed policy answers `403 {
+"error": "registration_closed" }`; an invite-only policy with no token
+answers `403 { "error": "invite_required" }`. `/register` itself reads the
+same policy and hides the form rather than offering one that could only
+fail, except when an invite token in the URL makes it valid anyway.
+
+The route never goes through `createUser()`: that helper always joins the
+single-tenant `default` org as owner, which would make every stranger who
+registers an owner of it. Instead, in one transaction:
 
 - **With a valid token**: the account is created and `acceptInvite` joins the
   inviting org with the invited role - never `default`, no org of its own.
-- **With no token**: the account gets its own single-owner organization
-  (`createOrganization`, slug derived from the username and collision-
-  suffixed). #513 owns the real policy here (slug source, quota, role
-  nuance); this is a narrow stand-in so open sign-up isn't accidentally
-  invite-only.
+- **With no token** (only reachable under `open`): the account gets its own
+  single-owner organization (`createOrganization`, slug derived from the
+  username and collision-suffixed). #513 owns the real policy here (slug
+  source, quota, role nuance); this is a narrow stand-in so open sign-up
+  isn't accidentally invite-only.
 
 An invalid, expired, revoked or already-consumed token refuses the whole
-registration (no account is created). A duplicate username or email returns
-`409 { "error": "username_taken" | "email_taken" }`. Rate-limited by IP
-through the same `auth_failures` table and policy as login. Login itself
-stays username-only rather than accepting either username or email -
-password recovery (a separate future child of #503) identifies people by
-address through its own route instead.
+registration (no account is created): `400 { "error":
+"invalid_or_expired_invite" }`. A duplicate username or email returns `409 {
+"error": "username_taken" | "email_taken" }`. Rate-limited by IP through the
+same `auth_failures` table and policy as login. Login itself stays
+username-only rather than accepting either username or email - password
+recovery identifies people by address through its own route instead (below).
 
 `/invite/<token>` sends a visitor with no session to `/register?next=...`
 (not `/login`): an invite is an account nobody has yet.
+
+## Password: change and reset
+
+Two ways to end up with a new password, plus the CLI escape hatch below.
+
+- **Self-service change** (#506, `POST /api/auth/password`,
+  `/settings/password`) - the signed-in caller supplies their current and
+  new password. It reuses the login route's rate-limit buckets, so a wrong
+  current-password guess here throttles the same way a bad login attempt
+  does. On success every _other_ session for the account is revoked; the one
+  making the request stays alive.
+- **Forgot / reset by email** (#509) - `POST /api/auth/password/forgot`
+  takes an `email` and always answers `200 { "ok": true }` whether or not
+  the address has an account, so the response can never be used to test
+  which addresses exist. When it does, it mints a single-use token
+  (20-minute expiry) and emails a `/reset/<token>` link through whatever
+  mail transport is configured (see [self-hosting.md](./self-hosting.md) -
+  the default sends nothing). `POST /api/auth/password/reset` redeems the
+  token, sets the new password, and - unlike the self-service change -
+  revokes _every_ session for the account, including the one making the
+  request; the caller ends up signed in through a freshly minted session
+  instead. Both routes are rate-limited by IP and by the submitted address,
+  and both are exempt from session resolution the same way `/register` and
+  `/login` are, since a locked-out visitor has none by definition.
+
+Neither covers an account with no email on file - see "Account recovery from
+the shell" below.
 
 ## Sessions
 
@@ -78,7 +125,22 @@ Override by inserting/updating that row directly - the login route reads it on e
 
 ## Account recovery from the shell
 
-A self-host that never configures email still needs a way in when a password is lost, and no console. `pitchbox user:create <username> [--admin]`, `pitchbox user:reset-password <username>`, and `pitchbox user:list` (see `docs/cli.md`) cover it: create an account, set a password, and grant instance-admin are each an explicit action, not one magic command that does all three. `user:create` and `user:reset-password` never accept a password as an argument - `PITCHBOX_CLI_PASSWORD`, piped stdin, or an echo-suppressed prompt only - and `user:reset-password` deletes that user's sessions and clears their `auth_failures` bucket, the same recovery `/settings/password` performs on itself.
+Forgot/reset by email (above) only covers an account with an address on
+file, and only on a deployment with a real mail transport configured - the
+default sends nothing. `pitchbox user:create <username> [--admin]`,
+`pitchbox user:reset-password <username>`, and `pitchbox user:list` (see
+`docs/cli.md`) cover the rest: an account made this way, from `seed:owner`,
+or from the pre-#507 first-run bootstrap has no email at all (nothing in the
+app can set one on an existing account), so it can never use the emailed
+flow - the CLI is its only recovery path, permanently, not just until mail
+is configured. Create an account, set a password, and grant instance-admin
+are each an explicit action, not one magic command that does all three.
+`user:create` and `user:reset-password` never accept a password as an
+argument - `PITCHBOX_CLI_PASSWORD`, piped stdin, or an echo-suppressed
+prompt only. `user:reset-password` deletes every one of that account's
+sessions and clears its `auth_failures` bucket - the same mechanics `POST
+/api/auth/password/reset` (the emailed reset link) uses, since neither has a
+"this tab" session to spare the way the signed-in self-service change does.
 
 ## Organizations and memberships
 

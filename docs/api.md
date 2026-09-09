@@ -7,7 +7,7 @@ The dashboard's `/api/*` routes power the UI and the extension. Authentication d
 - **Cookie session** (`pitchbox_session`) when `PITCHBOX_AUTH=on` - covers everything **except** the cases below.
 - **Internal dispatch token** (`Authorization: Bearer <token>`) - the one exception to cookie auth on a non-exempt route: `POST /api/run` accepts `PITCHBOX_INTERNAL_TOKEN` in place of a session, but only when there is no session on the request and the token is configured. This is how the daemon (which has no browser session) authenticates its own scheduled/keyword-triggered dispatch - see [`auth.md`](./auth.md) (#378).
 - **Extension per-device token** (`Authorization: Bearer <token>`) - required for every `/api/extension/*` call. Each paired device gets its own token in `extension_devices`; the side panel mints one via `POST /api/extension/auto-pair` using the dashboard session cookie. There is no shared singleton token.
-- **Public** - `/api/auth/login`, `/api/auth/logout`, and `/api/extension/auto-pair` (which authenticates with the dashboard session cookie, not a bearer token).
+- **Public** - `/api/auth/login`, `/api/auth/logout`, `/api/auth/register`, `/api/auth/password/forgot`, `/api/auth/password/reset`, and `/api/extension/auto-pair` (which authenticates with the dashboard session cookie, not a bearer token). `/api/auth/password` (self-service change), `/api/auth/unlock` and `/api/auth/failures` are **not** public despite the `/api/auth/*` prefix - they need a session like every other `/api/*` route (see [`auth.md`](./auth.md)).
 
 ## Selected endpoints
 
@@ -44,6 +44,10 @@ DELETE /api/playbooks/[id]
 # Auth
 POST /api/auth/login                         # { username, password }
 POST /api/auth/logout
+POST /api/auth/register                      # { username, password, email, token? } - policy-gated, see auth.md
+POST /api/auth/password                      # { currentPassword, newPassword } - session required
+POST /api/auth/password/forgot               # { email } - always 200, mints a reset token when the address exists
+POST /api/auth/password/reset                # { token, newPassword }
 
 # Extension - pairing
 POST /api/extension/pair                     # public → redeem a short-lived pairing code for a token

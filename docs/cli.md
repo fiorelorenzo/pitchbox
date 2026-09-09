@@ -30,9 +30,19 @@ pitchbox drafts:regenerate <id> [--hint "..."]
 
 Regeneration runs as an agent job dispatched by the web app. The dashboard's `POST /api/drafts/[id]/regenerate` (and the Inbox **Regenerate** action) launch a `draft_regeneration` run that rewrites the draft body honoring the reviewer hint, records the hint into `draft_regeneration_hints`, appends a `regenerated` draft_event that snapshots the previous body (so the change is undoable), and re-scores the draft. The CLI command is a thin pointer to that web flow.
 
+## `pitchbox seed:owner`
+
+Creates the owner user (and default-org owner membership) from
+`PITCHBOX_OWNER_USERNAME`/`PITCHBOX_OWNER_PASSWORD` in the environment, through
+the same `createUser()` path the first-run login bootstrap uses. A no-op
+(logs and exits 0) if a user already exists or either env var is unset, so
+it's safe to run on every deploy - the deploy pipeline runs it right after
+migrations so the owner account is never left unclaimed on a public URL. See
+[auth.md](auth.md#first-run-bootstrap).
+
 ## `pitchbox user:create <username> [--admin]`
 
-Creates an account (and default-org owner membership, same `createUser()` path `seed:owner` and first-login bootstrap use) - the way an operator with shell access gets in without writing a `password_hash` into Postgres by hand. Fails with `user_exists` and an actionable message, not a stack trace, on a username that already exists. `--admin` grants instance-admin at creation; it is a separate, explicit flag rather than something a fresh account gets for free.
+Creates an account (and default-org owner membership, same `createUser()` path `seed:owner` and first-login bootstrap use) - the way an operator with shell access gets in without writing a `password_hash` into Postgres by hand. Takes no `--email`: a CLI-created account has none, and nothing in the app can set one later, so it can never use the emailed forgot-password flow (see [auth.md](auth.md#account-recovery-from-the-shell)) - only `user:reset-password` recovers it. Fails with `user_exists` and an actionable message, not a stack trace, on a username that already exists. `--admin` grants instance-admin at creation; it is a separate, explicit flag rather than something a fresh account gets for free.
 
 The password is never a command-line argument - it lands in shell history and is visible to every other process on the box via `ps`. It's read, in order: from `PITCHBOX_CLI_PASSWORD`, or from stdin when piped (`echo "$PW" | pitchbox user:create alice`), or from an interactive echo-suppressed prompt otherwise.
 
@@ -43,3 +53,13 @@ Sets a new password for an existing account: rehashes, revokes every one of that
 ## `pitchbox user:list`
 
 Read-only. Prints every account's id, username, email, instance-admin flag, and org membership/role - the fastest way to answer "who can get into this deployment" without a database client.
+
+## When to reach for these instead of the email flow
+
+Registration and the forgot/reset flow (see [auth.md](auth.md#registration))
+cover anyone with an address, on a deployment with mail configured. Reach for
+the commands above instead when either isn't true: bootstrapping or
+recovering a self-host before mail is set up (the default sends nothing),
+creating an account for someone without going through a public registration
+form at all, or recovering any account made from the shell in the first
+place - it has no email to reset by.
