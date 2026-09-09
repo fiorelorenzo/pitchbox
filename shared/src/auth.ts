@@ -1,10 +1,11 @@
-import { randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { and, desc, eq, gt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import {
   appConfig,
   authFailures,
+  passwordResetTokens,
   sessions,
   users,
   organizations,
@@ -47,10 +48,19 @@ export async function loadAuthPolicy(db: Db): Promise<AuthPolicy> {
   };
 }
 
-export async function recordAuthFailure(db: Db, identifier: string): Promise<void> {
-  // Two rows per failed attempt - one keyed by IP, one by username - so the
-  // counter can check either bucket independently.
-  await db.insert(authFailures).values({ identifier, kind: 'login_attempt' });
+export async function recordAuthFailure(
+  db: Db,
+  identifier: string,
+  kind = 'login_attempt',
+): Promise<void> {
+  // One row per attempt against a bucket (IP or the caller's own
+  // identifier) - the counter checks each bucket independently. `kind`
+  // defaults to the original login-attempt label so the two existing call
+  // sites (login, password change) are unaffected; the forgot/reset-
+  // password routes (#509) pass their own kind so an admin reading
+  // listRecentAuthFailures can tell a mail-bomb attempt on the reset flow
+  // apart from a credential-guessing attempt on login.
+  await db.insert(authFailures).values({ identifier, kind });
 }
 
 export async function countAuthFailuresSince(
@@ -349,4 +359,58 @@ export async function findUserByEmail(
     .where(eq(users.email, normalized))
     .limit(1);
   return rows[0] ?? null;
+}
+
+// 20 minutes: inside the 15-30 minute window #509 calls for. Short enough
+// that a link sitting in an inbox for hours is dead by the time anyone but
+// the intended recipient could use it; long enough that fetching mail on a
+// slow connection doesn't race it.
+const RESET_TOKEN_TTL_MS = 20 * 60 * 1000;
+
+/**
+ * Mints a single-use, time-limited password reset token for `userId` and
+ * stores only its hash (`password_reset_tokens.token_hash`). Structurally
+ * this is org_invites' shape - a random token, an expiry, a single-use
+ * marker - but hashed at rest like extension_devices.token_hash
+ * (web/src/lib/server/extension-auth.ts's `hashToken`/`mintDeviceToken`):
+ * org_invites stores its token in the clear, which is fine for a link an
+ * org admin hands out on purpose, but wrong for a credential that proves
+ * control of an arbitrary mailbox. The raw token is returned once here and
+ * is not recoverable from the row afterward.
+ */
+export async function createPasswordResetToken(
+  db: Db,
+  userId: number,
+): Promise<{ token: string; expiresAt: Date }> {
+  const token = randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+  await db
+    .insert(passwordResetTokens)
+    .values({ userId, tokenHash: createHash('sha256').update(token).digest('hex'), expiresAt });
+  return { token, expiresAt };
+}
+
+/**
+ * Atomically redeems a reset token: a single UPDATE that only matches a row
+ * still unused and unexpired, in the same statement that marks it used -
+ * the same compare-and-set shape the extension device rotate endpoint uses
+ * (web/src/routes/api/extension/rotate/+server.ts) against a concurrent
+ * second rotate, applied here against a concurrent second redemption of the
+ * same reset link. Returns the owning user id, or null for an unknown,
+ * already-used, or expired token - the caller must answer all three
+ * identically so a probe can't learn which one it hit.
+ */
+export async function consumePasswordResetToken(db: Db, token: string): Promise<number | null> {
+  const [row] = await db
+    .update(passwordResetTokens)
+    .set({ usedAt: new Date() })
+    .where(
+      and(
+        eq(passwordResetTokens.tokenHash, createHash('sha256').update(token).digest('hex')),
+        isNull(passwordResetTokens.usedAt),
+        gt(passwordResetTokens.expiresAt, new Date()),
+      ),
+    )
+    .returning({ userId: passwordResetTokens.userId });
+  return row?.userId ?? null;
 }

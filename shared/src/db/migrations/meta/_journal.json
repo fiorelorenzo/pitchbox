@@ -162,6 +162,13 @@
       "when": 1788960000010,
       "tag": "0023_users_email",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788960000011,
+      "tag": "0024_password_reset_tokens",
+      "breakpoints": true
     }
   ]
 }

@@ -120,6 +120,17 @@ function isExemptPath(pathname: string): boolean {
     pathname.startsWith('/api/auth/login') ||
     pathname.startsWith('/api/auth/logout') ||
     pathname.startsWith('/api/auth/register') ||
+    // Forgot/reset password (#509): a locked-out visitor has no session by
+    // definition, so the request page (`/reset`), the confirm page
+    // (`/reset/<token>`), and both API endpoints all need to be reachable
+    // session-less. Exact prefixes, same as the entries above - not a
+    // blanket `/api/auth/password`, which would also exempt the signed-in
+    // self-service change at POST /api/auth/password
+    // (web/src/routes/api/auth/password/+server.ts) that must stay behind
+    // session resolution.
+    pathname.startsWith('/reset') ||
+    pathname.startsWith('/api/auth/password/forgot') ||
+    pathname.startsWith('/api/auth/password/reset') ||
     pathname.startsWith('/_app/') ||
     pathname.startsWith('/favicon')
   );

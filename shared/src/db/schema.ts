@@ -149,6 +149,33 @@ export const authFailures = pgTable(
   }),
 );
 
+export const passwordResetTokens = pgTable(
+  'password_reset_tokens',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // Hashed at rest, same convention as extension_devices.token_hash
+    // (shared/src/db/schema.ts, extensionDevices below): the raw token is
+    // only ever in the emailed link, never written to the database, so a
+    // read of this table (backup, replica, compromised credential) cannot
+    // be turned into an account takeover.
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // Single use: null until the token is redeemed, set exactly once by the
+    // same atomic UPDATE that checks it's still null (shared/src/auth.ts's
+    // consumePasswordResetToken) - a second redemption attempt matches zero
+    // rows instead of racing a separate delete.
+    usedAt: timestamp('used_at', { withTimezone: true }),
+  },
+  (t) => ({
+    tokenHashUnique: uniqueIndex('password_reset_tokens_token_hash_unique').on(t.tokenHash),
+    byUser: index('password_reset_tokens_user_idx').on(t.userId),
+  }),
+);
+
 export const playbooks = pgTable('playbooks', {
   id: serial('id').primaryKey(),
   slug: text('slug').notNull().unique(),

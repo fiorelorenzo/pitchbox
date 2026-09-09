@@ -74,14 +74,17 @@
 				<Button onclick={submit} disabled={busy || !username || password.length < 8}>
 					{data.firstUser ? 'Create' : 'Sign in'}
 				</Button>
-				{#if !data.firstUser}
-					<p class="text-center text-xs text-muted-foreground">
-						Need an account? <a
-							href={`/register?next=${encodeURIComponent($page.url.searchParams.get('next') || '/')}`}
-							class="underline">Create one</a
-						>
-					</p>
-				{/if}
+			{#if !data.firstUser}
+				<p class="text-center text-xs text-muted-foreground">
+					Need an account? <a
+						href={`/register?next=${encodeURIComponent($page.url.searchParams.get('next') || '/')}`}
+						class="underline">Create one</a
+					>
+				</p>
+				<p class="text-center text-xs text-muted-foreground">
+					<a href="/reset" class="underline">Forgot your password?</a>
+				</p>
+			{/if}
 			</Card.Content>
 		{/if}
 	</Card.Root>
