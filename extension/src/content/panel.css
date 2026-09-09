@@ -422,6 +422,21 @@
   color: var(--destructive);
 }
 
+/* #556: the plan-refusal link, opening /settings/billing in a new tab
+ * alongside `.assist-refusal` above. `--link` exists precisely because
+ * `--primary` resolves to near-white in this dark palette (D3) - the
+ * dashboard's own Markdown links use the same token for the same reason. */
+.assist-link {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.assist-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
 /* A state's own headline, in the product's voice: "No suggestion for this
  * post", "Inserted". One step above the hint under it, and the reason
  * `.assist-status` is no longer carrying copy it was never sized for

@@ -25,6 +25,10 @@ const armed = vi.fn(async (_draftId: number, _backendUrl?: string) => ({
   ok: true as const,
   data: {},
 }));
+// #556: only reached from `setRefused`'s `billingLinkFor` branch (the two
+// plan refusals) - every other test in this file never calls it, so a
+// resolved default here changes nothing for them.
+const pickPairing = vi.fn(async () => ({ backendUrl: 'https://app.pitchbox.app' }));
 
 vi.mock('../../src/lib/api.js', () => ({
   api: {
@@ -33,6 +37,7 @@ vi.mock('../../src/lib/api.js', () => ({
     acceptSuggestion: (body: unknown) => acceptSuggestion(body),
     armed: (draftId: number, backendUrl?: string) => armed(draftId, backendUrl),
   },
+  pickPairing: () => pickPairing(),
 }));
 
 const logged: Array<Record<string, unknown>> = [];
@@ -449,6 +454,10 @@ describe('every refusal says which one it is', () => {
       'blocked',
       'backend_unreachable',
       'generation_failed',
+      // #556: the plan's own ceiling and a failed payment - distinct from
+      // each other, so the panel can say which one stopped it.
+      'plan_limit_reached',
+      'plan_payment_required',
     ].map((reason) => refusalMessage(reason).key);
 
     expect(new Set(keys).size).toBe(keys.length);
@@ -492,6 +501,122 @@ describe('refusal rendering: post-specific, not the comment assist copy', () => 
     await settle();
 
     expect(panelText()).toMatch(/nothing recent/i);
+  });
+});
+
+describe('a plan refusal explains itself and links to billing (#556)', () => {
+  it('renders its own message for a spent suggestion limit, with a billing link', async () => {
+    const { editor, modal } = renderModal();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'refused', reason: 'plan_limit_reached', detail: {} });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wirePostAssist(editor, modal);
+    editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(panelText()).toMatch(/suggestion limit/i);
+    const link = shadow().querySelector<HTMLAnchorElement>('.assist-link');
+    expect(link?.getAttribute('href')).toBe('https://app.pitchbox.app/settings/billing');
+    expect(link?.getAttribute('target')).toBe('_blank');
+  });
+
+  it('renders a distinct message for a failed payment, also with a billing link', async () => {
+    const { editor, modal } = renderModal();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'refused', reason: 'plan_payment_required', detail: {} });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wirePostAssist(editor, modal);
+    editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(panelText()).toMatch(/payment/i);
+    expect(panelText()).not.toMatch(/suggestion limit/i);
+    const link = shadow().querySelector<HTMLAnchorElement>('.assist-link');
+    expect(link?.getAttribute('href')).toBe('https://app.pitchbox.app/settings/billing');
+  });
+});
+
+describe('the loop narrates its own steps (#573)', () => {
+  it('names the tool it is running, collapses a parallel step into one line, and hands off to writing', async () => {
+    const { editor, modal } = renderModal();
+    // Driven from out here, one `settle()` per event - see the comment
+    // assist's own test of this, which this mirrors exactly, for why.
+    let deliver: ((event: Record<string, unknown>) => void) | undefined;
+    // extension/tsconfig.json targets a lib without `Promise.withResolvers`
+    // (cli/src/lib/password.ts hit the same wall) - the executor form is
+    // the one that typechecks here.
+    let finish!: (value: { ok: true; data: { ok: true } }) => void;
+    const suggestPromise = new Promise<{ ok: true; data: { ok: true } }>((resolve) => {
+      finish = resolve;
+    });
+    suggest.mockImplementation((_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+      deliver = onEvent;
+      return suggestPromise;
+    });
+
+    wirePostAssist(editor, modal);
+    editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    deliver!({ kind: 'status', phase: 'operator_voice' });
+    await settle();
+    expect(panelText()).toContain('Finding how you have written about this…');
+
+    deliver!({ kind: 'status', phase: 'project_knowledge,check_style' });
+    await settle();
+    expect(panelText()).toContain(
+      'Checking what it knows about this project and checking the style…',
+    );
+
+    deliver!({ kind: 'status', phase: 'writing' });
+    await settle();
+    expect(panelText()).toContain('Writing…');
+
+    deliver!({ kind: 'chunk', text: 'A short update.', section: 'draft' });
+    deliver!({ kind: 'done', reasoning: '', draft: 'A short update.', skipped: false, ms: 900 });
+    finish({ ok: true, data: { ok: true } });
+    await settle();
+    expect(shadow().querySelector('textarea')?.value).toBe('A short update.');
+  });
+
+  it('says it answered with what it had once the hard budget cuts a draft short', async () => {
+    const { editor, modal } = renderModal();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'chunk', text: 'A short update.', section: 'draft' });
+        onEvent({
+          kind: 'done',
+          reasoning: '',
+          draft: 'A short update.',
+          skipped: false,
+          ms: 90_000,
+          budgetExhausted: true,
+        });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wirePostAssist(editor, modal);
+    editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(panelText()).toContain('Answered with what it had time to gather.');
   });
 });
 

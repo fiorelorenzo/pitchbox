@@ -283,6 +283,15 @@ export const it = {
 
   'dashboard.connection.no-active-tab': 'Nessuna scheda attiva',
 
+  // #556: vedi il commento in dict-en.ts.
+  'dashboard.connection.plan-remaining':
+    'Piano {plan}: {remaining} di {limit} suggerimenti rimasti in questo periodo',
+  'dashboard.connection.plan-remaining-low':
+    'Piano {plan}: solo {remaining} di {limit} suggerimenti rimasti in questo periodo',
+  'dashboard.connection.plan-unlimited': 'Piano {plan}: suggerimenti illimitati',
+  'dashboard.connection.plan-read-only':
+    'Piano {plan}: sola lettura finché il problema di pagamento non è risolto',
+
   // In-page panel chrome. The wordmark is the product name, so it is not
   // translated; everything else on this surface is.
   'panel.title': 'Pitchbox',
@@ -293,6 +302,19 @@ export const it = {
   'assist.comment.resting.cta': 'Suggerisci un commento',
   'assist.status.reading': 'Lettura del post in corso…',
   'assist.status.writing': 'Scrittura in corso…',
+  // #573: vedi il commento in content/shared/assist-status.ts e in
+  // dict-en.ts. Minuscolo e senza iniziale maiuscola: `describeStatus`
+  // maiuscola quale che sia la frase (o combinazione) resa.
+  'assist.status.step.read_thread': 'lettura del thread',
+  'assist.status.step.look_at_image': "osservazione dell'immagine",
+  'assist.status.step.author_history': 'verifica di cosa hai già scritto a questa persona',
+  'assist.status.step.operator_voice': 'ricerca di come scrivi di solito su questo tema',
+  'assist.status.step.project_knowledge': 'verifica di cosa sa su questo progetto',
+  'assist.status.step.my_prior_takes': 'verifica dei tuoi commenti precedenti',
+  'assist.status.step.check_style': 'verifica dello stile',
+  'assist.status.step.unknown': 'ancora al lavoro',
+  'assist.status.slow': 'Questo sta richiedendo più tempo del solito.',
+  'assist.status.budget_exhausted': 'Risposto con quello che è riuscito a raccogliere in tempo.',
   'assist.comment.ready.label': 'Commento suggerito (modificabile)',
   'assist.action.accept': 'Inserisci',
   'assist.action.retry': 'Riprova',
@@ -327,6 +349,12 @@ export const it = {
     'Il layout di LinkedIn è cambiato e Pitchbox non è riuscito a leggere questo post in modo affidabile.',
   'assist.refusal.generation_failed':
     'Qualcosa è andato storto durante la scrittura del suggerimento.',
+  // #556: vedi il commento in dict-en.ts.
+  'assist.refusal.plan_limit_reached':
+    'Il limite di suggerimenti del tuo piano per questo periodo è esaurito.',
+  'assist.refusal.plan_payment_required':
+    "Risolvi il pagamento per continuare a usare l'assistente.",
+  'assist.action.open_billing': 'Apri le impostazioni di fatturazione',
   // See the comment on `assist.refusal.extension_reloaded` in dict-en.ts.
   'assist.refusal.extension_reloaded':
     'Pitchbox è stato ricaricato o aggiornato - ricarica questa pagina per riconnetterti.',
