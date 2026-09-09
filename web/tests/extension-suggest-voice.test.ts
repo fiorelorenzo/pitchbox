@@ -183,7 +183,7 @@ describe('per-project voice (#408)', () => {
     });
     const examples = (
       await loadActiveTemplates(db, { projectId: project.id, kind: 'comment' })
-    ).map((t) => ({ title: t.title, body: t.body }));
+    ).map((t) => ({ id: t.id, title: t.title, body: t.body, createdAt: t.createdAt }));
     const expected = buildSuggestionPrompt({
       kind: 'post_comment',
       post: POST_BODY.post,

@@ -32,11 +32,19 @@
 // (#382). The envelope instruction asks for the split that
 // `EnvelopeSplitter` parses, and it stays last for the same reason the old
 // line did - it is the instruction most often lost in the middle of a prompt.
+//
+// 2026-09-09 (#578): the few-shot examples stopped being "the first
+// MAX_EXAMPLES of whatever order the caller passed" and are now chosen for
+// the post at hand - `example-selection.ts`'s `selectExamples`, lexical
+// overlap with the post rather than recency, with a recency fallback when
+// nothing in the corpus is topically close. See that module for the full
+// rationale; this file only owns rendering the result.
 
 import { HOUSE_STYLE_HEADING, HOUSE_STYLE_SECTION } from '../house-style.js';
 import { envelopeInstruction } from './envelope.js';
 import type { CodeRepo, OperatorPersona, ProjectBrief, VoiceProfileSummary } from './context.js';
 import { describePostRegister, readPostRegister } from './register.js';
+import { selectExamples, type ExampleCandidate } from './example-selection.js';
 import { ASSIST_TONE_NOTES_MAX, DEFAULT_ASSIST_TONE, type AssistTone } from './tone.js';
 
 /** The two kinds the in-page assistant can suggest. */
@@ -183,7 +191,10 @@ export const MAX_THREAD_CHARS = 6000;
  * rather than trusting that clamp. */
 export const MAX_IMAGE_DATA_URL_CHARS = 280_000;
 /** How many few-shot examples are worth carrying. More lengthens the prompt
- * without changing the voice, and the first token is what the human waits on. */
+ * without changing the voice, and the first token is what the human waits
+ * on - unchanged by #578, which is about *which* examples clear this
+ * ceiling, not how many. `example-selection.ts`'s `selectExamples` is what
+ * decides which; this is still the only cap. */
 export const MAX_EXAMPLES = 3;
 /** Ceilings on borrowed text from the companion context, same reasoning as
  * MAX_POST_CHARS: past this a prompt grows without the suggestion getting any
@@ -302,8 +313,10 @@ export function buildSuggestionPrompt(args: {
   /** Every project in the organization, including the current one. */
   projects: ProjectBrief[];
   repos: CodeRepo[];
-  /** Active few-shot templates for this project, already filtered by kind. */
-  examples?: Array<{ title: string; body: string }>;
+  /** Active few-shot templates for this project, already filtered by kind -
+   * `selectExamples` (`example-selection.ts`) picks which of these actually
+   * reach the prompt. */
+  examples?: ExampleCandidate[];
   /** Optional steer the human typed into the panel. */
   hint?: string;
   /**
@@ -436,13 +449,16 @@ export function buildSuggestionPrompt(args: {
     );
   }
 
-  const examples = (args.examples ?? []).slice(0, MAX_EXAMPLES);
-  if (examples.length > 0) {
+  const exampleSelection = selectExamples({ text: post.text }, args.examples ?? [], MAX_EXAMPLES);
+  if (exampleSelection.examples.length > 0) {
+    const intro =
+      exampleSelection.mode === 'similarity'
+        ? 'Things this account has written before on a similar subject. Match this voice, do not reuse the content:'
+        : 'Things this account has written before (nothing on file was a close topical match, so these are the most recent). Match this voice, do not reuse the content:';
     parts.push(
-      [
-        'Things this account has written before. Match this voice, do not reuse the content:',
-        ...examples.map((e) => `- ${e.title}: ${clamp(e.body, 600)}`),
-      ].join('\n'),
+      [intro, ...exampleSelection.examples.map((e) => `- ${e.title}: ${clamp(e.body, 600)}`)].join(
+        '\n',
+      ),
     );
   }
 
