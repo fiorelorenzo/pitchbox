@@ -40,7 +40,6 @@ import { resolveFunctionModel, gateModelForPlan } from '../ai/model-functions.js
 import { loadGatewayCatalogue } from '../ai/gateway-catalogue.js';
 import { buildSdkUsage, type SdkModelPricing } from '../agents/sdk/event-normalizer.js';
 import { checkStyle, type StyleFinding } from '../style-check.js';
-import { PERSONAL_PROJECT_SLUG } from '../personal-project.js';
 import {
   MAX_COMMENT_CHARS,
   MAX_POST_CHARS,
@@ -89,9 +88,9 @@ export interface AssistToolContext {
   /** The organization this suggestion belongs to. Every query below filters
    * on this - never on anything a tool argument could name. */
   orgId: number;
-  /** The project this suggestion is filed under: the device's bound
-   * project, or the org's `personal` project (see `personal-project.ts`). */
-  boundProjectId: number;
+  /** The project this suggestion is filed under, or null when none is bound
+   * (#523: a project is optional context, never a requirement). */
+  boundProjectId: number | null;
   /** Null when nothing was captured for this device (a fresh binding, nothing
    * scrolled since the collector was last on) - every tool that reads it
    * refuses explicitly rather than fabricating a post. */
@@ -142,25 +141,6 @@ async function resolveLinkedinPlatformId(db: Db): Promise<number | null> {
     .select({ id: schema.platforms.id })
     .from(schema.platforms)
     .where(eq(schema.platforms.slug, 'linkedin'))
-    .limit(1);
-  return row?.id ?? null;
-}
-
-/** The org's `personal` project id, read-only. Unlike
- * `personal-project.ts`'s `ensurePersonalProject`, this never creates the
- * row - `project_knowledge` only reads, per the module header ("no tool
- * writes anything"), and a project every org gets at creation time is not
- * expected to be missing outside a pre-migration organization. */
-async function resolvePersonalProjectId(db: Db, orgId: number): Promise<number | null> {
-  const [row] = await db
-    .select({ id: schema.projects.id })
-    .from(schema.projects)
-    .where(
-      and(
-        eq(schema.projects.organizationId, orgId),
-        eq(schema.projects.slug, PERSONAL_PROJECT_SLUG),
-      ),
-    )
     .limit(1);
   return row?.id ?? null;
 }
@@ -485,8 +465,8 @@ export interface AuthorHistoryResult {
     id: number;
     kind: string;
     state: string;
-    /** True for a draft created through an accepted suggestion (a `runs`
-     * row of kind `'assist'`) rather than a campaign. */
+    /** True for a row from the assist plane's own ledger
+     * (`assist_accepted_suggestions`, #521) rather than a campaign draft. */
     viaAssist: boolean;
     excerpt: string;
     createdAt: string;
@@ -510,7 +490,7 @@ const authorHistory: AssistTool<Record<string, never>, AuthorHistoryResult> = {
       return { ok: false, reason: 'the linkedin platform is not configured on this instance' };
     }
 
-    const [blocklistResult, contactRows, draftRows, messageRows] = await Promise.all([
+    const [blocklistResult, contactRows, draftRows, acceptedRows, messageRows] = await Promise.all([
       isBlocklisted(ctx.db, {
         platformId,
         projectId: ctx.boundProjectId,
@@ -533,6 +513,9 @@ const authorHistory: AssistTool<Record<string, never>, AuthorHistoryResult> = {
         )
         .orderBy(desc(schema.contactHistory.lastContactedAt))
         .limit(1),
+      // Campaign drafts only, going forward: an accepted suggestion never
+      // writes a `runs`/`drafts` row again (#521) - its own prior outreach
+      // comes from `assistAcceptedSuggestions` below instead.
       ctx.db
         .select({
           id: schema.drafts.id,
@@ -541,10 +524,8 @@ const authorHistory: AssistTool<Record<string, never>, AuthorHistoryResult> = {
           body: schema.drafts.body,
           sentContent: schema.drafts.sentContent,
           createdAt: schema.drafts.createdAt,
-          runKind: schema.runs.kind,
         })
         .from(schema.drafts)
-        .innerJoin(schema.runs, eq(schema.runs.id, schema.drafts.runId))
         .innerJoin(schema.projects, eq(schema.projects.id, schema.drafts.projectId))
         .where(
           and(
@@ -554,6 +535,23 @@ const authorHistory: AssistTool<Record<string, never>, AuthorHistoryResult> = {
           ),
         )
         .orderBy(desc(schema.drafts.createdAt))
+        .limit(AUTHOR_HISTORY_MAX_ITEMS),
+      ctx.db
+        .select({
+          id: schema.assistAcceptedSuggestions.id,
+          kind: schema.assistAcceptedSuggestions.kind,
+          body: schema.assistAcceptedSuggestions.body,
+          createdAt: schema.assistAcceptedSuggestions.createdAt,
+        })
+        .from(schema.assistAcceptedSuggestions)
+        .where(
+          and(
+            eq(schema.assistAcceptedSuggestions.organizationId, ctx.orgId),
+            eq(schema.assistAcceptedSuggestions.platformId, platformId),
+            eq(schema.assistAcceptedSuggestions.authorHandle, authorHandle),
+          ),
+        )
+        .orderBy(desc(schema.assistAcceptedSuggestions.createdAt))
         .limit(AUTHOR_HISTORY_MAX_ITEMS),
       ctx.db
         .select({
@@ -577,13 +575,43 @@ const authorHistory: AssistTool<Record<string, never>, AuthorHistoryResult> = {
 
     const contact = contactRows[0] ?? null;
     const hasAnySignal =
-      blocklistResult.blocked || !!contact || draftRows.length > 0 || messageRows.length > 0;
+      blocklistResult.blocked ||
+      !!contact ||
+      draftRows.length > 0 ||
+      acceptedRows.length > 0 ||
+      messageRows.length > 0;
     if (!hasAnySignal) {
       return {
         ok: false,
         reason: `no prior contact with ${authorHandle} - nothing on file for this organization`,
       };
     }
+
+    // Two sources of prior outreach, merged by time: campaign drafts and the
+    // assist plane's own ledger (#521) - an accepted suggestion has no state
+    // machine to report, so it reports the fixed state 'accepted' instead.
+    const outreach = [
+      ...draftRows.map((d) => ({
+        id: d.id,
+        kind: d.kind,
+        state: d.state,
+        viaAssist: false,
+        excerpt: clampText(d.sentContent ?? d.body, AUTHOR_HISTORY_EXCERPT_MAX).text,
+        createdAt: d.createdAt,
+      })),
+      ...acceptedRows.map((a) => ({
+        id: a.id,
+        kind: a.kind,
+        state: 'accepted',
+        viaAssist: true,
+        excerpt: clampText(a.body, AUTHOR_HISTORY_EXCERPT_MAX).text,
+        createdAt: a.createdAt,
+      })),
+    ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const outreachTruncated =
+      draftRows.length >= AUTHOR_HISTORY_MAX_ITEMS ||
+      acceptedRows.length >= AUTHOR_HISTORY_MAX_ITEMS ||
+      outreach.length > AUTHOR_HISTORY_MAX_ITEMS;
 
     return {
       ok: true,
@@ -596,13 +624,13 @@ const authorHistory: AssistTool<Record<string, never>, AuthorHistoryResult> = {
         repliedAt: contact?.repliedAt?.toISOString() ?? null,
         uncontactable: contact?.uncontactable ?? false,
         uncontactableReason: contact?.uncontactableReason ?? null,
-        priorOutreach: draftRows.map((d) => ({
-          id: d.id,
-          kind: d.kind,
-          state: d.state,
-          viaAssist: d.runKind === 'assist',
-          excerpt: clampText(d.sentContent ?? d.body, AUTHOR_HISTORY_EXCERPT_MAX).text,
-          createdAt: d.createdAt.toISOString(),
+        priorOutreach: outreach.slice(0, AUTHOR_HISTORY_MAX_ITEMS).map((o) => ({
+          id: o.id,
+          kind: o.kind,
+          state: o.state,
+          viaAssist: o.viaAssist,
+          excerpt: o.excerpt,
+          createdAt: o.createdAt.toISOString(),
         })),
         priorMessages: messageRows.map((m) => ({
           id: m.id,
@@ -611,7 +639,7 @@ const authorHistory: AssistTool<Record<string, never>, AuthorHistoryResult> = {
           at: m.createdAtPlatform.toISOString(),
         })),
         clamp: {
-          outreachTruncated: draftRows.length >= AUTHOR_HISTORY_MAX_ITEMS,
+          outreachTruncated,
           messagesTruncated: messageRows.length >= AUTHOR_HISTORY_MAX_ITEMS,
         },
       },
@@ -714,14 +742,16 @@ export interface ProjectKnowledgeResult {
 const projectKnowledge: AssistTool<{ projectId: number }, ProjectKnowledgeResult> = {
   name: 'project_knowledge',
   description:
-    "The named project's brief, the organization's public repos and their recent commits, and that project's insights. Only usable for the project this suggestion is filed under, or the organization's personal project - fetch this when the post is actually about the product, skip it otherwise.",
+    "The named project's brief, the organization's public repos and their recent commits, and that project's insights. Only usable for the project this suggestion is filed under - fetch this when the post is actually about that product, skip it otherwise.",
   schema: { projectId: z.number().int().positive() },
   async handler(ctx, args) {
-    const personalProjectId = await resolvePersonalProjectId(ctx.db, ctx.orgId);
-    if (args.projectId !== ctx.boundProjectId && args.projectId !== personalProjectId) {
+    if (ctx.boundProjectId == null) {
+      return { ok: false, reason: 'no project is bound to this suggestion' };
+    }
+    if (args.projectId !== ctx.boundProjectId) {
       return {
         ok: false,
-        reason: `project ${args.projectId} is neither the project this suggestion is filed under nor this organization's personal project`,
+        reason: `project ${args.projectId} is not the project this suggestion is filed under`,
       };
     }
 

@@ -3,15 +3,14 @@
 // (shared/src/agents/sdk/runner.ts, web/src/lib/server/runner.ts). Mirrors the
 // per-account quota helper's style (shared/src/quota.ts) but is org-scoped and
 // budget/concurrency based rather than per-account daily/weekly counts.
-import { and, eq, gte, inArray, lt, ne, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, or, sql } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { schema, type Db } from './db/client.js';
 
-// The loose handle personal-project.ts documents and orgs.ts already uses,
-// rather than the strict `Db` above: loadOrgQuotaDefaults is called from
-// createOrganization (shared/src/orgs.ts), which may be holding a
-// transaction handle mid-registration, and the strict schema-bound type
-// rejects that handle.
+// The loose handle orgs.ts already uses, rather than the strict `Db` above:
+// loadOrgQuotaDefaults is called from createOrganization
+// (shared/src/orgs.ts), which may be holding a transaction handle
+// mid-registration, and the strict schema-bound type rejects that handle.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = PgDatabase<any, any, any>;
 
@@ -290,13 +289,6 @@ export async function billingPeriodFor(
  * (`getOrgPeriodCostUsd` below still returns the single number a budget
  * decision needs).
  *
- * The `runs` side deliberately excludes `kind = 'assist'`: accepting a
- * suggestion (shared/src/assist-accept.ts) still writes a `runs` row so the
- * draft has somewhere to hang off `run_id`, but that row's own `cost_usd` is
- * always null now - the suggestion's cost was already ledgered here the
- * moment its stream finished, and summing both would count an accepted
- * suggestion twice (once here, once there).
- *
  * The `runs` query resolves the org's project ids first, then matches runs
  * against them directly (`runs.projectId`) or transitively via their
  * campaign (`runs.campaignId` -> `campaigns.projectId`), mirroring the
@@ -310,9 +302,13 @@ export async function billingPeriodFor(
  * double-count that run's cost in this un-grouped SUM and could falsely trip
  * `quota_exceeded`. Filtering by project id membership instead of joining
  * the table keeps each run a single row regardless of how many of its
- * project references resolve. `assist_usage` carries its own `projectId`
- * directly (a suggestion is always grounded in one project, never a
- * campaign), so its side needs no such join at all.
+ * project references resolve.
+ *
+ * `assist_usage` is filtered by `organizationId` directly rather than
+ * through the org's project ids: #523 made `assist_usage.project_id`
+ * nullable (a suggestion can be about no product at all), so an org with
+ * zero projects can still have assist spend to sum, which a project-id-only
+ * early return used to silently drop.
  */
 export interface OrgPeriodSpend {
   campaignUsd: number;
@@ -330,34 +326,31 @@ export async function getOrgPeriodSpend(
     .from(schema.projects)
     .where(eq(schema.projects.organizationId, orgId));
   const projectIds = orgProjects.map((p) => p.id);
-  // `inArray(x, [])` is a SQL error, and an org with no projects has no runs
-  // or assist usage to sum anyway.
-  if (projectIds.length === 0) {
-    return { campaignUsd: 0, assistantUsd: 0, totalUsd: 0 };
-  }
 
-  const [runRow] = await db
-    .select({ total: sql<string>`coalesce(sum(${schema.runs.costUsd}), 0)` })
-    .from(schema.runs)
-    .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
-    .where(
-      and(
-        ne(schema.runs.kind, 'assist'),
-        or(
-          inArray(schema.runs.projectId, projectIds),
-          inArray(schema.campaigns.projectId, projectIds),
-        ),
-        gte(schema.runs.startedAt, period.start),
-        lt(schema.runs.startedAt, period.end),
-      ),
-    );
+  const [runRow] =
+    projectIds.length === 0
+      ? [{ total: '0' }]
+      : await db
+          .select({ total: sql<string>`coalesce(sum(${schema.runs.costUsd}), 0)` })
+          .from(schema.runs)
+          .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
+          .where(
+            and(
+              or(
+                inArray(schema.runs.projectId, projectIds),
+                inArray(schema.campaigns.projectId, projectIds),
+              ),
+              gte(schema.runs.startedAt, period.start),
+              lt(schema.runs.startedAt, period.end),
+            ),
+          );
 
   const [assistRow] = await db
     .select({ total: sql<string>`coalesce(sum(${schema.assistUsage.costUsd}), 0)` })
     .from(schema.assistUsage)
     .where(
       and(
-        inArray(schema.assistUsage.projectId, projectIds),
+        eq(schema.assistUsage.organizationId, orgId),
         gte(schema.assistUsage.createdAt, period.start),
         lt(schema.assistUsage.createdAt, period.end),
       ),

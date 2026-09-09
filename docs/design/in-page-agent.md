@@ -144,15 +144,15 @@ Seven tools, all read-only, each taking its authority from the session and
 never from an argument the model supplies. The full contracts are #567's; what
 this document fixes is the authority model and the refusals.
 
-| Tool                | Model-supplied arguments                                                     | Server-supplied authority                                 | Refuses                                                            |
-| ------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
-| `read_thread`       | none                                                                         | the observed target captured for this device and org      | nothing rendered -> explicit "no thread captured"                  |
-| `look_at_image`     | none                                                                         | the crop captured with that target                        | no image -> explicit nothing; never a fetch of a remote asset      |
-| `author_history`    | none                                                                         | org id, the post author's handle from the captured target | no history -> explicit "no prior contact", which is information    |
-| `operator_voice`    | none                                                                         | operator profile for this org                             | thin evidence -> the defaults from #571, never an invented profile |
-| `project_knowledge` | project id **only if** it is the bound project or the org's personal project | org id, bound project                                     | any other project id -> refusal, not an empty result               |
-| `my_prior_takes`    | a lexical query string                                                       | org id, operator identity                                 | no match -> explicit nothing                                       |
-| `check_style`       | the draft text                                                               | none                                                      | never refuses; it is deterministic                                 |
+| Tool                | Model-supplied arguments                       | Server-supplied authority                                 | Refuses                                                                   |
+| ------------------- | ---------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `read_thread`       | none                                           | the observed target captured for this device and org      | nothing rendered -> explicit "no thread captured"                         |
+| `look_at_image`     | none                                           | the crop captured with that target                        | no image -> explicit nothing; never a fetch of a remote asset             |
+| `author_history`    | none                                           | org id, the post author's handle from the captured target | no history -> explicit "no prior contact", which is information           |
+| `operator_voice`    | none                                           | operator profile for this org                             | thin evidence -> the defaults from #571, never an invented profile        |
+| `project_knowledge` | project id **only if** it is the bound project | org id, bound project                                     | no project bound, or any other project id -> refusal, not an empty result |
+| `my_prior_takes`    | a lexical query string                         | org id, operator identity                                 | no match -> explicit nothing                                              |
+| `check_style`       | the draft text                                 | none                                                      | never refuses; it is deterministic                                        |
 
 Rules that hold for all of them:
 

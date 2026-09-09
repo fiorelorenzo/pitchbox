@@ -35,7 +35,10 @@ import type { OperatorPersona } from '@pitchbox/shared/assist/context';
  * Session binding for the assist MCP tools. An explicit context (the SDK
  * side, if it ever reused this server in-process) wins over the session env
  * a spawned subprocess reads, the same precedence `PitchboxMcpContext`
- * (./server.ts) follows.
+ * (./server.ts) follows. `boundProjectId` is optional (#523): a suggestion
+ * about no particular product still runs, with `project_knowledge` simply
+ * refusing every call since it has nothing to validate a project id
+ * against.
  */
 export interface AssistMcpContext {
   organizationId?: number;
@@ -102,15 +105,15 @@ export function createAssistMcpServer(ctx: AssistMcpContext = {}): McpServer {
       tool.name,
       { title: tool.name, description: tool.description, inputSchema: tool.schema },
       async (args: Record<string, unknown>, extra: { signal?: AbortSignal }) => {
-        if (organizationId == null || boundProjectId == null) {
+        if (organizationId == null) {
           return {
             isError: true,
             content: [
               {
                 type: 'text' as const,
                 text:
-                  'this assist MCP session has no bound organization/project - PITCHBOX_ASSIST_ORG_ID and ' +
-                  'PITCHBOX_ASSIST_PROJECT_ID must both be set before a tool call',
+                  'this assist MCP session has no bound organization - PITCHBOX_ASSIST_ORG_ID ' +
+                  'must be set before a tool call',
               },
             ],
           };
@@ -119,7 +122,7 @@ export function createAssistMcpServer(ctx: AssistMcpContext = {}): McpServer {
         const toolCtx: AssistToolContext = {
           db: getDb(),
           orgId: organizationId,
-          boundProjectId,
+          boundProjectId: boundProjectId ?? null,
           observedTarget,
           operator,
         };

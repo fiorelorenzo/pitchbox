@@ -3,22 +3,22 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import { requireExtensionAuth } from '$lib/server/extension-auth.js';
+import { requireExtensionAuth, resolveDeviceOrgId } from '$lib/server/extension-auth.js';
 import { RateLimiter } from '$lib/server/rate-limit.js';
-import { emit } from '$lib/server/events.js';
 import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist';
-import { acceptSuggestionIntoDraft } from '@pitchbox/shared/assist-accept';
+import { acceptSuggestion } from '@pitchbox/shared/assist-accept';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
 import { isOrgReadOnly } from '@pitchbox/shared/plans';
+import { resolveDefaultRunnerSlug } from '@pitchbox/shared/agents/config';
 
 // The other half of the real-time plane (#313): `POST /api/extension/suggest`
 // produces text nobody has committed to anything yet; this endpoint is what
 // turns the human's accept - the suggestion plus whatever they edited - into
-// a real `drafts` row, through the same blocklist/dedup/quota gates a
-// campaign draft goes through (`shared/src/assist-accept.ts`). See
-// docs/linkedin-integration-design.md, "Bookkeeping, which is where the two
-// planes touch."
+// a row in the assist plane's own ledger, through the same blocklist/dedup
+// gates a campaign draft goes through (`shared/src/assist-accept.ts`). No
+// `drafts` row, no `runs` row (#521) - see docs/linkedin-integration-design.md,
+// "Bookkeeping, which is where the two planes touch."
 //
 // There is no suggestion registry to reference by id - `/suggest` writes
 // nothing down - so the accept body carries the full context the panel
@@ -32,7 +32,9 @@ const perDevice = new RateLimiter(20, 60_000);
 const perOrg = new RateLimiter(60, 60_000);
 
 const BodySchema = z.object({
-  projectId: z.number().int().positive(),
+  // #523: context only - a suggestion can be accepted with no project at
+  // all, and files under none when it is.
+  projectId: z.number().int().positive().optional(),
   kind: z.enum(['post_comment', 'post']),
   post: z.object({
     urn: z.string().max(200).optional(),
@@ -41,6 +43,10 @@ const BodySchema = z.object({
     url: z.string().max(2000).optional(),
   }),
   body: z.string().min(1).max(10000),
+  // #521: the model's own draft text, sent only when the human changed it
+  // before accepting - worth keeping on the ledger row, per that issue's
+  // own field list.
+  editedFrom: z.string().max(10000).optional(),
   platform: z.string().min(1).max(40).default('linkedin'),
   usage: z
     .object({
@@ -48,7 +54,7 @@ const BodySchema = z.object({
       outputTokens: z.number().nonnegative().optional(),
       cacheReadTokens: z.number().nonnegative().optional(),
       cacheCreationTokens: z.number().nonnegative().optional(),
-      costUsd: z.number().nullable().optional(),
+      costUsd: z.number().nonnegative().optional(),
     })
     .optional(),
   ms: z.number().nonnegative().optional(),
@@ -68,28 +74,35 @@ export async function POST(event: RequestEvent) {
 
   const db = getDb();
 
+  const orgId = await resolveDeviceOrgId(db, auth.organizationId);
+  if (orgId == null) throw error(404, 'organization not found');
+
   // Org scoping, same posture as /suggest and /observations: an id that
   // doesn't resolve for this org 404s rather than 403s, leaking nothing
-  // about other tenants' ids.
-  const [project] = await db
-    .select()
-    .from(schema.projects)
-    .where(
-      auth.organizationId == null
-        ? eq(schema.projects.id, body.projectId)
-        : and(
-            eq(schema.projects.id, body.projectId),
-            eq(schema.projects.organizationId, auth.organizationId),
-          ),
-    )
-    .limit(1);
-  if (!project) throw error(404, 'project not found');
+  // about other tenants' ids. #523: a request naming no project skips this
+  // entirely rather than resolving one.
+  const project =
+    body.projectId != null
+      ? (
+          await db
+            .select()
+            .from(schema.projects)
+            .where(
+              and(
+                eq(schema.projects.id, body.projectId),
+                eq(schema.projects.organizationId, orgId),
+              ),
+            )
+            .limit(1)
+        )[0]
+      : undefined;
+  if (body.projectId != null && !project) throw error(404, 'project not found');
 
   // #554: a failed payment past its grace window refuses an accept the same
   // way it refuses the suggestion that preceded it - a suggestion nobody can
-  // request cannot legitimately be committed to a draft either.
-  const period = await billingPeriodFor(db, project.organizationId);
-  const usage = await getOrgUsage(db, project.organizationId, period);
+  // request cannot legitimately be committed to the ledger either.
+  const period = await billingPeriodFor(db, orgId);
+  const usage = await getOrgUsage(db, orgId, period);
   if (isOrgReadOnly(usage.entitlements)) {
     return json({ refused: 'plan_payment_required' });
   }
@@ -108,18 +121,17 @@ export async function POST(event: RequestEvent) {
   // accepted is a hole in the same switch. Scoped to `linkedin` for the same
   // reason /suggest scopes it: `linkedin_assist` is a LinkedIn-only setting.
   if (platform.slug === 'linkedin') {
-    const assist = await loadLinkedInAssistDeviceState(db, project.organizationId);
+    const assist = await loadLinkedInAssistDeviceState(db, orgId);
     if (!assist.enabled) {
       return json({
         refused: assist.killSwitch ? 'kill_switch' : 'assist_disabled',
         platform: platform.slug,
       });
     }
-    // Same exception /suggest makes for the same reason (decision
-    // 2026-09-07): the org's own `personal` project is always a valid
-    // destination alongside the bound one, because that is exactly where a
-    // suggestion that is not about a product is meant to file.
-    if (assist.projectId !== project.id && project.id !== assist.personalProjectId) {
+    // Same carve-out /suggest makes for the same reason: naming no project
+    // at all is never a bypass of the binding (#523), only naming a
+    // *different* one of the same org is.
+    if (body.projectId != null && assist.projectId !== body.projectId) {
       return json({
         refused: 'project_not_bound',
         platform: platform.slug,
@@ -127,20 +139,6 @@ export async function POST(event: RequestEvent) {
       });
     }
   }
-
-  // Convention shared with the linkedin-commenter playbook (sourceRef holds
-  // the post's own identifiers; see playbooks/linkedin-commenter.md). A feed
-  // post carries no URN at all (docs/linkedin-integration-design.md, "Two
-  // frontends, one identifier"), and the honest response to that is to record
-  // what the panel actually saw - the author and the post's own URL - rather
-  // than invent an id that would read as more certain than it is.
-  const sourceRef: Record<string, unknown> = {};
-  if (body.post.urn) {
-    sourceRef.externalId = body.post.urn;
-  } else if (body.post.authorHandle) {
-    sourceRef.authorHandle = body.post.authorHandle;
-  }
-  if (body.post.url) sourceRef.url = body.post.url;
 
   // Unlike the campaign commenter playbook (targetUser always null - "the
   // audience is whoever reads the post, not one person"), the assist accept
@@ -150,27 +148,23 @@ export async function POST(event: RequestEvent) {
   // `post` has no target - it is the human's own content, merely inspired by
   // something they read. Unaffected by whether the post had a URN: the
   // target is the author, not the post's identifier.
-  const targetUser =
+  const authorHandle =
     body.kind === 'post_comment' && body.post.authorHandle ? body.post.authorHandle : null;
 
-  const result = await acceptSuggestionIntoDraft(db, {
-    projectId: project.id,
-    organizationId: project.organizationId,
+  const result = await acceptSuggestion(db, {
+    organizationId: orgId,
+    projectId: project?.id ?? null,
     platformId: platform.id,
     kind: body.kind,
-    targetUser,
+    authorHandle,
+    authorName: body.post.authorName ?? null,
+    postUrn: body.post.urn ?? null,
+    postUrl: body.post.url ?? null,
     body: body.body,
-    sourceRef,
-    metadata: {
-      ...(body.post.authorHandle ? { authorHandle: body.post.authorHandle } : {}),
-      ...(body.post.authorName ? { authorName: body.post.authorName } : {}),
-      // Marks a draft filed without a URN, so analytics and any later dedup
-      // work can tell "no id available" apart from "id just wasn't sent".
-      ...(body.post.urn ? {} : { identifier: 'author-only' }),
-    },
-    agentRunner: project.defaultAgentRunner,
+    editedFrom: body.editedFrom ?? null,
+    deviceId: auth.deviceId,
+    agentRunner: project?.defaultAgentRunner ?? (await resolveDefaultRunnerSlug(db)),
     usage: body.usage ?? null,
-    runParams: { suggestionKind: body.kind, ms: body.ms ?? null },
   });
 
   if (!result.ok) {
@@ -178,7 +172,5 @@ export async function POST(event: RequestEvent) {
     return json({ refused: reason, ...rest });
   }
 
-  emit('drafts:changed', { id: result.draftId, state: 'pending_review' }, project.organizationId);
-
-  return json({ ok: true, draftId: result.draftId, runId: result.runId });
+  return json({ ok: true, id: result.id, dedupWarning: result.dedupWarning });
 }

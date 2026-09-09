@@ -455,7 +455,7 @@ export const runs = pgTable(
   'runs',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction' | 'campaign_skill_generation' | 'draft_regeneration' | 'reply_drafting' | 'project_insights' | 'assist' | 'project_description_refresh'
+    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction' | 'campaign_skill_generation' | 'draft_regeneration' | 'reply_drafting' | 'project_insights' | 'project_description_refresh' - 'assist' retired #521, accepting a suggestion no longer writes a runs row
     campaignId: integer('campaign_id').references(() => campaigns.id, { onDelete: 'cascade' }),
     projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     params: jsonb('params').notNull().default({}),
@@ -898,10 +898,12 @@ export const extensionPairings = pgTable('extension_pairings', {
 // A dedicated table rather than a synthetic `runs` row per suggestion, on
 // purpose: the run list and the analytics that read it are about outreach
 // activity, and nineteen invisible-to-a-human "runs" per twenty suggestions
-// would pollute both. `organizationId` is nullable (mirrors
-// extension_devices/extension_pairings: a self-host device paired with auth
-// off has no org), `projectId` is not - a suggestion is always grounded in
-// one project. `deviceId` is `set null` rather than `cascade` so revoking or
+// would pollute both. `organizationId` and `projectId` are both nullable
+// (mirrors extension_devices/extension_pairings for org: a self-host device
+// paired with auth off has no org; `projectId` followed the same shape once
+// #523 made the project a suggestion is filed under optional - a suggestion
+// grounded in no product still runs, is still billed, and still has to be
+// counted here). `deviceId` is `set null` rather than `cascade` so revoking or
 // deleting a device never erases spend history already counted against a
 // budget.
 export const assistUsage = pgTable(
@@ -911,9 +913,7 @@ export const assistUsage = pgTable(
     organizationId: integer('organization_id').references(() => organizations.id, {
       onDelete: 'cascade',
     }),
-    projectId: integer('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'set null' }),
     deviceId: integer('device_id').references(() => extensionDevices.id, {
       onDelete: 'set null',
     }),
@@ -947,6 +947,82 @@ export const assistUsage = pgTable(
   (t) => ({
     byOrgCreated: index('assist_usage_org_created_idx').on(t.organizationId, t.createdAt),
     byProjectCreated: index('assist_usage_project_created_idx').on(t.projectId, t.createdAt),
+  }),
+);
+
+// The assist plane's own ledger for an *accepted* suggestion (#521). Until
+// this table, accepting a suggestion materialised a `drafts` row plus a
+// `runs` row of kind `assist` purely because `drafts.run_id` was NOT NULL -
+// borrowing a campaign-shaped bookkeeping unit for a plane that has no
+// campaign, no run and no draft state machine of its own. This is a ledger
+// sized for what the assist plane actually knows: the platform, the post it
+// was about, who it was written to, the final text, what usage it cost, the
+// device that accepted it and when - scoped to the organization directly,
+// never through a project, because #523 makes the project a suggestion is
+// filed under optional context rather than a requirement.
+//
+// What does NOT live here, on purpose: a per-account draft quota (decided
+// 2026-09-09, #521 - the assist plane already has its own per-device/per-org
+// rate limits and the plan's own suggestions ceiling; what needs bounding is
+// money, not a fourth outreach count, and that is `assist_usage` above,
+// unaffected by this table). Also absent: `sourceRef`/`metadata` jsonb
+// catch-alls - the fields below are everything this plane is defined to
+// know, and a draft row's generality is exactly what this table exists to
+// not need.
+//
+// `editedFrom` is the model's own draft text, kept only when the human
+// changed it before accepting - `body` is always the final text. `projectId`
+// is `set null` (a suggestion naming a real product project is context, not
+// ownership - deleting that project must not delete the history of having
+// suggested something about it). `deviceId` is `set null` for the same
+// reason `assist_usage.device_id` is: revoking a device must never erase
+// spend/contact history already counted.
+export const assistAcceptedSuggestions = pgTable(
+  'assist_accepted_suggestions',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    platformId: integer('platform_id')
+      .notNull()
+      .references(() => platforms.id),
+    deviceId: integer('device_id').references(() => extensionDevices.id, {
+      onDelete: 'set null',
+    }),
+    kind: text('kind').notNull(), // DraftKind - 'post_comment' | 'post' today
+    postUrn: text('post_urn'),
+    authorHandle: text('author_handle'),
+    authorName: text('author_name'),
+    postUrl: text('post_url'),
+    body: text('body').notNull(),
+    editedFrom: text('edited_from'),
+    agentRunner: text('agent_runner').notNull(),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    cacheReadTokens: integer('cache_read_tokens'),
+    cacheCreationTokens: integer('cache_creation_tokens'),
+    // Both kept for audit rather than either one being authoritative for a
+    // budget decision (same posture the old `runs.params` held, #522): what
+    // the device claimed, and what this repo's own price table recomputes
+    // from the token counts above. The real spend figure a budget reads
+    // lives in `assist_usage`, ledgered when the suggestion's stream ended.
+    reportedCostUsd: numeric('reported_cost_usd', { precision: 10, scale: 4 }),
+    recomputedCostUsd: numeric('recomputed_cost_usd', { precision: 10, scale: 4 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byOrgCreated: index('assist_accepted_suggestions_org_created_idx').on(
+      t.organizationId,
+      t.createdAt.desc(),
+    ),
+    byAuthor: index('assist_accepted_suggestions_author_idx').on(
+      t.organizationId,
+      t.platformId,
+      t.authorHandle,
+      t.createdAt.desc(),
+    ),
   }),
 );
 

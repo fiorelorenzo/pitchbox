@@ -79,10 +79,6 @@
 	}
 
 	async function save() {
-		if (s.enabled && s.projectId == null) {
-			toast.error('Bind a project before enabling assist');
-			return;
-		}
 		if (s.tone === 'custom' && !s.toneNotes.trim()) {
 			toast.error('Describe the tone you want, or pick one of the named options');
 			return;
@@ -135,8 +131,9 @@
 			<Card.Header>
 				<Card.Title>Assist</Card.Title>
 				<Card.Description>
-					Off by default. A suggestion is written as a project's voice, so a project must be
-					bound before assist can be enabled.
+					Off by default. Writes as you, the operator - a project is optional context for a
+					suggestion that is genuinely about one of your products, never a requirement to turn
+					this on.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">

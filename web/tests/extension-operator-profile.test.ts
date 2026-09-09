@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { sql, eq, and } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { POST as operatorProfilePost } from '../src/routes/api/extension/operator-profile/+server.js';
@@ -74,7 +74,13 @@ describe('POST /api/extension/operator-profile', () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it('a first capture establishes the persona and files a personal-project LinkedIn account', async () => {
+  // #523 retired the personal project and, with it, the LinkedIn account
+  // this route used to file under it - the assistant binds to the operator
+  // profile and the connected account directly now, never a synthesized
+  // "personal" project. Migrated, not re-pinned: the observable contract
+  // this test still defends is that a first capture persists the persona,
+  // and it now also proves the retired side effect really is gone.
+  it('a first capture establishes the persona, with no project or account created', async () => {
     const org = await seedOrg('op-profile-first');
     await mintDevice(org.id, 'tokFirst');
 
@@ -91,20 +97,18 @@ describe('POST /api/extension/operator-profile', () => {
     expect(row.displayName).toBe('Ada Lovelace');
     expect(row.source).toBe('linkedin_capture');
 
-    const [personalProject] = await getDb()
+    const orgProjects = await getDb()
       .select()
       .from(schema.projects)
-      .where(and(eq(schema.projects.organizationId, org.id), eq(schema.projects.slug, 'personal')));
-    expect(personalProject).toBeDefined();
+      .where(eq(schema.projects.organizationId, org.id));
+    expect(orgProjects).toHaveLength(0);
 
-    const [account] = await getDb()
+    const orgAccounts = await getDb()
       .select()
       .from(schema.accounts)
-      .where(eq(schema.accounts.projectId, personalProject.id));
-    expect(account.handle).toBe('ada-lovelace');
-    expect(account.role).toBe('personal');
-    expect(account.active).toBe(true);
-    expect(account.cookieSession).toBeNull();
+      .innerJoin(schema.projects, eq(schema.accounts.projectId, schema.projects.id))
+      .where(eq(schema.projects.organizationId, org.id));
+    expect(orgAccounts).toHaveLength(0);
   });
 
   it('refuses a capture whose handle differs from the operator already on file, and does not touch the row', async () => {

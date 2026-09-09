@@ -11,7 +11,6 @@ import {
   runs,
   users,
 } from './db/schema.js';
-import { ensurePersonalProject } from './personal-project.js';
 import { loadOrgQuotaDefaults, loadSelfRegistrationQuotaDefaults } from './org-quota.js';
 import { isCloud } from './edition.js';
 import { PLAN_CATALOGUE, type PlanId } from './plans.js';
@@ -428,11 +427,12 @@ export async function createOrganization(
     .insert(memberships)
     .values({ organizationId: org.id, userId: args.ownerUserId, role: 'owner' })
     .onConflictDoNothing();
-  // Every organization gets the `personal` project up front (decision
-  // 2026-09-07, shared/src/personal-project.ts): an accepted suggestion that
-  // is not about a product still has to file somewhere, and creating it here
-  // means a brand new org is never waiting on a migration to have one.
-  await ensurePersonalProject(db, org.id);
+  // #523: a fresh organization gets no project it did not ask for. Until
+  // 2026-09-09 this created a `personal` project up front so a suggestion
+  // not about a product had somewhere to file; the assist plane now binds
+  // to the operator and its own ledger directly (shared/src/assist-accept.ts)
+  // and a project is optional context there, so there is nothing left for
+  // this org to need one for at creation time.
   return { id: org.id, slug: org.slug, role: 'owner' };
 }
 

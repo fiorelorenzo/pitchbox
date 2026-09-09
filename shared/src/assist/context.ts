@@ -34,7 +34,6 @@
 
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { schema, type Db } from '../db/client.js';
-import { PERSONAL_PROJECT_SLUG } from '../personal-project.js';
 import { loadVoiceProfile } from '../operator-voice-profile.js';
 
 export type PersonaExperience = {
@@ -66,8 +65,6 @@ export type ProjectBrief = {
   id: number;
   name: string;
   description?: string | null;
-  /** True for the `personal` project, which is the operator, not a product. */
-  isPersonal: boolean;
   /** True for the project this suggestion is being written under. */
   isCurrent: boolean;
 };
@@ -135,11 +132,13 @@ function asCommits(value: unknown): Array<{ message: string; committedAt?: strin
  * `currentProjectId` only marks which project the suggestion is being written
  * under - every project in the organization is loaded either way, because the
  * point is that the assistant can talk about the operator's other work when
- * that is the honest thing to say. Nothing crosses an organization boundary.
+ * that is the honest thing to say. Null (#523: a suggestion may name no
+ * project at all) simply means no project marks as current. Nothing crosses
+ * an organization boundary.
  */
 export async function loadCompanionContext(
   db: Db,
-  args: { organizationId: number; currentProjectId: number },
+  args: { organizationId: number; currentProjectId: number | null },
 ): Promise<CompanionContext> {
   const [profileRow] = await db
     .select()
@@ -189,7 +188,6 @@ export async function loadCompanionContext(
       id: p.id,
       name: p.name,
       description: p.description,
-      isPersonal: p.slug === PERSONAL_PROJECT_SLUG,
       isCurrent: p.id === args.currentProjectId,
     })),
     // A repo that failed to fetch has no text to contribute, so it is left out

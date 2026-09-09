@@ -67,14 +67,12 @@ const projects: ProjectBrief[] = [
     id: 1,
     name: 'Embertold',
     description: 'A world wiki for tabletop GMs.',
-    isPersonal: false,
     isCurrent: true,
   },
   {
     id: 2,
     name: 'Runecast',
     description: 'Dice roller for remote tables.',
-    isPersonal: false,
     isCurrent: false,
   },
 ];
@@ -130,6 +128,21 @@ describe('buildSuggestionPrompt', () => {
       ...noContext,
     });
     expect(prompt).toMatch(/post it themselves under their own name/);
+  });
+
+  // #523: a project is optional context, not a requirement - a suggestion
+  // can name none at all, and the prompt has to say something other than a
+  // lie about a product that was never named.
+  it('frames a null current project as the operator\u2019s own voice on no particular subject', () => {
+    const prompt = buildSuggestionPrompt({
+      kind: 'post_comment',
+      post,
+      currentProject: null,
+      ...noContext,
+    });
+    expect(prompt).toMatch(/own voice, on their own subject, not about any particular product/);
+    expect(prompt).toMatch(/post it themselves under their own name/);
+    expect(prompt).not.toContain('You are drafting for');
   });
 
   it('truncates a post longer than the cap instead of forwarding it whole', () => {
@@ -278,30 +291,27 @@ describe('buildSuggestionPrompt', () => {
       expect(prompt).toContain('[truncated]');
     });
 
-    it('caps the project list at MAX_PROJECTS, keeping the current and personal project', () => {
+    it('caps the project list at MAX_PROJECTS, keeping only the current project', () => {
       const filler: ProjectBrief[] = Array.from({ length: MAX_PROJECTS + 5 }, (_, i) => ({
         id: 100 + i,
         name: `Filler ${i}`,
         description: `Filler project ${i}.`,
-        isPersonal: false,
         isCurrent: false,
       }));
-      // Current and personal are last in the input on purpose: a plain
-      // slice(0, MAX_PROJECTS) with no ranking would drop both.
+      // Current is last in the input on purpose: a plain slice(0, MAX_PROJECTS)
+      // with no ranking would drop it.
       const manyProjects: ProjectBrief[] = [
         ...filler,
         {
           id: 1,
           name: 'Embertold',
           description: 'The bound project.',
-          isPersonal: false,
           isCurrent: true,
         },
         {
           id: 2,
-          name: 'Personal Voice',
-          description: 'The personal project.',
-          isPersonal: true,
+          name: 'Runecast',
+          description: 'A sibling project, ranked like any other one now.',
           isCurrent: false,
         },
       ];
@@ -317,10 +327,11 @@ describe('buildSuggestionPrompt', () => {
       const shown = manyProjects.filter((p) => prompt.includes(p.name));
       expect(shown).toHaveLength(MAX_PROJECTS);
       expect(prompt).toContain('Embertold (this one)');
-      expect(prompt).toContain('Personal Voice');
-      // The last filler project is the one guaranteed to fall past the cap,
-      // since only the current and personal project plus the earliest
-      // fillers fit inside MAX_PROJECTS.
+      // #523 retired the personal project and, with it, the only other
+      // survival guarantee this ranking ever gave: 'Runecast' sits after the
+      // current project in the input with no special status of its own now,
+      // so it falls past the cap exactly like the trailing filler entries do.
+      expect(prompt).not.toContain('Runecast');
       expect(prompt).not.toContain(`Filler ${filler.length - 1}`);
     });
 

@@ -13,15 +13,16 @@ type DraftSummary = {
 };
 
 /** The exact shape served by GET /api/extension/linkedin-assist (LI-19, #316).
- * `personalProjectId` is the org's auto-created `personal` project (decision
- * 5): the panel accepts a draft under it, distinct from `projectId` - which
- * product the assistant speaks for, used for context and templates. */
+ * `projectId` is context only (#523): which product the assistant speaks
+ * for, used for grounding, examples and voice. No `personalProjectId` -
+ * an accepted suggestion files under `projectId` if it names one, or under
+ * no project at all if it does not; there is no fallback project to land on
+ * either way. */
 export type LinkedInAssistState = {
   enabled: boolean;
   collectorEnabled: boolean;
   killSwitch: boolean;
   projectId: number | null;
-  personalProjectId: number;
   dailyCommentCap: number;
   dailyPostCap: number;
 };
@@ -178,26 +179,42 @@ export type AssistStatusPhase =
   | 'check_style'
   | (string & {});
 
-/** Every `refused` value POST /api/extension/suggest can answer with, ahead of the stream.
- * `no_recent_activity` only ever answers a `kind: 'post'` request: the observation
- * buffer this project's account has filled has nothing recent enough to draft from. */
+/** Every `refused` value POST /api/extension/suggest can answer with, ahead of the
+ * stream. #521 retired the per-account daily quota this used to precondition on
+ * (`quota_exhausted`, tied to a project's bound LinkedIn account) along with the
+ * `drafts` row it was a proxy for - what bounds a suggestion now is the
+ * per-device/per-org rate limiter and the plan's own suggestions ceiling below.
+ * `project_required` and `no_recent_activity` only ever answer a `kind: 'post'`
+ * request: #523 makes a project optional for the plane overall, but a `post`
+ * suggestion has no post of its own to ground in, so it still needs a real
+ * project (`project_required`) with something recent in its observation buffer
+ * (`no_recent_activity`). */
 export type SuggestRefusalReason =
   | 'assist_disabled'
   | 'kill_switch'
   | 'project_not_bound'
-  | 'quota_exhausted'
+  | 'project_required'
   | 'no_recent_activity'
   // #556: the plan's own ceiling and a failed payment past its grace window -
-  // distinct from `quota_exhausted` (the platform's own daily cap) and from
-  // each other, so the panel can say which one stopped it and what to do.
+  // distinct from each other, so the panel can say which one stopped it and
+  // what to do.
   | 'plan_limit_reached'
   | 'plan_payment_required';
 
-/** Every `refused` value POST /api/extension/suggest/accept can answer with: the same
- * assist gate as /suggest, plus shared/src/assist-accept.ts's own refusals for a
- * suggestion that cannot be materialised into a draft. */
+/** Every `refused` value POST /api/extension/suggest/accept can answer with: the
+ * same assist gate as /suggest (minus its two kind:'post'-only refusals, which
+ * grounding a suggestion has no equivalent of once there is text to accept), plus
+ * `shared/src/assist-accept.ts`'s own refusals for a suggestion the ledger will
+ * not write. #521 retired `no_account`: the accept path no longer needs a bound
+ * LinkedIn account to file against. */
 export type AcceptRefusalReason =
-  SuggestRefusalReason | 'no_account' | 'blocked' | 'uncontactable' | 'recently_contacted';
+  | 'assist_disabled'
+  | 'kill_switch'
+  | 'project_not_bound'
+  | 'plan_payment_required'
+  | 'blocked'
+  | 'uncontactable'
+  | 'recently_contacted';
 
 /**
  * One event out of /suggest, folded to one shape regardless of whether the
@@ -235,8 +252,12 @@ export type SuggestEvent =
   | { kind: 'failed'; message: string }
   | { kind: 'refused'; reason: SuggestRefusalReason; detail: Record<string, unknown> };
 
+/** #521: the ledger row's own id, and a dedup warning worth surfacing even on
+ * a real accept (the human is about to re-contact somebody recently
+ * contacted, on purpose) - never `draftId`/`runId`: this plane keeps no
+ * `drafts` row and no `runs` row of its own. */
 export type AcceptOutcome =
-  | { accepted: true; draftId: number; runId: number }
+  | { accepted: true; id: number; dedupWarning: string | null }
   | { accepted: false; refused: AcceptRefusalReason; detail: Record<string, unknown> };
 
 /**
@@ -675,9 +696,10 @@ export const api = {
    * or post for `params.post` as `onEvent` receives it, so the panel can
    * render a partial answer instead of a spinner for the five-to-ten-second
    * (measured: 10-14s, #360) wait before the first token. The server can
-   * also answer a plain `200 {refused}` ahead of the stream (kill switch,
-   * quota, an unbound project) - both shapes fold into the same `onEvent`
-   * calls, so the caller has one place to switch on `event.kind`.
+   * also answer a plain `200 {refused}` ahead of the stream (kill switch, an
+   * exhausted plan ceiling, a project that does not match the bound one) -
+   * both shapes fold into the same `onEvent` calls, so the caller has one
+   * place to switch on `event.kind`.
    *
    * The outer `ApiResult` reports only transport-level success: a network
    * failure or non-2xx status short-circuits before `onEvent` ever fires.
@@ -689,7 +711,8 @@ export const api = {
    */
   suggest: async (
     params: {
-      projectId: number;
+      /** #523: context only - omit to draft with no product in mind. */
+      projectId?: number;
       kind: SuggestionKind;
       post: SuggestPost;
       hint?: string;
@@ -757,17 +780,20 @@ export const api = {
   },
 
   /**
-   * POST /api/extension/suggest/accept (LI-16, #313): materialises the
-   * human's edited suggestion into a real draft. Unlike `suggest` above,
-   * this is a plain request/response - there is one outcome to report, so it
-   * comes back as the resolved value rather than through a callback. The
-   * inner `AcceptOutcome.accepted` distinguishes a real refusal (quota, no
-   * bound account, blocklisted, ...) from the outer `ApiResult.ok`, which
-   * only reports whether the HTTP round trip itself succeeded.
+   * POST /api/extension/suggest/accept (LI-16, #313): writes the human's
+   * edited suggestion into the assist plane's own ledger (#521 -
+   * `assist_accepted_suggestions`, never a `drafts`/`runs` row). Unlike
+   * `suggest` above, this is a plain request/response - there is one
+   * outcome to report, so it comes back as the resolved value rather than
+   * through a callback. The inner `AcceptOutcome.accepted` distinguishes a
+   * real refusal (the assist gate, blocklisted, ...) from the outer
+   * `ApiResult.ok`, which only reports whether the HTTP round trip itself
+   * succeeded.
    */
   acceptSuggestion: async (
     params: {
-      projectId: number;
+      /** #523: context only - omit to file under no project at all. */
+      projectId?: number;
       kind: SuggestionKind;
       post: SuggestPostRef;
       body: string;
@@ -794,7 +820,11 @@ export const api = {
     }
     return {
       ok: true,
-      data: { accepted: true, draftId: data.draftId as number, runId: data.runId as number },
+      data: {
+        accepted: true,
+        id: data.id as number,
+        dedupWarning: (data.dedupWarning as string | null) ?? null,
+      },
     };
   },
 };

@@ -262,24 +262,6 @@ export function watchForCommentSubmit(watcher: DraftSendWatcher, targetDraftId: 
   }, 15_000);
 }
 
-/**
- * Entry point for a caller that already has an accepted draft id and does
- * not go through the `pitchbox_draft` URL bootstrap below - #314's in-page
- * assist, once the human accepts a suggestion and it lands in the
- * composer. Creates the watcher and wires it immediately, the same call
- * shape `init()` below uses for the Inbox-opened flow, so a comment
- * accepted in-page is armed/sent through exactly the same route as one
- * opened from the Inbox - no second send path.
- */
-export function watchDraftForSend(
-  targetDraftId: number,
-  targetBackendUrl?: string,
-  initialVersion?: number,
-): void {
-  const watcher = createDraftSendWatcher(targetDraftId, targetBackendUrl, initialVersion);
-  watchForCommentSubmit(watcher, targetDraftId);
-}
-
 if (draftId !== null && claimDocument('linkedin-comment')) {
   let filled = false;
 

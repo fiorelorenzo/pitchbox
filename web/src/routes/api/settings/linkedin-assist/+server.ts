@@ -54,11 +54,6 @@ export async function POST(event: RequestEvent) {
   }
   const body = parsed.data;
 
-  // A suggestion has to be written as some project's voice
-  // (docs/linkedin-integration-design.md), so assist cannot go live unbound.
-  if (body.enabled && body.projectId == null) {
-    throw error(400, 'a project must be bound before assist can be enabled');
-  }
   const db = getDb();
   if (body.projectId != null && !(await projectBelongsToOrg(db, body.projectId, orgId))) {
     throw error(400, 'project not found in this organization');

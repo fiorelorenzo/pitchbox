@@ -33,14 +33,17 @@ export const ASSIST_SESSION_TTL_MS = 10 * 60 * 1000;
 interface AssistSessionEntry {
   messages: ModelMessage[];
   orgId: number | null;
-  projectId: number;
+  /** #523: a suggestion with no project bound continues one just as well - a
+   * session scoped to `null` matches only another `null`-scoped request,
+   * never a real project id or the other way around. */
+  projectId: number | null;
   kind: SuggestionKind;
   createdAt: number;
 }
 
 interface AssistSessionScope {
   orgId: number | null;
-  projectId: number;
+  projectId: number | null;
   kind: SuggestionKind;
 }
 

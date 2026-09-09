@@ -4,12 +4,10 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireExtensionAuth, resolveDeviceOrgId } from '$lib/server/extension-auth.js';
 import { RateLimiter } from '$lib/server/rate-limit.js';
-import { ensurePersonalProject } from '@pitchbox/shared/personal-project';
 import {
   loadOperatorProfile,
   saveOperatorProfile,
   recordVoiceSamples,
-  ensureOperatorAccount,
 } from '@pitchbox/shared/operator-profile';
 import { refreshVoiceProfile } from '@pitchbox/shared/operator-voice-profile';
 
@@ -152,15 +150,6 @@ export async function POST({ request }: { request: Request }) {
     if (voiceSamplesRecorded > 0) {
       await refreshVoiceProfile(db, orgId);
     }
-  }
-
-  const personalProjectId = await ensurePersonalProject(db, orgId);
-  if (platform) {
-    await ensureOperatorAccount(db, {
-      projectId: personalProjectId,
-      platformId: platform.id,
-      handle,
-    });
   }
 
   return json({ ok: true, voiceSamplesRecorded });

@@ -18,14 +18,11 @@ import * as schema from '../db/schema.js';
  * its job even if it forgot the bookkeeping call, so that case is checked
  * against the drafts, not against the run status.
  *
- * `assist` (#313) is deliberately absent, not merely unmentioned: an assist
- * run has no playbook, no MCP session and no agent that could call a finish
- * tool at all - it is created by `shared/src/assist-accept.ts` already
- * terminal (`status: 'success'`), in the same transaction as the draft it
- * produced. This map is only consulted for a run still `running` after its
- * agent process exits, which never happens for `assist` (there is no
- * process), so `playbookContractError` below returns null for it via the
- * `if (!tool) return null` fallthrough rather than a special case.
+ * `assist` (#313) never appears in `runs` at all any more: #521 moved an
+ * accepted suggestion into the assist plane's own ledger
+ * (`assist_accepted_suggestions`, `shared/src/assist-accept.ts`), and
+ * `runs_kind_target_chk` no longer accepts the kind. Nothing here needs a
+ * case for it - there is no row left to classify.
  */
 export const PLAYBOOK_FINISH_TOOL: Record<string, string> = {
   campaign: 'run_finish',

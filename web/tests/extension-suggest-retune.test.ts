@@ -9,6 +9,7 @@ import {
   saveLinkedInAssistSettings,
 } from '@pitchbox/shared/linkedin-assist';
 import { DRAFT_MARKER } from '@pitchbox/shared/assist/envelope';
+import { PLAN_CATALOGUE } from '@pitchbox/shared/plans';
 
 /**
  * The retune control (#409): a panel-level regenerate-in-a-direction request
@@ -158,62 +159,46 @@ describe('retune (#409): a direction on the same POST /api/extension/suggest rou
     expect(lastOptions?.prompt).not.toContain('outranks the tone above');
   });
 
-  // #409's own acceptance: a retune costs a model call, so it is bound by the
-  // exact same daily cap a first suggestion is. Two real route calls, not
-  // one: the first (a plain suggestion) succeeds while the account is still
-  // under its cap of one; a draft is then recorded as sent directly (the
-  // route itself never writes one - #313's accept path does, and only once
-  // the human confirms on LinkedIn - so this stands in for that having
-  // already happened once today); the second call, this time a retune,
-  // reads the now-exhausted quota and refuses exactly like a first call
-  // would, proving retune carries no bypass of its own.
-  it('a retune counts against the caps: the second call, at a cap of one, is refused', async () => {
-    const db = getDb();
-    const { org, project, platform } = await seedOrgProject('org-retune-cap');
-    await mintDevice(org.id, 'tokCap');
-    const [account] = await db
-      .insert(schema.accounts)
-      .values({
-        projectId: project.id,
-        platformId: platform.id,
-        handle: 'marco',
-        dailyLimit: 1,
-        active: true,
-      })
-      .returning();
+  // #409's own acceptance: a retune costs a model call, so it is bound by
+  // the exact same cap a first suggestion is - no bypass for the new field.
+  // #521/#548 retired the per-account daily quota this used to prove that
+  // against (an accepted suggestion no longer creates a draft or an
+  // account-scoped send record at all); what actually bounds this route now
+  // is the org's own plan ceiling (`suggestionsPerMonth`,
+  // extension-suggest-plan-limit.test.ts), so this proves parity against
+  // that instead: exhausting it before the retune call refuses the retune
+  // exactly like it would a first request.
+  it('a retune counts against the caps: refused once the plan\u2019s suggestion ceiling is spent', async () => {
+    const savedEdition = process.env.PITCHBOX_EDITION;
+    process.env.PITCHBOX_EDITION = 'cloud';
+    try {
+      const db = getDb();
+      const { org, project, platform } = await seedOrgProject('org-retune-cap');
+      await mintDevice(org.id, 'tokCap');
+      const limit = PLAN_CATALOGUE.free.suggestionsPerMonth!;
+      for (let i = 0; i < limit; i += 1) {
+        await db.insert(schema.assistUsage).values({
+          organizationId: org.id,
+          projectId: project.id,
+          deviceId: null,
+          platformId: platform.id,
+          kind: 'post_comment',
+          agentRunner: 'claude-code',
+        });
+      }
 
-    const first = await suggest({
-      request: request('tokCap', { ...POST_BODY, projectId: project.id }),
-    } as never);
-    expect(first.headers.get('content-type')).toContain('text/event-stream');
-    await first.text();
-
-    const [run] = await db
-      .insert(schema.runs)
-      .values({ kind: 'assist', projectId: project.id, trigger: 'manual', status: 'success' })
-      .returning();
-    await db.insert(schema.drafts).values({
-      runId: run.id,
-      projectId: project.id,
-      platformId: platform.id,
-      accountId: account.id,
-      // DRAFT_KINDS is 'dm' | 'post' | 'post_comment' | 'comment_reply' - a
-      // plain 'comment' is not one of them and getUsageForAccounts skips
-      // whatever isDraftKind rejects, so this has to match POST_BODY.kind
-      // for the inserted draft to actually count toward the cap below.
-      kind: 'post_comment',
-      body: 'the comment sent earlier today',
-      state: 'sent',
-      sentAt: new Date(),
-    });
-
-    const second = await suggest({
-      request: request('tokCap', { ...POST_BODY, projectId: project.id, retune: 'shorter' }),
-    } as never);
-    expect(second.headers.get('content-type')).toContain('application/json');
-    const body = (await second.json()) as { refused: string; window: string };
-    expect(body.refused).toBe('quota_exhausted');
-    expect(body.window).toBe('day');
+      const res = await suggest({
+        request: request('tokCap', { ...POST_BODY, projectId: project.id, retune: 'shorter' }),
+      } as never);
+      expect(res.headers.get('content-type')).toContain('application/json');
+      const body = (await res.json()) as { refused: string; metric: string };
+      expect(body.refused).toBe('plan_limit_reached');
+      expect(body.metric).toBe('suggestions');
+      expect(lastOptions).toBeNull();
+    } finally {
+      if (savedEdition === undefined) delete process.env.PITCHBOX_EDITION;
+      else process.env.PITCHBOX_EDITION = savedEdition;
+    }
   });
 
   it('with the assistant switched off, refuses with the same shape a first call gets', async () => {

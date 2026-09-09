@@ -7,7 +7,6 @@ import {
   type AssistToolContext,
   type AssistObservedTarget,
 } from '../src/assist/tools.js';
-import { ensurePersonalProject } from '../src/personal-project.js';
 import { recordVoiceSamples } from '../src/operator-profile.js';
 
 // #567: the seven assist tool handlers. What matters here is what a pure
@@ -308,23 +307,13 @@ describe('shared/src/assist/tools', () => {
       expect(result.data.project.description).toBe('A product that does X');
     });
 
-    it('answers for the personal project even when it is not the bound project', async () => {
-      const orgA = await ensureOrg('pk-org-c');
-      const projBound = await makeProject(orgA, 'pk-bound3', 'Bound product');
-      const personalId = await ensurePersonalProject(getDb(), orgA);
-      await getDb()
-        .update(schema.projects)
-        .set({ description: 'The operator, not a product' })
-        .where(eq(schema.projects.id, personalId));
-      const ctx = baseCtx({ orgId: orgA, boundProjectId: projBound });
-      const result = await ASSIST_TOOLS_BY_NAME.project_knowledge.handler(ctx, {
-        projectId: personalId,
-      });
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.data.project.description).toBe('The operator, not a product');
-    });
-
+    // #523 retired the personal project and, with it, project_knowledge's
+    // bypass for it - a non-bound project id now always refuses, no
+    // exceptions. Deleted rather than re-pinned to a plain seeded project:
+    // the behaviour this test defended (a distinguished project id that
+    // skips the binding check) no longer exists in the handler at all, and
+    // the two tests above already cover the real current contract (a bound
+    // project answers, any other one refuses).
     it('refuses with an explicit nothing when the project has no description, repos or insights', async () => {
       const orgA = await ensureOrg('pk-org-empty');
       const projBound = await makeProject(orgA, 'pk-bound-empty');

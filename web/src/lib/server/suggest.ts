@@ -216,7 +216,7 @@ async function runStyleRewrite(
 export function runSuggestion(args: {
   kind: SuggestionKind;
   post: ObservedPost;
-  currentProject: CurrentProject;
+  currentProject: CurrentProject | null;
   persona: OperatorPersona | null;
   voiceProfile: VoiceProfileSummary | null;
   projects: ProjectBrief[];
@@ -237,7 +237,7 @@ export function runSuggestion(args: {
    */
   tone?: AssistTone;
   toneNotes?: string;
-  projectId: number;
+  projectId: number | null;
   orgId?: number;
   runnerSlug: string;
   /** One callback per model chunk, already split into its reasoning/draft

@@ -3,12 +3,11 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
-import { requireExtensionAuth } from '$lib/server/extension-auth.js';
+import { requireExtensionAuth, resolveDeviceOrgId } from '$lib/server/extension-auth.js';
 import { RateLimiter } from '$lib/server/rate-limit.js';
 import { runSuggestion } from '$lib/server/suggest.js';
 import { loadActiveTemplates } from '@pitchbox/shared/templates';
-import { getAccountUsage, checkQuota, loadQuotaLimits } from '@pitchbox/shared/quota';
-import { mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
+import { resolveDefaultRunnerSlug } from '@pitchbox/shared/agents/config';
 import {
   MAX_COMMENT_CHARS,
   MAX_IMAGE_DATA_URL_CHARS,
@@ -88,7 +87,7 @@ const ImageSchema = z.object({
 
 const BodySchema = z
   .object({
-    projectId: z.number().int().positive(),
+    projectId: z.number().int().positive().optional(),
     kind: z.enum(['post_comment', 'post']),
     post: z.object({
       urn: z.string().max(200).optional(),
@@ -179,28 +178,36 @@ export async function POST(event: RequestEvent) {
 
   // Org scoping: a device bound to an org may only write as one of its own
   // projects, and an unknown project is a 404 rather than a 403 so it leaks
-  // nothing about other tenants' ids. A null-org device (self-host, auth off)
-  // is unrestricted, mirroring requireRole.
-  const [project] = await db
-    .select()
-    .from(schema.projects)
-    .where(
-      auth.organizationId == null
-        ? eq(schema.projects.id, body.projectId)
-        : and(
-            eq(schema.projects.id, body.projectId),
-            eq(schema.projects.organizationId, auth.organizationId),
-          ),
-    )
-    .limit(1);
-  if (!project) throw error(404, 'project not found');
+  // nothing about other tenants' ids. A null-org device (self-host, auth
+  // off) is unrestricted, mirroring requireRole. #523: `projectId` is
+  // optional context now, not a requirement - a request naming none
+  // resolves the org directly rather than through a project row.
+  const orgId = await resolveDeviceOrgId(db, auth.organizationId);
+  if (orgId == null) throw error(404, 'organization not found');
 
-  const period = await billingPeriodFor(db, project.organizationId);
-  const usage = await getOrgUsage(db, project.organizationId, period);
+  const project =
+    body.projectId != null
+      ? (
+          await db
+            .select()
+            .from(schema.projects)
+            .where(
+              and(
+                eq(schema.projects.id, body.projectId),
+                eq(schema.projects.organizationId, orgId),
+              ),
+            )
+            .limit(1)
+        )[0]
+      : undefined;
+  if (body.projectId != null && !project) throw error(404, 'project not found');
+
+  const period = await billingPeriodFor(db, orgId);
+  const usage = await getOrgUsage(db, orgId, period);
   // #557: a courtesy notification never blocks a suggestion, admitted or
   // refused by the checks below.
   try {
-    await checkUsageThresholds(db, project.organizationId, usage, period);
+    await checkUsageThresholds(db, orgId, usage, period);
   } catch (err) {
     console.error('[extension/suggest] checkUsageThresholds failed:', err);
   }
@@ -225,10 +232,6 @@ export async function POST(event: RequestEvent) {
     });
   }
 
-  // Suggesting what cannot be sent wastes the human's attention and a model
-  // call, so the platform's own daily quota is a precondition and not a
-  // post-hoc check. The refusal is a 200 with a body the panel can render:
-  // a 500 would look like a defect, and this is the system working.
   const [platform] = await db
     .select()
     .from(schema.platforms)
@@ -236,40 +239,12 @@ export async function POST(event: RequestEvent) {
     .limit(1);
   if (!platform) throw error(400, `unknown platform: ${body.platform}`);
 
-  const [account] = await db
-    .select()
-    .from(schema.accounts)
-    .where(
-      and(
-        eq(schema.accounts.projectId, project.id),
-        eq(schema.accounts.platformId, platform.id),
-        eq(schema.accounts.active, true),
-      ),
-    )
-    .limit(1);
-
-  if (account) {
-    const quotaKind = mapDraftKindToQuotaKind(body.kind);
-    const [limits, usage] = await Promise.all([
-      loadQuotaLimits(db, platform.slug),
-      getAccountUsage(db, account.id),
-    ]);
-    const day = checkQuota({
-      platformLimit: limits[quotaKind].perDay,
-      accountLimit: account.dailyLimit,
-      used: usage[quotaKind].day,
-    });
-    if (day.remaining <= 0) {
-      return json({
-        refused: 'quota_exhausted',
-        kind: quotaKind,
-        window: 'day',
-        limit: day.limit,
-        used: day.used,
-        boundBy: day.kind,
-      });
-    }
-  }
+  // #521: the per-account draft quota this used to precondition against
+  // (`accounts`, `mapDraftKindToQuotaKind`, `checkQuota`) is retired - it
+  // was a proxy for what a campaign draft's own send-time check does, and
+  // an accepted suggestion no longer becomes a draft at all. What bounds
+  // this route now is the per-device/per-org rate limiter above and the
+  // plan's own suggestions ceiling just checked.
 
   // The kill switch has to be enforced here, not only honoured by the panel
   // (#316 shipped the switch and the device read path; nothing refused a call
@@ -283,7 +258,7 @@ export async function POST(event: RequestEvent) {
   // LinkedIn setting, so gating every platform on it would silently block a
   // future Mastodon or Reddit assist that nobody ever wired to it.
   if (platform.slug === 'linkedin') {
-    const assist = await loadLinkedInAssistDeviceState(db, project.organizationId);
+    const assist = await loadLinkedInAssistDeviceState(db, orgId);
     if (!assist.enabled) {
       // Same posture as the quota refusal above: a 200 with a body the panel
       // can render. Nothing went wrong, an admin turned it off.
@@ -292,13 +267,12 @@ export async function POST(event: RequestEvent) {
         platform: platform.slug,
       });
     }
-    // A suggestion is written as the bound project's voice, so a request
-    // naming a different project of the same org is not a narrower case of
-    // the binding, it bypasses it - except for the org's own `personal`
-    // project (decision 2026-09-07): an accepted suggestion has to file
-    // somewhere, and the operator's own voice is exactly what `personal`
-    // exists for, so it is allowed alongside the bound product project.
-    if (assist.projectId !== project.id && project.id !== assist.personalProjectId) {
+    // A suggestion naming a project is written as that project's voice, so
+    // naming a different project of the same org than the one bound is not
+    // a narrower case of the binding, it bypasses it (#523: naming none at
+    // all is not a bypass - it makes no binding claim, and is always
+    // allowed).
+    if (body.projectId != null && assist.projectId !== body.projectId) {
       return json({
         refused: 'project_not_bound',
         platform: platform.slug,
@@ -312,15 +286,21 @@ export async function POST(event: RequestEvent) {
   // recent thing the observation buffer (#301/#302) actually saw this
   // project's account scroll past, read through the server rather than
   // trusting the panel to have scraped and forwarded a pile of observed
-  // posts itself. An empty buffer (a fresh binding, or nothing sighted
-  // since the collector was last on) is a real, distinct refusal: there is
-  // nothing honest to write a "starting point" prompt from, so this refuses
-  // the same way an exhausted quota does rather than asking the model to
-  // invent a subject.
+  // posts itself. That buffer is project-scoped (`observed_targets`), so
+  // unlike `post_comment`, a `post` suggestion still needs a real project
+  // to draft from (#523 makes the project optional for the plane overall,
+  // not for this one kind that has nothing else to ground itself in). An
+  // empty buffer (a fresh binding, or nothing sighted since the collector
+  // was last on) is a real, distinct refusal: there is nothing honest to
+  // write a "starting point" prompt from, so this refuses the same way an
+  // exhausted quota does rather than asking the model to invent a subject.
   let groundedPost: ObservedPost;
   if (body.kind === 'post') {
+    if (!project) {
+      return json({ refused: 'project_required', platform: platform.slug });
+    }
     const recent = await loadRecentObservedTarget(db, {
-      organizationId: project.organizationId,
+      organizationId: orgId,
       projectId: project.id,
       platformId: platform.id,
     });
@@ -341,21 +321,24 @@ export async function POST(event: RequestEvent) {
   // #578: id and createdAt travel too, not just title/body -
   // `buildSuggestionPrompt` (`shared/src/assist/example-selection.ts`) picks
   // which of these actually reach the prompt, by topical closeness to
-  // `groundedPost` rather than by this array's order.
-  const examples = (
-    await loadActiveTemplates(db, {
-      projectId: project.id,
-      kind: body.kind === 'post' ? 'post' : 'comment',
-    })
-  ).map((t) => ({ id: t.id, title: t.title, body: t.body, createdAt: t.createdAt }));
+  // `groundedPost` rather than by this array's order. No project, no
+  // templates to draw from.
+  const examples = project
+    ? (
+        await loadActiveTemplates(db, {
+          projectId: project.id,
+          kind: body.kind === 'post' ? 'post' : 'comment',
+        })
+      ).map((t) => ({ id: t.id, title: t.title, body: t.body, createdAt: t.createdAt }))
+    : [];
 
   // Everything the companion is allowed to know beyond this one post:
   // the operator's own persona and voice, every project in the org, and the
   // public repos GitHub read cached (shared/src/assist/context.ts). Loaded
   // once, right before the spawn, so a refusal above never pays for it.
   const context = await loadCompanionContext(db, {
-    organizationId: project.organizationId,
-    currentProjectId: project.id,
+    organizationId: orgId,
+    currentProjectId: project?.id ?? null,
   });
 
   // The tone (#405) is read here, resolved against the project this
@@ -363,12 +346,18 @@ export async function POST(event: RequestEvent) {
   // panel is not an enforcement boundary for it, exactly as it is not for
   // `enabled`, `killSwitch` or the reasoning/draft split. That is also what
   // keeps a panel-level retune (#409) an explicit feature rather than
-  // something a crafted request already gets for free. `project` here is the
-  // filed-under project (the bound project, or the org's `personal` project
-  // per the carve-out above), not necessarily the org's bound project the
-  // device state names - a personal suggestion and a product suggestion can
-  // therefore resolve to different voices even though they share one org.
-  const voice = await resolveEffectiveVoice(db, project.organizationId, project);
+  // something a crafted request already gets for free. `project` here is
+  // the filed-under project, which need not be the org's bound project the
+  // device state names, and may be absent entirely (#523) - the org's own
+  // `linkedin_assist` tone is what an unset project falls back to.
+  const voice = await resolveEffectiveVoice(
+    db,
+    orgId,
+    project ?? { voiceTone: null, voiceToneNotes: null },
+  );
+  // No project bound, no `defaultAgentRunner` column to read - the instance
+  // (or edition) default is what a fresh project would have gotten anyway.
+  const runnerSlug = project?.defaultAgentRunner ?? (await resolveDefaultRunnerSlug(db));
 
   let cancel: () => void = () => {};
   let settled = false;
@@ -393,7 +382,7 @@ export async function POST(event: RequestEvent) {
       const handle = runSuggestion({
         kind: body.kind as SuggestionKind,
         post: groundedPost,
-        currentProject: { name: project.name, description: project.description },
+        currentProject: project ? { name: project.name, description: project.description } : null,
         persona: context.persona,
         voiceProfile: context.voiceProfile,
         projects: context.projects,
@@ -403,9 +392,9 @@ export async function POST(event: RequestEvent) {
         retune: body.retune,
         tone: voice.tone,
         toneNotes: voice.toneNotes,
-        projectId: project.id,
+        projectId: project?.id ?? null,
         orgId: auth.organizationId ?? undefined,
-        runnerSlug: project.defaultAgentRunner,
+        runnerSlug,
         continueSessionId: body.sessionId,
         // #573: the tool name(s) the loop is running, comma-joined - the
         // panel translates each into the operator's own words and collapses
@@ -446,11 +435,11 @@ export async function POST(event: RequestEvent) {
             .insert(schema.assistUsage)
             .values({
               organizationId: auth.organizationId,
-              projectId: project.id,
+              projectId: project?.id ?? null,
               deviceId: auth.deviceId,
               platformId: platform.id,
               kind: body.kind,
-              agentRunner: project.defaultAgentRunner,
+              agentRunner: runnerSlug,
               model: res.model ?? null,
               inputTokens: res.usage?.inputTokens ?? null,
               outputTokens: res.usage?.outputTokens ?? null,

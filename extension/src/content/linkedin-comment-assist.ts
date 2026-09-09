@@ -10,11 +10,12 @@ import {
   type AssistStatusPhase,
   type RetuneDirection,
   type SuggestEvent,
+  type SuggestRefusalReason,
   type SuggestUsage,
 } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import { mountPanel, panelFor, type PanelHandle } from './shared/panel-host.js';
-import { insertComposerText, watchDraftForSend } from './linkedin-comment.js';
+import { insertComposerText } from './linkedin-comment.js';
 import {
   detectPageKind,
   findCommentComposer,
@@ -81,12 +82,13 @@ import CommentAssistPanel from './linkedin-comment-assist-panel.svelte';
  *
  * ## No second send path
  *
- * Accept calls the same materialise-a-draft endpoint LI-16 (#313) built,
- * inserts the accepted text with `insertComposerText` (native setter, a
- * genuine `input` event, never a synthetic submit), then hands the draft id
- * to `watchDraftForSend` - the exact send-detection state machine
- * `linkedin-comment.ts` already uses for a draft opened from the Inbox. An
- * in-page comment therefore lands in the ledger by exactly the same route.
+ * Accept writes straight into the assist plane's own ledger (#521,
+ * `shared/src/assist-accept.ts`'s `acceptSuggestion`) - unconditionally, the
+ * moment the human accepts, not gated behind a later "sent" detection the
+ * way a campaign draft is. There is no `drafts` row to arm and no send
+ * event to watch for: `insertComposerText` (native setter, a genuine
+ * `input` event, never a synthetic submit) is the last thing this script
+ * does with the accepted text.
  *
  * ## Reasoning is never insertable (#382)
  *
@@ -100,13 +102,13 @@ import CommentAssistPanel from './linkedin-comment-assist-panel.svelte';
  * is "no marker means no draft", closing #382 (a refusal used to arrive as
  * insertable reasoning text).
  *
- * ## Every accepted draft lands under the personal project
+ * ## Where an accepted suggestion is filed (#523)
  *
- * `GET /api/extension/linkedin-assist`'s `personalProjectId` (decision 5)
- * is the org's auto-created `personal` project - every accepted suggestion
- * here is filed under it, distinct from `boundProjectId`
- * (`assist.projectId`), which stays what it always was: the product the
- * suggestion is grounded in and generated for, used only for `api.suggest`.
+ * `boundProjectId` (`assist.projectId`, the same value used to request the
+ * suggestion) is what accept sends too - there is no separate "personal"
+ * project to fall back to. A suggestion naming no project at all is not a
+ * lesser case of one that does: it is a legitimate suggestion filed under
+ * no product, and `getOrgUsage` still counts it exactly once.
  */
 
 const COMMENT_KIND = 'post_comment';
@@ -245,15 +247,16 @@ export function readAssistPost(root: ParentNode = document): AssistPost | null {
   return post ? readAssistPostFromCard(post, root) : null;
 }
 
-/** Every refusal this panel can render, honestly and distinctly (the brief's
- * five states, plus the accept path's own three, plus four this client
- * detects itself). `no_recent_activity` is excluded: it only ever answers a
- * `kind: 'post'` request (#315's post composer assist grounds itself in the
- * observation buffer; this comment assist always supplies its own post
- * text, so it can never hit that refusal). A `done` event with no draft is
- * never a refusal - see `CommentAssistState.no_draft` below. */
+/** Every refusal this panel can render, honestly and distinctly: the assist
+ * gate's own reasons, the accept path's own three, plus four this client
+ * detects itself. `project_required` and `no_recent_activity` are excluded:
+ * both only ever answer a `kind: 'post'` request (#315's post composer
+ * assist grounds itself server-side; this comment assist always supplies
+ * its own post text, so it can never hit either). A `done` event with no
+ * draft is never a refusal - see `CommentAssistState.no_draft` below. */
 export type AssistRefusal =
-  | Exclude<AcceptRefusalReason, 'no_recent_activity'>
+  | Exclude<SuggestRefusalReason, 'project_required' | 'no_recent_activity'>
+  | AcceptRefusalReason
   | 'backend_unreachable'
   | 'selector_health_degraded'
   | 'generation_failed'
@@ -263,8 +266,6 @@ const KNOWN_REFUSALS: Record<AssistRefusal, true> = {
   assist_disabled: true,
   kill_switch: true,
   project_not_bound: true,
-  quota_exhausted: true,
-  no_account: true,
   blocked: true,
   uncontactable: true,
   recently_contacted: true,
@@ -273,8 +274,8 @@ const KNOWN_REFUSALS: Record<AssistRefusal, true> = {
   generation_failed: true,
   extension_reloaded: true,
   // #556: the plan's own ceiling and a failed payment past its grace
-  // window - distinct from `quota_exhausted` so the panel can say which
-  // one stopped it and point at billing rather than a generic upgrade.
+  // window - distinct from each other, so the panel can say which one
+  // stopped it and point at billing rather than a generic upgrade.
   plan_limit_reached: true,
   plan_payment_required: true,
 };
@@ -462,7 +463,6 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
   let currentReasoning = '';
   let currentDraft = '';
   let boundProjectId: number | null = null;
-  let personalProjectId: number | null = null;
   let lastUsage: SuggestUsage | undefined;
   let lastMs: number | undefined;
   // #576: the live session id from the last `done` event, if any - handed
@@ -554,12 +554,11 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
       void setRefused('assist_disabled');
       return;
     }
-    if (assist.projectId === null) {
-      void setRefused('project_not_bound');
-      return;
-    }
+    // #523: a null `assist.projectId` is not a refusal - the assistant
+    // binds to the operator, and a suggestion with no project just files
+    // under none. Naming a project is context only, so it travels through
+    // exactly as read, never coerced to a refusal on this side.
     boundProjectId = assist.projectId;
-    personalProjectId = assist.personalProjectId;
 
     // #569: captured here, not folded into `capturedPost`, because it is
     // the one field on this request that costs a round trip through the
@@ -572,7 +571,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
     let draft = '';
     const res = await api.suggest(
       {
-        projectId: boundProjectId,
+        projectId: boundProjectId ?? undefined,
         kind: COMMENT_KIND,
         post: {
           urn: capturedPost.urn,
@@ -638,7 +637,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
   }
 
   async function acceptAndInsert(): Promise<void> {
-    if (personalProjectId === null || !capturedPost) {
+    if (!capturedPost) {
       void setRefused('selector_health_degraded');
       return;
     }
@@ -646,7 +645,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
       state: { phase: 'accepting', reasoning: currentReasoning, draft: currentDraft },
     });
     const res = await api.acceptSuggestion({
-      projectId: personalProjectId,
+      projectId: boundProjectId ?? undefined,
       kind: COMMENT_KIND,
       post: {
         urn: capturedPost.urn,
@@ -668,14 +667,16 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
       return;
     }
 
+    // #521: the ledger row is already written above - there is no draft to
+    // arm and no send to watch for, unlike the campaign path this used to
+    // borrow.
     insertComposerText(composer, currentDraft);
-    watchDraftForSend(res.data.draftId);
     logFromContent({
       level: 'info',
       source: 'linkedin-action',
       message: 'activity.linkedin-action.suggestion-inserted',
-      messageParams: { draftId: res.data.draftId },
-      meta: { draftId: res.data.draftId },
+      messageParams: { id: res.data.id },
+      meta: { id: res.data.id },
     });
     handle.update({ state: { phase: 'inserted' } });
   }

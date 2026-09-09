@@ -403,34 +403,15 @@ describe('POST /api/extension/suggest', () => {
     expect(drafts).toHaveLength(0);
   });
 
-  it('refuses with a renderable body, not a 500, when the daily quota is spent', async () => {
-    const db = getDb();
-    const { org, project, platform } = await seedOrgProject('org-a');
-    await mintDevice(org.id, 'tok');
-    // A LinkedIn account whose own daily limit is already zero: the binding
-    // limit is the smaller of platform and account, so this exhausts it
-    // without depending on the platform defaults.
-    await db
-      .insert(schema.accounts)
-      .values({
-        projectId: project.id,
-        platformId: platform.id,
-        handle: 'lorenzo',
-        dailyLimit: 0,
-        active: true,
-      })
-      .returning();
-
-    const res = await suggest({
-      request: request('tok', { ...POST_BODY, projectId: project.id }),
-    } as never);
-    expect(res.headers.get('content-type')).toContain('application/json');
-    const body = (await res.json()) as { refused: string; window: string };
-    expect(body.refused).toBe('quota_exhausted');
-    expect(body.window).toBe('day');
-    // And it never reached the agent.
-    expect(lastOptions).toBeNull();
-  });
+  // #521 retired the per-account draft quota (`accounts.dailyLimit`,
+  // `checkQuota`) this route used to precondition against, per its own
+  // comment where the check used to live: an accepted suggestion no longer
+  // becomes a draft at all, so a campaign account's operational quota has
+  // nothing left to protect here. What bounds this route now - the
+  // per-device/per-org rate limiter and the org plan's own
+  // `suggestionsPerMonth` ceiling - is covered by
+  // extension-suggest-plan-limit.test.ts and rate-limit.test.ts. Deleted
+  // rather than re-pinned to a mechanism the route no longer has.
 
   // A disconnect has two windows, and the first one is the one that bites:
   // resolving the runner config and making a temp directory are awaits, so a
@@ -539,17 +520,18 @@ describe('POST /api/extension/suggest', () => {
     await ok.text();
   });
 
-  // Decision 2026-09-07: the org's own `personal` project is always a valid
-  // destination, unlike an arbitrary sibling project of the same org, which
-  // the previous test proves still gets refused.
-  it('serves a request naming the org personal project even though it is not the bound one', async () => {
-    const { org, project } = await seedOrgProject('org-personal');
-    await mintDevice(org.id, 'tokPersonal');
+  // #523: naming no project at all makes no binding claim, so it is never a
+  // bypass of the binding the way naming a *different* project of the same
+  // org is (the previous test) - it is always allowed, streaming in the
+  // operator's own voice on no particular subject.
+  it('serves a request naming no project at all, even though the org has a bound project', async () => {
+    const { org, project } = await seedOrgProject('org-no-project');
+    await mintDevice(org.id, 'tokNoProject');
     const assist = await loadLinkedInAssistDeviceState(getDb(), org.id);
-    expect(assist.personalProjectId).not.toBe(project.id);
+    expect(assist.projectId).toBe(project.id);
 
     const res = await suggest({
-      request: request('tokPersonal', { ...POST_BODY, projectId: assist.personalProjectId }),
+      request: request('tokNoProject', POST_BODY),
     } as never);
     expect(res.headers.get('content-type')).toContain('text/event-stream');
     await res.text();

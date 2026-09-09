@@ -245,10 +245,13 @@ describe('POST /api/auth/register', () => {
       throw new Error('org has no quota fields');
     }
 
+    // #523 retired the auto-created personal project - a fresh org has none
+    // until it makes one, so this test provisions its own to hang the
+    // concurrency/budget-check runs off, same as any real project would.
     const [project] = await getDb()
-      .select()
-      .from(schema.projects)
-      .where(eq(schema.projects.organizationId, orgId));
+      .insert(schema.projects)
+      .values({ organizationId: orgId, slug: 'quota-check', name: 'Quota Check' })
+      .returning();
 
     // Fill every concurrency slot the default allows, then one more -
     // assertOrgConcurrencyAdmitted (shared/src/org-quota.ts, the same

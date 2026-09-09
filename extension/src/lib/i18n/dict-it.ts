@@ -147,16 +147,10 @@ export const it = {
   'activity.linkedin-action.suggestion-no-draft':
     'LinkedIn assist non ha prodotto una bozza da inserire (skipped: {skipped}).',
   'activity.linkedin-action.suggestion-inserted':
-    'Suggerimento accettato inserito nel box del commento LinkedIn per il draft {draftId}.',
+    'Suggerimento accettato inserito nel box del commento LinkedIn (id registro {id}).',
   // See the comment on `activity.linkedin-action.assist-mounted` in dict-en.ts.
   'activity.linkedin-action.assist-mounted':
     'Assistente commento aperto sulla pagina {pageKind}, con la card del post {card}.',
-  'activity.linkedin-action.post-submit-not-found':
-    'Impossibile trovare il pulsante di pubblicazione del post LinkedIn per il draft {draftId} entro 15s; la pubblicazione non verrà tracciata automaticamente.',
-  'activity.linkedin-action.post-confirm-unavailable':
-    "Il draft {draftId} ha lasciato il composer senza errori, ma il feed di LinkedIn non espone un identificatore stabile per un post appena pubblicato, quindi Pitchbox non ha potuto confermarne l'invio né catturarne l'URN. Segnalo manualmente se è stato pubblicato.",
-  'activity.linkedin-action.post-confirm-timeout':
-    'Impossibile confermare che il draft {draftId} abbia lasciato il composer entro 20s dal clic su Pubblica; verifica manualmente lo stato.',
   'activity.linkedin-dom.selector-miss':
     'Il selettore LinkedIn "{selector}" non trova corrispondenze nella pagina {pageKind} ({misses} mancate, {matches} trovate) - questa lettura potrebbe essere obsoleta o mancante.',
   'activity.linkedin-collector.batch-sent':
@@ -336,11 +330,11 @@ export const it = {
   'assist.post.accepting': 'Salvataggio in corso…',
   'assist.post.inserted.title': 'Inserito',
   'assist.post.inserted.hint': 'Premi il pulsante Pubblica di LinkedIn per inviarlo.',
+  // #521: vedi il commento in dict-en.ts - quota_exhausted/no_account sono
+  // stati ritirati insieme alla quota per account.
   'assist.refusal.assist_disabled': "L'assistente Pitchbox è disattivato per questo workspace.",
   'assist.refusal.kill_switch': "Un amministratore ha fermato l'assistente.",
   'assist.refusal.project_not_bound': "Nessun progetto è collegato all'assistente.",
-  'assist.refusal.quota_exhausted': 'La quota commenti di oggi è esaurita.',
-  'assist.refusal.no_account': 'Nessun account LinkedIn è collegato a questo progetto.',
   'assist.refusal.blocked': 'Questa persona è nella blocklist.',
   'assist.refusal.uncontactable': 'Questa persona è stata segnata come non contattabile.',
   'assist.refusal.recently_contacted': 'Contattata di recente, quindi viene saltata.',
@@ -359,7 +353,8 @@ export const it = {
   'assist.refusal.extension_reloaded':
     'Pitchbox è stato ricaricato o aggiornato - ricarica questa pagina per riconnetterti.',
   'assist.refusal.unknown': "L'assistente ha rifiutato questa richiesta ({reason}).",
-  'assist.refusal.post_quota_exhausted': 'La quota post di oggi è esaurita.',
+  // Post-only (#523): vedi il commento su `project_required` in dict-en.ts.
+  'assist.refusal.project_required': "Collega un progetto all'assistente per suggerire un post.",
   'assist.refusal.no_recent_activity':
     'Ancora nulla di recente da cui scrivere un post. Esplora la tua rete per un po’, poi riprova.',
   // #438: see the comment in dict-en.ts.

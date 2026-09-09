@@ -1,7 +1,7 @@
 import type { RequestEvent } from '@sveltejs/kit';
 import { redirect } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
-import { and, desc, eq, gte, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
 import {
@@ -43,6 +43,30 @@ export async function load(event: RequestEvent) {
   const projects = await listProjects(db, { organizationId: orgId });
   const projectIds = projects.map((p) => p.id);
 
+  const assistSince24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const assistSince7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  // Filtered by `organizationId` directly, not through this org's project
+  // ids: #523 made `assist_usage.project_id` nullable (a suggestion can be
+  // about no product at all), so an org with zero projects can still have
+  // assist spend to show - the `projectIds.length === 0` early return right
+  // below must not hardcode this to zero.
+  const [assistSpendRow] =
+    orgId == null
+      ? [{ cost24h: 0, cost7d: 0 }]
+      : await db
+          .select({
+            cost24h: sql<
+              string | null
+            >`COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= ${assistSince24h}), 0)`,
+            cost7d: sql<
+              string | null
+            >`COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= ${assistSince7d}), 0)`,
+          })
+          .from(schema.assistUsage)
+          .where(eq(schema.assistUsage.organizationId, orgId));
+  const assistCost24h = Number(assistSpendRow?.cost24h ?? 0);
+  const assistCost7d = Number(assistSpendRow?.cost7d ?? 0);
+
   // No projects in this org - nothing to show, and `inArray(x, [])` is a SQL error.
   if (projectIds.length === 0) {
     return {
@@ -66,7 +90,7 @@ export async function load(event: RequestEvent) {
       },
       recentRuns: [],
       campaigns: [],
-      spend: { cost24h: 0, cost7d: 0, assistCost24h: 0, assistCost7d: 0 },
+      spend: { cost24h: 0, cost7d: 0, assistCost24h, assistCost7d },
     };
   }
 
@@ -160,11 +184,11 @@ export async function load(event: RequestEvent) {
     .limit(5);
 
   // ----- Spend (last 24h / 7d) -----
-  // Campaign/other-run cost excludes `kind = 'assist'` on purpose: an
-  // accepted suggestion's own `runs` row always has a null `cost_usd` now
-  // (shared/src/assist-accept.ts) - the assistant's spend lives entirely in
-  // `assist_usage` below, ledgered once per suggestion whether accepted or
-  // not (#522). Summing both would double an accepted suggestion's cost.
+  // The assistant's spend lives entirely in `assist_usage`
+  // (`assistCost24h`/`assistCost7d`, computed above before the
+  // zero-projects early return) - #521 retired the `assist`-kind `runs`
+  // row entirely, so this query is campaign/other-run cost only, with
+  // nothing left to exclude.
   const [spendRow] = await db
     .select({
       cost24h: sql<
@@ -176,25 +200,13 @@ export async function load(event: RequestEvent) {
     })
     .from(schema.runs)
     .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
-    .where(and(ne(schema.runs.kind, 'assist'), runOrgMatch));
-
-  const [assistSpendRow] = await db
-    .select({
-      cost24h: sql<
-        string | null
-      >`COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= ${since24h}), 0)`,
-      cost7d: sql<
-        string | null
-      >`COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= ${since7d}), 0)`,
-    })
-    .from(schema.assistUsage)
-    .where(inArray(schema.assistUsage.projectId, projectIds));
+    .where(runOrgMatch);
 
   const spend = {
     cost24h: Number(spendRow?.cost24h ?? 0),
     cost7d: Number(spendRow?.cost7d ?? 0),
-    assistCost24h: Number(assistSpendRow?.cost24h ?? 0),
-    assistCost7d: Number(assistSpendRow?.cost7d ?? 0),
+    assistCost24h,
+    assistCost7d,
   };
 
   // ----- Run stats (last 7 days, campaign runs only - the three cards on

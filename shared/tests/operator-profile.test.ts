@@ -7,7 +7,6 @@ import {
   listVoiceSamples,
   setVoiceSampleExcluded,
   recordVoiceSamples,
-  ensureOperatorAccount,
 } from '../src/operator-profile.js';
 
 async function platformId(slug: string): Promise<number> {
@@ -24,15 +23,6 @@ async function ensureOrg(slug: string): Promise<number> {
     .from(schema.organizations)
     .where(eq(schema.organizations.slug, slug));
   return org!.id;
-}
-
-async function makeProject(organizationId: number, slug: string): Promise<number> {
-  const db = getDb();
-  const [p] = await db
-    .insert(schema.projects)
-    .values({ organizationId, slug, name: slug })
-    .returning({ id: schema.projects.id });
-  return p!.id;
 }
 
 describe('shared/src/operator-profile', () => {
@@ -162,44 +152,10 @@ describe('shared/src/operator-profile', () => {
     });
   });
 
-  describe('ensureOperatorAccount', () => {
-    it('creates an active, credential-less personal-role LinkedIn account', async () => {
-      const projectId = await makeProject(orgAId, 'op-profile-personal-a');
-      await ensureOperatorAccount(getDb(), {
-        projectId,
-        platformId: linkedinId,
-        handle: 'ada-lovelace',
-      });
-
-      const [account] = await getDb()
-        .select()
-        .from(schema.accounts)
-        .where(eq(schema.accounts.projectId, projectId));
-      expect(account.role).toBe('personal');
-      expect(account.handle).toBe('ada-lovelace');
-      expect(account.active).toBe(true);
-      expect(account.cookieSession).toBeNull();
-      expect(account.accessTokenEncrypted).toBeNull();
-    });
-
-    it('is idempotent: a second call for the same project/platform creates no second row', async () => {
-      const projectId = await makeProject(orgAId, 'op-profile-personal-b');
-      await ensureOperatorAccount(getDb(), {
-        projectId,
-        platformId: linkedinId,
-        handle: 'ada-lovelace',
-      });
-      await ensureOperatorAccount(getDb(), {
-        projectId,
-        platformId: linkedinId,
-        handle: 'ada-lovelace',
-      });
-
-      const accounts = await getDb()
-        .select()
-        .from(schema.accounts)
-        .where(eq(schema.accounts.projectId, projectId));
-      expect(accounts).toHaveLength(1);
-    });
-  });
+  // #521 removed ensureOperatorAccount as dead code once its only caller,
+  // the accept path's per-account no_account gate, was itself removed - the
+  // assist plane binds to the operator profile and the connected account
+  // directly now, never a synthesized "personal" account row. This test
+  // exercised a function that no longer exists, not a contract any caller
+  // still relies on, so it is deleted rather than aimed at new internals.
 });

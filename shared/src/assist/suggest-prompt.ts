@@ -302,7 +302,10 @@ const RETUNE_INSTRUCTION: Record<RetuneDirection, string> = {
 export function buildSuggestionPrompt(args: {
   kind: SuggestionKind;
   post: ObservedPost;
-  currentProject: CurrentProject;
+  /** Null when the suggestion names no project (#523: a project is
+   * optional context, never a requirement) - the operator's own voice on
+   * no particular subject. */
+  currentProject: CurrentProject | null;
   /** Null when the operator has never captured a profile or typed one in by
    * hand - a smaller prompt, not a guessed one. */
   persona: OperatorPersona | null;
@@ -344,11 +347,17 @@ export function buildSuggestionPrompt(args: {
   const tone: AssistTone = args.tone ?? DEFAULT_ASSIST_TONE;
   const parts: string[] = [];
 
-  parts.push(
-    `You are drafting for ${currentProject.name}, whose operator will read what you write, edit it if they want, and post it themselves under their own name. Nothing you write is sent by anyone but them.`,
-  );
-  if (currentProject.description?.trim()) {
-    parts.push(`What ${currentProject.name} is:\n${clamp(currentProject.description, 1200)}`);
+  if (currentProject) {
+    parts.push(
+      `You are drafting for ${currentProject.name}, whose operator will read what you write, edit it if they want, and post it themselves under their own name. Nothing you write is sent by anyone but them.`,
+    );
+    if (currentProject.description?.trim()) {
+      parts.push(`What ${currentProject.name} is:\n${clamp(currentProject.description, 1200)}`);
+    }
+  } else {
+    parts.push(
+      "You are drafting in the operator's own voice, on their own subject, not about any particular product they build. The operator will read what you write, edit it if they want, and post it themselves under their own name. Nothing you write is sent by anyone but them.",
+    );
   }
 
   // Who the operator is: headline, about, experience and their own notes on
@@ -396,14 +405,13 @@ export function buildSuggestionPrompt(args: {
   // What they are building: every project in the organization, so the
   // assistant can speak honestly about the operator's other work instead of
   // acting as if this product is the only thing they do. Ranked before the
-  // MAX_PROJECTS cut so the current project and the personal project always
-  // survive it regardless of how many other projects the organization has -
-  // those two are what a suggestion can actually depend on; everything else
-  // is honest context that is fine to lose past the ceiling.
+  // MAX_PROJECTS cut so the current project always survives it regardless of
+  // how many other projects the organization has - everything else is
+  // honest context that is fine to lose past the ceiling.
   if (projects.length > 0) {
     const rankedProjects = [...projects].sort((a, b) => {
-      const aRank = a.isCurrent ? 0 : a.isPersonal ? 1 : 2;
-      const bRank = b.isCurrent ? 0 : b.isPersonal ? 1 : 2;
+      const aRank = a.isCurrent ? 0 : 1;
+      const bRank = b.isCurrent ? 0 : 1;
       return aRank - bRank;
     });
     parts.push(

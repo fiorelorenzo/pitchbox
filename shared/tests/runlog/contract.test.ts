@@ -131,20 +131,13 @@ describe('playbookContractError', () => {
     expect(await playbookContractError(db, { id: 1, kind: 'something_else' })).toBeNull();
   });
 
-  // #313: an assist run has no playbook and no agent that could call a finish
-  // tool at all, unlike every other kind above. It is deliberately absent
-  // from PLAYBOOK_FINISH_TOOL rather than mapped to one, so this exercises the
-  // real row shape (kind: 'assist', a bare project, no campaign) rather than
-  // the synthetic 'something_else' case above.
-  it('an assist run is never classified playbook_incomplete', async () => {
-    const { db, project } = await fixtures();
-    const [run] = await db
-      .insert(schema.runs)
-      .values({ kind: 'assist', projectId: project.id, trigger: 'manual', status: 'running' })
-      .returning();
-
-    expect(await playbookContractError(db, run)).toBeNull();
-  });
+  // #521: `runs_kind_target_chk` no longer accepts kind = 'assist' at all
+  // (an accepted suggestion writes into assist_accepted_suggestions now,
+  // never a `runs` row), so a `run` with this kind can no longer exist to
+  // classify. Deleted rather than kept exercising a row the schema itself
+  // now refuses to store - the 'says nothing about a kind with no finish
+  // tool' case above already covers the same `if (!tool) return null`
+  // fallthrough this test exercised.
 });
 
 afterAll(async () => {
