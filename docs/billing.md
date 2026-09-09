@@ -208,7 +208,6 @@ change to the price catalogue. It never writes to the app database.
 | ----------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `PITCHBOX_BILLING`            | web (server only) | `on` to enable the billing routes; unset means self-host posture, same 404 `/api/auth/*` takes when `PITCHBOX_AUTH` is off |
 | `STRIPE_SECRET_KEY`           | web (server only) | `sk_live_…` in production, `sk_test_…` in preview and locally                                                              |
-| `STRIPE_PUBLISHABLE_KEY`      | web               | `pk_live_…` / `pk_test_…`, safe to expose                                                                                  |
 | `STRIPE_WEBHOOK_SECRET`       | web (server only) | signing secret of **that deployment's own** endpoint                                                                       |
 | `STRIPE_PORTAL_CONFIGURATION` | web (server only) | optional; pins the portal configuration instead of the default                                                             |
 | `PITCHBOX_APP_ORIGIN`         | setup script      | defaults to `https://app.pitchbox.app`                                                                                     |
@@ -217,6 +216,19 @@ change to the price catalogue. It never writes to the app database.
 Production and preview have **separate webhook endpoints with separate signing
 secrets** on purpose: a preview deployment holding the production secret could
 write production billing state. Never copy one into the other.
+
+A Docker deployment needs each of those four in **both** compose files, not
+only in `.env`: `docker-compose.app.yml` enumerates the container's
+environment instead of passing `.env` through, and `docker-compose.bluegreen.yml`
+replaces that whole block through its `x-web-common` anchor, so a variable
+present in one place still reaches nothing. Prod held a live key in `.env` and
+in neither file on 2026-09-10, which answers every billing route 404
+`billing_disabled` while looking configured. `tests/docker-mail-env.test.ts`
+now fails when a variable `loadStripeEnv` reads is missing from either file.
+
+Nothing reads a publishable key: Checkout is hosted and the app only ever
+redirects to a session URL, so there is no `STRIPE_PUBLISHABLE_KEY` here and
+setting one configures nothing.
 
 ## Webhooks
 

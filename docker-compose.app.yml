@@ -63,6 +63,17 @@ services:
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
       GITHUB_APP_PRIVATE_KEY_B64: ${GITHUB_APP_PRIVATE_KEY_B64:-}
+      # Hosted billing (#549, #551). Same enumeration rule as the two blocks
+      # above: the billing routes and the Stripe webhook read these from the
+      # process environment, so a key that lives only in `.env` leaves the
+      # deployment answering 404 `billing_disabled` while looking configured.
+      # Measured on prod 2026-09-10, with a live key in `.env` and nothing in
+      # this file. The daemon is deliberately not given them - nothing under
+      # `daemon/` touches Stripe.
+      PITCHBOX_BILLING: ${PITCHBOX_BILLING:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PORTAL_CONFIGURATION: ${STRIPE_PORTAL_CONFIGURATION:-}
     depends_on:
       postgres:
         condition: service_healthy

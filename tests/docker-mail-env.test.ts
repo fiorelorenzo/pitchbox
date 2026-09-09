@@ -41,6 +41,16 @@ function githubAppEnvVarsReadByTheLoader(): string[] {
   return envVarsReadBy('shared/src/github-app.ts');
 }
 
+/** Hosted billing's own configuration (#549, #551), which fails in the same
+ * silent shape as mail: `loadStripeEnv` collapses to `{ enabled: false }` and
+ * every billing route answers 404 `billing_disabled`, so a deployment holding
+ * a real live key looks configured and sells nothing. Measured on prod
+ * 2026-09-10: the four variables were in `/opt/apps/pitchbox/.env` and in
+ * neither compose file. */
+function stripeEnvVarsReadByTheLoader(): string[] {
+  return envVarsReadBy('shared/src/stripe/env.ts');
+}
+
 /** The `web:` service's own block, cut at the next service at the same indent. */
 function webServiceBlock(): string {
   const src = readFileSync(join(root, 'docker-compose.app.yml'), 'utf8');
@@ -107,6 +117,35 @@ describe('the deployed app receives the mail configuration it reads', () => {
   );
 
   it.each(mailEnvVarsReadByTheLoader())(
+    'passes %s into the blue-green web containers, which are what production runs',
+    (name) => {
+      expect(blueGreenCommonBlock()).toMatch(
+        new RegExp(`^\\s+${name}: \\$\\{${name}(:-[^}]*)?\\}$`, 'm'),
+      );
+    },
+  );
+});
+
+describe('the deployed app receives the billing configuration it reads', () => {
+  it('finds the variables to check, rather than passing on an empty set', () => {
+    expect(stripeEnvVarsReadByTheLoader()).toEqual([
+      'PITCHBOX_BILLING',
+      'STRIPE_PORTAL_CONFIGURATION',
+      'STRIPE_SECRET_KEY',
+      'STRIPE_WEBHOOK_SECRET',
+    ]);
+  });
+
+  it.each(stripeEnvVarsReadByTheLoader())(
+    'passes %s into the base web service, interpolated from the deployment environment',
+    (name) => {
+      expect(webServiceBlock()).toMatch(
+        new RegExp(`^\\s+${name}: \\$\\{${name}(:-[^}]*)?\\}$`, 'm'),
+      );
+    },
+  );
+
+  it.each(stripeEnvVarsReadByTheLoader())(
     'passes %s into the blue-green web containers, which are what production runs',
     (name) => {
       expect(blueGreenCommonBlock()).toMatch(
