@@ -2,11 +2,16 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { getDb, schema } from '../src/db/client.js';
 import { recordVoiceSamples, setVoiceSampleExcluded } from '../src/operator-profile.js';
+import { EMPTY_RHYTHM, MIN_ITEMS_TO_DERIVE } from '../src/assist/voice-profile.js';
+import { DEFAULT_VOICE_PROFILE } from '../src/assist/voice-defaults.js';
 import {
   loadVoiceProfile,
   refreshVoiceProfile,
   saveVoiceProfileSummary,
   resetVoiceProfileToDerived,
+  resolveOperatorVoiceProfile,
+  VOICE_AXES,
+  type VoiceProfileEvidence,
 } from '../src/operator-voice-profile.js';
 
 // #407: the operator's derived voice profile, end to end against a real
@@ -15,6 +20,14 @@ import {
 // cannot check on their own: the corpus is gathered org-scoped across four
 // different tables, excluding a real voice sample row changes what gets
 // derived, and a manual edit really does survive a real refresh.
+//
+// 2026-09-09 (#570/#571): the versioning and default-resolution tests below
+// are the DB-round-trip half of that work - the pure logic (what "measured"
+// vs "default" means, what a legacy row normalizes to) is already pinned in
+// assist-voice-profile.test.ts and the pure resolveVoiceProfile tests here;
+// what only a real database can prove is that a row actually written by an
+// older shape reads back correctly, and that a real recompute against
+// Postgres bumps the version rather than silently overwriting.
 
 async function reset() {
   await getDb().execute(
@@ -119,6 +132,72 @@ async function seedCorpus(orgId: number, tag: string) {
   });
 
   return { proj, account, campaign, run, linkedin };
+}
+
+// A real-looking corpus sized and worded to make a specific claim per axis
+// (#570's acceptance: "the rich case produces measurements that actually
+// differ from the defaults"). Verified by hand against `measureVoiceCorpus`
+// directly before being written here: 12 items, 201 words, so it clears
+// both `MIN_ITEMS_TO_DERIVE` and the lexicon's 200-word avoided-word floor.
+// Eight English voice samples share a repeated emoji and hashtag and end on
+// a claim; four Italian sent messages give the language split something
+// real to report both overall and per corpus surface.
+const RICH_ENGLISH_SAMPLES = [
+  'Shipped the new onboarding flow today. It took three tries to get the copy exactly right. \u{1F680} #buildinpublic.',
+  'Talked to five different customers this week. Every single one asked for the same export feature. \u{1F680} #buildinpublic.',
+  'Fixed a nasty race condition in the background queue. Took two full days to track it down.',
+  'Wrote the whole feature spec on a plane. No wifi, no distractions, just me and the document.',
+  'I think the pricing page still confuses people. Probably needs another pass next sprint.',
+  'Our whole team debated this for a week before deciding. We chose the simpler approach in the end.',
+  'Reviewed every pull request myself this sprint. Small changes, merged fast, nothing sat waiting overnight.',
+  'Wrote a short retro after the outage last night. Named exactly what broke and what changes next.',
+];
+const RICH_ITALIAN_MESSAGES = [
+  'Abbiamo chiuso la migrazione questa mattina. Il team dovrebbe notare una vera differenza di velocita adesso.',
+  'Il nostro piccolo team ha avuto un trimestre difficile. Ne abbiamo parlato apertamente e siamo andati avanti.',
+  'Ho scritto tutta la specifica in aereo. Niente wifi, nessuna distrazione, solo io e il documento.',
+  'Penso che la pagina dei prezzi confonda ancora le persone. Probabilmente serve un altro passaggio nel prossimo sprint.',
+];
+
+async function seedRichCorpus(orgId: number, tag: string) {
+  const db = getDb();
+  const linkedin = await platformId('linkedin');
+  await recordVoiceSamples(
+    db,
+    orgId,
+    linkedin,
+    RICH_ENGLISH_SAMPLES.map((text, i) => ({ externalId: `${tag}-rich-sample-${i}`, text })),
+  );
+
+  const [proj] = await db
+    .insert(schema.projects)
+    .values({ organizationId: orgId, slug: `${tag}-rich-proj`, name: `${tag} rich proj` })
+    .returning();
+  const [account] = await db
+    .insert(schema.accounts)
+    .values({ projectId: proj.id, platformId: linkedin, handle: `${tag}-rich-acct` })
+    .returning();
+  const [contact] = await db
+    .insert(schema.contactHistory)
+    .values({
+      platformId: linkedin,
+      accountHandle: account.handle,
+      targetUser: `${tag}-rich-target`,
+      organizationId: orgId,
+    })
+    .returning();
+  for (const [i, body] of RICH_ITALIAN_MESSAGES.entries()) {
+    await db.insert(schema.messages).values({
+      contactId: contact.id,
+      platformId: linkedin,
+      author: account.handle,
+      isFromUs: true,
+      body,
+      platformMessageId: `${tag}-rich-msg-${i}`,
+      createdAtPlatform: new Date(),
+      source: 'linkedin',
+    });
+  }
 }
 
 describe('shared/src/operator-voice-profile', () => {
@@ -239,5 +318,126 @@ describe('shared/src/operator-voice-profile', () => {
     const reset = await resetVoiceProfileToDerived(getDb(), orgId);
     expect(reset.source).toBe('derived');
     expect(reset.summary).toBe(derived.summary);
+  });
+
+  it('a recompute on an unchanged corpus reproduces identical measurements but bumps the version', async () => {
+    const orgId = await ensureOrg('vp-org-version');
+    await seedCorpus(orgId, 'vr');
+
+    const first = await refreshVoiceProfile(getDb(), orgId);
+    expect(first.evidence.version).toBe(1);
+
+    const second = await refreshVoiceProfile(getDb(), orgId);
+    expect(second.evidence.version).toBe(2);
+    // The counter moved; the content it describes did not - determinism and
+    // "a recompute is a new version" hold at the same time, not in tension.
+    expect(second.summary).toBe(first.summary);
+    expect(second.traits).toEqual(first.traits);
+    expect(second.openings).toEqual(first.openings);
+    expect(second.evidence.rhythm).toEqual(first.evidence.rhythm);
+    expect(second.evidence.language).toEqual(first.evidence.language);
+
+    const third = await refreshVoiceProfile(getDb(), orgId);
+    expect(third.evidence.version).toBe(3);
+  });
+
+  it('reads a row written before #570 shipped without throwing, as version 0 with valid empty axes', async () => {
+    const orgId = await ensureOrg('vp-org-legacy');
+    // The exact shape `refreshVoiceProfile` wrote before this change: no
+    // `version`, none of the six extended axes - just the corpus ids and
+    // counts #407 already stored.
+    const legacyEvidence = {
+      voiceSampleIds: [1, 2],
+      messageIds: [],
+      draftIds: [],
+      templateIds: [],
+      counts: { voiceSamples: 2, messages: 0, drafts: 0, templates: 0 },
+    };
+    await getDb()
+      .insert(schema.operatorVoiceProfiles)
+      .values({
+        organizationId: orgId,
+        summary: 'Usually writes with first person, speaking as themselves.',
+        traits: ['first-person'],
+        openings: [],
+        closings: [],
+        commonWords: [],
+        wordsPerSentence: 12,
+        itemCount: 4,
+        wordCount: 80,
+        evidence: legacyEvidence,
+        source: 'derived',
+        derivedAt: new Date(),
+      });
+
+    const row = await loadVoiceProfile(getDb(), orgId);
+    expect(row).not.toBeNull();
+    expect(row!.evidence.version).toBe(0);
+    expect(row!.evidence.voiceSampleIds).toEqual([1, 2]);
+    expect(row!.evidence.rhythm).toEqual(EMPTY_RHYTHM);
+    expect(row!.summary).toBe('Usually writes with first person, speaking as themselves.');
+
+    // A recompute over a legacy row starts counting from its version, not
+    // from zero every time - 0 is "never versioned", not "version zero of a
+    // fresh count".
+    const refreshed = await refreshVoiceProfile(getDb(), orgId);
+    expect(refreshed.evidence.version).toBe(1);
+  });
+});
+
+describe('resolveOperatorVoiceProfile', () => {
+  beforeEach(reset);
+
+  it('a thin or absent corpus resolves to the labelled defaults, never an invented profile', async () => {
+    const orgId = await ensureOrg('vp-org-resolve-thin');
+
+    const beforeAnyDerivation = await resolveOperatorVoiceProfile(getDb(), orgId);
+    expect(beforeAnyDerivation.status).toBe('default');
+    expect(beforeAnyDerivation.summary).toBe(DEFAULT_VOICE_PROFILE.summary);
+    for (const axis of VOICE_AXES) expect(beforeAnyDerivation.axes[axis]).toBe('default');
+    expect(beforeAnyDerivation.measured).toBeNull();
+    expect(beforeAnyDerivation.gap).toMatch(/more pieces? of their own writing/);
+
+    // Below MIN_ITEMS_TO_DERIVE even after a real derivation ran.
+    const linkedin = await platformId('linkedin');
+    await recordVoiceSamples(getDb(), orgId, linkedin, [
+      { externalId: 'thin-1', text: 'Just one lone post here, nothing to compare it to yet.' },
+    ]);
+    await refreshVoiceProfile(getDb(), orgId);
+    const stillThin = await resolveOperatorVoiceProfile(getDb(), orgId);
+    expect(stillThin.itemCount).toBeLessThan(MIN_ITEMS_TO_DERIVE);
+    expect(stillThin.status).toBe('default');
+    expect(stillThin.axes.rhythm).toBe('default');
+  });
+
+  it('a rich, real-looking corpus resolves to measurements that actually differ from the defaults', async () => {
+    const orgId = await ensureOrg('vp-org-resolve-rich');
+    await seedRichCorpus(orgId, 'rr');
+    await refreshVoiceProfile(getDb(), orgId);
+
+    const resolved = await resolveOperatorVoiceProfile(getDb(), orgId);
+    expect(resolved.status).toBe('measured');
+    for (const axis of VOICE_AXES) expect(resolved.axes[axis]).toBe('measured');
+    expect(resolved.gap).toBeNull();
+    expect(resolved.summary).not.toBe(DEFAULT_VOICE_PROFILE.summary);
+
+    const evidence = resolved.measured!.evidence as VoiceProfileEvidence;
+    // Real content, not the defaults' placeholder rules: an emoji and a
+    // hashtag genuinely reused across the fixture, a claim-dominant ending,
+    // a mixed language split overall and a clean split per corpus surface,
+    // and every default-sounding candidate word the fixture never used.
+    expect(evidence.shape.emoji).toContain('\u{1F680}');
+    expect(evidence.shape.hashtags).toContain('#buildinpublic');
+    expect(evidence.shape.ending).toBe('claim');
+    expect(evidence.language.primary).toBe('mixed');
+    expect(evidence.language.byKind.voice_sample?.primary).toBe('en');
+    expect(evidence.language.byKind.message?.primary).toBe('it');
+    // None of the candidate words appear anywhere in the fixture, so the
+    // corpus genuinely avoided all of them - a real absence, not a partial
+    // or invented list.
+    expect(evidence.lexicon.avoidedWords).toContain('leverage');
+    expect(evidence.lexicon.avoidedWords).toContain('humbled');
+    expect(evidence.lexicon.avoidedWords.length).toBeGreaterThanOrEqual(10);
+    expect(evidence.rhythm.medianSentenceWords).toBeGreaterThan(0);
   });
 });
