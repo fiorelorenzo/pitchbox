@@ -47,7 +47,9 @@ describe('the deployed app receives the mail configuration it reads', () => {
   it.each(mailEnvVarsReadByTheLoader())(
     'passes %s into the web container, interpolated from the deployment environment',
     (name) => {
-      expect(webServiceBlock()).toMatch(new RegExp(`^\\s+${name}: \\$\\{${name}(:-[^}]*)?\\}$`, 'm'));
+      expect(webServiceBlock()).toMatch(
+        new RegExp(`^\\s+${name}: \\$\\{${name}(:-[^}]*)?\\}$`, 'm'),
+      );
     },
   );
 });
