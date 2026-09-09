@@ -38,6 +38,20 @@ x-web-common: &web-common
     PITCHBOX_AUTH: ${PITCHBOX_AUTH:-off}
     PITCHBOX_OWNER_USERNAME: ${PITCHBOX_OWNER_USERNAME:-}
     PITCHBOX_OWNER_PASSWORD: ${PITCHBOX_OWNER_PASSWORD:-}
+    # Outbound mail (#508, #514, #580), and here for the same reason as the
+    # token above: a value added only to the base `web` never reaches a
+    # blue-green deployment. Measured on prod 2026-09-09 - #579 added these
+    # to the base service, the release went out, and the active web still
+    # had no MAIL_PROVIDER, so a verified Resend domain and a real key sent
+    # nothing.
+    MAIL_PROVIDER: ${MAIL_PROVIDER:-}
+    MAIL_FROM: ${MAIL_FROM:-}
+    RESEND_API_KEY: ${RESEND_API_KEY:-}
+    SMTP_HOST: ${SMTP_HOST:-}
+    SMTP_PORT: ${SMTP_PORT:-}
+    SMTP_SECURE: ${SMTP_SECURE:-}
+    SMTP_USER: ${SMTP_USER:-}
+    SMTP_PASS: ${SMTP_PASS:-}
   healthcheck:
     test:
       [
