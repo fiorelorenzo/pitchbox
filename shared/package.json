@@ -77,7 +77,11 @@
     "./instance-audit": "./src/instance-audit.ts",
     "./mastodon-source": "./src/mastodon-source.ts",
     "./hackernews-source": "./src/hackernews-source.ts",
-    "./project-description-refresh": "./src/project-description-refresh.ts"
+    "./project-description-refresh": "./src/project-description-refresh.ts",
+    "./mail": "./src/mail/base.ts",
+    "./mail/registry": "./src/mail/registry.ts",
+    "./mail/template": "./src/mail/template.ts",
+    "./mail/env": "./src/mail/env.ts"
   },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",
@@ -94,14 +98,17 @@
     "drizzle-orm": "^0.45.2",
     "html-to-text": "^9.0.5",
     "jose": "^6.2.3",
+    "nodemailer": "^10.0.1",
     "pg": "^8.23.0",
     "playwright": "^1.62.1",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "resend": "^6.26.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/html-to-text": "^9.0.4",
+    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.23.13"
