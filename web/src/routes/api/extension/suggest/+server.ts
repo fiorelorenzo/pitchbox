@@ -11,6 +11,7 @@ import { getAccountUsage, checkQuota, loadQuotaLimits } from '@pitchbox/shared/q
 import { mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
 import {
   MAX_COMMENT_CHARS,
+  MAX_IMAGE_DATA_URL_CHARS,
   MAX_POST_CHARS,
   MAX_THREAD_CHARS,
   MAX_THREAD_COMMENTS,
@@ -61,6 +62,26 @@ const ThreadSchema = z.object({
   truncated: z.boolean(),
 });
 
+// #569: the post's attached media, captured as pixels from the human's own
+// rendered tab - see docs/design/in-page-agent.md's "capture the rendered
+// tab, never fetch licdn" rule and `ObservedImage`'s own doc comment for
+// what each combination of present/absent fields means. `dataUrl` is
+// re-capped here rather than trusted from the extension's own clamp, same
+// posture as every other field on this schema.
+const ImageSchema = z.object({
+  dataUrl: z
+    .string()
+    .max(MAX_IMAGE_DATA_URL_CHARS)
+    .regex(
+      /^data:image\/(jpeg|png|webp);base64,/,
+      'post.image.dataUrl must be a base64 image data URL',
+    )
+    .optional(),
+  alt: z.string().max(1000).optional(),
+  kind: z.enum(['image', 'video_frame', 'carousel_page']),
+  partial: z.boolean().optional(),
+});
+
 const BodySchema = z
   .object({
     projectId: z.number().int().positive(),
@@ -81,6 +102,9 @@ const BodySchema = z
       reactionCount: z.string().max(100).optional(),
       commentCount: z.string().max(100).optional(),
       thread: ThreadSchema.optional(),
+      // #569: the post's attached media - see ImageSchema's own doc comment
+      // for what each combination of present/absent sub-fields means.
+      image: ImageSchema.optional(),
     }),
     hint: z.string().max(500).optional(),
     // #409: a panel-level retune direction, never a setting - see the

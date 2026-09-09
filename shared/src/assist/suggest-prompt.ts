@@ -67,6 +67,47 @@ export interface ObservedPost {
   /** The visible comment thread (#568), when the page had one to read - the
    * SDUI feed never does (see linkedin-dom.ts's module header). */
   thread?: ObservedThread;
+  /** The post's own attached media, captured as pixels from the human's
+   * rendered tab (#569) - never fetched from a licdn URL, by either side;
+   * see docs/design/in-page-agent.md's "capture the rendered tab, never
+   * fetch licdn" rule. See `ObservedImage`'s own doc comment for what
+   * absence of each of its fields means. */
+  image?: ObservedImage;
+}
+
+/** What kind of rendered media `ObservedPost.image` is a crop of (#569), so
+ * a description doesn't overclaim: a video post shows one frame, never the
+ * video, and a carousel or document post shows whichever page LinkedIn
+ * currently has on screen, never every page. */
+export type ObservedImageKind = 'image' | 'video_frame' | 'carousel_page';
+
+/** The post's attached media (#569), present on `ObservedPost` whenever the
+ * post has visible media at all - independent of whether a capture of it
+ * actually reached us. Three states a consumer must handle, honestly
+ * distinct rather than collapsed into one "no image" case:
+ *
+ * - `dataUrl` set: real pixels, a `data:image/...;base64,...` URL the
+ *   extension downscaled and re-encoded before the request ever left the
+ *   browser, capped at `MAX_IMAGE_DATA_URL_CHARS` and re-enforced by the
+ *   same cap server-side rather than trusting that clamp.
+ * - `dataUrl` absent, `alt` set: the capture itself was unavailable
+ *   (permission not granted, the tab was not the active one, or the media
+ *   had scrolled out of the viewport) but LinkedIn rendered its own alt
+ *   text for it.
+ * - both absent: the post has media and neither a capture nor an alt text
+ *   reached us. There is an image nobody can describe, which is worth
+ *   stating to the model rather than pretending away.
+ *
+ * `ObservedPost.image` itself absent (not this type at all) means the post
+ * carries no media whatsoever - the one case that skips a vision call
+ * entirely, at no cost. */
+export interface ObservedImage {
+  dataUrl?: string;
+  alt?: string;
+  kind: ObservedImageKind;
+  /** True when this is one page of a multi-page carousel or document post -
+   * what is currently rendered, never every page. */
+  partial?: boolean;
 }
 
 /** One rendered comment or reply in `ObservedPost.thread` (#568), mirroring
@@ -132,6 +173,15 @@ export const MAX_POST_CHARS = 4000;
 export const MAX_THREAD_COMMENTS = 30;
 export const MAX_COMMENT_CHARS = 500;
 export const MAX_THREAD_CHARS = 6000;
+/** Hard ceiling on `ObservedImage.dataUrl`'s own character length (#569) - a
+ * downscaled, re-encoded crop meant for a vision model, not a retina asset.
+ * ~280 KB of base64 text is comfortably above what a JPEG crop capped at
+ * 1024px on its longest edge and re-encoded at moderate quality produces,
+ * and comfortably below anything that would bloat the request; past this
+ * either the extension's own clamp failed or the request is hostile, and
+ * the zod schema on `POST /api/extension/suggest` rejects it outright
+ * rather than trusting that clamp. */
+export const MAX_IMAGE_DATA_URL_CHARS = 280_000;
 /** How many few-shot examples are worth carrying. More lengthens the prompt
  * without changing the voice, and the first token is what the human waits on. */
 export const MAX_EXAMPLES = 3;

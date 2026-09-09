@@ -234,6 +234,23 @@ export const en = {
   'home.access.denied': 'Chrome did not grant access. You can ask again anytime.',
   'home.access.request-failed': 'Could not ask Chrome for LinkedIn access. Try again.',
 
+  // #569: image capture is its own opt-in, deliberately never folded into
+  // home.access above (Main's call, 2026-09-09) - see
+  // ImageCaptureAccessRow.svelte's own doc comment for why. The off-detail
+  // line says plainly that Chrome will ask for every site, not just
+  // LinkedIn, and why: captureVisibleTab is a browser-level capture of the
+  // visible tab, so Chrome will not scope it to one origin.
+  'home.image-access.on': 'Image-aware suggestions: on',
+  'home.image-access.off': 'Image-aware suggestions: off',
+  'home.image-access.on-detail':
+    'The assistant can look at the picture in a post before it suggests a comment.',
+  'home.image-access.off-detail':
+    'Chrome has no way to capture just LinkedIn - turning this on means answering Chrome\'s own "all sites" prompt, not a LinkedIn-only one. Skip it and the assistant just says it cannot see the image.',
+  'home.image-access.turn-on': 'Turn on',
+  'home.image-access.turn-off': 'Turn off',
+  'home.image-access.denied': 'Chrome did not grant access. You can ask again anytime.',
+  'home.image-access.request-failed': 'Could not ask Chrome for access. Try again.',
+
   // The state line at the top of home, one per state lib/home-state.ts can
   // derive. Every line names the state in words; every detail names what set
   // it (D21).

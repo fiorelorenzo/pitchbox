@@ -85,6 +85,17 @@ export type SuggestThread = {
   truncated: boolean;
 };
 
+/** The post's attached media (#569) - mirrors
+ * shared/src/assist/suggest-prompt.ts's `ObservedImage` by hand. See that
+ * type's own doc comment for what each combination of present/absent
+ * fields means to whoever reads it on the other end. */
+export type SuggestImage = {
+  dataUrl?: string;
+  alt?: string;
+  kind: 'image' | 'video_frame' | 'carousel_page';
+  partial?: boolean;
+};
+
 /** The observed post context /suggest drafts from. `urn` is absent for a
  * feed sighting - see linkedin-dom.ts's "Two frontends, one identifier".
  * `text` is optional because a `kind: 'post'` request carries nothing to
@@ -103,6 +114,7 @@ export type SuggestPost = {
   reactionCount?: string;
   commentCount?: string;
   thread?: SuggestThread;
+  image?: SuggestImage;
 };
 
 /** What /suggest/accept sends back: the same post context, minus `text` -

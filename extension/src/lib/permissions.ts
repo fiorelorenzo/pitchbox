@@ -45,3 +45,39 @@ export function requestLinkedInPermission(): Promise<boolean> {
 export function revokeLinkedInPermission(): Promise<boolean> {
   return chrome.permissions.remove({ origins: [LINKEDIN_ORIGIN] });
 }
+
+// #569: image capture is its own opt-in, deliberately never folded into
+// LINKEDIN_ORIGIN above (Main's call, 2026-09-09). `chrome.tabs.captureVisibleTab`
+// refuses with "Either the '<all_urls>' or 'activeTab' permission is required"
+// even once the scoped LinkedIn origin above is granted - measured directly
+// against a real tab - and `activeTab` cannot substitute here: it only
+// activates on a browser-UI gesture (the toolbar icon, a context menu, the
+// commands API), never on the page-level click that triggers a capture (the
+// human clicking into LinkedIn's own comment box). So the only permission
+// that actually satisfies a content-script-triggered capture is `<all_urls>`,
+// already declared in `manifest.config.ts`'s `optional_host_permissions` -
+// this is a wider *runtime request*, not a wider static grant. Keeping it
+// out of `requestLinkedInPermission` matters: the one button an operator
+// presses to use the assistant at all must keep asking Chrome's narrowest
+// possible question, so declining the image feature never reads as
+// declining the assistant itself.
+export const IMAGE_CAPTURE_ORIGIN = '<all_urls>';
+
+/** The real current state, read from Chrome rather than assumed. */
+export function hasImageCapturePermission(): Promise<boolean> {
+  return chrome.permissions.contains({ origins: [IMAGE_CAPTURE_ORIGIN] });
+}
+
+/**
+ * Requests `<all_urls>`, for image capture only. Same user-gesture
+ * constraint as `requestLinkedInPermission` - call synchronously from the
+ * click, before any other `await` resolves.
+ */
+export function requestImageCapturePermission(): Promise<boolean> {
+  return chrome.permissions.request({ origins: [IMAGE_CAPTURE_ORIGIN] });
+}
+
+/** Revokes `<all_urls>`. Safe to call even if never granted. */
+export function revokeImageCapturePermission(): Promise<boolean> {
+  return chrome.permissions.remove({ origins: [IMAGE_CAPTURE_ORIGIN] });
+}
