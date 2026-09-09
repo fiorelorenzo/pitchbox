@@ -80,6 +80,13 @@ Each returns `false` for cross-tenant access; the route then returns 404.
 
 `/settings/organization` (reached from the org switcher) is the org home: rename the org (admin+), a roles reference, the member list with role change and removal (owner/admin, owner-protected), pending invites with revoke, and a danger zone to leave the org (blocked for the sole owner) or delete it (owner, non-`default`, typed confirm). Roles are enforced server-side; see [permissions.md](permissions.md).
 
+On the cloud edition, `/settings/billing` and the two routes it calls
+(`POST /api/billing/checkout`, `POST /api/billing/portal`) are admin-and-owner
+only, the same `requireRole(event, 'admin')` gate as organization management
+above - a member can see the plan but cannot buy, change or cancel one. See
+[Billing](billing.md) and [permissions.md](permissions.md) for the full
+route-to-role table.
+
 ## Database
 
 ```

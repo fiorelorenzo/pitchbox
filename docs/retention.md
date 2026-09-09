@@ -19,3 +19,20 @@ draft's `contact_history` row survives even when the draft itself ages out
 
 The worker deletes in batches of 10k rows and is configurable via the
 `PITCHBOX_RETENTION_MS` environment variable (default `3600000`).
+
+## Retention is not plan-scoped, as shipped
+
+The plan catalogue (`shared/src/plans.ts`) declares a `retentionDays` ceiling
+per plan (14/30/90/180 for Free/Solo/Growth/Scale, mirrored from Stripe's
+`limit_retention_days` product metadata for the paid tiers) and
+`resolveEntitlements` returns it on every `Entitlements` value. As shipped,
+nothing reads that field to clamp anything: the policy above is one
+instance-wide `app_config` row, set by an instance admin, and the daemon's
+`retention.ts` worker prunes every organization on the deployment against
+that same policy - on **both** the cloud edition and self-host, with no
+per-org distinction and no reference to an org's plan. An org on Free and an
+org on Scale are pruned identically today. This is a real gap between the
+catalogue's declared field and enforcement, not a documentation choice - if
+per-plan retention ships, it reads `entitlements.retentionDays` the same way
+every other metered limit reads its own field, and this section moves back
+to describing self-host as the one edition with no ceiling.

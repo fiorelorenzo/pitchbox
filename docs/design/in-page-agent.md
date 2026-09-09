@@ -83,7 +83,7 @@ What this means concretely:
 - The SDK path wraps those handlers as native tools. `SdkRunner` needs a way to
   be given a tool set that is **not** the campaign `PitchboxToolSet`; that is
   the one runner change this epic needs, and it is additive.
-- The ACP path gets a second stdio MCP entry point (`cli/bin/pitchbox-assist-mcp`,
+- The ACP path gets a second stdio MCP entry point (`bin/pitchbox-assist-mcp`,
   a sibling of `bin/pitchbox-mcp`) that exposes **only** these tools and binds
   its session to an org and a project rather than to a run. It shares the
   handlers with the SDK path, so a scoping test written once covers both.
