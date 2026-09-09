@@ -115,7 +115,6 @@ describe('createCheckoutSession', () => {
       }),
     ).rejects.toBeInstanceOf(UnknownPriceError);
   });
-
 });
 
 describe('createPortalSession', () => {
@@ -130,5 +129,4 @@ describe('createPortalSession', () => {
       }),
     ).rejects.toBeInstanceOf(NoStripeCustomerError);
   });
-
 });

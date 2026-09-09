@@ -25,7 +25,14 @@ import { join } from 'node:path';
  */
 
 const ROOT = join(import.meta.dirname, '..');
-const TEST_DIRS = ['tests', 'shared/tests', 'web/tests', 'cli/tests', 'daemon/tests', 'extension/tests'];
+const TEST_DIRS = [
+  'tests',
+  'shared/tests',
+  'web/tests',
+  'cli/tests',
+  'daemon/tests',
+  'extension/tests',
+];
 
 /** `homedir()` and `os.homedir`, `$HOME` interpolation, a literal `~/`, and the
  * credential paths this box actually holds. */

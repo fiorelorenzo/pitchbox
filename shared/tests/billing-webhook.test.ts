@@ -19,7 +19,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '../src/db/client.js';
 import { applyStripeEvent, limitsFromProductMetadata } from '../src/billing/webhook.js';
-import { createStripeClient } from '../src/stripe/client.js';
 import type { StripeClient, StripeProduct, StripeSubscription } from '../src/stripe/client.js';
 
 const createdOrgIds: number[] = [];
@@ -316,7 +315,10 @@ describe('applyStripeEvent', () => {
   it("maps the real Stripe product's recorded metadata (growth) to org_subscriptions limits", async () => {
     const catalogue = JSON.parse(
       readFileSync(join(import.meta.dirname, 'fixtures/stripe/catalogue.json'), 'utf8'),
-    ) as Record<string, { price: { unit_amount: number }; product: { metadata: Record<string, string> } }>;
+    ) as Record<
+      string,
+      { price: { unit_amount: number }; product: { metadata: Record<string, string> } }
+    >;
     const recorded = catalogue.pitchbox_growth_monthly;
     // The recording is what the account really answers, so this still proves
     // the mapping against Stripe's own shape and its string-typed metadata,
