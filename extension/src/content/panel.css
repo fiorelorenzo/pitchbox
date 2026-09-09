@@ -4,7 +4,20 @@
  * `CSSStyleSheet` and adopts it, so nothing here ever reaches linkedin.com's
  * own document.
  *
- * Two things are deliberately absent.
+ * Three things are deliberately absent.
+ *
+ * No `rem`, anywhere, and this is the rule in this file most easily broken by
+ * accident. A `rem` resolves against the host document's root element, not
+ * against the shadow host, and linkedin.com sets `html { font-size: 10px }`,
+ * so every length written that way rendered at 62.5% of its intended size:
+ * D16's 16px draft arrived as 10px, D17's 13.5px reasoning as 8.4px, D18's
+ * 36px button as 22.5px (#524, measured on the real feed). `all: initial` on
+ * `:host` cannot help, because `rem` is a unit resolved at use rather than
+ * an inherited property. Lengths here are px; anything type-relative is
+ * `em`, a percentage or a unitless line-height, and nothing derives from a
+ * token whose own value is in rem. `assertNoRemUnits` in
+ * `extension/vite-plugins/panel-content-scripts.ts` fails the build if one
+ * comes back.
  *
  * No `@fontsource-variable/inter`. An `@font-face` declared inside a shadow
  * root is ignored by the browser: font faces resolve against the document, not
@@ -76,13 +89,26 @@
    * where it fails to. */
   --panel-font-stack:
     'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-  /* The three radius steps the panel's own rules use. These used to be
-   * generated from a `@theme inline` block, which was the sheet's last real
-   * dependency on Tailwind's build (#369); as plain `calc()` off tokens.css's
-   * `--radius` they are the same values with nothing to resolve them. */
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
+  /* The panel's type steps, in px because of the rule at the top of this
+   * file, and anchored to the page they are read on: linkedin.com's own post
+   * body computes to 14px/20px on the feed (measured 2026-09-09), so the
+   * draft sits one step above the text it will become and the panel's
+   * secondary voice one step below it. The values are D16's and D17's, which
+   * until now only existed as intentions:
+   *   --panel-text      the draft, streaming or editable, and a state's title
+   *   --panel-text-hint the secondary voice: hints, reasoning, refusals
+   *   --panel-text-xs   the frame's own chrome and the status line */
+  --panel-text: 16px;
+  --panel-text-hint: 13.5px;
+  --panel-text-xs: 13px;
+  /* The three radius steps the panel's own rules use. They used to be
+   * `calc()` off tokens.css's `--radius`, which is `0.625rem` and therefore
+   * collapsed to 6.25px in here; tokens.css stays a verbatim copy of
+   * `web/src/app.css` (D2), so the panel declares the px it needs rather
+   * than editing the token file. Same values the dashboard renders at. */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
 }
 
 /* The panel root, and the real isolation boundary.
@@ -172,13 +198,13 @@
 .frame .head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  gap: 8px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
 }
 
 .frame .mark {
-  font-size: 0.8125rem;
+  font-size: var(--panel-text-xs);
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--foreground);
@@ -190,7 +216,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.8125rem;
+  font-size: var(--panel-text-xs);
   color: var(--muted-foreground);
 }
 
@@ -200,8 +226,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
@@ -229,12 +255,12 @@
 }
 
 .frame .body {
-  padding: 1rem;
+  padding: 16px;
   /* The part that actually scrolls: the header above stays put, and a
    * draft long enough to hit `:host`'s `max-height` scrolls here instead
    * of running the panel off the screen. Deliberately no font-size here -
-   * the content mounted into it sets its own (D14 splits reasoning at 13px
-   * muted from the draft at 15px primary; a rule here would fight that). */
+   * the content mounted into it sets its own (D14 splits the reasoning from
+   * the draft, D16/D17 size them; a rule here would fight both). */
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -243,15 +269,15 @@
 /* LI-17 (#314): the comment-assist body rendered inside `.frame .body`
  * above. Density is deliberately the brief's "middle" step down from the
  * dashboard's own airy default (docs/design/linkedin-assistant-brief.md):
- * a 2rem (32px) control row, no 68px rows, suggestion text at the brief's
- * literal 15px rather than the nearest Tailwind step. Colour only ever
+ * a 32px control row, no 68px rows, suggestion text at a size chosen for the
+ * page rather than at the nearest Tailwind step. Colour only ever
  * comes from a token (D1) - nothing here is a raw hex. */
 .assist {
   display: flex;
   flex-direction: column;
   /* 12px between sections (D16). The old 8px is what made a two-section
    * card read as one crowded one. */
-  gap: 0.75rem;
+  gap: 12px;
 }
 
 /* The panel's secondary voice: the product's own hints, and the model's
@@ -259,7 +285,7 @@
  * at the inherited leading - it is read, not glanced at, and it is read in
  * Italian, which runs ~20% longer than the English it was sized against. */
 .assist-hint {
-  font-size: 0.84375rem;
+  font-size: var(--panel-text-hint);
   line-height: 1.6;
   color: var(--muted-foreground);
 }
@@ -267,8 +293,8 @@
 .assist-status {
   display: flex;
   align-items: center;
-  min-height: 2rem;
-  font-size: 0.8125rem;
+  min-height: 32px;
+  font-size: var(--panel-text-xs);
   color: var(--muted-foreground);
 }
 
@@ -276,7 +302,7 @@
  * box below it, so the text does not resize under the reader the moment the
  * stream closes (D16). */
 .assist-preview {
-  font-size: 1rem;
+  font-size: var(--panel-text);
   line-height: 1.6;
   color: var(--foreground);
   white-space: pre-wrap;
@@ -290,12 +316,12 @@
 .assist-skeleton {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: 6px;
 }
 
 .assist-skeleton span {
   display: block;
-  height: 0.625rem;
+  height: 10px;
   border-radius: var(--radius-sm);
   background: var(--muted);
 }
@@ -330,17 +356,17 @@
 
 .assist-textarea {
   width: 100%;
-  /* 9rem, not 4.5rem (D16): a comment is 60-150 words, and the old box
+  /* 144px, not 72px (D16): a comment is 60-150 words, and the old box
    * showed about three lines of one, so the thing the human came for
    * arrived pre-scrolled. */
-  min-height: 9rem;
-  padding: 0.625rem 0.75rem;
+  min-height: 144px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--background);
   color: var(--foreground);
   font-family: inherit;
-  font-size: 1rem;
+  font-size: var(--panel-text);
   line-height: 1.6;
   resize: vertical;
 }
@@ -354,8 +380,8 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
-  min-height: 2rem;
+  gap: 8px;
+  min-height: 32px;
 }
 
 .assist-button {
@@ -364,13 +390,13 @@
   justify-content: center;
   /* 36px, up from 32px, with 14px label: the row holds the one action the
    * whole panel exists for, and it was the smallest thing on screen. */
-  height: 2.25rem;
-  padding: 0 0.875rem;
+  height: 36px;
+  padding: 0 14px;
   border: 0;
   border-radius: var(--radius-sm);
   background: var(--primary);
   color: var(--primary-foreground);
-  font-size: 0.875rem;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -391,7 +417,7 @@
 }
 
 .assist-refusal {
-  font-size: 0.84375rem;
+  font-size: var(--panel-text-hint);
   line-height: 1.6;
   color: var(--destructive);
 }
@@ -401,7 +427,7 @@
  * `.assist-status` is no longer carrying copy it was never sized for
  * (D18). */
 .assist-title {
-  font-size: 1rem;
+  font-size: var(--panel-text);
   font-weight: 600;
   line-height: 1.4;
   color: var(--foreground);
@@ -414,14 +440,14 @@
 .assist-why {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: 6px;
   align-self: flex-start;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--muted-foreground);
   font-family: inherit;
-  font-size: 0.84375rem;
+  font-size: var(--panel-text-hint);
   cursor: pointer;
   text-align: left;
 }
@@ -440,8 +466,8 @@
  * ships no SVG assets, and a text glyph would inherit LinkedIn's own font
  * metrics through the host. */
 .assist-why-caret {
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 8px;
+  height: 8px;
   border-right: 1.5px solid currentcolor;
   border-bottom: 1.5px solid currentcolor;
   transform: rotate(-45deg);
@@ -460,8 +486,8 @@
 /* The expanded reasoning. Indented to the caret's own column so it reads as
  * belonging to the line that opened it. */
 .assist-why-body {
-  margin-left: 0.875rem;
-  font-size: 0.84375rem;
+  margin-left: 14px;
+  font-size: var(--panel-text-hint);
   line-height: 1.6;
   color: var(--muted-foreground);
   white-space: pre-wrap;

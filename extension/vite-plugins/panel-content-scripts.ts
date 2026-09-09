@@ -58,6 +58,34 @@ export function assertNoTailwindDirectives(cssPath: string): void {
   }
 }
 
+// A rem length, and the tokens whose own value is one. `--radius` (0.625rem),
+// `--row-py` and `--row-px` come from `tokens.css`, which is a verbatim copy of
+// the dashboard's `app.css` (D2) and stays one, so a panel rule that derives a
+// length from them collapses exactly like a literal `rem` would.
+const REM_UNIT = /(?<![\w-])\d*\.?\d+rem\b/;
+const REM_TOKEN = /var\(\s*--(?:radius|row-py|row-px)\s*[,)]/;
+
+/**
+ * The regression guard #524 asks for. A `rem` in this sheet is not a style
+ * choice, it is a length that resolves against the host document's root
+ * element: the sheet is adopted into a shadow root on a page we do not own,
+ * and linkedin.com sets `html { font-size: 10px }`, so every `rem` rendered at
+ * 62.5% of its intended size (8.125px chrome, a 20px control row) while the
+ * same sheet looked correct in the side panel and in every test.
+ */
+export function assertNoRemUnits(cssPath: string): void {
+  const css = readFileSync(cssPath, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const offender = REM_UNIT.exec(css) ?? REM_TOKEN.exec(css);
+  if (offender) {
+    throw new Error(
+      `${path.relative(process.cwd(), cssPath)} sizes something in rem (${offender[0].trim()}), ` +
+        "but this sheet is adopted into a shadow root on the host page, where rem resolves against that page's " +
+        'root font size (10px on linkedin.com), not against the panel (#524). Use px, em, a percentage or a ' +
+        'unitless line-height, and do not derive a length from a token whose own value is in rem.',
+    );
+  }
+}
+
 function safeVarName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_$]/g, '_');
 }
@@ -78,7 +106,9 @@ export function panelContentScripts(): Plugin {
       config = resolved;
     },
     async closeBundle() {
-      assertNoTailwindDirectives(path.resolve(config.root, 'src/content/panel.css'));
+      const panelCss = path.resolve(config.root, 'src/content/panel.css');
+      assertNoTailwindDirectives(panelCss);
+      assertNoRemUnits(panelCss);
       for (const entry of PANEL_CONTENT_SCRIPTS) {
         const outputFile = panelScriptOutput(entry);
         await build({
