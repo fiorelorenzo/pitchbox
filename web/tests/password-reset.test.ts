@@ -36,7 +36,10 @@ async function seedUser(): Promise<{ userId: number }> {
     .insert(schema.users)
     .values({ username: USERNAME, passwordHash: hash, email: EMAIL })
     .returning();
-  let [org] = await db.select().from(schema.organizations).where(sql`slug = 'default'`);
+  let [org] = await db
+    .select()
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
   if (!org) {
     [org] = await db
       .insert(schema.organizations)
