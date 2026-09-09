@@ -77,7 +77,11 @@ export function getAssistSession(id: string, scope: AssistSessionScope): ModelMe
   purgeExpired(now);
   const entry = sessions.get(id);
   if (!entry) return null;
-  if (entry.orgId !== scope.orgId || entry.projectId !== scope.projectId || entry.kind !== scope.kind) {
+  if (
+    entry.orgId !== scope.orgId ||
+    entry.projectId !== scope.projectId ||
+    entry.kind !== scope.kind
+  ) {
     return null;
   }
   return entry.messages;

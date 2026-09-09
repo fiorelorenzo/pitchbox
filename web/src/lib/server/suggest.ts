@@ -257,7 +257,6 @@ export function runSuggestion(args: {
    * no result yet - the panel's "this is taking longer than usual" state. */
   onSlow?: () => void;
 }): SuggestionHandle {
-
   // `cancel()` can arrive before the runner exists: resolving its config and
   // making a temp directory are both awaits, and a human who closes the panel
   // immediately lands in that window. A cancel that only forwards to a handle

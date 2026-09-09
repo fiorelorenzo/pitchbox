@@ -687,7 +687,7 @@ describe('runSuggestion narrates its own steps and budget (#573)', () => {
     expect(clean.budgetExhausted).toBe(false);
   });
 
-  it('forwards the loop\'s own tool steps to onToolStep as they are known', async () => {
+  it("forwards the loop's own tool steps to onToolStep as they are known", async () => {
     const { project } = await seedOrgProject('org-narrate');
     toolStepsToEmit = [['read_thread'], ['read_thread', 'look_at_image']];
     const seen: string[][] = [];
@@ -717,7 +717,13 @@ describe('runSuggestion narrates its own steps and budget (#573)', () => {
 describe('runSuggestion session continuation (#576)', () => {
   beforeEach(reset);
 
-  function baseArgs(project: { id: number; name: string; description: string | null; organizationId: number; defaultAgentRunner: string }) {
+  function baseArgs(project: {
+    id: number;
+    name: string;
+    description: string | null;
+    organizationId: number;
+    defaultAgentRunner: string;
+  }) {
     return {
       kind: 'post_comment' as const,
       post: POST_BODY.post,
