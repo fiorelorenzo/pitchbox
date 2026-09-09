@@ -18,6 +18,8 @@ type Db = PgDatabase<any, any, any>;
 
 export type OrgRole = 'owner' | 'admin' | 'member';
 
+export type OrgInvite = typeof orgInvites.$inferSelect;
+
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /**
@@ -200,6 +202,7 @@ export async function listOrgMembers(db: Db, orgId: number) {
     .select({
       userId: memberships.userId,
       username: users.username,
+      email: users.email,
       role: memberships.role,
       createdAt: memberships.createdAt,
     })
@@ -283,7 +286,7 @@ export async function createInvite(
   return { id: row.id, token, expiresAt };
 }
 
-export async function findValidInvite(db: Db, token: string) {
+export async function findValidInvite(db: Db, token: string): Promise<OrgInvite | null> {
   const now = new Date();
   const [row] = await db
     .select()
@@ -373,6 +376,32 @@ export async function createOrganization(
   // means a brand new org is never waiting on a migration to have one.
   await ensurePersonalProject(db, org.id);
   return { id: org.id, slug: org.slug, role: 'owner' };
+}
+
+/**
+ * Derives an available organization slug from a username, for the register
+ * route's no-invite path (open sign-up, #505). #513 owns the real policy
+ * here - where the slug should really come from (username vs. email local
+ * part), the new org's name and quota, and what a later-invited owner of
+ * their own org keeps - this is a narrow, unopinionated stand-in so open
+ * sign-up is not accidentally invite-only in the meantime. Collision-
+ * suffixed with a numeric counter against `organizations.slug`'s unique
+ * constraint.
+ */
+export async function uniqueOrgSlugFromUsername(db: Db, username: string): Promise<string> {
+  const base =
+    username
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 54) || 'org';
+  let candidate = base;
+  let suffix = 2;
+  while (await findOrgBySlug(db, candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
 }
 
 /** The role of a user in an org, or null if they are not a member. */

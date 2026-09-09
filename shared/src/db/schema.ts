@@ -27,16 +27,35 @@ export const platforms = pgTable('platforms', {
   enabled: boolean('enabled').notNull().default(true),
 });
 
-export const users = pgTable('users', {
-  id: serial('id').primaryKey(),
-  username: text('username').notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
-  // Instance-wide admin, distinct from per-org 'admin' role. Gates global
-  // config that spans every tenant (default runner, quota defaults, webhook
-  // config) - a self-created org owner must NOT get this for free.
-  isInstanceAdmin: boolean('is_instance_admin').notNull().default(false),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const users = pgTable(
+  'users',
+  {
+    id: serial('id').primaryKey(),
+    username: text('username').notNull().unique(),
+    passwordHash: text('password_hash').notNull(),
+    // Instance-wide admin, distinct from per-org 'admin' role. Gates global
+    // config that spans every tenant (default runner, quota defaults, webhook
+    // config) - a self-created org owner must NOT get this for free.
+    isInstanceAdmin: boolean('is_instance_admin').notNull().default(false),
+    // Nullable: accounts created before #507 (first-run bootstrap,
+    // `pitchbox seed:owner`) have none, and nothing in the app requires one
+    // for those to keep working. Required at `POST /api/auth/register`
+    // (#504) since open sign-up (#505) makes the address the only thing
+    // tying a self-registered account to a person, and later the way back in
+    // after a lost password. Always written already normalized (trimmed,
+    // lowercased, see `normalizeEmail` in `shared/src/auth.ts`), so the
+    // unique index below is a plain column constraint rather than an
+    // expression index, and two logins differing only in case collide.
+    email: text('email'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // Postgres treats each NULL as distinct in a unique index, so accounts
+    // with no email never collide with each other - only two non-null,
+    // already-normalized addresses do.
+    emailUnique: uniqueIndex('users_email_unique').on(t.email),
+  }),
+);
 
 export const organizations = pgTable('organizations', {
   id: serial('id').primaryKey(),

@@ -19,6 +19,35 @@ On a brand-new install the `users` table is empty and the initial owner account 
 
 For any internet-facing deployment, claim the owner account (or seed it from deploy credentials) before the URL is reachable, so the initial account is never left unclaimed by an operator. Run `pitchbox seed:owner` right after migrations in the deploy pipeline: it reads `PITCHBOX_OWNER_USERNAME` and `PITCHBOX_OWNER_PASSWORD` from the environment and creates the owner (plus its default-org owner membership) through the same `createUser()` path the login bootstrap uses. It is a no-op (logs and exits 0) if a user already exists or either env var is unset, so it's safe to run on every deploy.
 
+## Registration
+
+`POST /api/auth/register` (#504) creates an account for anyone, since the
+decision of 2026-09-09 opened sign-up: `username`, `password` and `email`
+(required, unique on a normalized - trimmed, lowercased - value, #507), plus
+an optional `token` when the visitor arrived via `/invite/<token>`. It never
+goes through `createUser()`: that helper always joins the single-tenant
+`default` org as owner, which would make every stranger who registers an
+owner of it. Instead, in one transaction:
+
+- **With a valid token**: the account is created and `acceptInvite` joins the
+  inviting org with the invited role - never `default`, no org of its own.
+- **With no token**: the account gets its own single-owner organization
+  (`createOrganization`, slug derived from the username and collision-
+  suffixed). #513 owns the real policy here (slug source, quota, role
+  nuance); this is a narrow stand-in so open sign-up isn't accidentally
+  invite-only.
+
+An invalid, expired, revoked or already-consumed token refuses the whole
+registration (no account is created). A duplicate username or email returns
+`409 { "error": "username_taken" | "email_taken" }`. Rate-limited by IP
+through the same `auth_failures` table and policy as login. Login itself
+stays username-only rather than accepting either username or email -
+password recovery (a separate future child of #503) identifies people by
+address through its own route instead.
+
+`/invite/<token>` sends a visitor with no session to `/register?next=...`
+(not `/login`): an invite is an account nobody has yet.
+
 ## Sessions
 
 `createSession()` mints a 32-byte hex token, stores it in the `sessions` table with a 30-day expiry, and sets it as an httpOnly cookie. `loadSession()` joins `sessions × users` and only returns non-expired rows. Logging out deletes the row and clears the cookie.

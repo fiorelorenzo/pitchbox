@@ -201,26 +201,59 @@ export async function countUsers(
   return rows.length;
 }
 
-export async function createUser(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  db: PgDatabase<any, any, any>,
-  username: string,
-  password: string,
-  opts: { isInstanceAdmin?: boolean } = {},
+/** Trims and lowercases an email so every write and lookup compares the same normalized form. Empty/absent collapses to null. */
+export function normalizeEmail(email: string | null | undefined): string | null {
+  if (!email) return null;
+  const trimmed = email.trim();
+  return trimmed ? trimmed.toLowerCase() : null;
+}
+
+/**
+ * Inserts a user row only - no org membership, no default-org bootstrap.
+ * `createUser` below is for the two paths (first login, `seed:owner`) that
+ * always want the `default` org as owner; `POST /api/auth/register` (#504)
+ * must not go through that path (createUser would make every invited or
+ * self-registered person an owner of the single-tenant `default` org - see
+ * #503's write-up of that trap), so it composes this with `acceptInvite` or
+ * `createOrganization` itself, inside its own transaction.
+ */
+export async function createUserRecord(
+  db: Db,
+  args: { username: string; password: string; email?: string | null },
 ): Promise<number> {
-  const passwordHash = await hashPassword(password);
-  const [row] = await db.insert(users).values({ username, passwordHash }).returning();
+  const passwordHash = await hashPassword(args.password);
+  const [row] = await db
+    .insert(users)
+    .values({ username: args.username, passwordHash, email: normalizeEmail(args.email) })
+    .returning();
+  return row.id;
+}
+
+export async function createUser(
+  db: Db,
+  args: {
+    username: string;
+    password: string;
+    email?: string | null;
+    isInstanceAdmin?: boolean;
+  },
+): Promise<number> {
+  const userId = await createUserRecord(db, {
+    username: args.username,
+    password: args.password,
+    email: args.email,
+  });
   // The only place that writes `is_instance_admin` true is setInstanceAdmin
   // below (#413): routing the bootstrap grant through it too means there is
   // exactly one function to audit or extend, not a second insert-time path
   // that can quietly drift from the promote path.
-  if (opts.isInstanceAdmin) {
-    await setInstanceAdmin(db, row.id, true);
+  if (args.isInstanceAdmin) {
+    await setInstanceAdmin(db, userId, true);
   }
   // First user implicitly joins the default org as owner. If the default org
   // doesn't exist yet (fresh install without seed:core), create it inline.
   let [org] = await db.select().from(organizations).where(eq(organizations.slug, 'default'));
-  const orgName = defaultOrgName(username);
+  const orgName = defaultOrgName(args.username);
   if (!org) {
     [org] = await db.insert(organizations).values({ slug: 'default', name: orgName }).returning();
   } else if (org.name === 'Default' || org.name === 'My Organization') {
@@ -235,9 +268,9 @@ export async function createUser(
   await ensurePersonalProject(db, org.id);
   await db
     .insert(memberships)
-    .values({ organizationId: org.id, userId: row.id, role: 'owner' })
+    .values({ organizationId: org.id, userId, role: 'owner' })
     .onConflictDoNothing();
-  return row.id;
+  return userId;
 }
 
 /**
@@ -300,6 +333,20 @@ export async function findUserByUsername(
     .select({ id: users.id, passwordHash: users.passwordHash })
     .from(users)
     .where(eq(users.username, username))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function findUserByEmail(
+  db: Db,
+  email: string,
+): Promise<{ id: number; passwordHash: string } | null> {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  const rows = await db
+    .select({ id: users.id, passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.email, normalized))
     .limit(1);
   return rows[0] ?? null;
 }

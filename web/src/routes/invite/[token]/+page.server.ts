@@ -18,7 +18,7 @@ export const load: PageServerLoad = async (event) => {
   }
   if (!event.locals.user) {
     const next = encodeURIComponent(event.url.pathname);
-    throw redirect(302, `/login?next=${next}`);
+    throw redirect(302, `/register?next=${next}`);
   }
   const [org] = await db
     .select({ name: schema.organizations.name })
@@ -43,7 +43,7 @@ export const actions: Actions = {
     const db = getDb();
     if (!event.locals.user) {
       const next = encodeURIComponent(event.url.pathname);
-      throw redirect(302, `/login?next=${next}`);
+      throw redirect(302, `/register?next=${next}`);
     }
     const accepted = await acceptInvite(db, token, event.locals.user.id);
     if (!accepted) {

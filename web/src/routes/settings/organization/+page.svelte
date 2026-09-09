@@ -15,7 +15,13 @@
   import RemoveMemberDialog from '$lib/components/settings/RemoveMemberDialog.svelte';
   import LeaveOrgDialog from '$lib/components/settings/LeaveOrgDialog.svelte';
 
-  type Member = { userId: number; username: string; role: string; joinedAt: string };
+  type Member = {
+    userId: number;
+    username: string;
+    email: string | null;
+    role: string;
+    joinedAt: string;
+  };
   type Invite = {
     token: string;
     role: string;
@@ -533,10 +539,15 @@
             >
               {initials(m.username)}
             </span>
-            <span class="flex-1 truncate text-sm font-medium">
-              {m.username}
-              {#if m.userId === data.currentUserId}
-                <span class="font-normal text-muted-foreground">(you)</span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-sm font-medium">
+                {m.username}
+                {#if m.userId === data.currentUserId}
+                  <span class="font-normal text-muted-foreground">(you)</span>
+                {/if}
+              </span>
+              {#if m.email}
+                <span class="block truncate text-xs text-muted-foreground">{m.email}</span>
               {/if}
             </span>
             <span

@@ -7,7 +7,10 @@ import {
   hashPassword,
   verifyPassword,
   createUser,
+  createUserRecord,
   findUserByUsername,
+  findUserByEmail,
+  normalizeEmail,
   createSession,
   loadSession,
   deleteSession,
@@ -39,7 +42,7 @@ describe('shared/auth', () => {
   });
 
   it('createUser bootstraps the default org membership', async () => {
-    const id = await createUser(getDb(), 'alice', 'a-very-long-password');
+    const id = await createUser(getDb(), { username: 'alice', password: 'a-very-long-password' });
     expect(typeof id).toBe('number');
 
     const org = await loadOrganizationForUser(getDb(), id);
@@ -55,7 +58,7 @@ describe('shared/auth', () => {
   // created inline, and it must not have to wait for a migration to get its
   // `personal` project (shared/src/personal-project.ts, decision 2026-09-07).
   it('createUser creates the personal project for a freshly-created default org', async () => {
-    const id = await createUser(getDb(), 'frank', 'a-very-long-password');
+    const id = await createUser(getDb(), { username: 'frank', password: 'a-very-long-password' });
     const org = await loadOrganizationForUser(getDb(), id);
     expect(org).not.toBeNull();
 
@@ -67,11 +70,16 @@ describe('shared/auth', () => {
   });
 
   it('createUser defaults isInstanceAdmin to false, and honours the opt-in (#137)', async () => {
-    const memberId = await createUser(getDb(), 'dave', 'a-very-long-password');
+    const memberId = await createUser(getDb(), {
+      username: 'dave',
+      password: 'a-very-long-password',
+    });
     const [memberRow] = await getDb().select().from(users).where(eq(users.id, memberId));
     expect(memberRow.isInstanceAdmin).toBe(false);
 
-    const ownerId = await createUser(getDb(), 'erin', 'a-very-long-password', {
+    const ownerId = await createUser(getDb(), {
+      username: 'erin',
+      password: 'a-very-long-password',
       isInstanceAdmin: true,
     });
     const [ownerRow] = await getDb().select().from(users).where(eq(users.id, ownerId));
@@ -82,8 +90,77 @@ describe('shared/auth', () => {
     expect(await findUserByUsername(getDb(), 'nope')).toBeNull();
   });
 
+  it('normalizeEmail trims and lowercases, and collapses empty/absent to null', () => {
+    expect(normalizeEmail('  Alice@Example.COM  ')).toBe('alice@example.com');
+    expect(normalizeEmail('')).toBeNull();
+    expect(normalizeEmail('   ')).toBeNull();
+    expect(normalizeEmail(null)).toBeNull();
+    expect(normalizeEmail(undefined)).toBeNull();
+  });
+
+  it('createUser stores email already normalized, and leaves it null when omitted (#507)', async () => {
+    const withEmail = await createUser(getDb(), {
+      username: 'greta',
+      password: 'a-very-long-password',
+      email: '  Greta@Example.COM  ',
+    });
+    const [row] = await getDb().select().from(users).where(eq(users.id, withEmail));
+    expect(row.email).toBe('greta@example.com');
+
+    const withoutEmail = await createUser(getDb(), {
+      username: 'harry',
+      password: 'a-very-long-password',
+    });
+    const [row2] = await getDb().select().from(users).where(eq(users.id, withoutEmail));
+    expect(row2.email).toBeNull();
+  });
+
+  it('findUserByEmail matches case- and whitespace-insensitively, and returns null when missing (#507)', async () => {
+    const id = await createUser(getDb(), {
+      username: 'ivy',
+      password: 'a-very-long-password',
+      email: 'ivy@example.com',
+    });
+    const found = await findUserByEmail(getDb(), '  IVY@Example.com ');
+    expect(found?.id).toBe(id);
+    expect(await findUserByEmail(getDb(), 'nobody@example.com')).toBeNull();
+  });
+
+  // A duplicate address that differs only in case or surrounding whitespace
+  // must still collide, since both createUser and the register route always
+  // normalize before writing - this is the DB-level backstop for that
+  // invariant, independent of any application-level pre-check.
+  it('the users.email unique index rejects a second account with the same normalized address (#507)', async () => {
+    await createUser(getDb(), {
+      username: 'jack',
+      password: 'a-very-long-password',
+      email: 'jack@example.com',
+    });
+    await expect(
+      createUser(getDb(), {
+        username: 'jackalt',
+        password: 'a-very-long-password',
+        email: '  Jack@Example.com  ',
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('createUserRecord inserts a user row with no org membership, unlike createUser (#504)', async () => {
+    const id = await createUserRecord(getDb(), {
+      username: 'kim',
+      password: 'a-very-long-password',
+      email: 'kim@example.com',
+    });
+    expect(await loadOrganizationForUser(getDb(), id)).toBeNull();
+    const [row] = await getDb().select().from(users).where(eq(users.id, id));
+    expect(row.email).toBe('kim@example.com');
+  });
+
   it('setInstanceAdmin flips the flag on and off (#413)', async () => {
-    const userId = await createUser(getDb(), 'frank', 'a-very-long-password');
+    const userId = await createUser(getDb(), {
+      username: 'frank',
+      password: 'a-very-long-password',
+    });
     const [before] = await getDb().select().from(users).where(eq(users.id, userId));
     expect(before.isInstanceAdmin).toBe(false);
 
@@ -97,8 +174,12 @@ describe('shared/auth', () => {
   });
 
   it('listUsers reports every user with their instance-admin flag, ordered by username (#413)', async () => {
-    await createUser(getDb(), 'zack', 'a-very-long-password');
-    await createUser(getDb(), 'amy', 'a-very-long-password', { isInstanceAdmin: true });
+    await createUser(getDb(), { username: 'zack', password: 'a-very-long-password' });
+    await createUser(getDb(), {
+      username: 'amy',
+      password: 'a-very-long-password',
+      isInstanceAdmin: true,
+    });
     const rows = await listUsers(getDb());
     expect(rows.map((r) => r.username)).toEqual(['amy', 'zack']);
     expect(rows.find((r) => r.username === 'amy')?.isInstanceAdmin).toBe(true);
@@ -112,7 +193,7 @@ describe('shared/auth', () => {
   // time `isInstanceAdmin:` assignment fails this test instead of silently
   // drifting from `setInstanceAdmin`.
   it('sessions can be created, loaded, and deleted', async () => {
-    const userId = await createUser(getDb(), 'bob', 'a-very-long-password');
+    const userId = await createUser(getDb(), { username: 'bob', password: 'a-very-long-password' });
     const sess = await createSession(getDb(), userId);
     expect(sess.id).toMatch(/^[0-9a-f]{64}$/);
 
@@ -125,7 +206,10 @@ describe('shared/auth', () => {
   });
 
   it('expired sessions are not returned by loadSession', async () => {
-    const userId = await createUser(getDb(), 'carol', 'a-very-long-password');
+    const userId = await createUser(getDb(), {
+      username: 'carol',
+      password: 'a-very-long-password',
+    });
     const sess = await createSession(getDb(), userId);
     // Force-expire the row.
     await getDb().execute(
