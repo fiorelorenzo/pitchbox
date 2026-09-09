@@ -126,7 +126,10 @@ export type LinkedInSelectorId =
   | 'ownProfileHeadline'
   | 'ownProfileAbout'
   | 'ownProfileExperience'
-  | 'ownPostTimestamp';
+  | 'ownPostTimestamp'
+  | 'postTimestamp'
+  | 'postReactionCount'
+  | 'postCommentCount';
 
 export type SelectorHealthEntry = {
   selector: LinkedInSelectorId;
@@ -640,6 +643,11 @@ export type LinkedInComment = {
   relativeTime: string | null;
 };
 
+/** Every comment/reply article's own selector on a classic post-detail page
+ * (see `LinkedInComment`'s doc comment) - one constant rather than four
+ * copies of the same string literal scattered across this module. */
+const COMMENT_ARTICLE_SELECTOR = 'article[data-id^="urn:li:comment:"]';
+
 /**
  * Every comment `article[data-id]` on a classic post-detail page, in
  * document order - both top-level comments and their nested replies (see
@@ -649,9 +657,7 @@ export type LinkedInComment = {
 export function findPostComments(root: ParentNode = document): Element[] {
   const pageKind = detectPageKind(root);
   const comments =
-    pageKind === 'post-detail-classic'
-      ? queryDeepAll<Element>('article[data-id^="urn:li:comment:"]', root)
-      : [];
+    pageKind === 'post-detail-classic' ? queryDeepAll<Element>(COMMENT_ARTICLE_SELECTOR, root) : [];
   if (pageKind !== 'unknown') record('postComments', pageKind, comments.length > 0);
   return comments;
 }
@@ -667,7 +673,7 @@ export function findPostComments(root: ParentNode = document): Element[] {
 export function findParentCommentId(comment: Element, root: ParentNode = document): string | null {
   let node = comment.parentElement;
   while (node && node !== root) {
-    if (node.matches('article[data-id^="urn:li:comment:"]')) {
+    if (node.matches(COMMENT_ARTICLE_SELECTOR)) {
       return node.getAttribute('data-id');
     }
     node = node.parentElement;
@@ -687,7 +693,7 @@ function ownCommentDescendant<T extends Element = Element>(
   selector: string,
 ): T | null {
   const matches = queryDeepAll<T>(selector, comment);
-  return matches.find((m) => m.closest('article[data-id^="urn:li:comment:"]') === comment) ?? null;
+  return matches.find((m) => m.closest(COMMENT_ARTICLE_SELECTOR) === comment) ?? null;
 }
 
 /**
@@ -763,6 +769,67 @@ export function readCommentRelativeTime(
   const timeEl = ownCommentDescendant<HTMLTimeElement>(comment, 'time');
   const text = timeEl?.textContent?.trim() || null;
   if (pageKind !== 'unknown') record('commentTimestamp', pageKind, text !== null);
+  return text;
+}
+
+/**
+ * The post's own rendered reaction count (#568) - e.g. "16" in the real
+ * capture, next to the reaction icons. LinkedIn renders the visible number
+ * in a `span[aria-hidden="true"]` sibling of the reaction summary's own
+ * `aria-label` (`"Paolo Greco e 15 altre persone"` in the capture - a name
+ * plus "and N others", not the count itself, and worded differently with no
+ * reactions at all), so a screen reader is not handed a bare digit. Every
+ * comment carries the identical shape for its own reaction count too
+ * (verified against the capture), which is why this skips any span whose
+ * `closest(COMMENT_ARTICLE_SELECTOR)` is non-null - the post's own reaction
+ * count is the only one that never sits inside a comment article. `null` on
+ * the SDUI feed, which renders none of this (see module header).
+ */
+export function readPostReactionCount(post: Element, root: ParentNode = document): string | null {
+  const pageKind = detectPageKind(root);
+  let text: string | null = null;
+  if (pageKind === 'post-detail-classic') {
+    for (const span of queryDeepAll<HTMLElement>('span[aria-hidden="true"]', post)) {
+      if (span.closest(COMMENT_ARTICLE_SELECTOR)) continue;
+      const own = span.textContent?.trim();
+      if (own && /^\d[\d.,\s]*$/.test(own)) {
+        text = own;
+        break;
+      }
+    }
+  }
+  if (pageKind !== 'unknown') record('postReactionCount', pageKind, text !== null);
+  return text;
+}
+
+/**
+ * The post's own rendered comment count (#568) - e.g. "31 commenti" in the
+ * real capture, LinkedIn's own total rather than what actually loaded (see
+ * `findPostComments`, and `ObservedThread.renderedCount` in
+ * shared/src/assist/suggest-prompt.ts for the distinction this exists for).
+ * Read the same way `readPostReactionCount` is - the count sits in a
+ * `span[aria-hidden="true"]` inside a `button[aria-label]`, scoped to the
+ * first one outside any comment article whose text is a digit run followed
+ * by more text (unlike the reaction count's span, which is nothing but
+ * digits - the property the two selectors use to tell each other apart).
+ */
+export function readPostCommentCount(post: Element, root: ParentNode = document): string | null {
+  const pageKind = detectPageKind(root);
+  let text: string | null = null;
+  if (pageKind === 'post-detail-classic') {
+    for (const span of queryDeepAll<HTMLElement>(
+      'button[aria-label] span[aria-hidden="true"]',
+      post,
+    )) {
+      if (span.closest(COMMENT_ARTICLE_SELECTOR)) continue;
+      const own = span.textContent?.trim();
+      if (own && /^\d[\d.,\s]*\D/.test(own)) {
+        text = own;
+        break;
+      }
+    }
+  }
+  if (pageKind !== 'unknown') record('postCommentCount', pageKind, text !== null);
   return text;
 }
 
@@ -1042,26 +1109,54 @@ export function readOwnProfile(root: Document = document): OwnProfileCapture | n
 }
 
 /**
+ * The first `[aria-hidden="true"]` element under `scope`, outside any
+ * anchor, in document order - the query behind both `readOwnPostRelativeTime`
+ * below (a post captured on the operator's own recent-activity page) and
+ * `readPostRelativeTime` (#568, any post-detail page): LinkedIn renders a
+ * classic-frontend byline's relative-time text the same way regardless of
+ * whose post it is, verified against both classic captures
+ * (`post-detail.html`: "6 giorni • Modificato •", `own-activity.html`: "3
+ * ore •"), in both cases before any comment content in document order. One
+ * query rather than two, so the two callers cannot drift apart.
+ */
+function firstAriaHiddenOutsideAnchor(scope: Element): string | null {
+  for (const el of queryDeepAll<Element>('[aria-hidden="true"]', scope)) {
+    if (el.closest('a')) continue;
+    const text = el.textContent?.trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+/**
  * The signed-in member's own rendered relative-time text for `post`, read
  * the same way `readPostAuthor`'s classic branch reads the byline name: the
  * name, badge and headline all sit inside the byline's own `<a>`, and the
- * first `[aria-hidden="true"]` element *outside* any anchor is the
- * relative-time line LinkedIn renders next to it - verified against both
- * classic captures (`post-detail.html`: "6 giorni • Modificato •",
- * `own-activity.html`: "3 ore •"), in both cases before any comment content
- * in document order.
+ * first `[aria-hidden="true"]` element outside any anchor is the
+ * relative-time line LinkedIn renders next to it - see
+ * `firstAriaHiddenOutsideAnchor`'s own doc comment for the captures this is
+ * verified against.
  */
 function readOwnPostRelativeTime(post: Element): string | null {
-  let text: string | null = null;
-  for (const el of queryDeepAll<Element>('[aria-hidden="true"]', post)) {
-    if (el.closest('a')) continue;
-    const own = el.textContent?.trim();
-    if (own) {
-      text = own;
-      break;
-    }
-  }
+  const text = firstAriaHiddenOutsideAnchor(post);
   record('ownPostTimestamp', 'post-detail-classic', text !== null);
+  return text;
+}
+
+/**
+ * `post`'s own rendered relative-time text (#568) - when it was posted, not
+ * to be confused with a reply's own `readCommentRelativeTime`. Reuses
+ * `firstAriaHiddenOutsideAnchor`, the same selector `readOwnPostRelativeTime`
+ * above uses for the operator's own recent-activity posts, rather than a
+ * second one: LinkedIn renders any classic-frontend post's byline timestamp
+ * the same way regardless of whose post it is. `null` on the SDUI feed,
+ * which this module's header already documents as carrying none of this
+ * markup.
+ */
+export function readPostRelativeTime(post: Element, root: ParentNode = document): string | null {
+  const pageKind = detectPageKind(root);
+  const text = pageKind === 'post-detail-classic' ? firstAriaHiddenOutsideAnchor(post) : null;
+  if (pageKind !== 'unknown') record('postTimestamp', pageKind, text !== null);
   return text;
 }
 

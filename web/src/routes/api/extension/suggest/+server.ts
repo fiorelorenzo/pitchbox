@@ -10,7 +10,10 @@ import { loadActiveTemplates } from '@pitchbox/shared/templates';
 import { getAccountUsage, checkQuota, loadQuotaLimits } from '@pitchbox/shared/quota';
 import { mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
 import {
+  MAX_COMMENT_CHARS,
   MAX_POST_CHARS,
+  MAX_THREAD_CHARS,
+  MAX_THREAD_COMMENTS,
   RETUNE_DIRECTIONS,
   type ObservedPost,
   type SuggestionKind,
@@ -39,6 +42,25 @@ const perDevice = new RateLimiter(20, 60_000);
 // several legitimate devices still add up to something sane.
 const perOrg = new RateLimiter(60, 60_000);
 
+// #568: one comment/reply in the visible thread, capped per-body by
+// MAX_COMMENT_CHARS. The aggregate MAX_THREAD_CHARS cap (across every
+// comment's body combined) cannot be expressed as a single field
+// constraint, so it is checked in the `superRefine` below instead.
+const CommentSchema = z.object({
+  id: z.string().max(200).optional(),
+  authorName: z.string().max(200).optional(),
+  authorHandle: z.string().max(200).optional(),
+  body: z.string().max(MAX_COMMENT_CHARS),
+  relativeTime: z.string().max(200).optional(),
+  parentId: z.string().max(200).optional(),
+});
+
+const ThreadSchema = z.object({
+  comments: z.array(CommentSchema).max(MAX_THREAD_COMMENTS),
+  renderedCount: z.number().int().min(0),
+  truncated: z.boolean(),
+});
+
 const BodySchema = z
   .object({
     projectId: z.number().int().positive(),
@@ -52,6 +74,13 @@ const BodySchema = z
         .max(MAX_POST_CHARS * 2)
         .optional(),
       url: z.string().max(2000).optional(),
+      // #568: what the page cheaply says about the room, plus the visible
+      // thread itself - all classic-post-detail-only and all optional, the
+      // same posture as every other post field above.
+      relativeTime: z.string().max(200).optional(),
+      reactionCount: z.string().max(100).optional(),
+      commentCount: z.string().max(100).optional(),
+      thread: ThreadSchema.optional(),
     }),
     hint: z.string().max(500).optional(),
     // #409: a panel-level retune direction, never a setting - see the
@@ -73,6 +102,22 @@ const BodySchema = z
         message: 'post.text is required for kind "post_comment"',
         path: ['post', 'text'],
       });
+    }
+    // #568: the one thread cap `z.array().max()`/`z.string().max()` above
+    // cannot express - the combined body length across every comment,
+    // rather than any single one. The schema is the enforcement boundary
+    // (AGENTS.md), so this rejects rather than silently re-truncating what
+    // the extension already clamped.
+    const thread = val.post.thread;
+    if (thread) {
+      const totalChars = thread.comments.reduce((sum, c) => sum + c.body.length, 0);
+      if (totalChars > MAX_THREAD_CHARS) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `post.thread.comments combined body length exceeds ${MAX_THREAD_CHARS}`,
+          path: ['post', 'thread', 'comments'],
+        });
+      }
     }
   });
 

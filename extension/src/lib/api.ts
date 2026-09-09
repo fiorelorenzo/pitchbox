@@ -64,17 +64,45 @@ export type ProjectSourceProfileOutput = {
 
 export type SuggestionKind = 'post_comment' | 'post';
 
+/** One rendered comment or reply in `SuggestPost.thread` (#568) - mirrors
+ * shared/src/assist/suggest-prompt.ts's `ObservedComment` by hand, same
+ * posture as every other shape on this file. */
+export type SuggestComment = {
+  id?: string;
+  authorName?: string;
+  authorHandle?: string;
+  body: string;
+  relativeTime?: string;
+  parentId?: string;
+};
+
+/** The visible comment thread under a post (#568), already clamped by the
+ * content script before this ever reaches `fetch` - mirrors
+ * shared/src/assist/suggest-prompt.ts's `ObservedThread` by hand. */
+export type SuggestThread = {
+  comments: SuggestComment[];
+  renderedCount: number;
+  truncated: boolean;
+};
+
 /** The observed post context /suggest drafts from. `urn` is absent for a
  * feed sighting - see linkedin-dom.ts's "Two frontends, one identifier".
  * `text` is optional because a `kind: 'post'` request carries nothing to
  * draft from at all - the server grounds that kind itself, in whatever the
- * observation buffer most recently saw (#315). */
+ * observation buffer most recently saw (#315). `relativeTime`,
+ * `reactionCount`, `commentCount` and `thread` are all #568: the visible
+ * comment thread and what the page cheaply says about the room, classic
+ * post-detail frontend only. */
 export type SuggestPost = {
   urn?: string;
   authorHandle?: string;
   authorName?: string;
   text?: string;
   url?: string;
+  relativeTime?: string;
+  reactionCount?: string;
+  commentCount?: string;
+  thread?: SuggestThread;
 };
 
 /** What /suggest/accept sends back: the same post context, minus `text` -

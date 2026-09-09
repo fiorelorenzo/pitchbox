@@ -17,9 +17,17 @@ import {
   detectPageKind,
   findCommentComposer,
   findFeedPosts,
+  findParentCommentId,
+  findPostComments,
   findPostComposerModal,
+  readCommentAuthor,
+  readCommentBody,
+  readCommentRelativeTime,
   readPostAuthor,
+  readPostCommentCount,
   readPostIdentifier,
+  readPostReactionCount,
+  readPostRelativeTime,
   readPostText,
   resetSelectorHealth,
   selectorHealthActivityEvents,
@@ -100,15 +108,100 @@ import CommentAssistPanel from './linkedin-comment-assist-panel.svelte';
 
 const COMMENT_KIND = 'post_comment';
 
+/** Mirrors shared/src/assist/suggest-prompt.ts's MAX_THREAD_COMMENTS,
+ * MAX_COMMENT_CHARS and MAX_THREAD_CHARS by hand - see api.ts's own note on
+ * why the extension has no dependency on @pitchbox/shared. Keep these three
+ * numbers in sync with that file if either changes; the server's own zod
+ * schema enforces them again regardless (AGENTS.md: a switch is enforced
+ * where the effect happens, not only where it is read). */
+const MAX_THREAD_COMMENTS = 30;
+const MAX_COMMENT_CHARS = 500;
+const MAX_THREAD_CHARS = 6000;
+
+/** One rendered comment or reply in `AssistPost.thread` (#568) - mirrors
+ * shared/src/assist/suggest-prompt.ts's `ObservedComment` by hand. */
+export type AssistComment = {
+  id?: string;
+  authorName?: string;
+  authorHandle?: string;
+  body: string;
+  relativeTime?: string;
+  parentId?: string;
+};
+
+/** The visible comment thread under a post, already clamped to the three
+ * caps above - see `buildAssistThread`'s doc comment for how, and
+ * shared/src/assist/suggest-prompt.ts's `ObservedThread` for what each
+ * field means. */
+export type AssistThread = {
+  comments: AssistComment[];
+  renderedCount: number;
+  truncated: boolean;
+};
+
+/**
+ * The visible comment thread under `post` (#568), clamped before it ever
+ * reaches the network - a post with hundreds of rendered comments must not
+ * turn into a multi-hundred-KB request. Reuses `findPostComments` and the
+ * other comment accessors from linkedin-dom.ts rather than a second set of
+ * selectors, so `getSelectorHealthReport` stays honest about what this
+ * script actually reads. `undefined` when the page rendered no comments at
+ * all (the SDUI feed, or a post nobody has replied to yet) - an absent
+ * thread, not an empty one with nothing to say.
+ */
+function buildAssistThread(post: Element, root: ParentNode): AssistThread | undefined {
+  const all = findPostComments(root).filter((el) => post.contains(el));
+  if (all.length === 0) return undefined;
+
+  const comments: AssistComment[] = [];
+  let totalChars = 0;
+  let truncated = false;
+
+  for (const el of all) {
+    if (comments.length >= MAX_THREAD_COMMENTS) {
+      truncated = true;
+      break;
+    }
+    let body = readCommentBody(el, root) ?? '';
+    if (body.length > MAX_COMMENT_CHARS) {
+      body = body.slice(0, MAX_COMMENT_CHARS);
+      truncated = true;
+    }
+    if (totalChars + body.length > MAX_THREAD_CHARS) {
+      truncated = true;
+      break;
+    }
+    totalChars += body.length;
+    const author = readCommentAuthor(el, root);
+    comments.push({
+      id: el.getAttribute('data-id') ?? undefined,
+      authorName: author.name ?? undefined,
+      authorHandle: author.handle ?? undefined,
+      body,
+      relativeTime: readCommentRelativeTime(el, root) ?? undefined,
+      parentId: findParentCommentId(el, root) ?? undefined,
+    });
+  }
+
+  return { comments, renderedCount: all.length, truncated };
+}
+
 /** The context a comment suggestion is requested for. `urn` is present only
  * on the classic post-detail frontend - a feed card has none (see the
- * module doc comment's "Two frontends, one identifier" note). */
+ * module doc comment's "Two frontends, one identifier" note). `relativeTime`,
+ * `reactionCount`, `commentCount` and `thread` are all classic-frontend-only
+ * too (#568): the SDUI feed exposes none of them (see linkedin-dom.ts's
+ * module header). */
 export type AssistPost = {
   urn?: string;
   authorHandle?: string;
   authorName?: string;
   text: string;
   url: string;
+  relativeTime?: string;
+  reactionCount?: string;
+  commentCount?: string;
+  thread?: AssistThread;
 };
 
 /**
@@ -132,6 +225,10 @@ export function readAssistPostFromCard(
     authorName: author.name ?? undefined,
     text,
     url: location.href,
+    relativeTime: readPostRelativeTime(post, root) ?? undefined,
+    reactionCount: readPostReactionCount(post, root) ?? undefined,
+    commentCount: readPostCommentCount(post, root) ?? undefined,
+    thread: buildAssistThread(post, root),
   };
 }
 
@@ -439,6 +536,10 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
           authorName: capturedPost.authorName,
           text: capturedPost.text,
           url: capturedPost.url,
+          relativeTime: capturedPost.relativeTime,
+          reactionCount: capturedPost.reactionCount,
+          commentCount: capturedPost.commentCount,
+          thread: capturedPost.thread,
         },
         retune,
       },
