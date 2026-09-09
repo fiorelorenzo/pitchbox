@@ -67,6 +67,11 @@ below), `settings/companion` GET + the `saveProfile`/`toggleVoiceSample` form
 actions (2026-09-07 companion decisions: the operator's persona and voice
 samples that feed every suggestion's prompt are at least as sensitive as the
 LinkedIn assist switch, so this page's loader throws the same way),
+`settings/billing` GET (#555: the plan, its usage this period and the two
+real ways to change it - org-scoped like Retention/Security, not instance-
+wide, since a plan is per-organization; additionally cloud-only, see the
+#254 note below for how the rail hides it entirely on self-host rather than
+opening onto a page with nothing to meter),
 `settings/github-sources` POST + `[id]` DELETE (adding/removing a repo the
 companion may cite; the GET is member-level, listed below, since reading it
 back is no more sensitive than reading a project),
@@ -200,7 +205,15 @@ same org-scoped `requireRole(event, 'admin')` gate). #506 added a tenth,
 gated on `locals.user` existing at all rather than an org role, since a
 password change needs nothing beyond being the account holder; 404s when
 auth is off, since there's no login concept and nothing to change a
-password for). `/settings`
+password for). #555 added an eleventh, `settings/billing` (the plan, its
+usage this period and the two real ways to change it - org-scoped, so it
+throws `requireRole(event, 'admin')` like Retention/Security, plus a second,
+edition-scoped gate: self-host has no plan concept at all
+(`shared/src/plans.ts`'s `resolveEntitlements` is unlimited there before it
+ever looks at Stripe or the plan catalogue), so the rail hides the link
+entirely rather than opening onto a page with nothing to meter - a stray
+direct hit still loads and says so rather than 404ing or rendering an empty
+plan card). `/settings`
 itself now just redirects (307) to `/settings/status`. The four routes that
 used to be General's tabs each gate their own data set in their own loader,
 the same per-data-set split #237 landed on the old combined page: `status`
@@ -216,11 +229,13 @@ empty/misleading state when it isn't. `extension`'s paired-devices list
 status); only revoking a device (DELETE) and minting a pairing code (POST
 `settings/extension-pairing`) are admin-gated. The settings rail
 (`web/src/routes/settings/+layout.svelte`) hides the `organization` link when
-auth is off (no org context to show), and hides the `retention`/`security`/
-`linkedin-assist`/`companion` links from a non-admin since those routes'
-loaders call `requireRole(event, 'admin')` and would 403; `status`/`runners`/
-`extension`/`quota`/`password` are always shown to a signed-in caller because
-none of their loaders throw a role error (`password` still 404s with no
+auth is off (no org context to show), hides the `retention`/`security`/
+`linkedin-assist`/`companion`/`billing` links from a non-admin since those
+routes' loaders call `requireRole(event, 'admin')` and would 403, and
+additionally hides `billing` from self-host regardless of role
+(`data.isCloud`, root `+layout.server.ts`); `status`/`runners`/`extension`/
+`quota`/`password` are always shown to a signed-in caller because none of
+their loaders throw a role error (`password` still 404s with no
 `locals.user`, i.e. auth off); they only narrow the payload or, for
 `password`, gate on being signed in at all.
 
