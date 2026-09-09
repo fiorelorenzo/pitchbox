@@ -6,6 +6,7 @@ import { sql, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { GRACE_PERIOD_DAYS } from '@pitchbox/shared/billing/grace';
 import type {
   AgentRunHandle,
   AgentRunOptions,
@@ -134,7 +135,7 @@ describe('POST /api/campaigns is read-only-gated by a failed payment (#554)', ()
   it('refuses with plan_payment_required once the grace window has elapsed, creating nothing', async () => {
     const { orgId, projectId } = await seedPastDueOrgWithProject(
       'campaign-payment-required-over',
-      10,
+      GRACE_PERIOD_DAYS + 1,
     );
     const reddit = await platformId('reddit');
 

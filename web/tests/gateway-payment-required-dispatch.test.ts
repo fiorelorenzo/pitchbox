@@ -6,6 +6,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { GRACE_PERIOD_DAYS } from '@pitchbox/shared/billing/grace';
 import type {
   AgentRunHandle,
   AgentRunOptions,
@@ -54,7 +55,7 @@ async function platformId(slug: string): Promise<number> {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** A 'cloud'-runner campaign under an org whose mirrored subscription
- * entered `past_due` `failedDaysAgo` days ago - past GRACE_PERIOD_DAYS (7)
+ * entered `past_due` `failedDaysAgo` days ago - past GRACE_PERIOD_DAYS
  * is read-only, short of it is still working normally. */
 async function seedPastDueCampaign(
   slug: string,
@@ -158,7 +159,10 @@ describe('cloud run dispatch is read-only-gated by a failed payment (#554)', () 
   });
 
   it('refuses a run once the grace window has elapsed', async () => {
-    const { campaignId } = await seedPastDueCampaign('payment-required-over', 10);
+    const { campaignId } = await seedPastDueCampaign(
+      'payment-required-over',
+      GRACE_PERIOD_DAYS + 1,
+    );
 
     const { runId } = await runCampaign(campaignId);
     const run = await runRow(runId);

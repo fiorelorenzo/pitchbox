@@ -5,6 +5,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { GRACE_PERIOD_DAYS } from '@pitchbox/shared/billing/grace';
 import {
   defaultLinkedInAssistSettings,
   saveLinkedInAssistSettings,
@@ -141,7 +142,10 @@ describe('POST /api/extension/observations is read-only-gated by a failed paymen
   });
 
   it('refuses with a 403 once the grace window has elapsed', async () => {
-    const { org, project } = await seedPastDueOrgWithProject('obs-payment-required-over', 10);
+    const { org, project } = await seedPastDueOrgWithProject(
+      'obs-payment-required-over',
+      GRACE_PERIOD_DAYS + 1,
+    );
     await mintDevice(org.id, 'tok-obs-payment-over');
 
     const { status, message } = await statusAndBodyOf(

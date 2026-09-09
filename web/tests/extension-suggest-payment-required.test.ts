@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { GRACE_PERIOD_DAYS } from '@pitchbox/shared/billing/grace';
 import {
   defaultLinkedInAssistSettings,
   saveLinkedInAssistSettings,
@@ -171,7 +172,10 @@ describe('POST /api/extension/suggest is read-only-gated by a failed payment (#5
   });
 
   it('refuses with plan_payment_required once the grace window has elapsed', async () => {
-    const { org, project } = await seedPastDueOrgProject('payment-required-suggest-over', 10);
+    const { org, project } = await seedPastDueOrgProject(
+      'payment-required-suggest-over',
+      GRACE_PERIOD_DAYS + 1,
+    );
     await mintDevice(org.id, 'tok-payment-required-over');
 
     const res = await suggest({

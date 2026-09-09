@@ -5,6 +5,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { GRACE_PERIOD_DAYS } from '@pitchbox/shared/billing/grace';
 import { POST as invitesPost } from '../src/routes/api/orgs/[slug]/invites/+server.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -96,7 +97,7 @@ describe('POST /api/orgs/[slug]/invites is read-only-gated by a failed payment (
   it('refuses with plan_payment_required once the grace window has elapsed, inviting nobody', async () => {
     const { orgId, userId, slug } = await makePastDueOrgWithAdmin(
       'invite-payment-required-over',
-      10,
+      GRACE_PERIOD_DAYS + 1,
     );
 
     const res = await invitesPost(postEvent(userId, slug, { email: 'friend@example.com' }));
