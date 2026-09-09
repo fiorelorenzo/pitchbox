@@ -308,6 +308,12 @@ importers:
         specifier: ^4.5.4
         version: 4.5.4
     devDependencies:
+      '@ai-sdk/gateway':
+        specifier: ^4.0.75
+        version: 4.0.75(zod@4.5.4)
+      '@ai-sdk/provider':
+        specifier: ^4.0.10
+        version: 4.0.10
       '@fontsource-variable/inter':
         specifier: ^5.2.8
         version: 5.2.8
@@ -329,6 +335,9 @@ importers:
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
+      ai:
+        specifier: ^7.0.93
+        version: 7.0.93(zod@4.5.4)
       clsx:
         specifier: ^2.1.1
         version: 2.1.1

@@ -29,12 +29,15 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@ai-sdk/gateway": "^4.0.75",
+    "@ai-sdk/provider": "^4.0.10",
     "@fontsource-variable/inter": "^5.2.8",
     "@internationalized/date": "^3.12.2",
     "@sveltejs/adapter-node": "^5.5.7",
     "@sveltejs/kit": "^2.70.2",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/diff": "^8.0.0",
+    "ai": "^7.0.93",
     "clsx": "^2.1.1",
     "mode-watcher": "^1.1.0",
     "shadcn-svelte": "^1.5.1",
