@@ -149,7 +149,7 @@ export const en = {
   'activity.linkedin-action.suggestion-no-draft':
     'LinkedIn assist produced no draft to insert (skipped: {skipped}).',
   'activity.linkedin-action.suggestion-inserted':
-    'Inserted an accepted suggestion into the LinkedIn composer for draft {draftId}.',
+    'Inserted an accepted suggestion into the LinkedIn composer (ledger id {id}).',
   // #449: mounted purely from the composer click (no card selector on the
   // critical path), so this is the one signal that the delegated listener
   // actually fired and where on LinkedIn it fired - `card` names whether a
@@ -157,12 +157,6 @@ export const en = {
   // itself succeeded.
   'activity.linkedin-action.assist-mounted':
     'Comment assist opened on the {pageKind} page, with the post card {card}.',
-  'activity.linkedin-action.post-submit-not-found':
-    'Could not find the LinkedIn post submit button for draft {draftId} within 15s; posting will not be tracked automatically.',
-  'activity.linkedin-action.post-confirm-unavailable':
-    "Draft {draftId} left the composer with no error, but LinkedIn's feed exposes no stable identifier for a freshly published post, so Pitchbox could not confirm it was sent or capture its URN. Mark it manually if it published.",
-  'activity.linkedin-action.post-confirm-timeout':
-    'Could not confirm draft {draftId} left the composer within 20s after clicking Post; check its status manually.',
   'activity.linkedin-dom.selector-miss':
     'LinkedIn selector "{selector}" is not matching on the {pageKind} page ({misses} misses, {matches} matches) - this reading may be stale or missing.',
   'activity.linkedin-collector.batch-sent':
@@ -367,16 +361,17 @@ export const en = {
   'assist.post.accepting': 'Saving…',
   'assist.post.inserted.title': 'Inserted',
   'assist.post.inserted.hint': "Press LinkedIn's own Post button to send it.",
-  // Refused is five states in the brief plus three the accept path can also
-  // answer with (no_account, blocked, uncontactable, recently_contacted) and
-  // four this client detects itself (backend_unreachable, selector health, a
-  // mid-stream generation failure, and a dead extension context) - each
-  // real, each with its own remedy, never a generic failure.
+  // #521 retired the per-account draft quota (`accounts`, `checkQuota`) this
+  // used to precondition on, and with it the `quota_exhausted`/`no_account`
+  // refusals - what bounds a suggestion now is the per-device/per-org rate
+  // limiter and the plan's own suggestions ceiling. What remains: the assist
+  // gate's own reasons, the accept path's own three, and four this client
+  // detects itself (backend_unreachable, selector health, a mid-stream
+  // generation failure, and a dead extension context) - each real, each
+  // with its own remedy, never a generic failure.
   'assist.refusal.assist_disabled': 'The Pitchbox assistant is turned off for this workspace.',
   'assist.refusal.kill_switch': 'An admin stopped the assistant.',
   'assist.refusal.project_not_bound': 'No project is bound to the assistant yet.',
-  'assist.refusal.quota_exhausted': "Today's comment quota is used up.",
-  'assist.refusal.no_account': 'No LinkedIn account is linked to this project yet.',
   'assist.refusal.blocked': 'This person is on the blocklist.',
   'assist.refusal.uncontactable': 'This person was marked uncontactable.',
   'assist.refusal.recently_contacted': 'Already contacted recently, so this is being skipped.',
@@ -385,9 +380,9 @@ export const en = {
     "LinkedIn's layout changed and Pitchbox could not read this post reliably.",
   'assist.refusal.generation_failed': 'Something went wrong while writing the suggestion.',
   // #556: the plan's own ceiling and a failed payment past its grace
-  // window - distinct from `quota_exhausted` (the platform's own daily
-  // cap) so the panel can say which one stopped it, each with a link that
-  // opens `/settings/billing` in a new tab (D28).
+  // window - distinct from each other, so the panel can say which one
+  // stopped it, each with a link that opens `/settings/billing` in a new
+  // tab (D28).
   'assist.refusal.plan_limit_reached': "Your plan's suggestion limit for this period is used up.",
   'assist.refusal.plan_payment_required': 'Fix your payment to keep using the assistant.',
   'assist.action.open_billing': 'Open billing settings',
@@ -400,11 +395,10 @@ export const en = {
   'assist.refusal.extension_reloaded':
     'Pitchbox was reloaded or updated - reload this page to reconnect.',
   'assist.refusal.unknown': 'The assistant refused this request ({reason}).',
-  // The post assist's own quota message: the server answers the same
-  // `quota_exhausted` reason for both kinds, but the comment assist's
-  // message above names the wrong quota here - the post quota ships
-  // separately, at one a day.
-  'assist.refusal.post_quota_exhausted': "Today's post quota is used up.",
+  // Post-only (#523): a post suggestion has no post of its own to ground
+  // in, so unlike every other kind it still needs a real project even
+  // though a project is optional for the plane overall.
+  'assist.refusal.project_required': 'Bind a project to the assistant to suggest a post.',
   // Post-only: the observation buffer this suggestion grounds in (#315) had
   // nothing recent enough to draft from.
   'assist.refusal.no_recent_activity':

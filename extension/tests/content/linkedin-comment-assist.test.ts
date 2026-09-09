@@ -12,8 +12,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
  * text lands in is the fixture's own.
  *
  * #382's reasoning/draft split and the 2026-09-07 feed rework (per-card
- * wiring, `personalProjectId` routing) are covered by later `describe`
- * blocks below, using the real anonymised feed fixture the same way.
+ * wiring, the ledger's own optional-project routing #521/#523) are covered
+ * by later `describe` blocks below, using the real anonymised feed fixture
+ * the same way.
  */
 
 import POST_DETAIL_HTML from './fixtures/linkedin/post-detail.html?raw';
@@ -22,8 +23,6 @@ import FEED_HTML from './fixtures/linkedin/feed.html?raw';
 const linkedinAssist = vi.fn();
 const suggest = vi.fn();
 const acceptSuggestion = vi.fn();
-const armed = vi.fn(async () => ({ ok: true as const, data: {} }));
-const sent = vi.fn(async () => ({ ok: true as const, data: {} }));
 // #556: only reached from `setRefused`'s `billingLinkFor` branch (the two
 // plan refusals) - every other test in this file never calls it, so a
 // resolved default here changes nothing for them.
@@ -34,8 +33,6 @@ vi.mock('../../src/lib/api.js', () => ({
     linkedinAssist: () => linkedinAssist(),
     suggest: (body: unknown, onEvent: unknown) => suggest(body, onEvent),
     acceptSuggestion: (body: unknown) => acceptSuggestion(body),
-    armed: () => armed(),
-    sent: () => sent(),
   },
   pickPairing: () => pickPairing(),
 }));
@@ -57,10 +54,9 @@ const {
 } = await import('../../src/content/linkedin-comment-assist.js');
 const { findFeedPosts } = await import('../../src/content/shared/linkedin-dom.js');
 
-// `projectId` (context/grounding) and `personalProjectId` (decision 5: where
-// an accepted draft is filed) are deliberately distinct values below, so a
-// test that reads the wrong one fails loudly instead of passing by
-// coincidence.
+// #521/#523: an accepted suggestion files under `projectId` (the same value
+// used to request it) or under no project at all - there is no separate
+// "personal" project to route it to.
 const ASSIST_ON = {
   ok: true as const,
   data: {
@@ -69,7 +65,6 @@ const ASSIST_ON = {
       collectorEnabled: true,
       killSwitch: false,
       projectId: 2,
-      personalProjectId: 99,
       dailyCommentCap: 8,
       dailyPostCap: 1,
     },
@@ -474,7 +469,7 @@ describe('accept, insert, and the button the human presses', () => {
     suggest.mockImplementation(streamingSuggest('', text));
     acceptSuggestion.mockResolvedValue({
       ok: true,
-      data: { accepted: true, draftId: 4242, runId: 7 },
+      data: { accepted: true, id: 4242, dedupWarning: null },
     });
 
     const clicks: string[] = [];
@@ -501,9 +496,10 @@ describe('accept, insert, and the button the human presses', () => {
 
     expect(composer.textContent).toContain('PR size');
     expect(acceptSuggestion).toHaveBeenCalledTimes(1);
-    // Decision 5: an accepted draft lands under the personal project, not
-    // the project the suggestion was grounded in.
-    expect(acceptSuggestion.mock.calls[0][0]).toMatchObject({ projectId: 99 });
+    // #521/#523: an accepted suggestion lands under `boundProjectId` (the
+    // same value used to request it, projectId 2 above) - there is no
+    // separate personal project to fall back to.
+    expect(acceptSuggestion.mock.calls[0][0]).toMatchObject({ projectId: 2 });
     expect(clicks).toEqual([]);
     expect(submits).toEqual([]);
     expect(panelText()).toMatch(/Comment button|Inserted/i);
@@ -516,7 +512,7 @@ describe('accept, insert, and the button the human presses', () => {
     );
     acceptSuggestion.mockResolvedValue({
       ok: true,
-      data: { accepted: true, draftId: 1, runId: 1 },
+      data: { accepted: true, id: 1, dedupWarning: null },
     });
 
     wireCommentAssist(composer);
@@ -751,12 +747,11 @@ describe('every refusal says which one it is', () => {
       'assist_disabled',
       'kill_switch',
       'project_not_bound',
-      'quota_exhausted',
+      'blocked',
       'backend_unreachable',
       'selector_health_degraded',
       // #556: the plan's own ceiling and a failed payment - distinct from
-      // each other and from `quota_exhausted`, so the panel can say which
-      // one stopped it.
+      // each other, so the panel can say which one stopped it.
       'plan_limit_reached',
       'plan_payment_required',
     ].map((reason) => refusalMessage(reason).key);
@@ -836,7 +831,7 @@ describe('a plan refusal explains itself and links to billing (#556)', () => {
     const composer = renderPost();
     suggest.mockImplementation(
       async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
-        onEvent({ kind: 'refused', reason: 'quota_exhausted', detail: {} });
+        onEvent({ kind: 'refused', reason: 'assist_disabled', detail: {} });
         return { ok: true as const, data: { ok: true } };
       },
     );

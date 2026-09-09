@@ -13,18 +13,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
  * for `findPostComposer`/`findMessageEvents`. The API layer is faked; the
  * panel and the modal shape are real.
  *
- * #382's reasoning/draft split and `personalProjectId` routing (2026-09-07)
- * mirror `linkedin-comment-assist.test.ts`'s own coverage of the same
- * contract.
+ * #382's reasoning/draft split and the ledger's own optional-project routing
+ * (#521/#523) mirror `linkedin-comment-assist.test.ts`'s own coverage of the
+ * same contract.
  */
 
 const linkedinAssist = vi.fn();
 const suggest = vi.fn();
 const acceptSuggestion = vi.fn();
-const armed = vi.fn(async (_draftId: number, _backendUrl?: string) => ({
-  ok: true as const,
-  data: {},
-}));
 // #556: only reached from `setRefused`'s `billingLinkFor` branch (the two
 // plan refusals) - every other test in this file never calls it, so a
 // resolved default here changes nothing for them.
@@ -35,7 +31,6 @@ vi.mock('../../src/lib/api.js', () => ({
     linkedinAssist: () => linkedinAssist(),
     suggest: (body: unknown, onEvent: unknown) => suggest(body, onEvent),
     acceptSuggestion: (body: unknown) => acceptSuggestion(body),
-    armed: (draftId: number, backendUrl?: string) => armed(draftId, backendUrl),
   },
   pickPairing: () => pickPairing(),
 }));
@@ -50,13 +45,13 @@ vi.mock('../../src/lib/log-from-content.js', () => ({
 // Dynamic, not static: this module must load after the `vi.mock` calls
 // above are in place (vitest hoists `vi.mock` but not a static import),
 // matching `linkedin-comment-assist.test.ts`'s own established pattern.
-const { wirePostAssist, wirePostSubmit, refusalMessage } =
-  await import('../../src/content/linkedin-post-assist.js');
+const { wirePostAssist, refusalMessage } = await import(
+  '../../src/content/linkedin-post-assist.js'
+);
 
-// `projectId` (context/grounding) and `personalProjectId` (decision 5: where
-// an accepted draft is filed) are deliberately distinct values below, so a
-// test that reads the wrong one fails loudly instead of passing by
-// coincidence.
+// #521/#523: an accepted suggestion files under `projectId` (the same value
+// used to request it) or under no project at all - there is no separate
+// "personal" project to route it to.
 const ASSIST_ON = {
   ok: true as const,
   data: {
@@ -65,7 +60,6 @@ const ASSIST_ON = {
       collectorEnabled: true,
       killSwitch: false,
       projectId: 2,
-      personalProjectId: 99,
       dailyCommentCap: 8,
       dailyPostCap: 1,
     },
@@ -245,7 +239,7 @@ describe('accept, insert, and the button the human presses', () => {
     suggest.mockImplementation(streamingSuggest('', text));
     acceptSuggestion.mockResolvedValue({
       ok: true,
-      data: { accepted: true, draftId: 5150, runId: 9 },
+      data: { accepted: true, id: 5150, dedupWarning: null },
     });
 
     const clicks: string[] = [];
@@ -275,13 +269,14 @@ describe('accept, insert, and the button the human presses', () => {
     expect(editor.textContent).toContain('post composer assist');
     expect(acceptSuggestion).toHaveBeenCalledTimes(1);
     // No urn/authorHandle/authorName in the accept body: a post has none of
-    // those until it publishes, and it is the operator's own voice. Decision
-    // 5: it lands under the personal project, not the project it was
-    // grounded in (projectId 2 above).
+    // those until it publishes, and it is the operator's own voice. It
+    // lands under `boundProjectId` (#521/#523: the same value used to
+    // request the suggestion, projectId 2 above - there is no separate
+    // personal project to fall back to).
     expect(acceptSuggestion.mock.calls[0][0]).toMatchObject({
       kind: 'post',
       post: {},
-      projectId: 99,
+      projectId: 2,
     });
     expect(clicks).toEqual([]);
     expect(submits).toEqual([]);
@@ -295,7 +290,7 @@ describe('accept, insert, and the button the human presses', () => {
     );
     acceptSuggestion.mockResolvedValue({
       ok: true,
-      data: { accepted: true, draftId: 1, runId: 1 },
+      data: { accepted: true, id: 1, dedupWarning: null },
     });
 
     wirePostAssist(editor, modal);
@@ -440,8 +435,8 @@ describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
 });
 
 describe('every refusal says which one it is', () => {
-  it("gives the post quota message its own key, distinct from the comment assist's own", () => {
-    expect(refusalMessage('quota_exhausted').key).toBe('assist.refusal.post_quota_exhausted');
+  it("gives project_required its own key, distinct from the comment assist's refusals", () => {
+    expect(refusalMessage('project_required').key).toBe('assist.refusal.project_required');
   });
 
   it('maps every other known reason to its own distinct message key', () => {
@@ -449,8 +444,8 @@ describe('every refusal says which one it is', () => {
       'assist_disabled',
       'kill_switch',
       'project_not_bound',
+      'project_required',
       'no_recent_activity',
-      'no_account',
       'blocked',
       'backend_unreachable',
       'generation_failed',
@@ -466,11 +461,11 @@ describe('every refusal says which one it is', () => {
 });
 
 describe('refusal rendering: post-specific, not the comment assist copy', () => {
-  it('renders the post quota message, not the comment quota message, when the server refuses quota_exhausted', async () => {
+  it('renders a distinct message when this kind needs a project the comment assist never requires (#523)', async () => {
     const { editor, modal } = renderModal();
     suggest.mockImplementation(
       async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
-        onEvent({ kind: 'refused', reason: 'quota_exhausted', detail: {} });
+        onEvent({ kind: 'refused', reason: 'project_required', detail: {} });
         return { ok: true, data: {} };
       },
     );
@@ -481,8 +476,7 @@ describe('refusal rendering: post-specific, not the comment assist copy', () => 
     shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
     await settle();
 
-    expect(panelText()).toMatch(/post quota/i);
-    expect(panelText()).not.toMatch(/comment/i);
+    expect(panelText()).toMatch(/bind a project/i);
   });
 
   it('renders a distinct message when the observation buffer has nothing recent to ground a post in', async () => {
@@ -635,86 +629,3 @@ describe('single-page navigation', () => {
   });
 });
 
-describe('post completion detection: arms, but never fabricates a sent confirmation', () => {
-  // No fixture shows a published post's URN anywhere (see the module doc
-  // comment's "No URN after publish" section) - so `wirePostSubmit` is
-  // exercised directly against synthetic markup, matching every other
-  // unverified accessor's own test posture in this repo.
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  function buildArmedModal(): { modal: HTMLElement; btn: HTMLButtonElement } {
-    document.body.innerHTML =
-      '<div role="dialog"><div contenteditable="true" role="textbox">draft</div>' +
-      '<button type="submit">Pubblica</button></div>';
-    const modal = document.querySelector<HTMLElement>('[role="dialog"]')!;
-    const btn = modal.querySelector<HTMLButtonElement>('button[type="submit"]')!;
-    return { modal, btn };
-  }
-
-  it('arms the draft on the human click - never dispatched, only listened for', async () => {
-    const { modal, btn } = buildArmedModal();
-    expect(wirePostSubmit(modal, 777)).toBe(true);
-
-    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await vi.advanceTimersByTimeAsync(0);
-
-    expect(armed).toHaveBeenCalledWith(777, undefined);
-  });
-
-  it('logs a distinct warning, and never a fabricated sent, once the modal closes without an error', async () => {
-    const { modal, btn } = buildArmedModal();
-    wirePostSubmit(modal, 777);
-    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    // LinkedIn's own signal a submit went through, on the SDUI frontend a
-    // freshly published post exposes no other identifier this module could
-    // read instead (see the module doc comment).
-    document.body.innerHTML = '';
-    await vi.advanceTimersByTimeAsync(600);
-
-    const warn = logged.find(
-      (e) => e.message === 'activity.linkedin-action.post-confirm-unavailable',
-    );
-    expect(warn).toBeDefined();
-    expect(warn?.level).toBe('warn');
-    expect(warn?.messageParams).toEqual({ draftId: 777 });
-  });
-
-  it('leaves the draft armed and logs nothing when the modal closes but LinkedIn shows an inline error', async () => {
-    const { modal, btn } = buildArmedModal();
-    wirePostSubmit(modal, 777);
-    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    // The modal is gone - the same shape a successful submit leaves - but
-    // LinkedIn also rendered an inline error, a failed submit's real shape.
-    // The error must win: "the modal closed" alone is not enough to log
-    // anything, and it must never be read as a confirmation.
-    document.body.innerHTML = '';
-    const alert = document.createElement('div');
-    alert.setAttribute('role', 'alert');
-    alert.textContent = 'Something went wrong. Please try again.';
-    document.body.appendChild(alert);
-    await vi.advanceTimersByTimeAsync(600);
-
-    expect(
-      logged.some((e) => String(e.message).startsWith('activity.linkedin-action.post-confirm')),
-    ).toBe(false);
-  });
-
-  it('gives up and logs a distinct timeout when the modal neither closes nor errors within 20s', async () => {
-    const { modal, btn } = buildArmedModal();
-    wirePostSubmit(modal, 777);
-    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    await vi.advanceTimersByTimeAsync(20_000);
-
-    const warn = logged.find((e) => e.message === 'activity.linkedin-action.post-confirm-timeout');
-    expect(warn).toBeDefined();
-    expect(warn?.messageParams).toEqual({ draftId: 777 });
-  });
-});

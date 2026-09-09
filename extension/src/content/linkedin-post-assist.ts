@@ -10,15 +10,15 @@ import {
   type AssistStatusPhase,
   type RetuneDirection,
   type SuggestEvent,
+  type SuggestRefusalReason,
   type SuggestUsage,
 } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import { mountPanel, panelFor, type PanelHandle } from './shared/panel-host.js';
-import { insertComposerText, hasInlineCommentError } from './linkedin-comment.js';
+import { insertComposerText } from './linkedin-comment.js';
 import {
   findPostComposer,
   findPostComposerModal,
-  findPostSubmitButton,
   resetSelectorHealth,
   selectorHealthActivityEvents,
 } from './shared/linkedin-dom.js';
@@ -63,31 +63,19 @@ import PostAssistPanel from './linkedin-post-assist-panel.svelte';
  * "Suggest a post" control fires the network request. Neither click is ever
  * synthesised.
  *
- * ## No URN after publish - completion detection stops at "armed"
+ * ## No draft to arm, no send to watch for (#521)
  *
- * A comment's URN can be confirmed the moment it posts: the classic
- * post-detail frontend renders it as `article[data-id]`
- * (`linkedin-comment.ts`'s `findOurCommentUrn`). A freshly published post has
- * no equivalent this module can read. `linkedin-dom.ts`'s own header
- * documents the exhaustive search behind this (#303): on the SDUI feed the
- * activity URN "is not in the feed DOM, not inside any shadow root, not in
- * any inline script, and not reachable through React's fiber or memoized
- * props" - and that is exactly the frontend a freshly published post renders
- * into. So this script arms the draft on the human's own click of LinkedIn's
- * "Post" control (never dispatches one) and watches for the composer closing
- * without an inline error, but it never calls the `sent` endpoint the way
- * the comment watcher does: there is no `platform_post_id` to give it, and
- * writing one down without an identifier would be a fabricated confirmation,
- * not a detected one. The draft stays `armed` for a human to resolve.
- *
- * What a human with a live account would need to capture before this can go
- * further: right after publishing a real post from this composer, does
- * *anything* on the page expose the new post's URN - a `data-urn` on the
- * fresh top-of-feed card, a `data-sdui-anchor-id` keyed to it, a network
- * response body the browser's own devtools can see, or does navigating to
- * the profile's own `/recent-activity/` page render it through the classic
- * frontend with a real `data-urn`? None of the fixtures in this repo show
- * that state, so none of it is guessed here.
+ * Accept writes straight into the assist plane's own ledger
+ * (`shared/src/assist-accept.ts`'s `acceptSuggestion`) the moment the human
+ * accepts - unconditionally, not gated behind detecting that the post
+ * actually went out. There is no `drafts` row to arm this script used to
+ * carry a `draftId` for, and no way to confirm a freshly published post's
+ * identity anyway: unlike a comment's URN (confirmable the moment it
+ * posts, via the classic frontend's `article[data-id]`), `linkedin-dom.ts`'s
+ * own header documents the exhaustive search behind why a freshly
+ * published post's own URN is unreachable on the SDUI feed (#303). So this
+ * script does not try - `insertComposerText` is the last thing it does with
+ * the accepted text, matching the comment assist's own posture.
  *
  * ## Reasoning is never insertable (#382)
  *
@@ -96,37 +84,45 @@ import PostAssistPanel from './linkedin-post-assist-panel.svelte';
  * only ever sends `draft`, and a `done` event whose `draft` is `null`
  * renders no insert affordance - see `no_draft` below.
  *
- * ## Every accepted draft lands under the personal project
+ * ## Where an accepted suggestion is filed (#523)
  *
- * Same routing as the comment assist: `api.acceptSuggestion` here sends
- * `assist.personalProjectId` (decision 5), not the project the suggestion
- * was grounded in (`boundProjectId`, still used for `api.suggest` alone).
+ * Same routing as the comment assist: `api.acceptSuggestion` sends
+ * `boundProjectId` (`assist.projectId`), the same value used to request the
+ * suggestion - there is no separate personal project to fall back to.
+ * Unlike the comment assist, this kind can never actually reach accept with
+ * no project bound: `api.suggest` already refuses with `project_required`
+ * before the panel ever has a draft to offer (this kind grounds itself in a
+ * project's own observation buffer, see above) - #523 makes a project
+ * optional for the plane overall, not for the one kind that has nothing
+ * else to ground itself in.
  */
 
 const POST_KIND = 'post';
 
 /** Every refusal this panel can render, honestly and distinctly. A subset of
- * the comment assist's own `AssistRefusal` (LI-17): a `post` suggestion never
- * targets one person, so the accept path's `uncontactable`/`recently_contacted`
- * refusals (only reachable with a `targetUser`, see `shared/src/assist-accept.ts`)
- * can never fire here, and this script never reads post content off the page,
- * so `selector_health_degraded` cannot fire either. `no_recent_activity` is
- * new: the observation buffer this suggestion grounds in (see the module doc
- * comment) had nothing recent enough to draft from. A `done` event with no
- * draft is never a refusal - see `PostAssistState.no_draft` below. */
+ * the comment assist's own `AssistRefusal` (LI-17) plus the two refusals
+ * `SuggestRefusalReason` carries that only a `kind: 'post'` request can
+ * hit: a `post` suggestion never targets one person, so the accept path's
+ * `uncontactable`/`recently_contacted` refusals (only reachable with a
+ * `targetUser`, see `shared/src/assist-accept.ts`) can never fire here, and
+ * this script never reads post content off the page, so
+ * `selector_health_degraded` cannot fire either. `project_required` and
+ * `no_recent_activity` are the two new ones: the observation buffer this
+ * suggestion grounds in (see the module doc comment) needs a real project
+ * with something recent in it. A `done` event with no draft is never a
+ * refusal - see `PostAssistState.no_draft` below. */
 export type PostAssistRefusal =
   | Exclude<AcceptRefusalReason, 'uncontactable' | 'recently_contacted'>
+  | SuggestRefusalReason
   | 'backend_unreachable'
-  | 'generation_failed'
-  | 'no_recent_activity';
+  | 'generation_failed';
 
 const KNOWN_REFUSALS: Record<PostAssistRefusal, true> = {
   assist_disabled: true,
   kill_switch: true,
   project_not_bound: true,
-  quota_exhausted: true,
+  project_required: true,
   no_recent_activity: true,
-  no_account: true,
   blocked: true,
   backend_unreachable: true,
   generation_failed: true,
@@ -141,13 +137,9 @@ function billingLinkFor(reason: string): boolean {
 }
 
 /**
- * Maps a refusal reason to its own i18n key. `quota_exhausted` gets a key
- * distinct from the comment assist's own (`assist.refusal.post_quota_exhausted`
- * vs `assist.refusal.quota_exhausted`): the server answers the same reason
- * string either way, but "today's comment quota is used up" would be a lie
- * on this surface - the post quota ships separately, at one a day. Every
- * other reason reuses the comment assist's own message, which names nothing
- * kind-specific. A reason this client does not recognise still renders,
+ * Maps a refusal reason to its own i18n key - every reason is real and
+ * actionable, so the panel always says which one it is rather than a
+ * generic failure. A reason this client does not recognise still renders,
  * naming itself, instead of a blank or a raw untranslated key. Exported for
  * testing.
  */
@@ -155,7 +147,6 @@ export function refusalMessage(reason: string): {
   key: string;
   params?: Record<string, string>;
 } {
-  if (reason === 'quota_exhausted') return { key: 'assist.refusal.post_quota_exhausted' };
   if (reason in KNOWN_REFUSALS) return { key: `assist.refusal.${reason}` };
   return { key: 'assist.refusal.unknown', params: { reason } };
 }
@@ -195,99 +186,6 @@ export type PostAssistPanelProps = {
 // shows its modal open, see the module doc comment), so this falls back to
 // the editor itself with the same posture that script does.
 
-const POST_CONFIRM_POLL_MS = 500;
-const POST_CONFIRM_TIMEOUT_MS = 20_000;
-const POST_SUBMIT_WAIT_MS = 15_000;
-
-/**
- * Arms `draftId` on the human's own click of LinkedIn's post-composer submit
- * control found under `modal` (never dispatches one), then watches for the
- * modal closing cleanly. Never calls `api.sent` - see the module doc
- * comment's "No URN after publish" section for why that would be a
- * fabricated confirmation rather than a detected one. Exported for testing.
- */
-export function wirePostSubmit(modal: Element, draftId: number): boolean {
-  const btn = findPostSubmitButton(modal);
-  if (!btn) return false;
-  let armed = false;
-  btn.addEventListener(
-    'click',
-    () => {
-      if (armed) return;
-      armed = true;
-      void api.armed(draftId);
-      let resolved = false;
-      const finish = (message: string, reason: string) => {
-        if (resolved) return;
-        resolved = true;
-        window.clearInterval(poll);
-        window.clearTimeout(giveUp);
-        logFromContent({
-          level: 'warn',
-          source: 'linkedin-action',
-          message,
-          messageParams: { draftId },
-          meta: { draftId, script: 'linkedin-post-assist', reason, url: location.href },
-        });
-      };
-      const poll = window.setInterval(() => {
-        if (hasInlineCommentError()) {
-          // LinkedIn showed an inline error - leave the draft armed for a
-          // retry, nothing resolved yet.
-          window.clearInterval(poll);
-          window.clearTimeout(giveUp);
-          return;
-        }
-        if (findPostComposerModal()) return; // still open/submitting
-        finish('activity.linkedin-action.post-confirm-unavailable', 'no-post-identifier-in-dom');
-      }, POST_CONFIRM_POLL_MS);
-      const giveUp = window.setTimeout(() => {
-        finish('activity.linkedin-action.post-confirm-timeout', 'confirm-poll-timeout');
-      }, POST_CONFIRM_TIMEOUT_MS);
-    },
-    { capture: true },
-  );
-  return true;
-}
-
-/**
- * Wires `wirePostSubmit` now if the submit control already exists under
- * `modal`, or retries via `MutationObserver` scoped to the modal - LinkedIn
- * does not render a submit control for an empty composer, matching
- * `linkedin-comment.ts`'s `watchForCommentSubmit` (this is the expected path
- * right after inserting text, not a fallback) - for up to 15s before logging
- * a distinct give-up.
- */
-function watchPostForSend(modal: Element, draftId: number): void {
-  if (wirePostSubmit(modal, draftId)) return;
-  let wired = false;
-  const obs = new MutationObserver(() => {
-    if (wirePostSubmit(modal, draftId)) {
-      wired = true;
-      obs.disconnect();
-    }
-  });
-  obs.observe(modal, { childList: true, subtree: true });
-  window.setTimeout(() => {
-    obs.disconnect();
-    if (wired) return;
-    logFromContent({
-      level: 'warn',
-      source: 'linkedin-action',
-      message: 'activity.linkedin-action.post-submit-not-found',
-      messageParams: { draftId },
-      meta: {
-        draftId,
-        script: 'linkedin-post-assist',
-        step: 'wire-submit-button',
-        selector: 'findPostSubmitButton',
-        reason: 'submit-button-not-found',
-        url: location.href,
-      },
-    });
-  }, POST_SUBMIT_WAIT_MS);
-}
-
 /** #382: a `done` event with no draft is never a refusal, so it gets its own
  * log message - see `linkedin-comment-assist.ts`'s own `logNoDraft`, which
  * this mirrors exactly. */
@@ -303,18 +201,17 @@ function logNoDraft(skipped: boolean): void {
 
 /**
  * Mounts the assist panel on `editor`'s anchor and wires its whole state
- * machine: request, edit, accept-then-insert-then-arm, refuse. One call per
- * modal open (see `wirePostAssist` below); `mountPanel` itself is what keeps
- * a second click from stacking a second panel.
+ * machine: request, edit, accept-then-insert, refuse. One call per modal
+ * open (see `wirePostAssist` below); `mountPanel` itself is what keeps a
+ * second click from stacking a second panel.
  */
-function mountAssistPanel(editor: HTMLElement, modal: Element): void {
+function mountAssistPanel(editor: HTMLElement, _modal: Element): void {
   const anchor = editor.closest('form') ?? editor;
   for (const event of selectorHealthActivityEvents()) logFromContent(event);
 
   let currentReasoning = '';
   let currentDraft = '';
   let boundProjectId: number | null = null;
-  let personalProjectId: number | null = null;
   let lastUsage: SuggestUsage | undefined;
   let lastMs: number | undefined;
   // #576: the live session id from the last `done` event, if any.
@@ -378,12 +275,11 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
       void setRefused('assist_disabled');
       return;
     }
-    if (assist.projectId === null) {
-      void setRefused('project_not_bound');
-      return;
-    }
+    // #523: a null `assist.projectId` is not a refusal here either - only
+    // `no_recent_activity`/`project_required` from the server itself (this
+    // kind's own grounding needs, distinct from #523's general optionality)
+    // can stop a request for lack of a project.
     boundProjectId = assist.projectId;
-    personalProjectId = assist.personalProjectId;
 
     let reasoning = '';
     let draft = '';
@@ -392,7 +288,7 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
     // `post` here is informational context only.
     const res = await api.suggest(
       {
-        projectId: boundProjectId,
+        projectId: boundProjectId ?? undefined,
         kind: POST_KIND,
         post: { url: location.href },
         retune,
@@ -447,15 +343,11 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
   }
 
   async function acceptAndInsert(): Promise<void> {
-    if (personalProjectId === null) {
-      void setRefused('backend_unreachable');
-      return;
-    }
     handle.update({
       state: { phase: 'accepting', reasoning: currentReasoning, draft: currentDraft },
     });
     const res = await api.acceptSuggestion({
-      projectId: personalProjectId,
+      projectId: boundProjectId ?? undefined,
       kind: POST_KIND,
       // No urn (a post has none until it publishes), no authorHandle/authorName
       // (this is the operator's own voice, not a reply to someone) - see
@@ -475,14 +367,15 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
       void setRefused(res.data.refused);
       return;
     }
+    // #521: the ledger row is already written above - there is no draft to
+    // arm and no send to watch for.
     insertComposerText(editor, currentDraft);
-    watchPostForSend(modal, res.data.draftId);
     logFromContent({
       level: 'info',
       source: 'linkedin-action',
       message: 'activity.linkedin-action.suggestion-inserted',
-      messageParams: { draftId: res.data.draftId },
-      meta: { draftId: res.data.draftId },
+      messageParams: { id: res.data.id },
+      meta: { id: res.data.id },
     });
     handle.update({ state: { phase: 'inserted' } });
   }
