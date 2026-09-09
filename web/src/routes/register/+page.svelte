@@ -13,6 +13,9 @@
 		invite: { token: string; email: string | null; orgName: string | null } | null;
 		policy: 'open' | 'invite' | 'off';
 		canRegister: boolean;
+		selectedPlan: 'solo' | 'growth' | 'scale' | null;
+		selectedInterval: 'month' | 'year' | null;
+		selectedPlanName: string | null;
 	};
 	let { data }: { data: PageData } = $props();
 
@@ -67,6 +70,32 @@
 					description: 'Check your email to verify your address before you can start a run.',
 				});
 			}
+
+			// #558: a signup that arrived via a pricing-page CTA (`/register?plan=growth`)
+			// goes straight into Checkout for that plan rather than landing on an empty
+			// dashboard - the whole point of the CTA carrying the plan through. Falls back
+			// to the ordinary destination on any failure (self-host with billing off,
+			// Stripe hiccup, a catalogue/Stripe price mismatch): a stalled checkout must
+			// never strand the account that was just created for it.
+			if (data.selectedPlan) {
+				try {
+					const checkoutRes = await fetch('/api/billing/checkout', {
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({
+							plan: data.selectedPlan,
+							interval: data.selectedInterval ?? 'month',
+						}),
+					});
+					if (checkoutRes.ok) {
+						const { url } = (await checkoutRes.json()) as { url: string };
+						window.location.href = url;
+						return;
+					}
+				} catch {
+					// falls through to the ordinary destination below
+				}
+			}
 			await goto(data.next ?? '/', { invalidateAll: true });
 		} finally {
 			busy = false;
@@ -114,6 +143,12 @@
 						You have been invited to join
 						<span class="font-medium text-foreground">{data.invite.orgName ?? 'an organization'}</span
 						>. Create an account to accept.
+					</p>
+				{:else if data.selectedPlanName}
+					<p class="text-xs text-muted-foreground">
+						Continuing to <span class="font-medium text-foreground">{data.selectedPlanName}</span>
+						({data.selectedInterval === 'year' ? 'billed annually' : 'billed monthly'}) after your
+						account is created.
 					</p>
 				{/if}
 			</Card.Header>

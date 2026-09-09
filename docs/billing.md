@@ -116,6 +116,20 @@ a feature flag rather than a metered limit, so it has no Stripe metadata
 counterpart and always comes from the catalogue, keyed by plan id, even for a
 mirrored subscription.
 
+## Where the marketing site's pricing page gets its numbers
+
+`pitchbox-landing` (a separate repo, its own deploy, no database) cannot call
+`resolveEntitlements`, so its `/pricing` page does not restate the table above by
+hand. `pnpm run plans:export` (`scripts/export-plan-catalogue.ts`) writes
+`docs/plan-catalogue.json` from `listPlans()` itself; `shared/tests/plan-catalogue-artifact.test.ts`
+fails this repo's CI if that file is committed out of sync. The landing repo pulls it
+from GitHub raw content only when someone runs its own `pnpm run plans:refresh`
+on purpose, the same shape as its existing token-drift snapshot (`docs/design/DECISIONS.md`
+D24/D26): a deliberate, human-run refresh, never a live fetch at the landing's own
+build or request time. Run `plans:export` and commit the result whenever
+`PLAN_CATALOGUE` changes, the same way `stripe-setup.ts` needs a run after a
+metadata change.
+
 ## What happens at a limit, and after a failed payment
 
 - A limit is a **hard refusal** with an upgrade prompt: no silent degrade to a
