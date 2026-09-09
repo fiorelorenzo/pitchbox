@@ -26,9 +26,7 @@ async function makeOrg(slug: string, plan: string = 'free') {
 }
 
 async function makeProject(orgId: number, slug: string) {
-  await getDb()
-    .insert(schema.projects)
-    .values({ organizationId: orgId, slug, name: slug });
+  await getDb().insert(schema.projects).values({ organizationId: orgId, slug, name: slug });
 }
 
 function postEvent(orgId: number, body: unknown): Parameters<typeof projectsPost>[0] {
@@ -60,7 +58,12 @@ describe('POST /api/projects is plan-limit-gated (#548)', () => {
     );
 
     expect(res.status).toBe(402);
-    const body = (await res.json()) as { error?: string; metric?: string; limit?: number; used?: number };
+    const body = (await res.json()) as {
+      error?: string;
+      metric?: string;
+      limit?: number;
+      used?: number;
+    };
     expect(body.error).toBe('plan_limit_reached');
     expect(body.metric).toBe('projects');
     expect(body.limit).toBe(freeLimit);

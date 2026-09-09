@@ -70,7 +70,11 @@ async function makeRun(opts: {
   });
 }
 
-async function makeAssistUsage(opts: { organizationId: number; projectId: number; createdAt: Date }) {
+async function makeAssistUsage(opts: {
+  organizationId: number;
+  projectId: number;
+  createdAt: Date;
+}) {
   const db = getDb();
   const [platform] = await db
     .select({ id: schema.platforms.id })
@@ -101,15 +105,15 @@ async function makeAccount(projectId: number, active: boolean = true) {
 async function makeMember(organizationId: number) {
   const db = getDb();
   const username = `usage-test-${randomUUID()}`;
-  const [user] = await db
-    .insert(schema.users)
-    .values({ username, passwordHash: 'x' })
-    .returning();
+  const [user] = await db.insert(schema.users).values({ username, passwordHash: 'x' }).returning();
   createdUserIds.push(user.id);
   await db.insert(schema.memberships).values({ organizationId, userId: user.id, role: 'member' });
 }
 
-async function makeInvite(organizationId: number, opts: { acceptedAt?: Date; expiresAt?: Date } = {}) {
+async function makeInvite(
+  organizationId: number,
+  opts: { acceptedAt?: Date; expiresAt?: Date } = {},
+) {
   const db = getDb();
   await db.insert(schema.orgInvites).values({
     organizationId,

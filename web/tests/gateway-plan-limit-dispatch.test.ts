@@ -101,7 +101,11 @@ async function seedCloudCampaign(
 
 async function runRow(runId: number) {
   const [row] = await getDb()
-    .select({ status: schema.runs.status, error: schema.runs.error, failureReason: schema.runs.failureReason })
+    .select({
+      status: schema.runs.status,
+      error: schema.runs.error,
+      failureReason: schema.runs.failureReason,
+    })
     .from(schema.runs)
     .where(eq(schema.runs.id, runId));
   return row;

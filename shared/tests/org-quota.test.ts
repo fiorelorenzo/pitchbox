@@ -323,7 +323,11 @@ describe('getOrgPeriodCostUsd', () => {
 
   it('returns 0 for an org with no runs at all', async () => {
     const { orgId } = await setupOrg();
-    const total = await getOrgPeriodCostUsd(getDb(), orgId, monthPeriod(new Date('2026-07-15T12:00:00Z')));
+    const total = await getOrgPeriodCostUsd(
+      getDb(),
+      orgId,
+      monthPeriod(new Date('2026-07-15T12:00:00Z')),
+    );
     expect(total).toBe(0);
   });
 
@@ -546,10 +550,7 @@ describe('billingPeriodFor', () => {
   it('an org with a live subscription gets exactly its stored Stripe period, regardless of createdAt', async () => {
     const { orgId } = await setupOrg({ createdAt: new Date('2026-01-01T00:00:00Z') });
     const db = getDb();
-    const [platform] = await db
-      .select({ id: schema.platforms.id })
-      .from(schema.platforms)
-      .limit(1);
+    const [platform] = await db.select({ id: schema.platforms.id }).from(schema.platforms).limit(1);
     await db.insert(schema.orgSubscriptions).values({
       organizationId: orgId,
       stripeCustomerId: 'cus_test',

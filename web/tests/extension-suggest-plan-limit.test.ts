@@ -203,5 +203,4 @@ describe('POST /api/extension/suggest is plan-limit-gated (#548)', () => {
     const text = await res.text();
     expect(text).toContain('event: done');
   });
-
 });
