@@ -12,6 +12,7 @@ import {
   users,
 } from './db/schema.js';
 import { ensurePersonalProject } from './personal-project.js';
+import { loadOrgQuotaDefaults } from './org-quota.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = PgDatabase<any, any, any>;
@@ -358,13 +359,31 @@ export async function loadActiveOrganization(
   return rows[0];
 }
 
+/**
+ * Creates an organization with an owner membership, its `personal` project,
+ * and a default run quota (#515) - the single primitive behind both a
+ * self-registered account's own org (`POST /api/auth/register`'s no-invite
+ * path, #513) and an existing user creating an additional org (`POST
+ * /api/orgs`). Neither caller is an operator who has configured anything
+ * for this org yet, so it must never start on `null` (unlimited) the way a
+ * manually-provisioned org can. The seeded `default` org bypasses this
+ * function entirely (inserted directly by createUser/seed-core) and keeps
+ * its unlimited, unconfigured caps - it is the single-tenant self-host
+ * fallback, not a self-created tenant.
+ */
 export async function createOrganization(
   db: Db,
   args: { slug: string; name: string; ownerUserId: number },
 ): Promise<{ id: number; slug: string; role: string }> {
+  const quotaDefaults = await loadOrgQuotaDefaults(db);
   const [org] = await db
     .insert(organizations)
-    .values({ slug: args.slug, name: args.name })
+    .values({
+      slug: args.slug,
+      name: args.name,
+      monthlyRunBudgetUsd: quotaDefaults.monthlyRunBudgetUsd.toFixed(2),
+      maxConcurrentRuns: quotaDefaults.maxConcurrentRuns,
+    })
     .returning();
   await db
     .insert(memberships)
@@ -380,13 +399,13 @@ export async function createOrganization(
 
 /**
  * Derives an available organization slug from a username, for the register
- * route's no-invite path (open sign-up, #505). #513 owns the real policy
- * here - where the slug should really come from (username vs. email local
- * part), the new org's name and quota, and what a later-invited owner of
- * their own org keeps - this is a narrow, unopinionated stand-in so open
- * sign-up is not accidentally invite-only in the meantime. Collision-
- * suffixed with a numeric counter against `organizations.slug`'s unique
- * constraint.
+ * route's no-invite path (open sign-up, #505). Settled by #513: the
+ * username is what open registration already collects and already needs to
+ * be unique-ish for login, so the slug rides on it rather than the email
+ * local part, which the registrant did not choose and may well share with
+ * a colleague's shared inbox alias. Collision-suffixed with a numeric
+ * counter against `organizations.slug`'s unique constraint, since the
+ * person was never asked to pick a slug of their own.
  */
 export async function uniqueOrgSlugFromUsername(db: Db, username: string): Promise<string> {
   const base =

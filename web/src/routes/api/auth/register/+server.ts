@@ -177,12 +177,13 @@ export async function POST(event: RequestEvent) {
         const accepted = await acceptInvite(tx, invite.token, id);
         if (!accepted) throw new InviteRaceError();
       } else {
-        // #513 owns the real self-registration org policy (slug source,
-        // quota, role nuance, what an invited-later user keeps). This is a
-        // narrow, unopinionated stand-in so open sign-up (#505) is not
-        // accidentally invite-only in the meantime: every stranger gets
-        // their own single-owner org through the existing createOrganization
-        // primitive, never `default`.
+        // #513: a stranger with no invite gets their own single-owner
+        // organization, never `default` (the single-tenant self-host
+        // fallback stays untouched either way), through the same
+        // createOrganization primitive an already-logged-in user's `POST
+        // /api/orgs` uses - including its default run quota (#515), since
+        // this account is exactly the "nobody has configured anything for
+        // this org yet" case that default exists for.
         const slug = await uniqueOrgSlugFromUsername(tx, parsed.data.username);
         await createOrganization(tx, {
           slug,

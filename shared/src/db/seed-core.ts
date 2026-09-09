@@ -5,6 +5,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensurePersonalProject } from '../personal-project.js';
+import { ORG_QUOTA_DEFAULTS_FALLBACK } from '../org-quota.js';
 
 export const QUOTA_DEFAULTS = {
   reddit: {
@@ -141,6 +142,14 @@ export async function seedCore() {
   await db
     .insert(schema.appConfig)
     .values({ key: 'quota_defaults', value: QUOTA_DEFAULTS })
+    .onConflictDoNothing();
+  // #515: a self-created org's default run budget/concurrency, read by
+  // createOrganization (shared/src/orgs.ts) via loadOrgQuotaDefaults. Kept
+  // next to quota_defaults on purpose - both are instance-wide, operator-
+  // editable-without-a-redeploy app_config rows.
+  await db
+    .insert(schema.appConfig)
+    .values({ key: 'org_quota_defaults', value: ORG_QUOTA_DEFAULTS_FALLBACK })
     .onConflictDoNothing();
 
   const missingSlugs: string[] = [];

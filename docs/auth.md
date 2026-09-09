@@ -52,10 +52,17 @@ registers an owner of it. Instead, in one transaction:
 - **With a valid token**: the account is created and `acceptInvite` joins the
   inviting org with the invited role - never `default`, no org of its own.
 - **With no token** (only reachable under `open`): the account gets its own
-  single-owner organization (`createOrganization`, slug derived from the
-  username and collision-suffixed). #513 owns the real policy here (slug
-  source, quota, role nuance); this is a narrow stand-in so open sign-up
-  isn't accidentally invite-only.
+  single-owner organization, created by the same `createOrganization`
+  primitive `POST /api/orgs` uses for a logged-in user's additional org
+  (#513). Its slug derives from the username (already collected, already
+  unique-ish for login), lowercased and collision-suffixed against
+  `organizations.slug` rather than the email local part, which the registrant
+  did not choose. The org starts with a default monthly run budget and
+  concurrency cap from `app_config.org_quota_defaults` (#515) instead of the
+  unlimited `null` every other column default gives - see
+  [cloud-runner.md](cloud-runner.md) ("How cost and quota work"). The seeded
+  `default` org and the `personal`-project convention ([orgs.md](orgs.md))
+  are untouched by either branch above.
 
 An invalid, expired, revoked or already-consumed token refuses the whole
 registration (no account is created): `400 { "error":

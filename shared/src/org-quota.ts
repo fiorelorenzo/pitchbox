@@ -4,7 +4,16 @@
 // per-account quota helper's style (shared/src/quota.ts) but is org-scoped and
 // budget/concurrency based rather than per-account daily/weekly counts.
 import { and, eq, gte, inArray, or, sql } from 'drizzle-orm';
+import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { schema, type Db } from './db/client.js';
+
+// The loose handle personal-project.ts documents and orgs.ts already uses,
+// rather than the strict `Db` above: loadOrgQuotaDefaults is called from
+// createOrganization (shared/src/orgs.ts), which may be holding a
+// transaction handle mid-registration, and the strict schema-bound type
+// rejects that handle.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyDb = PgDatabase<any, any, any>;
 
 /**
  * An org's quota snapshot: remaining monthly USD run budget and concurrency
@@ -17,6 +26,53 @@ export interface OrgQuotaSnapshot {
   remainingUsd: number | null;
   /** Max concurrent runs allowed for this org, or null if unlimited. */
   concurrencyCap: number | null;
+}
+
+/**
+ * The default budget/concurrency an org gets at creation when nobody has
+ * configured one - #515: null on `organizations.monthly_run_budget_usd` /
+ * `max_concurrent_runs` means unlimited, and a self-created org (open
+ * registration, or an existing user spinning up an additional org via
+ * `POST /api/orgs`) must never start there. Read from `app_config` next to
+ * `quota_defaults` so an operator can change the numbers without a
+ * redeploy; seeded by seed-core.ts alongside `quota_defaults`.
+ */
+export type OrgQuotaDefaults = {
+  monthlyRunBudgetUsd: number;
+  maxConcurrentRuns: number;
+};
+
+const ORG_QUOTA_DEFAULTS_KEY = 'org_quota_defaults';
+
+// Used both as the seed-core.ts value and as the fallback when the
+// app_config row is missing entirely (a fresh install that ran migrations
+// but not seed:core) or holds something malformed. Numbers are deliberately
+// modest: enough for a real evaluation of the product in a month, not
+// enough to run up a meaningful Gateway bill on an account nobody vetted.
+export const ORG_QUOTA_DEFAULTS_FALLBACK: OrgQuotaDefaults = {
+  monthlyRunBudgetUsd: 20,
+  maxConcurrentRuns: 2,
+};
+
+export async function loadOrgQuotaDefaults(db: AnyDb): Promise<OrgQuotaDefaults> {
+  const [row] = await db
+    .select({ value: schema.appConfig.value })
+    .from(schema.appConfig)
+    .where(eq(schema.appConfig.key, ORG_QUOTA_DEFAULTS_KEY))
+    .limit(1);
+  const value = row?.value as Partial<Record<string, unknown>> | undefined;
+  const budget = Number(value?.monthlyRunBudgetUsd);
+  const concurrency = Number(value?.maxConcurrentRuns);
+  return {
+    monthlyRunBudgetUsd:
+      Number.isFinite(budget) && budget > 0
+        ? budget
+        : ORG_QUOTA_DEFAULTS_FALLBACK.monthlyRunBudgetUsd,
+    maxConcurrentRuns:
+      Number.isFinite(concurrency) && concurrency > 0
+        ? Math.floor(concurrency)
+        : ORG_QUOTA_DEFAULTS_FALLBACK.maxConcurrentRuns,
+  };
 }
 
 /** First instant (UTC) of the calendar month containing `now`. */

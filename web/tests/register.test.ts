@@ -4,6 +4,12 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { createInvite, findOrgBySlug, listUserOrganizations } from '@pitchbox/shared/orgs';
 import { saveRegistrationPolicy } from '@pitchbox/shared/registration-policy';
+import {
+  assertOrgConcurrencyAdmitted,
+  getOrgQuotaFields,
+  getOrgQuotaSnapshot,
+  ORG_QUOTA_DEFAULTS_FALLBACK,
+} from '@pitchbox/shared/org-quota';
 import { POST as register } from '../src/routes/api/auth/register/+server.js';
 import { load as inviteLoad } from '../src/routes/invite/[token]/+page.server.js';
 import { type CookieJar, makeCookies, runThroughHandle } from './helpers/handle-harness.js';
@@ -76,6 +82,9 @@ describe('POST /api/auth/register', () => {
       role: 'admin',
       createdByUserId: adminId,
     });
+    const orgCountBefore = (
+      await getDb().select({ id: schema.organizations.id }).from(schema.organizations)
+    ).length;
 
     const jar: CookieJar = { store: new Map() };
     const res = await callRegister(
@@ -100,6 +109,13 @@ describe('POST /api/auth/register', () => {
     expect(orgs).toHaveLength(1);
     expect(orgs[0].slug).toBe('acme');
     expect(orgs[0].role).toBe('admin');
+
+    // #513: an invited registration must get nothing new - joining the
+    // inviting org, never a second organization of its own.
+    const orgCountAfter = (
+      await getDb().select({ id: schema.organizations.id }).from(schema.organizations)
+    ).length;
+    expect(orgCountAfter).toBe(orgCountBefore);
 
     const [invRow] = await getDb()
       .select()
@@ -173,7 +189,7 @@ describe('POST /api/auth/register', () => {
     expect(user).toBeUndefined();
   });
 
-  it('a stranger with no invite registers into their own new organization, not default', async () => {
+  it('a stranger with no invite registers into their own new organization, not default, on the settled default quota', async () => {
     const jar: CookieJar = { store: new Map() };
     const res = await callRegister(
       { username: 'solo-founder', email: 'solo@example.com', password: 'a-very-long-password' },
@@ -189,6 +205,79 @@ describe('POST /api/auth/register', () => {
     expect(orgs).toHaveLength(1);
     expect(orgs[0].slug).not.toBe('default');
     expect(orgs[0].role).toBe('owner');
+
+    // #515: a self-created org starts on the documented default budget and
+    // concurrency cap, never the unbounded `null` a bare column default
+    // would leave it on.
+    const fields = await getOrgQuotaFields(getDb(), orgs[0].id);
+    expect(fields).toEqual(ORG_QUOTA_DEFAULTS_FALLBACK);
+  });
+
+  it("a self-created org's default caps are enforced by the existing concurrency and budget assertions, not a new check", async () => {
+    const jar: CookieJar = { store: new Map() };
+    const res = await callRegister(
+      {
+        username: 'quota-check',
+        email: 'quota-check@example.com',
+        password: 'a-very-long-password',
+      },
+      jar,
+    );
+    expect(res.status).toBe(200);
+
+    const [user] = await getDb()
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.username, 'quota-check'));
+    const orgs = await listUserOrganizations(getDb(), user.id);
+    const orgId = orgs[0].id;
+    const fields = await getOrgQuotaFields(getDb(), orgId);
+    if (!fields || fields.monthlyRunBudgetUsd == null || fields.maxConcurrentRuns == null) {
+      throw new Error('org has no quota fields');
+    }
+
+    const [project] = await getDb()
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.organizationId, orgId));
+
+    // Fill every concurrency slot the default allows, then one more -
+    // assertOrgConcurrencyAdmitted (shared/src/org-quota.ts, the same
+    // function the cloud dispatch path calls) has to refuse it.
+    let extraRunId = 0;
+    for (let i = 0; i < fields.maxConcurrentRuns + 1; i++) {
+      const [run] = await getDb()
+        .insert(schema.runs)
+        .values({
+          kind: 'project_extraction',
+          projectId: project.id,
+          trigger: 'manual',
+          status: 'running',
+        })
+        .returning({ id: schema.runs.id });
+      extraRunId = run.id;
+    }
+    await expect(assertOrgConcurrencyAdmitted(getDb(), orgId, extraRunId)).rejects.toThrow(
+      /concurrency limit/i,
+    );
+
+    // Spend one dollar past the default monthly budget - getOrgQuotaSnapshot
+    // (the same function the cloud dispatch path reads before starting a
+    // run) has to report a negative remaining balance, not the unlimited
+    // `null` a manually-provisioned org's untouched columns would give.
+    await getDb()
+      .insert(schema.runs)
+      .values({
+        kind: 'project_extraction',
+        projectId: project.id,
+        trigger: 'manual',
+        status: 'success',
+        costUsd: String(fields.monthlyRunBudgetUsd + 1),
+        startedAt: new Date(),
+      });
+    const snapshot = await getOrgQuotaSnapshot(getDb(), orgId);
+    expect(snapshot.remainingUsd).not.toBeNull();
+    expect(snapshot.remainingUsd as number).toBeLessThan(0);
   });
 
   it('two strangers whose usernames collide on the derived slug get distinct organizations', async () => {
