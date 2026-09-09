@@ -5,6 +5,9 @@ export default defineConfig({
   vite: { server: { host: '127.0.0.1' } },
   // Served from https://fiorelorenzo.github.io/pitchbox/ - without this prefix
   // the built site requests assets from the apex domain and renders unstyled.
+  // Staying on GitHub Pages rather than moving to a docs.pitchbox.app vhost is a
+  // deliberate decision (D25, docs/design/DECISIONS.md, #429), not an oversight -
+  // this base path already matches where the site is actually served.
   base: '/pitchbox/',
   title: 'Pitchbox',
   description: 'Self-hosted, human-in-the-loop outreach agent for Reddit (and beyond).',
@@ -15,6 +18,8 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/getting-started' },
       { text: 'Concepts', link: '/concepts' },
+      { text: 'Website', link: 'https://pitchbox.app' },
+      { text: 'Open the app', link: 'https://app.pitchbox.app' },
       { text: 'GitHub', link: 'https://github.com/fiorelorenzo/pitchbox' },
     ],
     sidebar: [

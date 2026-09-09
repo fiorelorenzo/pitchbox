@@ -9,6 +9,7 @@
 		Shield,
 		Settings,
 		BookOpen,
+		Globe,
 		Bell,
 		History,
 		BarChart3,
@@ -27,6 +28,10 @@
 	// VitePress dev server runs on :5181 with base /pitchbox/. In production
 	// the published Pages site is the source of truth.
 	const DOCS_URL = dev ? 'http://localhost:5181/pitchbox/' : 'https://fiorelorenzo.github.io/pitchbox/';
+
+	// The marketing site (#429): the app moved off the apex to app.pitchbox.app
+	// (#422/#424), so nothing here pointed back at it until now.
+	const WEBSITE_URL = 'https://pitchbox.app';
 
 	type NavItem = {
 		href: string;
@@ -197,8 +202,17 @@
 		{/each}
 	</nav>
 
-	<!-- Bottom section: docs + auth + system status -->
+	<!-- Bottom section: website + docs + auth + system status -->
 	<div class="flex flex-col gap-1 border-t border-border mt-4 pt-4">
+		<a
+			href={WEBSITE_URL}
+			target="_blank"
+			rel="noopener"
+			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+		>
+			<Globe class="size-4 shrink-0" />
+			Website
+		</a>
 		<a
 			href={DOCS_URL}
 			target="_blank"
