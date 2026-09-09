@@ -3,6 +3,11 @@ import { sql } from 'drizzle-orm';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { createSession } from '@pitchbox/shared/auth';
+import {
+  getOrgQuotaFields,
+  ORG_QUOTA_DEFAULTS_FALLBACK,
+  SELF_REGISTRATION_QUOTA_DEFAULTS_FALLBACK,
+} from '@pitchbox/shared/org-quota';
 import { POST } from '../src/routes/api/orgs/+server.js';
 
 async function reset() {
@@ -44,6 +49,22 @@ describe('POST /api/orgs', () => {
       .from(schema.organizations)
       .where(sql`slug = 'cr-new'`);
     expect(stored.activeOrganizationId).toBe(org.id);
+  });
+
+  it('gets the invited/existing-user quota defaults, never the lower self-registration ones (#540) - even though this caller may themselves have self-registered', async () => {
+    const u = await seedUser('cr-quota');
+    const res = await POST(
+      event(u.sessionId, u.userId, { slug: 'cr-quota-org', name: 'Quota Co' }),
+    );
+    expect(res.status).toBe(201);
+    const db = getDb();
+    const [org] = await db
+      .select()
+      .from(schema.organizations)
+      .where(sql`slug = 'cr-quota-org'`);
+    const fields = await getOrgQuotaFields(db, org.id);
+    expect(fields).toEqual(ORG_QUOTA_DEFAULTS_FALLBACK);
+    expect(fields).not.toEqual(SELF_REGISTRATION_QUOTA_DEFAULTS_FALLBACK);
   });
 
   it('rejects a duplicate slug', async () => {

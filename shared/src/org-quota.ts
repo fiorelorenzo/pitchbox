@@ -75,6 +75,69 @@ export async function loadOrgQuotaDefaults(db: AnyDb): Promise<OrgQuotaDefaults>
   };
 }
 
+/**
+ * The budget/concurrency a *self-registered* org gets at creation - #540.
+ * Deliberately a separate `app_config` key from `org_quota_defaults` above
+ * rather than a smaller value in the same key: raising what an invited or
+ * paying tenant gets (`org_quota_defaults`) must never also raise what a
+ * stranger who typed an email into `/register` gets, and a single shared
+ * key can't express two different numbers for two different trust levels.
+ * Read by `createOrganization`'s no-invite branch only (shared/src/orgs.ts)
+ * - an existing, already-authenticated user creating an additional org via
+ * `POST /api/orgs` still gets `org_quota_defaults`, since that caller
+ * already has an account on this instance, invited or not.
+ */
+export type SelfRegistrationQuotaDefaults = {
+  monthlyRunBudgetUsd: number;
+  maxConcurrentRuns: number;
+};
+
+const SELF_REGISTRATION_QUOTA_DEFAULTS_KEY = 'self_registration_quota_defaults';
+
+// Seeded by seed-core.ts alongside ORG_QUOTA_DEFAULTS_FALLBACK, and the
+// fallback when the app_config row is missing or malformed. Single-digit
+// USD on purpose (#540): a stranger who just registered has had zero
+// human review, unlike an invited or manually-provisioned org.
+export const SELF_REGISTRATION_QUOTA_DEFAULTS_FALLBACK: SelfRegistrationQuotaDefaults = {
+  monthlyRunBudgetUsd: 5,
+  maxConcurrentRuns: 1,
+};
+
+export async function loadSelfRegistrationQuotaDefaults(
+  db: AnyDb,
+): Promise<SelfRegistrationQuotaDefaults> {
+  const [row] = await db
+    .select({ value: schema.appConfig.value })
+    .from(schema.appConfig)
+    .where(eq(schema.appConfig.key, SELF_REGISTRATION_QUOTA_DEFAULTS_KEY))
+    .limit(1);
+  const value = row?.value as Partial<Record<string, unknown>> | undefined;
+  const budget = Number(value?.monthlyRunBudgetUsd);
+  const concurrency = Number(value?.maxConcurrentRuns);
+  return {
+    monthlyRunBudgetUsd:
+      Number.isFinite(budget) && budget > 0
+        ? budget
+        : SELF_REGISTRATION_QUOTA_DEFAULTS_FALLBACK.monthlyRunBudgetUsd,
+    maxConcurrentRuns:
+      Number.isFinite(concurrency) && concurrency > 0
+        ? Math.floor(concurrency)
+        : SELF_REGISTRATION_QUOTA_DEFAULTS_FALLBACK.maxConcurrentRuns,
+  };
+}
+
+/** Persists the self-registration defaults (instance admin area, #540). */
+export async function saveSelfRegistrationQuotaDefaults(
+  db: Db,
+  defaults: SelfRegistrationQuotaDefaults,
+): Promise<SelfRegistrationQuotaDefaults> {
+  await db
+    .insert(schema.appConfig)
+    .values({ key: SELF_REGISTRATION_QUOTA_DEFAULTS_KEY, value: defaults })
+    .onConflictDoUpdate({ target: schema.appConfig.key, set: { value: defaults } });
+  return defaults;
+}
+
 /** First instant (UTC) of the calendar month containing `now`. */
 export function startOfMonthUtc(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
@@ -315,4 +378,100 @@ export async function assertOrgConcurrencyAdmitted(
         `operator raises the limit in Settings.`,
     );
   });
+}
+
+/**
+ * The instance-wide monthly Gateway ceiling - #540. Opening registration
+ * (#423) turns a per-org cap into an unbounded instance-wide one: a hundred
+ * self-registered orgs each safely under their own budget still sums to a
+ * real bill nobody capped. `null` means unlimited, the same convention as
+ * `organizations.monthlyRunBudgetUsd` - an operator who genuinely wants no
+ * instance-wide ceiling (a single-tenant self-host, say) can still choose
+ * that explicitly, but a missing/unset app_config row falls back to a real
+ * number rather than to unlimited, so the ceiling protects a fresh install
+ * before anyone has visited the instance admin area to configure one.
+ */
+export type InstanceQuotaCeiling = {
+  monthlyBudgetUsd: number | null;
+};
+
+const INSTANCE_QUOTA_CEILING_KEY = 'instance_quota_ceiling';
+
+// Seeded by seed-core.ts alongside the other quota defaults, and the
+// fallback when the app_config row is missing or holds something
+// malformed. Sized so a hundred self-registered orgs at their own
+// SELF_REGISTRATION_QUOTA_DEFAULTS_FALLBACK budget ($5 each) still sit
+// under it - the ceiling is a backstop for every org's own budget being
+// raised or exceeded together, not a number tuned to never bite.
+export const INSTANCE_QUOTA_CEILING_FALLBACK: InstanceQuotaCeiling = {
+  monthlyBudgetUsd: 500,
+};
+
+export async function loadInstanceQuotaCeiling(db: AnyDb): Promise<InstanceQuotaCeiling> {
+  const [row] = await db
+    .select({ value: schema.appConfig.value })
+    .from(schema.appConfig)
+    .where(eq(schema.appConfig.key, INSTANCE_QUOTA_CEILING_KEY))
+    .limit(1);
+  if (!row) return { ...INSTANCE_QUOTA_CEILING_FALLBACK };
+  const raw = (row.value as { monthlyBudgetUsd?: unknown } | undefined)?.monthlyBudgetUsd;
+  if (raw === null) return { monthlyBudgetUsd: null }; // explicit unlimited.
+  const n = Number(raw);
+  return {
+    monthlyBudgetUsd:
+      Number.isFinite(n) && n >= 0 ? n : INSTANCE_QUOTA_CEILING_FALLBACK.monthlyBudgetUsd,
+  };
+}
+
+/** Persists the instance-wide ceiling (instance admin area, #540). */
+export async function saveInstanceQuotaCeiling(
+  db: Db,
+  ceiling: InstanceQuotaCeiling,
+): Promise<InstanceQuotaCeiling> {
+  const value = { monthlyBudgetUsd: ceiling.monthlyBudgetUsd };
+  await db
+    .insert(schema.appConfig)
+    .values({ key: INSTANCE_QUOTA_CEILING_KEY, value })
+    .onConflictDoUpdate({ target: schema.appConfig.key, set: { value } });
+  return ceiling;
+}
+
+/**
+ * Sum of every organization's month-to-date Gateway spend - the
+ * instance-wide total #540 checks the ceiling against. Calls
+ * `getOrgMonthToDateCostUsd` once per organization and adds the results,
+ * rather than re-deriving its own SUM query, so this total always agrees
+ * with the per-org figure the dashboard and org-quota settings show, and so
+ * whatever a sibling change teaches `getOrgMonthToDateCostUsd` about what
+ * counts as spend (#522: the in-page assistant's own Gateway calls, which
+ * carry no `runs` row today) is picked up here automatically, with no
+ * second place to update.
+ */
+export async function getInstanceMonthToDateCostUsd(
+  db: Db,
+  now: Date = new Date(),
+): Promise<number> {
+  const orgs = await db.select({ id: schema.organizations.id }).from(schema.organizations);
+  if (orgs.length === 0) return 0;
+  const totals = await Promise.all(orgs.map((o) => getOrgMonthToDateCostUsd(db, o.id, now)));
+  return totals.reduce((sum, t) => sum + t, 0);
+}
+
+/**
+ * Instance-wide quota snapshot: remaining monthly USD Gateway budget across
+ * every organization (null = unlimited, `instance_quota_ceiling` explicitly
+ * set to null). A `remainingUsd` of 0 or negative means the instance is
+ * over its ceiling - checked in `web/src/lib/server/runner.ts` next to the
+ * per-org check, with its own refusal reason (`instance_quota_exhausted`,
+ * shared/src/runlog/classify-failure.ts) so an operator reading a failed
+ * run can tell "this tenant is out of budget" from "the instance is".
+ */
+export async function getInstanceQuotaSnapshot(
+  db: Db,
+  now: Date = new Date(),
+): Promise<{ remainingUsd: number | null }> {
+  const ceiling = await loadInstanceQuotaCeiling(db);
+  if (ceiling.monthlyBudgetUsd == null) return { remainingUsd: null };
+  const spentUsd = await getInstanceMonthToDateCostUsd(db, now);
+  return { remainingUsd: ceiling.monthlyBudgetUsd - spentUsd };
 }

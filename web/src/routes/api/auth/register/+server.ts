@@ -181,14 +181,17 @@ export async function POST(event: RequestEvent) {
         // organization, never `default` (the single-tenant self-host
         // fallback stays untouched either way), through the same
         // createOrganization primitive an already-logged-in user's `POST
-        // /api/orgs` uses - including its default run quota (#515), since
-        // this account is exactly the "nobody has configured anything for
-        // this org yet" case that default exists for.
+        // /api/orgs` uses. `quotaSource: 'self_registration'` (#540) is the
+        // one thing that differs: this account has had zero human review,
+        // so it starts on the lower self-registration default rather than
+        // the shared org_quota_defaults an invited or manually-provisioned
+        // org gets.
         const slug = await uniqueOrgSlugFromUsername(tx, parsed.data.username);
         await createOrganization(tx, {
           slug,
           name: defaultOrgName(parsed.data.username),
           ownerUserId: id,
+          quotaSource: 'self_registration',
         });
       }
       return id;

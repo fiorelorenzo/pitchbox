@@ -12,6 +12,7 @@ export type RunFailureReason =
   | 'runner_missing'
   | 'auth_expired'
   | 'quota_exhausted'
+  | 'instance_quota_exhausted'
   | 'concurrency_exhausted'
   | 'playbook_error'
   | 'playbook_incomplete'
@@ -28,6 +29,7 @@ export const RUN_FAILURE_REASONS: readonly RunFailureReason[] = [
   'runner_missing',
   'auth_expired',
   'quota_exhausted',
+  'instance_quota_exhausted',
   'concurrency_exhausted',
   'playbook_error',
   'playbook_incomplete',
@@ -78,6 +80,16 @@ const QUOTA_PATTERNS = [
   'rate limit', // distinct from runlog "rate-limit" kind: this catches text mentions
   'rate-limit',
 ];
+
+// #540: the instance-wide monthly Gateway ceiling (checked in
+// web/src/lib/server/runner.ts next to the per-org budget above,
+// shared/src/org-quota.ts's getInstanceQuotaSnapshot) is a different
+// failure from an org's own budget - "this tenant is out of budget" is on
+// the operator's tenant, "the instance is out of budget" is on the
+// operator running the deployment. Its refusal text deliberately says
+// "instance-wide" rather than "quota", so it needs its own pattern and its
+// own reason rather than folding into `quota_exhausted`.
+const INSTANCE_QUOTA_PATTERNS = ['instance-wide'];
 
 // #485: the org's concurrency cap (organizations.max_concurrent_runs) is a
 // different failure than the budget above - "you already have N runs going"
@@ -146,6 +158,7 @@ export function classifyFailure(events: ParsedEvent[], exitCode: number | null):
   if (STEP_LIMIT_PATTERNS.some((p) => haystack.includes(p))) return 'step_limit_reached';
   if (SDK_TIMEOUT_PATTERNS.some((p) => haystack.includes(p))) return 'agent_timeout';
   if (AUTH_PATTERNS.some((p) => haystack.includes(p))) return 'auth_expired';
+  if (INSTANCE_QUOTA_PATTERNS.some((p) => haystack.includes(p))) return 'instance_quota_exhausted';
   if (QUOTA_PATTERNS.some((p) => haystack.includes(p))) return 'quota_exhausted';
   if (CONCURRENCY_PATTERNS.some((p) => haystack.includes(p))) return 'concurrency_exhausted';
   if (NETWORK_PATTERNS.some((p) => haystack.includes(p))) return 'network';

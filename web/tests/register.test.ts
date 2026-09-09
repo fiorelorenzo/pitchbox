@@ -9,6 +9,7 @@ import {
   getOrgQuotaFields,
   getOrgQuotaSnapshot,
   ORG_QUOTA_DEFAULTS_FALLBACK,
+  SELF_REGISTRATION_QUOTA_DEFAULTS_FALLBACK,
 } from '@pitchbox/shared/org-quota';
 import { POST as register } from '../src/routes/api/auth/register/+server.js';
 import { load as inviteLoad } from '../src/routes/invite/[token]/+page.server.js';
@@ -189,7 +190,7 @@ describe('POST /api/auth/register', () => {
     expect(user).toBeUndefined();
   });
 
-  it('a stranger with no invite registers into their own new organization, not default, on the settled default quota', async () => {
+  it('a stranger with no invite registers into their own new organization, not default, on the lower self-registration default quota (#540) - distinct from org_quota_defaults', async () => {
     const jar: CookieJar = { store: new Map() };
     const res = await callRegister(
       { username: 'solo-founder', email: 'solo@example.com', password: 'a-very-long-password' },
@@ -206,11 +207,14 @@ describe('POST /api/auth/register', () => {
     expect(orgs[0].slug).not.toBe('default');
     expect(orgs[0].role).toBe('owner');
 
-    // #515: a self-created org starts on the documented default budget and
-    // concurrency cap, never the unbounded `null` a bare column default
-    // would leave it on.
+    // #540: a self-registered stranger's org starts on the lower
+    // self-registration default, never the shared org_quota_defaults an
+    // invited or manually-provisioned org gets (#515 introduced that
+    // shared default; #540 split it in two) - and never the unbounded
+    // `null` a bare column default would leave it on.
     const fields = await getOrgQuotaFields(getDb(), orgs[0].id);
-    expect(fields).toEqual(ORG_QUOTA_DEFAULTS_FALLBACK);
+    expect(fields).toEqual(SELF_REGISTRATION_QUOTA_DEFAULTS_FALLBACK);
+    expect(fields).not.toEqual(ORG_QUOTA_DEFAULTS_FALLBACK);
   });
 
   it("a self-created org's default caps are enforced by the existing concurrency and budget assertions, not a new check", async () => {
