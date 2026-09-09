@@ -59,6 +59,11 @@ function makeEvent(body: unknown, jar: CookieJar, ip = '10.1.0.1'): RequestEvent
   });
   return {
     request,
+    // #514: the register route now builds the verification link from
+    // `event.url.origin`, same convention as /api/auth/password/forgot -
+    // this hand-rolled event needs a `url` for that, same as it already
+    // needs `request`/`cookies`/`getClientAddress`.
+    url: new URL(request.url),
     cookies: makeCookies(jar),
     getClientAddress: () => ip,
   } as unknown as RequestEvent;

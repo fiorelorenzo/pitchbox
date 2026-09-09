@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import { runDraftRegeneration } from '../../../../../lib/server/runner.js';
 import { getDb } from '../../../../../lib/server/db.js';
-import { requireOrgId } from '$lib/server/auth.js';
+import { requireOrgId, requireVerifiedEmail } from '$lib/server/auth.js';
 import { draftBelongsToOrg } from '@pitchbox/shared/orgs';
 
 type Body = { hint?: unknown };
@@ -17,6 +17,7 @@ export async function POST(event: RequestEvent) {
 
   const orgId = await requireOrgId(event);
   if (!(await draftBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+  await requireVerifiedEmail(event);
 
   const payload = (await request.json().catch(() => ({}))) as Body;
   const hint =

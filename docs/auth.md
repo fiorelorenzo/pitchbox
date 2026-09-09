@@ -102,6 +102,52 @@ Two ways to end up with a new password, plus the CLI escape hatch below.
 Neither covers an account with no email on file - see "Account recovery from
 the shell" below.
 
+## Email verification
+
+`users.email_verified_at` (#514) is null until the address is proven. A
+registration mints a single-use, hashed-at-rest token
+(`email_verification_tokens`, `createEmailVerificationToken`/
+`consumeEmailVerificationToken` in `shared/src/auth.ts`, 48-hour TTL - hours
+rather than the password-reset flow's 20 minutes, since people read mail
+late) and mails a `/verify/<token>` link through the same transport
+convention as password reset. Exactly one mail per registration, except one
+case: an account created from an invite whose invite carried this exact
+(normalized) address is born verified - the inviter already vouched for it -
+and gets no mail at all. Changing the address on an existing account is not
+implemented yet; when it lands, it must clear `email_verified_at` and
+re-enter this flow rather than trust the new value untouched.
+
+**Decision (recorded on #514): an unverified account can sign in and look
+around, but cannot start a run.** A run spends real money through the AI
+Gateway, and is the one action worth protecting from a throwaway signup -
+everything else (browsing, settings, reading data) stays open. This is
+enforced server-side, not by hiding a button: `requireVerifiedEmail`
+(`web/src/lib/server/auth.ts`) throws `403 { "message": "email_unverified"
+}` and is called at the top of every route that dispatches a run - `POST
+/api/run`, `POST /api/campaigns` (which dispatches a skill-generation run on
+creation), `POST /api/campaigns/[id]/skill-runs`, `POST
+/api/projects/[id]/runs`, `POST /api/drafts/[id]/regenerate`, and `POST
+/api/drafts/[id]/reply-draft/retry` - before any of them touch
+`web/src/lib/server/runner.ts`. It is a no-op when there is no signed-in
+caller (auth off, or the daemon's internal-token dispatch to `POST
+/api/run`, which carries no session), same convention as `requireRole`. An
+account with no email on file (a pre-#507 bootstrap/`seed:owner`/CLI
+account, which can never clear this column) counts as verified - blocking it
+would be a permanent lockout with no way out, not a spend protection.
+
+`POST /api/auth/verify/confirm` redeems the token (rate-limited by IP,
+unknown/used/expired all answer `400 { "error": "invalid_or_expired_token"
+}` identically) and is exempt from session resolution like `/reset/<token>`,
+since the link may be opened with no session at all. `POST
+/api/auth/verify/resend` is session-gated (self-service, like `POST
+/api/auth/password`) and rate-limited by IP and by the account's own address
+through the same `auth_failures` bucket and `loadAuthPolicy` register and
+login use; a caller who is already verified gets `{ "ok": true,
+"alreadyVerified": true }` without touching the rate limit. `/settings/password`
+shows the account's address, a Verified/Unverified badge, and the resend
+button when unverified - the same per-account, signed-in-only surface the
+self-service password change already uses.
+
 ## Sessions
 
 `createSession()` mints a 32-byte hex token, stores it in the `sessions` table with a 30-day expiry, and sets it as an httpOnly cookie. `loadSession()` joins `sessions × users` and only returns non-expired rows. Logging out deletes the row and clears the cookie.

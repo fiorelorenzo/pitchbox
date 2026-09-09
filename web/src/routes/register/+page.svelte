@@ -61,6 +61,12 @@
 				toast.error(message);
 				return;
 			}
+			const okBody = (await res.json().catch(() => ({}))) as { emailVerified?: boolean };
+			if (!okBody.emailVerified) {
+				toast.success('Account created', {
+					description: 'Check your email to verify your address before you can start a run.',
+				});
+			}
 			await goto(data.next ?? '/', { invalidateAll: true });
 		} finally {
 			busy = false;

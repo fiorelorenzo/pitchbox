@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { runProjectExtraction } from '$lib/server/runner.js';
-import { requireOrgId } from '$lib/server/auth.js';
+import { requireOrgId, requireVerifiedEmail } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 import { assertSafeGitCloneUrl } from '@pitchbox/shared/project-extraction';
 
@@ -26,6 +26,7 @@ export async function POST(event: RequestEvent) {
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
   const orgId = await requireOrgId(event);
   if (!(await projectBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+  await requireVerifiedEmail(event);
   const raw = await request.json().catch(() => null);
   const parsed = PostBody.safeParse(raw);
   if (!parsed.success) {

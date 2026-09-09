@@ -5,6 +5,7 @@ import type { PgDatabase } from 'drizzle-orm/pg-core';
 import {
   appConfig,
   authFailures,
+  emailVerificationTokens,
   passwordResetTokens,
   sessions,
   users,
@@ -229,12 +230,27 @@ export function normalizeEmail(email: string | null | undefined): string | null 
  */
 export async function createUserRecord(
   db: Db,
-  args: { username: string; password: string; email?: string | null },
+  args: {
+    username: string;
+    password: string;
+    email?: string | null;
+    // Set only by POST /api/auth/register when an invite carried this exact
+    // address (#514) - the inviter already vouched for it, so the account is
+    // born verified rather than going through the mail round trip. Every
+    // other caller (createUser's first-login/seed:owner bootstrap, a
+    // token-only registration) leaves this null.
+    emailVerifiedAt?: Date | null;
+  },
 ): Promise<number> {
   const passwordHash = await hashPassword(args.password);
   const [row] = await db
     .insert(users)
-    .values({ username: args.username, passwordHash, email: normalizeEmail(args.email) })
+    .values({
+      username: args.username,
+      passwordHash,
+      email: normalizeEmail(args.email),
+      emailVerifiedAt: args.emailVerifiedAt ?? null,
+    })
     .returning();
   return row.id;
 }
@@ -413,4 +429,81 @@ export async function consumePasswordResetToken(db: Db, token: string): Promise<
     )
     .returning({ userId: passwordResetTokens.userId });
   return row?.userId ?? null;
+}
+
+// 48 hours, not the 20-minute window RESET_TOKEN_TTL_MS uses above: #514
+// asks for the TTL "measured in hours rather than minutes since people read
+// mail late" - a stale reset link is a bigger risk to leave lying around
+// (it changes a password) than a stale verification link is (it only
+// proves a mailbox, and the account already works for everything but
+// starting a run in the meantime).
+const EMAIL_VERIFICATION_TOKEN_TTL_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * Mints a single-use, time-limited email verification token for `userId`
+ * and stores only its hash (`email_verification_tokens.token_hash`) -
+ * exactly `createPasswordResetToken`'s shape above, reused rather than
+ * reinvented since both are "prove control of this mailbox" tokens. The raw
+ * token is returned once here and is not recoverable from the row
+ * afterward.
+ */
+export async function createEmailVerificationToken(
+  db: Db,
+  userId: number,
+): Promise<{ token: string; expiresAt: Date }> {
+  const token = randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + EMAIL_VERIFICATION_TOKEN_TTL_MS);
+  await db.insert(emailVerificationTokens).values({
+    userId,
+    tokenHash: createHash('sha256').update(token).digest('hex'),
+    expiresAt,
+  });
+  return { token, expiresAt };
+}
+
+/**
+ * Atomically redeems a verification token: a single UPDATE that only
+ * matches a row still unused and unexpired, in the same statement that
+ * marks it used - same compare-and-set shape as
+ * `consumePasswordResetToken`. Returns the owning user id, or null for an
+ * unknown, already-used, or expired token; the caller answers all three
+ * identically, same reasoning as the reset flow.
+ */
+export async function consumeEmailVerificationToken(db: Db, token: string): Promise<number | null> {
+  const [row] = await db
+    .update(emailVerificationTokens)
+    .set({ usedAt: new Date() })
+    .where(
+      and(
+        eq(emailVerificationTokens.tokenHash, createHash('sha256').update(token).digest('hex')),
+        isNull(emailVerificationTokens.usedAt),
+        gt(emailVerificationTokens.expiresAt, new Date()),
+      ),
+    )
+    .returning({ userId: emailVerificationTokens.userId });
+  return row?.userId ?? null;
+}
+
+/** Marks `userId`'s address verified. The one write site for `users.email_verified_at`. */
+export async function markEmailVerified(db: Db, userId: number): Promise<void> {
+  await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, userId));
+}
+
+/**
+ * Whether `userId` may do whatever `requireVerifiedEmail`
+ * (web/src/lib/server/auth.ts) gates - today, starting a run (#514). An
+ * account with no email on file predates the #507 requirement (first-login
+ * bootstrap, `seed:owner`, the CLI) and can never clear this column, so it
+ * is treated as verified rather than permanently locked out; only an
+ * account that has an address is held to actually proving it.
+ */
+export async function isEmailVerified(db: Db, userId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ email: users.email, emailVerifiedAt: users.emailVerifiedAt })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!row) return false;
+  if (!row.email) return true;
+  return row.emailVerifiedAt != null;
 }
