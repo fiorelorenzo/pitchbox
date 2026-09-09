@@ -114,6 +114,15 @@ export default defineConfig({
       DATABASE_URL: testDatabaseUrl(),
       PITCHBOX_TEST_MODE: '1',
       AI_GATEWAY_API_KEY: '',
+      // Same reasoning as AI_GATEWAY_API_KEY above, for #508's mail
+      // transport: a real RESEND_API_KEY/SMTP_* sitting in a developer's
+      // .env must not let a test that calls loadMailEnv()/createMailTransport()
+      // with the default process.env construct a real transport and attempt
+      // a live send. Tests exercising the real transports pass their own
+      // fake env object explicitly instead of relying on process.env.
+      MAIL_PROVIDER: '',
+      RESEND_API_KEY: '',
+      SMTP_HOST: '',
     },
   },
 });
