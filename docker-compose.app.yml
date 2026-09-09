@@ -38,6 +38,23 @@ services:
       PITCHBOX_EDITION: cloud
       # The SDK runner's only remote - reaches every model through the AI Gateway.
       AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?set AI_GATEWAY_API_KEY in .env}
+      # Outbound mail (#508, #514): a deployment secret read from the
+      # environment like AI_GATEWAY_API_KEY above, never from app_config
+      # (shared/src/mail/env.ts explains why). Unset means the null
+      # transport, which logs and drops - the right default for a
+      # self-host with nothing configured, and the reason these have to be
+      # listed here explicitly: this compose file enumerates the
+      # environment rather than passing the whole .env through, so a value
+      # that is only in .env never reaches the process. That is exactly
+      # how a configured Resend key sat in prod's .env doing nothing.
+      MAIL_PROVIDER: ${MAIL_PROVIDER:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
     depends_on:
       postgres:
         condition: service_healthy
