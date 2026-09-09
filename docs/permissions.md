@@ -191,7 +191,12 @@ switch - org-scoped, so it throws `requireRole(event, 'admin')` like
 Retention/Security rather than narrowing like Quota below); the 2026-09-07
 companion decisions added a ninth, `settings/companion` (the operator's
 persona, voice samples and GitHub sources that feed the assistant's prompt -
-same org-scoped `requireRole(event, 'admin')` gate). `/settings`
+same org-scoped `requireRole(event, 'admin')` gate). #506 added a tenth,
+`settings/password` (self-service password change for the signed-in caller -
+gated on `locals.user` existing at all rather than an org role, since a
+password change needs nothing beyond being the account holder; 404s when
+auth is off, since there's no login concept and nothing to change a
+password for). `/settings`
 itself now just redirects (307) to `/settings/status`. The four routes that
 used to be General's tabs each gate their own data set in their own loader,
 the same per-data-set split #237 landed on the old combined page: `status`
@@ -210,8 +215,10 @@ status); only revoking a device (DELETE) and minting a pairing code (POST
 auth is off (no org context to show), and hides the `retention`/`security`/
 `linkedin-assist`/`companion` links from a non-admin since those routes'
 loaders call `requireRole(event, 'admin')` and would 403; `status`/`runners`/
-`extension`/`quota` are always shown because none of their loaders throw,
-they only narrow the payload.
+`extension`/`quota`/`password` are always shown to a signed-in caller because
+none of their loaders throw a role error (`password` still 404s with no
+`locals.user`, i.e. auth off); they only narrow the payload or, for
+`password`, gate on being signed in at all.
 
 **Exempt** (no org role): `auth/*`, `extension/*` (token-auth companion),
 `orgs` POST + `orgs/switch` POST (self-service), `orgs/[slug]/invites/[token]/accept`
