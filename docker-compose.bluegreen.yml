@@ -59,6 +59,14 @@ x-web-common: &web-common
     GITHUB_APP_ID: ${GITHUB_APP_ID:-}
     GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
     GITHUB_APP_PRIVATE_KEY_B64: ${GITHUB_APP_PRIVATE_KEY_B64:-}
+    # Hosted billing (#549, #551), in this overlay for the same reason: this
+    # anchor replaces the base service's whole environment, so the four
+    # variables added to docker-compose.app.yml would reach nothing that
+    # production actually runs.
+    PITCHBOX_BILLING: ${PITCHBOX_BILLING:-}
+    STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+    STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+    STRIPE_PORTAL_CONFIGURATION: ${STRIPE_PORTAL_CONFIGURATION:-}
   healthcheck:
     test:
       [
