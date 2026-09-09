@@ -40,6 +40,7 @@
     "./assist/budget": "./src/assist/budget.ts",
     "./assist/voice-defaults": "./src/assist/voice-defaults.ts",
     "./assist/example-selection": "./src/assist/example-selection.ts",
+    "./assist/loop": "./src/assist/loop.ts",
     "./operator-profile": "./src/operator-profile.ts",
     "./operator-voice-profile": "./src/operator-voice-profile.ts",
     "./github-sources": "./src/github-sources.ts",

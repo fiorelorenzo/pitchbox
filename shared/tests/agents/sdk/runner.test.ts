@@ -501,4 +501,155 @@ describe('SdkRunner', () => {
     const resultEvent = events.find((e) => e.kind === 'result');
     expect(resultEvent?.payload).toMatchObject({ type: 'result', success: true });
   });
+
+  it('attaches a directly-given tool set instead of the campaign MCP tool set when opts.tools is set', async () => {
+    const createToolSetSpy = vi.fn(fakeToolSet().fn);
+    let receivedTools: unknown;
+    const runner = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGateway(),
+      createToolSetFn: createToolSetSpy,
+      streamTextFn: vi.fn((opts: { tools?: unknown; abortSignal?: AbortSignal }) => {
+        receivedTools = opts.tools;
+        return {
+          fullStream: gen({
+            type: 'finish',
+            finishReason: 'stop',
+            totalUsage: { inputTokens: 1, outputTokens: 1 },
+          }),
+        };
+      }) as unknown as typeof streamText,
+    });
+    const directTools = { read_thread: {} };
+    const handle = runner.run({ ...baseOpts(), prompt: 'hi', tools: directTools });
+    await handle.result;
+    // The campaign MCP tool set is never created - a direct tool set wins
+    // entirely, it does not merge with it.
+    expect(createToolSetSpy).not.toHaveBeenCalled();
+    expect(receivedTools).toBe(directTools);
+  });
+
+  it('passes no prepareStep to streamText when no toolLoopBudget is given, leaving campaign runs untouched', async () => {
+    let capturedPrepareStep: unknown;
+    const { fn: createToolSetFn } = fakeToolSet();
+    const runner = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGateway(),
+      createToolSetFn,
+      streamTextFn: vi.fn((opts: { prepareStep?: unknown }) => {
+        capturedPrepareStep = opts.prepareStep;
+        return {
+          fullStream: gen({ type: 'finish', finishReason: 'stop', totalUsage: {} }),
+        };
+      }) as unknown as typeof streamText,
+    });
+    const handle = runner.run({ ...baseOpts(), prompt: 'hi', attachMcp: false });
+    await handle.result;
+    expect(capturedPrepareStep).toBeUndefined();
+  });
+
+  it('builds a prepareStep that forces toolChoice:none with a nudge once the step budget is hit', async () => {
+    // Exercising the raw PrepareStepFunction the runner hands to streamText, not typed here.
+    let capturedPrepareStep: any;
+    const runner = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGateway(),
+      streamTextFn: vi.fn((opts: { prepareStep?: unknown }) => {
+        capturedPrepareStep = opts.prepareStep;
+        return { fullStream: gen({ type: 'finish', finishReason: 'stop', totalUsage: {} }) };
+      }) as unknown as typeof streamText,
+    });
+    const handle = runner.run({
+      ...baseOpts(),
+      prompt: 'hi',
+      tools: {},
+      toolLoopBudget: { maxSteps: 3, softBudgetMs: 1_000_000, tokenBudget: 1_000_000 },
+    });
+    await handle.result;
+    // Steps 0 and 1 (of a 3-step budget, zero-based) are still free to call tools.
+    expect(
+      await capturedPrepareStep({ stepNumber: 0, steps: [], instructions: undefined }),
+    ).toBeUndefined();
+    expect(
+      await capturedPrepareStep({
+        stepNumber: 1,
+        steps: [{ usage: { inputTokens: 10 } }],
+        instructions: undefined,
+      }),
+    ).toBeUndefined();
+    // Step 2 is the budget's last step (maxSteps - 1): forced text-only, with a
+    // nudge explaining why, appended to whatever instructions already existed.
+    const forced = await capturedPrepareStep({
+      stepNumber: 2,
+      steps: [{ usage: { inputTokens: 10 } }, { usage: { inputTokens: 10 } }],
+      instructions: 'be concise',
+    });
+    expect(forced.toolChoice).toBe('none');
+    expect(forced.instructions).toContain('be concise');
+    expect(forced.instructions).toMatch(/budget/i);
+  });
+
+  it('forces toolChoice:none once the soft wall-clock budget elapses, independent of step count', async () => {
+    vi.useFakeTimers();
+    let capturedPrepareStep: any;
+    const runner = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGateway(),
+      streamTextFn: vi.fn((opts: { prepareStep?: unknown }) => {
+        capturedPrepareStep = opts.prepareStep;
+        return { fullStream: gen({ type: 'finish', finishReason: 'stop', totalUsage: {} }) };
+      }) as unknown as typeof streamText,
+    });
+    const handle = runner.run({
+      ...baseOpts(),
+      prompt: 'hi',
+      tools: {},
+      toolLoopBudget: { maxSteps: 10, softBudgetMs: 5_000, tokenBudget: 1_000_000 },
+    });
+    await handle.result;
+    // Well under the wall-clock budget: still free to call tools.
+    expect(
+      await capturedPrepareStep({ stepNumber: 0, steps: [], instructions: undefined }),
+    ).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(5_001);
+    const forced = await capturedPrepareStep({ stepNumber: 1, steps: [], instructions: undefined });
+    expect(forced.toolChoice).toBe('none');
+  });
+
+  it('forces toolChoice:none once accumulated input tokens cross the token budget', async () => {
+    let capturedPrepareStep: any;
+    const runner = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGateway(),
+      streamTextFn: vi.fn((opts: { prepareStep?: unknown }) => {
+        capturedPrepareStep = opts.prepareStep;
+        return { fullStream: gen({ type: 'finish', finishReason: 'stop', totalUsage: {} }) };
+      }) as unknown as typeof streamText,
+    });
+    const handle = runner.run({
+      ...baseOpts(),
+      prompt: 'hi',
+      tools: {},
+      toolLoopBudget: { maxSteps: 10, softBudgetMs: 1_000_000, tokenBudget: 60_000 },
+    });
+    await handle.result;
+    expect(
+      await capturedPrepareStep({
+        stepNumber: 1,
+        steps: [{ usage: { inputTokens: 30_000 } }],
+        instructions: undefined,
+      }),
+    ).toBeUndefined();
+    const forced = await capturedPrepareStep({
+      stepNumber: 2,
+      steps: [{ usage: { inputTokens: 30_000 } }, { usage: { inputTokens: 30_001 } }],
+      instructions: undefined,
+    });
+    expect(forced.toolChoice).toBe('none');
+  });
 });

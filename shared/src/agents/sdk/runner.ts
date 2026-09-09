@@ -239,10 +239,7 @@ export class SdkRunner implements AgentRunner {
       const prepareStep: PrepareStepFunction<ToolSet> | undefined = loopBudget
         ? ({ stepNumber, steps, instructions }) => {
             const elapsedMs = Date.now() - loopStartedAt;
-            const tokensSoFar = steps.reduce(
-              (sum, step) => sum + (step.usage.inputTokens ?? 0),
-              0,
-            );
+            const tokensSoFar = steps.reduce((sum, step) => sum + (step.usage.inputTokens ?? 0), 0);
             const overBudget =
               stepNumber >= loopBudget.maxSteps - 1 ||
               elapsedMs >= loopBudget.softBudgetMs ||
@@ -257,7 +254,10 @@ export class SdkRunner implements AgentRunner {
               'You are at your step, time, or token budget for this answer. Do not call ' +
               'any more tools. Write your best answer now using only what you have already ' +
               'gathered.';
-            return { toolChoice: 'none' as const, instructions: base ? `${base}\n\n${nudge}` : nudge };
+            return {
+              toolChoice: 'none' as const,
+              instructions: base ? `${base}\n\n${nudge}` : nudge,
+            };
           }
         : undefined;
 
