@@ -59,6 +59,7 @@ export default defineConfig({
         items: [
           { text: 'Self-hosting', link: '/self-hosting' },
           { text: 'Retention', link: '/retention' },
+          { text: 'Billing', link: '/billing' },
         ],
       },
     ],
