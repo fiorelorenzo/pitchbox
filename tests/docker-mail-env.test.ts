@@ -19,11 +19,26 @@ import { join } from 'node:path';
  */
 const root = join(import.meta.dirname, '..');
 
-function mailEnvVarsReadByTheLoader(): string[] {
-  const src = readFileSync(join(root, 'shared/src/mail/env.ts'), 'utf8');
+function envVarsReadBy(loaderPath: string): string[] {
+  const src = readFileSync(join(root, loaderPath), 'utf8');
   const names = new Set<string>();
   for (const m of src.matchAll(/\benv\.([A-Z][A-Z0-9_]*)/g)) names.add(m[1]);
   return [...names].sort();
+}
+
+function mailEnvVarsReadByTheLoader(): string[] {
+  return envVarsReadBy('shared/src/mail/env.ts');
+}
+
+/** The optional GitHub App's credential (#390), read the same way and with
+ * the same failure shape: a variable the loader reads and the compose files
+ * do not pass produces a deployment that reads repositories anonymously while
+ * its `.env` holds a perfectly good key. `loadGithubAppEnv` throws on a
+ * partial configuration, so a missing one here is worse than silent - it
+ * takes the route down - which is another reason to check it in CI rather
+ * than in production. */
+function githubAppEnvVarsReadByTheLoader(): string[] {
+  return envVarsReadBy('shared/src/github-app.ts');
 }
 
 /** The `web:` service's own block, cut at the next service at the same indent. */
@@ -50,6 +65,29 @@ function blueGreenCommonBlock(): string {
   const next = rest.search(/\nservices:\n/);
   return next < 0 ? rest : rest.slice(0, next);
 }
+
+describe('the deployed app receives the GitHub App credential it reads', () => {
+  it('finds the variables to check, rather than passing on an empty set', () => {
+    expect(githubAppEnvVarsReadByTheLoader()).toEqual([
+      'GITHUB_APP_ID',
+      'GITHUB_APP_PRIVATE_KEY_B64',
+      'GITHUB_APP_SLUG',
+    ]);
+  });
+
+  it.each(githubAppEnvVarsReadByTheLoader())('passes %s into the base web service', (name) => {
+    expect(webServiceBlock()).toMatch(new RegExp(`^\\s+${name}: \\$\\{${name}(:-[^}]*)?\\}$`, 'm'));
+  });
+
+  it.each(githubAppEnvVarsReadByTheLoader())(
+    'passes %s into the blue-green web containers, which are what production runs',
+    (name) => {
+      expect(blueGreenCommonBlock()).toMatch(
+        new RegExp(`^\\s+${name}: \\$\\{${name}(:-[^}]*)?\\}$`, 'm'),
+      );
+    },
+  );
+});
 
 describe('the deployed app receives the mail configuration it reads', () => {
   it('finds the variables to check, rather than passing on an empty set', () => {

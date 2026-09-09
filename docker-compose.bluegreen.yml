@@ -52,6 +52,13 @@ x-web-common: &web-common
     SMTP_SECURE: ${SMTP_SECURE:-}
     SMTP_USER: ${SMTP_USER:-}
     SMTP_PASS: ${SMTP_PASS:-}
+    # Optional GitHub App (#390), in this overlay for exactly the reason the
+    # mail block above records: this anchor replaces the base service's whole
+    # environment, so a credential added only to docker-compose.app.yml never
+    # reaches the container a blue-green deploy actually runs.
+    GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+    GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+    GITHUB_APP_PRIVATE_KEY_B64: ${GITHUB_APP_PRIVATE_KEY_B64:-}
   healthcheck:
     test:
       [

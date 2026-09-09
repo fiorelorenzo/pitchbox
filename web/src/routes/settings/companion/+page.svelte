@@ -6,7 +6,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Info, TriangleAlert, Plus, Trash2, UserRound, Mic, FolderGit2, RefreshCw, RotateCcw } from '@lucide/svelte';
+	import { Info, TriangleAlert, Plus, Trash2, UserRound, Mic, FolderGit2, RefreshCw, RotateCcw, KeyRound } from '@lucide/svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import PageContainer from '$lib/components/PageContainer.svelte';
@@ -196,6 +196,103 @@
 			toast.error('Could not add that repository');
 		} finally {
 			addingRepo = false;
+		}
+	}
+
+	// --- The optional GitHub App (#390) -------------------------------------
+	// `configured` is the deployment's own state (does an app exist at all),
+	// `installations` is this org's. A self-host with no app is not an error
+	// and gets a sentence rather than a warning: public repos by URL keep
+	// working exactly as they did.
+
+	type GithubInstallation = {
+		id: number;
+		installationId: number;
+		accountLogin: string;
+		accountType: string;
+		repositorySelection: string;
+		permissions: Record<string, string>;
+		updatedAt: string;
+	};
+
+	let appConfigured = $state(false);
+	let installations = $state<GithubInstallation[]>([]);
+	let loadingInstallations = $state(true);
+	let disconnectingId = $state<number | null>(null);
+
+	async function loadInstallations() {
+		loadingInstallations = true;
+		try {
+			const res = await fetch('/api/settings/github-installations');
+			if (!res.ok) return;
+			const body = (await res.json()) as {
+				configured: boolean;
+				installations: GithubInstallation[];
+			};
+			appConfigured = body.configured;
+			installations = body.installations;
+		} catch {
+			// Leave the card in its "not configured" shape rather than shouting:
+			// nothing here is required for the companion to work.
+		} finally {
+			loadingInstallations = false;
+		}
+	}
+	onMount(loadInstallations);
+
+	// The install and setup round trip reports back in the query string
+	// (web/src/routes/api/integrations/github/setup/+server.ts), so the result
+	// of a redirect the operator just came back from is said out loud once.
+	onMount(() => {
+		const params = new URLSearchParams(window.location.search);
+		const result = params.get('github');
+		if (!result) return;
+		const detail = params.get('detail');
+		const messages: Record<string, string> = {
+			installed: `GitHub connected${detail ? ` for ${detail}` : ''}`,
+			requested: 'Install requested. An owner of that account has to approve it.',
+			not_configured: 'This deployment has no GitHub App configured.',
+			no_state: 'Start the install from this page, so it lands on the right organization.',
+			wrong_org: 'That install was started for a different organization.',
+			forbidden: 'You need admin access to connect GitHub.',
+			unauthenticated: 'Sign in again and retry the install.',
+			claimed_by_other_org: 'That GitHub account is already connected to another organization.',
+			unverified: `GitHub would not confirm that installation${detail ? `: ${detail}` : ''}`,
+			bad_request: 'GitHub sent back an install with no installation id.',
+		};
+		if (result === 'installed' || result === 'requested') {
+			toast.success(messages[result]);
+		} else {
+			toast.error(messages[result] ?? 'The GitHub install did not complete');
+		}
+		// Strip the params so a refresh does not repeat the toast.
+		window.history.replaceState({}, '', window.location.pathname);
+	});
+
+	async function disconnectInstallation(id: number) {
+		if (disconnectingId) return;
+		disconnectingId = id;
+		try {
+			const res = await fetch(`/api/settings/github-installations/${id}`, { method: 'DELETE' });
+			if (res.ok) {
+				const body = (await res.json()) as { uninstalled: boolean; reason: string | null };
+				if (body.uninstalled) {
+					toast.success('GitHub disconnected and the app uninstalled');
+				} else {
+					// The row is gone either way, so the org has already stopped
+					// using the credential. Say what is left to do by hand.
+					toast.warning(
+						'Disconnected here, but GitHub did not confirm the uninstall. Remove it from the account settings on GitHub.',
+					);
+				}
+				await Promise.all([loadInstallations(), loadRepos()]);
+			} else if (res.status === 403) {
+				toast.error('You need admin access for that');
+			} else {
+				toast.error('Could not disconnect that installation');
+			}
+		} finally {
+			disconnectingId = null;
 		}
 	}
 
@@ -523,11 +620,78 @@
 			<Card.Header>
 				<Card.Title class="flex items-center gap-2"><FolderGit2 class="size-4" /> What you have shipped</Card.Title>
 				<Card.Description>
-					Public repositories the companion can mention. Public repos only, added by URL with no
-					credential - a private repo needs the GitHub App, which doesn't exist yet.
+					Repositories the companion can mention. A public repo needs nothing but its URL. A
+					private one is only readable once this organization connects the GitHub App below, and
+					only for the repositories the account selects.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
+				<!-- The GitHub App (#390). Above the add form on purpose: whether a
+				     private URL will work at all is decided here. -->
+				{#if !loadingInstallations}
+					<div class="rounded-md border border-border bg-muted/30 p-4">
+						{#if !appConfigured}
+							<p class="text-xs text-muted-foreground">
+								No GitHub App is configured on this deployment, so repositories are read
+								anonymously: public ones only, and GitHub allows 60 requests an hour per
+								address. That is the intended self-host setup and needs no credential.
+							</p>
+						{:else if installations.length === 0}
+							<div class="flex flex-wrap items-center justify-between gap-3">
+								<p class="text-xs text-muted-foreground">
+									Connect the GitHub App to read private repositories. You choose which
+									repositories it can see, it asks for read access to code and metadata and
+									nothing else, and you can disconnect it here at any time.
+								</p>
+								<Button href="/api/integrations/github/install" data-sveltekit-reload>
+									<KeyRound class="size-4" /> Connect GitHub
+								</Button>
+							</div>
+						{:else}
+							<div class="flex flex-col gap-3">
+								{#each installations as install (install.id)}
+									<div class="flex flex-wrap items-center justify-between gap-3">
+										<div class="min-w-0">
+											<p class="text-sm font-medium text-foreground">
+												{install.accountLogin}
+												<Badge variant="outline" class="ml-1 align-middle">
+													{install.repositorySelection === 'all'
+														? 'all repositories'
+														: 'selected repositories'}
+												</Badge>
+											</p>
+											<p class="mt-0.5 text-xs text-muted-foreground">
+												{Object.entries(install.permissions)
+													.map(([name, level]) => `${name}: ${level}`)
+													.join(', ') || 'no permissions reported'}
+											</p>
+										</div>
+										<div class="flex items-center gap-2">
+											<Button
+												href="/api/integrations/github/install"
+												variant="outline"
+												size="sm"
+												data-sveltekit-reload
+											>
+												Change repositories
+											</Button>
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												disabled={disconnectingId === install.id}
+												onclick={() => disconnectInstallation(install.id)}
+											>
+												Disconnect
+											</Button>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+
 				<form onsubmit={addRepo} class="flex gap-2">
 					<Input
 						bind:value={newRepoUrl}

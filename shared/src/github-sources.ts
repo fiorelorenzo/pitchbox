@@ -14,6 +14,7 @@
 
 import { and, asc, eq, isNull, lt, or } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
+import { installationTokenForOwner, type GithubAppEnv } from './github-app.js';
 
 export type GithubSourceRow = typeof schema.githubSources.$inferSelect;
 
@@ -138,6 +139,14 @@ type RefreshOptions = {
    * this never actually reaches GitHub. */
   fetchImpl?: GithubFetch;
   ttlMs?: number;
+  /**
+   * The GitHub App credential to authenticate with when the source's owner is
+   * an account that installed it (#390). `undefined` reads the deployment
+   * environment, `null` forces the anonymous path, which is what most tests
+   * want. Resolution, and why it is by account login, is in
+   * `shared/src/github-app.ts`.
+   */
+  app?: GithubAppEnv | null;
 };
 
 async function recordFetchError(db: Db, id: number, message: string): Promise<void> {
@@ -172,7 +181,19 @@ export async function refreshGithubSource(
   if (row.fetchedAt && Date.now() - row.fetchedAt.getTime() < ttlMs) return;
 
   const base = `${GITHUB_API_BASE}/repos/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.repo)}`;
-  const headers = { Accept: 'application/vnd.github+json' };
+
+  // A private repository is invisible to the anonymous API, and GitHub answers
+  // 404 rather than 403 for one, so without a credential this module cannot
+  // tell "does not exist" from "not yours to see". When the organization has
+  // installed the app on that owner's account, every call below carries an
+  // installation token instead, which also lifts the 60/hour anonymous cap to
+  // 5,000.
+  const installation = await installationTokenForOwner(db, row.organizationId, row.owner, {
+    app: opts.app,
+    fetchImpl: opts.fetchImpl,
+  });
+  const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
+  if (installation) headers.Authorization = `token ${installation.token}`;
 
   let repoRes: Response;
   try {
@@ -183,7 +204,18 @@ export async function refreshGithubSource(
   }
 
   if (repoRes.status === 404) {
-    await recordFetchError(db, id, 'repository not found (private or deleted)');
+    // The message differs by credential on purpose. Anonymously, 404 is
+    // ambiguous and the operator's fix is to install the app. Authenticated,
+    // it is not ambiguous at all: the installation exists but this repository
+    // is not in what the account selected, which is a different fix and a
+    // different sentence.
+    await recordFetchError(
+      db,
+      id,
+      installation
+        ? "not in this installation's selected repositories (add it on GitHub, or install the app on all repositories)"
+        : 'repository not found (private or deleted; a private repo needs the GitHub App)',
+    );
     return;
   }
   if (repoRes.status === 403) {

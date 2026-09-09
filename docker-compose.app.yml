@@ -55,6 +55,14 @@ services:
       SMTP_SECURE: ${SMTP_SECURE:-}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
+      # Optional GitHub App (#390): the credential that lets the companion read
+      # a private repository. Unset means anonymous reads, public repos only,
+      # which is a supported state and not an error. Enumerated here for the
+      # same reason the mail block above is: this file lists the environment
+      # rather than passing .env through.
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_APP_PRIVATE_KEY_B64: ${GITHUB_APP_PRIVATE_KEY_B64:-}
     depends_on:
       postgres:
         condition: service_healthy

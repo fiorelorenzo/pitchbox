@@ -1216,6 +1216,53 @@ export const githubSources = pgTable(
   }),
 );
 
+// The optional GitHub App's installations (#390). Only the public half of the
+// credential lives here: the installation id and which account granted it.
+// The private key is a deployment secret read from the environment
+// (`shared/src/github-app.ts`), never a row and never an `app_config` value.
+//
+// `installation_id` is unique across the whole table rather than per
+// organization, and that is a security property rather than tidiness: an
+// installation belongs to exactly one GitHub account, so letting two
+// organizations claim the same one would let the second read the first's
+// private repositories. A re-install onto an account another org already
+// holds is refused (`recordInstallation`), not merged.
+//
+// There is no `project_id` and no per-source link: resolution is by account
+// login (`installationTokenForOwner`), because that is what an installation
+// actually scopes.
+export const githubInstallations = pgTable(
+  'github_installations',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    /** GitHub's own installation id. `bigint` because GitHub's ids are already
+     * past what a 32-bit column holds (the two live ones are 160288218 and
+     * 160289335), with mode 'number' since the value stays far inside
+     * `Number.MAX_SAFE_INTEGER`. */
+    installationId: bigint('installation_id', { mode: 'number' }).notNull(),
+    /** The account that installed it: a user or an organization login. This is
+     * the join key for a repository's owner. */
+    accountLogin: text('account_login').notNull(),
+    accountType: text('account_type').notNull().default('User'),
+    /** `all` or `selected`, as GitHub reports it - worth showing an operator,
+     * since `selected` explains why a repo he just created is invisible. */
+    repositorySelection: text('repository_selection').notNull().default('selected'),
+    /** What the installation actually granted, as GitHub reports it. Stored so
+     * Settings can say "contents: read" rather than promising what the app
+     * registration asks for, which an account is free to narrow. */
+    permissions: jsonb('permissions').notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byInstallation: uniqueIndex('github_installations_installation_unique').on(t.installationId),
+    byOrg: index('github_installations_org_idx').on(t.organizationId),
+  }),
+);
+
 // A project's set of sources (#431/#398): a project used to be described
 // from exactly one thing at a time, chosen fresh on every extraction run
 // (`cli/src/commands/project.ts`'s `folder` | `git` | `upload`, held only in

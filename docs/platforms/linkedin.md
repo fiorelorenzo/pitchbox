@@ -75,8 +75,34 @@ Companion**:
 - **How you write**: the operator's own recent posts as voice samples,
   newest first. A sample can be excluded from prompts without deleting it,
   since a delete would just come back on the next capture.
-- **What you have shipped**: public GitHub repositories, added by URL with
-  no credential. Private repos need the (not yet built) GitHub App.
+- **What you have shipped**: GitHub repositories the companion may cite. A
+  public one needs nothing but its URL. A **private** one is readable once
+  the organization connects the optional GitHub App from that same card
+  (#390): the account chooses which repositories the app can see, the app
+  asks for read access to code and metadata and nothing else, and
+  disconnecting it here also uninstalls it from the account.
+
+The App is optional and per deployment. With no App configured, which is the
+self-host default, repositories are read anonymously: public ones only, and
+GitHub allows 60 requests an hour per address. With one configured, a read of
+a repository whose owner has installed it carries an installation token
+instead, which raises that to 5,000 an hour.
+
+Two operational details worth knowing before you debug a repo that will not
+load. Resolution is by **account login**: a token is only ever presented to
+the account that granted it, so a source under an owner nobody installed on
+is still read anonymously rather than with somebody else's credential. And an
+installation belongs to exactly one organization here: re-installing on an
+account another organization already connected is refused, not merged, since
+otherwise the second organization would read the first's private code.
+
+The credential itself is a **deployment secret** (`GITHUB_APP_ID`,
+`GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY_B64`, the last base64 because a
+PEM's newlines do not survive an env file). It is never an `app_config` value,
+never served to a client, and a partial configuration throws at load rather
+than falling back to anonymous reads - otherwise a private repository would be
+reported as "not found", which is the same thing GitHub says about a repo that
+never existed.
 
 An accepted suggestion that isn't written for a bound project - the operator
 writing as themselves, not as any one product - lands under the
