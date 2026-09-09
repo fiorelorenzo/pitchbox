@@ -3,7 +3,7 @@
 // (shared/src/agents/sdk/runner.ts, web/src/lib/server/runner.ts). Mirrors the
 // per-account quota helper's style (shared/src/quota.ts) but is org-scoped and
 // budget/concurrency based rather than per-account daily/weekly counts.
-import { and, eq, gte, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { schema, type Db } from './db/client.js';
 
@@ -138,22 +138,151 @@ export async function saveSelfRegistrationQuotaDefaults(
   return defaults;
 }
 
-/** First instant (UTC) of the calendar month containing `now`. */
+/** First instant (UTC) of the calendar month containing `now`. Kept for
+ * exactly one caller after #545: `getInstanceMonthToDateCostUsd` sums every
+ * organization's spend over the SAME plain calendar month regardless of any
+ * one org's own billing period, which is the instance-wide ceiling's
+ * existing meaning and #545 deliberately leaves unchanged. No other caller
+ * should reappear here - an org's own spend window is `billingPeriodFor`
+ * below. */
 export function startOfMonthUtc(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
 }
 
+/** `date`'s day-of-month (and time-of-day) shifted by `months`, clamped to
+ * the target month's real length (e.g. Jan 31 + 1 month -> Feb 28/29, never
+ * Mar 3). The building block both `calendarPeriodFor` and the instance-wide
+ * calendar-month period use. */
+function addUtcMonths(date: Date, months: number): Date {
+  const totalMonths = date.getUTCMonth() + months;
+  const year = date.getUTCFullYear() + Math.floor(totalMonths / 12);
+  const month = ((totalMonths % 12) + 12) % 12;
+  const lastDayOfTargetMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const day = Math.min(date.getUTCDate(), lastDayOfTargetMonth);
+  return new Date(
+    Date.UTC(
+      year,
+      month,
+      day,
+      date.getUTCHours(),
+      date.getUTCMinutes(),
+      date.getUTCSeconds(),
+      date.getUTCMilliseconds(),
+    ),
+  );
+}
+
+/** A half-open spend window `[start, end)`. */
+export interface Period {
+  start: Date;
+  end: Date;
+}
+
+/** The plain calendar-month window `getInstanceMonthToDateCostUsd` sums
+ * every org over - the 1st of the month to the 1st of the next, in UTC.
+ * Deliberately NOT anchored on anything org-specific: see `startOfMonthUtc`'s
+ * own doc comment for why the instance-wide ceiling keeps this window
+ * regardless of what `billingPeriodFor` computes for any one org. */
+function calendarMonthPeriod(now: Date): Period {
+  const start = startOfMonthUtc(now);
+  return { start, end: addUtcMonths(start, 1) };
+}
+
+function monthsBetweenUtc(from: Date, to: Date): number {
+  return (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + (to.getUTCMonth() - from.getUTCMonth());
+}
+
 /**
- * Org month-to-date spend, split into campaign/other-run cost and assistant
- * (in-page suggestion) cost, both started/created on or after the first of
- * the current calendar month (UTC). #522: the assistant plane writes no
+ * The calendar-month period containing `now`, anchored on `anchor`'s
+ * day-of-month (and time-of-day) rather than the 1st - #545. An org that
+ * never subscribes gets this window, anchored on its own `createdAt`: a free
+ * org's spend window is therefore stable for the org's whole lifetime and
+ * does not shift merely because it later subscribes or its subscription
+ * later lapses, since it is always derived from `organizations.createdAt`,
+ * never from Stripe.
+ */
+export function calendarPeriodFor(anchor: Date, now: Date): Period {
+  let months = monthsBetweenUtc(anchor, now);
+  let start = addUtcMonths(anchor, months);
+  if (start > now) {
+    months -= 1;
+    start = addUtcMonths(anchor, months);
+  }
+  let end = addUtcMonths(anchor, months + 1);
+  // The initial estimate above can land one month short or long once
+  // month-end clamping is in play (e.g. an anchor on the 31st produces a
+  // 28-day February) - walk to the exact window containing `now` rather
+  // than trusting the arithmetic estimate.
+  while (end <= now) {
+    months += 1;
+    start = end;
+    end = addUtcMonths(anchor, months + 1);
+  }
+  while (start > now) {
+    months -= 1;
+    end = start;
+    start = addUtcMonths(anchor, months);
+  }
+  return { start, end };
+}
+
+/**
+ * Pure period resolution given already-loaded org data - the part of
+ * `billingPeriodFor` worth unit-testing with a fixed clock and no database.
+ * A live subscription's period always wins; otherwise the org's own
+ * creation-anchored calendar month (see `calendarPeriodFor`).
+ */
+export function resolveBillingPeriod(
+  input: { orgCreatedAt: Date; subscriptionPeriod: Period | null },
+  now: Date,
+): Period {
+  if (input.subscriptionPeriod) return input.subscriptionPeriod;
+  return calendarPeriodFor(input.orgCreatedAt, now);
+}
+
+/**
+ * An org's current spend window (#545): a live subscription's own
+ * `current_period_start`/`current_period_end` as the Stripe webhook mirrors
+ * them onto `org_subscriptions`, or the free/self-host calendar-month
+ * fallback above. This is what a budget decision, the dashboard, the
+ * org-quota settings page and every plan-limit check meter "this period"
+ * against - see `resolveBillingPeriod` for the pure resolution rule.
+ */
+export async function billingPeriodFor(db: Db, orgId: number, now: Date = new Date()): Promise<Period> {
+  const [row] = await db
+    .select({
+      orgCreatedAt: schema.organizations.createdAt,
+      currentPeriodStart: schema.orgSubscriptions.currentPeriodStart,
+      currentPeriodEnd: schema.orgSubscriptions.currentPeriodEnd,
+    })
+    .from(schema.organizations)
+    .leftJoin(
+      schema.orgSubscriptions,
+      eq(schema.orgSubscriptions.organizationId, schema.organizations.id),
+    )
+    .where(eq(schema.organizations.id, orgId))
+    .limit(1);
+  // An org that no longer exists has nothing left to meter - the org lookup
+  // elsewhere in the dispatch path is what actually refuses that case; this
+  // just needs to not throw, so it anchors on `now` itself.
+  const orgCreatedAt = row?.orgCreatedAt ?? now;
+  const subscriptionPeriod =
+    row?.currentPeriodStart != null && row?.currentPeriodEnd != null
+      ? { start: row.currentPeriodStart, end: row.currentPeriodEnd }
+      : null;
+  return resolveBillingPeriod({ orgCreatedAt, subscriptionPeriod }, now);
+}
+
+/**
+ * Org spend within `period`, split into campaign/other-run cost and
+ * assistant (in-page suggestion) cost. #522: the assistant plane writes no
  * `runs` row for a suggestion (see web/src/routes/api/extension/suggest -
  * a suggestion is ephemeral until a human accepts it), so its spend lives in
  * `assist_usage` instead, one row per finished suggestion whether accepted
  * or not. Kept apart rather than pre-summed, per #522's decision: an
  * operator asking "why am I out of budget" needs to see which half spent it
- * (`getOrgMonthToDateCostUsd` below still returns the single number a
- * budget decision needs).
+ * (`getOrgPeriodCostUsd` below still returns the single number a budget
+ * decision needs).
  *
  * The `runs` side deliberately excludes `kind = 'assist'`: accepting a
  * suggestion (shared/src/assist-accept.ts) still writes a `runs` row so the
@@ -179,19 +308,17 @@ export function startOfMonthUtc(now: Date): Date {
  * directly (a suggestion is always grounded in one project, never a
  * campaign), so its side needs no such join at all.
  */
-export interface OrgMonthToDateSpend {
+export interface OrgPeriodSpend {
   campaignUsd: number;
   assistantUsd: number;
   totalUsd: number;
 }
 
-export async function getOrgMonthToDateSpend(
+export async function getOrgPeriodSpend(
   db: Db,
   orgId: number,
-  now: Date = new Date(),
-): Promise<OrgMonthToDateSpend> {
-  const monthStart = startOfMonthUtc(now);
-
+  period: Period,
+): Promise<OrgPeriodSpend> {
   const orgProjects = await db
     .select({ id: schema.projects.id })
     .from(schema.projects)
@@ -214,7 +341,8 @@ export async function getOrgMonthToDateSpend(
           inArray(schema.runs.projectId, projectIds),
           inArray(schema.campaigns.projectId, projectIds),
         ),
-        gte(schema.runs.startedAt, monthStart),
+        gte(schema.runs.startedAt, period.start),
+        lt(schema.runs.startedAt, period.end),
       ),
     );
 
@@ -224,7 +352,8 @@ export async function getOrgMonthToDateSpend(
     .where(
       and(
         inArray(schema.assistUsage.projectId, projectIds),
-        gte(schema.assistUsage.createdAt, monthStart),
+        gte(schema.assistUsage.createdAt, period.start),
+        lt(schema.assistUsage.createdAt, period.end),
       ),
     );
 
@@ -236,26 +365,23 @@ export async function getOrgMonthToDateSpend(
 /**
  * The single number a budget decision uses (org-quota's own gate in
  * getOrgQuotaSnapshot, the instance-wide ceiling): campaign spend plus
- * assistant spend, month-to-date. See getOrgMonthToDateSpend for the split
- * and why the two are kept apart for a human but combined here for a cap.
+ * assistant spend, within `period`. See getOrgPeriodSpend for the split and
+ * why the two are kept apart for a human but combined here for a cap.
  */
-export async function getOrgMonthToDateCostUsd(
-  db: Db,
-  orgId: number,
-  now: Date = new Date(),
-): Promise<number> {
-  const { totalUsd } = await getOrgMonthToDateSpend(db, orgId, now);
+export async function getOrgPeriodCostUsd(db: Db, orgId: number, period: Period): Promise<number> {
+  const { totalUsd } = await getOrgPeriodSpend(db, orgId, period);
   return totalUsd;
 }
 
 /**
- * Compute an org's current quota snapshot: remaining monthly USD budget (null
- * = unlimited, since `organizations.monthly_run_budget_usd` is null) and its
- * concurrency cap (null = unlimited, `organizations.max_concurrent_runs`
- * null). A `remainingUsd` of 0 or negative means the org is over budget. An
- * org that no longer exists is treated as unlimited on both axes - not this
- * function's decision to make; the org lookup elsewhere in the dispatch path
- * is what actually gates a run against a missing org.
+ * Compute an org's current quota snapshot: remaining budget for its current
+ * billing period (null = unlimited, since `organizations.monthlyRunBudgetUsd`
+ * is null) and its concurrency cap (null = unlimited,
+ * `organizations.max_concurrent_runs` null). A `remainingUsd` of 0 or
+ * negative means the org is over budget. An org that no longer exists is
+ * treated as unlimited on both axes - not this function's decision to make;
+ * the org lookup elsewhere in the dispatch path is what actually gates a run
+ * against a missing org.
  */
 export async function getOrgQuotaSnapshot(
   db: Db,
@@ -276,7 +402,8 @@ export async function getOrgQuotaSnapshot(
     return { remainingUsd: null, concurrencyCap };
   }
 
-  const spentUsd = await getOrgMonthToDateCostUsd(db, orgId, now);
+  const period = await billingPeriodFor(db, orgId, now);
+  const spentUsd = await getOrgPeriodCostUsd(db, orgId, period);
   const budgetUsd = Number(org.monthlyRunBudgetUsd);
   return { remainingUsd: budgetUsd - spentUsd, concurrencyCap };
 }
@@ -489,23 +616,27 @@ export async function saveInstanceQuotaCeiling(
 }
 
 /**
- * Sum of every organization's month-to-date Gateway spend - the
- * instance-wide total #540 checks the ceiling against. Calls
- * `getOrgMonthToDateCostUsd` once per organization and adds the results,
- * rather than re-deriving its own SUM query, so this total always agrees
- * with the per-org figure the dashboard and org-quota settings show, and so
- * whatever a sibling change teaches `getOrgMonthToDateCostUsd` about what
- * counts as spend (#522: the in-page assistant's own Gateway calls, which
- * carry no `runs` row today) is picked up here automatically, with no
- * second place to update.
+ * Sum of every organization's calendar-month-to-date Gateway spend - the
+ * instance-wide total #540 checks the ceiling against. Deliberately the
+ * plain calendar month (`calendarMonthPeriod`, the 1st of the month to the
+ * 1st of the next), the SAME window for every org regardless of any one
+ * org's own billing period (`billingPeriodFor`) - #545 introduced per-org
+ * billing periods without changing what this instance-wide ceiling means:
+ * one consistent window an operator can reason about across every tenant,
+ * not a hundred different subscription anniversaries. Calls
+ * `getOrgPeriodCostUsd` once per organization and adds the results, rather
+ * than re-deriving its own SUM query, so this total always agrees with the
+ * per-org figure's own spend accounting (#522: the in-page assistant's own
+ * Gateway calls, which carry no `runs` row) with no second place to update.
  */
 export async function getInstanceMonthToDateCostUsd(
   db: Db,
   now: Date = new Date(),
 ): Promise<number> {
+  const period = calendarMonthPeriod(now);
   const orgs = await db.select({ id: schema.organizations.id }).from(schema.organizations);
   if (orgs.length === 0) return 0;
-  const totals = await Promise.all(orgs.map((o) => getOrgMonthToDateCostUsd(db, o.id, now)));
+  const totals = await Promise.all(orgs.map((o) => getOrgPeriodCostUsd(db, o.id, period)));
   return totals.reduce((sum, t) => sum + t, 0);
 }
 
