@@ -50,6 +50,60 @@ export interface ObservedPost {
   authorName?: string;
   text: string;
   url?: string;
+  /** LinkedIn's own rendered relative-time text for the post itself (#568),
+   * e.g. "6 giorni" - never a machine timestamp, the same posture
+   * `ObservedComment.relativeTime` documents below. */
+  relativeTime?: string;
+  /** LinkedIn's own rendered reaction count on the post, as text (#568) -
+   * e.g. "16". Left as the platform's own prose rather than parsed to a
+   * number: the source is locale-formatted, not a machine count. */
+  reactionCount?: string;
+  /** LinkedIn's own rendered comment count on the post, as text (#568) -
+   * e.g. "31 commenti". This is the platform's own total and can run ahead
+   * of `thread.renderedCount`, which is only what the page actually loaded
+   * - "300 comments already" and "two comments" call for different replies
+   * even when the page rendered the same handful either way. */
+  commentCount?: string;
+  /** The visible comment thread (#568), when the page had one to read - the
+   * SDUI feed never does (see linkedin-dom.ts's module header). */
+  thread?: ObservedThread;
+}
+
+/** One rendered comment or reply in `ObservedPost.thread` (#568), mirroring
+ * `LinkedInComment` in extension/src/content/shared/linkedin-dom.ts field
+ * for field - the extension has no dependency on `@pitchbox/shared`, so the
+ * two types cannot share a declaration, only a shape. */
+export interface ObservedComment {
+  id?: string;
+  authorName?: string;
+  authorHandle?: string;
+  body: string;
+  /** LinkedIn's own relative-time text, never a machine timestamp - see
+   * `LinkedInComment.relativeTime`'s doc comment in linkedin-dom.ts for why. */
+  relativeTime?: string;
+  /** The comment this one replies to, when nested; absent for a top-level
+   * comment, whose parent is the post itself. */
+  parentId?: string;
+}
+
+/** The visible comment thread under a post, as the page actually rendered
+ * it (#568) - not the platform's own total, which lives on `ObservedPost`
+ * as `commentCount` and can run ahead of what loaded. `comments` is already
+ * clamped to MAX_THREAD_COMMENTS entries, each body to MAX_COMMENT_CHARS,
+ * and the combined bodies to MAX_THREAD_CHARS by the extension before the
+ * request ever leaves the browser (a post with hundreds of comments must
+ * not become a multi-hundred-KB request) - the zod schema on
+ * `POST /api/extension/suggest` re-enforces the same three numbers rather
+ * than trusting that clamp, since a stale build or a crafted request could
+ * skip it. `truncated` is set the moment any cap actually cuts something,
+ * so a consumer knows the thread it received is partial rather than
+ * assuming it is complete. `renderedCount` is how many comment articles the
+ * page actually had on screen (`findPostComments(...).length` before any
+ * cap runs), never smaller than `comments.length`. */
+export interface ObservedThread {
+  comments: ObservedComment[];
+  renderedCount: number;
+  truncated: boolean;
 }
 
 /** The project the suggestion is filed under, described the way the old
@@ -65,6 +119,19 @@ export interface CurrentProject {
  * past this is either a pasted article or a hostile payload, and neither
  * improves the suggestion. */
 export const MAX_POST_CHARS = 4000;
+/** Ceilings on `ObservedThread` (#568), the same spirit as MAX_POST_CHARS: a
+ * post with hundreds of comments does not make a better suggestion by
+ * forwarding all of them, only a slower and more expensive one. Three
+ * separate caps because a thread can be hostile along any one axis alone -
+ * few but enormous comments, or many but short ones - and MAX_THREAD_CHARS
+ * is the one most likely to bind first on an ordinary long thread of
+ * merely-medium comments, each individually under MAX_COMMENT_CHARS. The
+ * extension clamps to these numbers before sending; the zod schema on
+ * `POST /api/extension/suggest` enforces them again rather than trusting
+ * that clamp. */
+export const MAX_THREAD_COMMENTS = 30;
+export const MAX_COMMENT_CHARS = 500;
+export const MAX_THREAD_CHARS = 6000;
 /** How many few-shot examples are worth carrying. More lengthens the prompt
  * without changing the voice, and the first token is what the human waits on. */
 export const MAX_EXAMPLES = 3;

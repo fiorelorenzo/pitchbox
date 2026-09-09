@@ -1,15 +1,20 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  findFeedPosts,
   findPostComments,
   findParentCommentId,
   readCommentAuthor,
   readCommentBody,
   readCommentRelativeTime,
+  readPostCommentCount,
+  readPostReactionCount,
+  readPostRelativeTime,
   findMessageEvents,
   resetSelectorHealth,
 } from '../../src/content/shared/linkedin-dom.js';
 import POST_DETAIL_HTML from './fixtures/linkedin/post-detail.html?raw';
+import FEED_HTML from './fixtures/linkedin/feed.html?raw';
 
 // post-detail.html is the same anonymised, real, signed-in capture
 // linkedin-dom.test.ts already exercises (see that fixture's README): 8
@@ -90,6 +95,36 @@ describe('post-detail.html: comment/reply reading (#307, real capture)', () => {
     // the reason a caller must never treat this string as parseable in
     // general (see LinkedInComment.relativeTime's doc comment).
     expect(Number.isNaN(Date.parse(relativeTime!))).toBe(true);
+  });
+});
+
+describe("post-detail.html: the post's own relative time, reaction and comment counts (#568, real capture)", () => {
+  it("readPostRelativeTime reads the post's own byline timestamp, never a machine date", () => {
+    render(POST_DETAIL_HTML);
+    const [post] = findFeedPosts(document);
+    const relativeTime = readPostRelativeTime(post, document);
+    expect(relativeTime).toBeTruthy();
+    expect(Number.isNaN(Date.parse(relativeTime!))).toBe(true);
+  });
+
+  it("readPostReactionCount reads the visible reaction number, distinct from any comment's own", () => {
+    render(POST_DETAIL_HTML);
+    const [post] = findFeedPosts(document);
+    expect(readPostReactionCount(post, document)).toBe('16');
+  });
+
+  it("readPostCommentCount reads LinkedIn's own rendered total, as text", () => {
+    render(POST_DETAIL_HTML);
+    const [post] = findFeedPosts(document);
+    expect(readPostCommentCount(post, document)).toBe('31 commenti');
+  });
+
+  it('feed.html (SDUI): all three read null - the feed renders none of this markup', () => {
+    render(FEED_HTML);
+    const [post] = findFeedPosts(document);
+    expect(readPostRelativeTime(post, document)).toBeNull();
+    expect(readPostReactionCount(post, document)).toBeNull();
+    expect(readPostCommentCount(post, document)).toBeNull();
   });
 });
 

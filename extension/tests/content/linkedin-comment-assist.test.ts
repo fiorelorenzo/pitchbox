@@ -798,6 +798,112 @@ describe('single-page navigation', () => {
   });
 });
 
+describe('the visible thread (#568)', () => {
+  /** A classic post-detail page with `count` synthetic comments, each
+   * `bodyLength` characters long - same shape `findPostComments` reads
+   * (`article[data-id^="urn:li:comment:"]`, `h3 span` for the byline,
+   * `section` for the body, `time` for the relative-time text), reused
+   * rather than invented, per the module's "reuse the existing accessors"
+   * posture. */
+  function renderThread(count: number, bodyLength: number): Element {
+    const comments = Array.from(
+      { length: count },
+      (_, i) => `
+        <article data-id="urn:li:comment:(activity:9999,${i})">
+          <h3><span>Commenter ${i}</span></h3>
+          <section>${'x'.repeat(bodyLength)}</section>
+          <time>1h</time>
+        </article>
+      `,
+    ).join('');
+    document.body.innerHTML = `
+      <div role="article" data-urn="urn:li:activity:9999">
+        <div class="update-components-text">Hostile post body text, long enough to draft from.</div>
+        ${comments}
+      </div>
+    `;
+    const [post] = findFeedPosts(document);
+    return post;
+  }
+
+  it('a hostile thread (many long comments) is clamped on every axis', () => {
+    // 50 comments at 2000 chars each - past every one of the three caps
+    // (30 comments, 500 chars/comment, 6000 chars total) at once.
+    const post = renderThread(50, 2000);
+    const captured = readAssistPostFromCard(post, document);
+    const thread = captured?.thread;
+    expect(thread).toBeDefined();
+    // The page really did render 50 - this is LinkedIn's own count, before
+    // any cap runs, and it must survive the clamp even though the comments
+    // array carrying them does not.
+    expect(thread!.renderedCount).toBe(50);
+    expect(thread!.truncated).toBe(true);
+    expect(thread!.comments.length).toBeLessThanOrEqual(30);
+    for (const c of thread!.comments) expect(c.body.length).toBeLessThanOrEqual(500);
+    const totalChars = thread!.comments.reduce((sum, c) => sum + c.body.length, 0);
+    expect(totalChars).toBeLessThanOrEqual(6000);
+  });
+
+  it('many short comments hit the count cap on their own, well under the char caps', () => {
+    // 50 comments at 50 chars each - 2500 chars total if every one made it
+    // through, comfortably under the 6000-char cap, so only the 30-comment
+    // count cap can be what stops this one.
+    const post = renderThread(50, 50);
+    const thread = readAssistPostFromCard(post, document)?.thread;
+    expect(thread?.renderedCount).toBe(50);
+    expect(thread?.comments).toHaveLength(30);
+    expect(thread?.truncated).toBe(true);
+  });
+
+  it('a single oversized comment is clamped on its own, well under the count and total caps', () => {
+    const post = renderThread(1, 2000);
+    const thread = readAssistPostFromCard(post, document)?.thread;
+    expect(thread?.renderedCount).toBe(1);
+    expect(thread?.comments).toHaveLength(1);
+    expect(thread?.comments[0]?.body.length).toBe(500);
+    expect(thread?.truncated).toBe(true);
+  });
+
+  it('an ordinary thread under every cap is carried whole, marked not truncated', () => {
+    const post = renderThread(3, 80);
+    const thread = readAssistPostFromCard(post, document)?.thread;
+    expect(thread?.renderedCount).toBe(3);
+    expect(thread?.comments).toHaveLength(3);
+    expect(thread?.truncated).toBe(false);
+  });
+
+  it('post-detail.html (real capture): the thread carries all 16 rendered comments, not truncated', () => {
+    renderPost();
+    const [post] = findFeedPosts(document);
+    const thread = readAssistPostFromCard(post, document)?.thread;
+    expect(thread?.renderedCount).toBe(16);
+    expect(thread?.comments).toHaveLength(16);
+    expect(thread?.truncated).toBe(false);
+    expect(thread?.comments[0]?.authorName).toBe('Marco Rossi');
+    expect(thread?.comments[0]?.parentId).toBeUndefined();
+  });
+
+  it('the suggest request carries the clamped thread, not the raw DOM read', async () => {
+    const post = renderThread(50, 2000);
+    const composer = document.createElement('div');
+    composer.setAttribute('contenteditable', 'true');
+    composer.setAttribute('role', 'textbox');
+    post.appendChild(composer);
+
+    wireCommentAssist(composer, post);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(1);
+    // vi.fn mock call built entirely by this test, not external input.
+    const call = suggest.mock.calls[0][0] as {
+      post: { thread?: { comments: Array<{ body: string }>; truncated: boolean } };
+    };
+    expect(call.post.thread?.truncated).toBe(true);
+    expect(call.post.thread?.comments.length).toBeLessThanOrEqual(30);
+  });
+});
+
 describe('per-card wiring on the feed (2026-09-07 overlay/feed rework)', () => {
   /** Appends a synthetic comment composer under `card` - the real anonymised
    * fixture carries none (LinkedIn renders one lazily, behind the human's
