@@ -154,15 +154,18 @@ run's own spend crosses the line - normalized to the `quota_exhausted`
 failure reason `shared/src/runlog/classify-failure.ts` already recognizes via
 its existing `QUOTA_PATTERNS`, with no classifier change needed.
 
-**Known gap: concurrency is unenforced.** `concurrencyCap` is part of the
-snapshot above, but nothing reads it on the cloud runner's dispatch path.
-The earlier runner-service design enforced it from an in-memory per-org
-session count at WebSocket admission (CLD-P5, see "Historical design
-record"); that mechanism left with the runner service, and #419 wires only
-the USD budget check. An org today can dispatch as many concurrent `cloud`
-runs as it can trigger, each independently budget-checked at its own start,
-with no cap on how many run at once. Listed under "Open questions" rather
-than silently assumed fixed.
+**Concurrency (#485).** `concurrencyCap` is part of the snapshot above, and
+`assertOrgConcurrencyAdmitted` (`shared/src/org-quota.ts`) enforces it: after
+`dispatchRun` inserts a run's `status: 'running'` row, it takes an
+org-scoped `pg_advisory_xact_lock`, ranks every currently-`running` row for
+the org by insertion order, and refuses this one if its rank exceeds
+`max_concurrent_runs` - a message that says "concurrency limit", never
+"quota", so `classifyFailure` tags it `concurrency_exhausted` rather than
+`quota_exhausted`. The earlier runner-service design enforced the same idea
+from an in-memory per-org session count at WebSocket admission (CLD-P5, see
+"Historical design record"); that mechanism left with the runner service,
+and this replaces it with a Postgres-backed check that survives the process
+restarting mid-run.
 
 ## Environment variables a cloud deployment needs
 
@@ -189,12 +192,9 @@ update --init` for the cloud edition to work.
 
 ## Open questions
 
-- **[OPEN] Concurrency cap is unenforced.** See "How cost and quota work"
-  above. `max_concurrent_runs` is stored and surfaced in Settings, but
-  nothing on the current dispatch path reads it. Needs either an
-  in-process per-org counter (single instance) or a DB-backed one
-  (multi-instance), mirroring the design the old runner service used before
-  it was removed.
+- ~~**Concurrency cap is unenforced.**~~ Closed by #485:
+  `assertOrgConcurrencyAdmitted` now enforces `max_concurrent_runs` on every
+  cloud-runner dispatch. See "How cost and quota work" above.
 - **[OPEN] No per-scenario step ceiling override.** `DEFAULT_STEP_CEILING`
   (12) is a single constant for every playbook. A playbook that genuinely
   needs more steps has no way to ask for them short of raising the shared
