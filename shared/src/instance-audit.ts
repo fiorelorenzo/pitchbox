@@ -11,8 +11,16 @@
 
 import { desc } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
+import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { instanceAuditLog } from './db/schema.js';
-import type { Db } from './db/client.js';
+
+// Loose on purpose (matches shared/src/orgs.ts's own alias): a real `Db`
+// (shared/src/db/client.ts) and a `db.transaction` callback's `tx` are both
+// assignable to this, and the Stripe webhook (#551) is the first caller
+// that needs to write an audit row inside the same transaction as the
+// state change it describes.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Db = PgDatabase<any, any, any>;
 
 export type InstanceAuditActor = { id: number; username: string } | null;
 

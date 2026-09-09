@@ -88,7 +88,14 @@
     "./mail/template": "./src/mail/template.ts",
     "./mail/env": "./src/mail/env.ts",
     "./registration-policy": "./src/registration-policy.ts",
-    "./plans": "./src/plans.ts"
+    "./plans": "./src/plans.ts",
+    "./stripe/env": "./src/stripe/env.ts",
+    "./stripe/client": "./src/stripe/client.ts",
+    "./stripe/signature": "./src/stripe/signature.ts",
+    "./billing/customer": "./src/billing/customer.ts",
+    "./billing/checkout": "./src/billing/checkout.ts",
+    "./billing/portal": "./src/billing/portal.ts",
+    "./billing/webhook": "./src/billing/webhook.ts"
   },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",

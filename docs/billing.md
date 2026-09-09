@@ -19,14 +19,25 @@ That choice is not just a fee, it constrains the integration:
 
 - Checkout Sessions **must** set `managed_payments[enabled]=true` and use API
   version `2025-03-31.basil` or later.
-- These parameters are **rejected** on such a session: `automatic_tax`,
-  `tax_id_collection`, `subscription_data.default_tax_rates`,
-  `payment_method_collection`, `payment_method_configuration`,
-  `payment_method_options`, `payment_method_types`,
-  `saved_payment_method_options`, `customer_update[name]`,
-  `customer_update[address]`, `shipping_address_collection`, `shipping_options`,
-  `subscription_data.application_fee_percent`, `subscription_data.on_behalf_of`,
-  `subscription_data.transfer_data`, `subscription_data.invoice_settings`.
+- These parameters are **rejected**, per Stripe's own documentation:
+  `subscription_data.default_tax_rates`, `payment_method_collection`,
+  `payment_method_configuration`, `payment_method_options`,
+  `payment_method_types`, `saved_payment_method_options`,
+  `shipping_address_collection`, `shipping_options`,
+  `subscription_data.application_fee_percent`,
+  `subscription_data.on_behalf_of`, `subscription_data.transfer_data`,
+  `subscription_data.invoice_settings`. Verified against the real test
+  account under `2025-03-31.basil` (#550/#551 PR): `payment_method_types`,
+  `shipping_address_collection` and `subscription_data.invoice_settings` do
+  reject outright with exactly that message. `automatic_tax[enabled]` and
+  `tax_id_collection[enabled]` are a narrower case Stripe's own error message
+  states directly - Managed Payments pins both to `true` and only the
+  opposite value errors ("must be true when Managed Payments is enabled");
+  omitting either is silently equivalent to `true`. Two more from Stripe's
+  own list, `customer_update[name]` and `customer_update[address]`, did
+  **not** error in that same test-mode run - a discrepancy worth knowing
+  about but not worth relying on, since the app never sets any of the above
+  either way.
 - A subscription **cannot be created outside Checkout or a Payment Link**, and
   one-off invoices and customer invoice items are not available on it. Updating
   or cancelling an existing subscription through the API still works.
@@ -83,11 +94,18 @@ writes: not a second source of truth, but what an org resolves to _before_
 Stripe is asked - Free (which has no Stripe object, ever), an instance-admin
 grant (never Stripe-backed), and the gap before a subscription's first
 webhook lands. `organizations.plan`/`plan_source`/`plan_updated_at` record
-which plan and why; `org_subscriptions` mirrors a live subscription's
-metadata limits per org, one row per org, separate from `organizations`
-because a subscription has its own lifecycle - Stripe can delete it out from
-under us (see "A customer can ask Stripe to delete their data" below), and
-that has to look like a row disappearing, not a pile of nulled columns.
+which plan and why, and `organizations.stripe_customer_id` records the
+org's Stripe customer (#550) - created lazily on first checkout and kept
+there rather than on `org_subscriptions`, since a customer can exist with
+no subscription yet (or after one is cancelled) and `org_subscriptions`
+is itself deleted wholesale when Stripe's subscription is. `org_subscriptions`
+mirrors a live subscription's metadata limits per org, one row per org,
+separate from `organizations` because a subscription has its own lifecycle -
+Stripe can delete it out from under us (see "A customer can ask Stripe to
+delete their data" below), and that has to look like a row disappearing,
+not a pile of nulled columns. `stripe_events` is the webhook's own
+idempotency ledger (#551): Stripe's event id as the primary key, so a
+retried or replayed delivery is a no-op rather than a double-apply.
 
 Precedence, highest first: self-host (unlimited, no plan, no Stripe key
 required); an instance-admin grant (`plan_source='grant'`), which survives
@@ -128,14 +146,15 @@ A webhook signing secret is returned only when the endpoint is created. Pass
 
 ## Environment
 
-| Variable                      | Where             | What                                                           |
-| ----------------------------- | ----------------- | -------------------------------------------------------------- |
-| `STRIPE_SECRET_KEY`           | web (server only) | `sk_live_…` in production, `sk_test_…` in preview and locally  |
-| `STRIPE_PUBLISHABLE_KEY`      | web               | `pk_live_…` / `pk_test_…`, safe to expose                      |
-| `STRIPE_WEBHOOK_SECRET`       | web (server only) | signing secret of **that deployment's own** endpoint           |
-| `STRIPE_PORTAL_CONFIGURATION` | web (server only) | optional; pins the portal configuration instead of the default |
-| `PITCHBOX_APP_ORIGIN`         | setup script      | defaults to `https://app.pitchbox.app`                         |
-| `PITCHBOX_PREVIEW_ORIGIN`     | setup script      | defaults to `https://preview.pitchbox.app`                     |
+| Variable                      | Where             | What                                                                                                                       |
+| ----------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `PITCHBOX_BILLING`            | web (server only) | `on` to enable the billing routes; unset means self-host posture, same 404 `/api/auth/*` takes when `PITCHBOX_AUTH` is off |
+| `STRIPE_SECRET_KEY`           | web (server only) | `sk_live_…` in production, `sk_test_…` in preview and locally                                                              |
+| `STRIPE_PUBLISHABLE_KEY`      | web               | `pk_live_…` / `pk_test_…`, safe to expose                                                                                  |
+| `STRIPE_WEBHOOK_SECRET`       | web (server only) | signing secret of **that deployment's own** endpoint                                                                       |
+| `STRIPE_PORTAL_CONFIGURATION` | web (server only) | optional; pins the portal configuration instead of the default                                                             |
+| `PITCHBOX_APP_ORIGIN`         | setup script      | defaults to `https://app.pitchbox.app`                                                                                     |
+| `PITCHBOX_PREVIEW_ORIGIN`     | setup script      | defaults to `https://preview.pitchbox.app`                                                                                 |
 
 Production and preview have **separate webhook endpoints with separate signing
 secrets** on purpose: a preview deployment holding the production secret could
