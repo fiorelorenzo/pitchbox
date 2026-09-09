@@ -4,6 +4,7 @@
   import * as Table from '$lib/components/ui/table';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
+  import { SelectField } from '$lib/components/ui/select-field';
   import { Info, Bot, Gauge, Archive, Webhook, ScrollText } from '@lucide/svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import PageContainer from '$lib/components/PageContainer.svelte';
@@ -12,7 +13,8 @@
   import { invalidateAll } from '$app/navigation';
 
   type AdminUser = { id: number; username: string; isInstanceAdmin: boolean };
-  type PageData = { authOn: boolean; users: AdminUser[] };
+  type RegistrationPolicy = 'open' | 'invite' | 'off';
+  type PageData = { authOn: boolean; users: AdminUser[]; registrationPolicy: RegistrationPolicy };
   let { data }: { data: PageData } = $props();
 
   let promoting = $state<number | null>(null);
@@ -35,6 +37,39 @@
       toast.error('Could not promote that user');
     } finally {
       promoting = null;
+    }
+  }
+
+  const REGISTRATION_POLICY_OPTIONS: { value: RegistrationPolicy; label: string }[] = [
+    { value: 'open', label: 'Open - anyone can register' },
+    { value: 'invite', label: 'Invite-only - a valid invite token is required' },
+    { value: 'off', label: 'Off - no registration at all' },
+  ];
+  // svelte-ignore state_referenced_locally
+  let registrationPolicy = $state<RegistrationPolicy>(data.registrationPolicy);
+  let savingRegistrationPolicy = $state(false);
+
+  async function saveRegistrationPolicy(next: RegistrationPolicy) {
+    const previous = registrationPolicy;
+    registrationPolicy = next;
+    savingRegistrationPolicy = true;
+    try {
+      const res = await fetch('/api/settings/admin/registration', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ policy: next }),
+      });
+      if (!res.ok) {
+        registrationPolicy = previous;
+        toast.error('Could not save the registration policy');
+        return;
+      }
+      toast.success('Registration policy saved');
+    } catch {
+      registrationPolicy = previous;
+      toast.error('Could not save the registration policy');
+    } finally {
+      savingRegistrationPolicy = false;
     }
   }
 
@@ -115,6 +150,26 @@
       </a>
     {/each}
   </div>
+
+  <Card.Root class="mt-8 max-w-3xl">
+    <Card.Header>
+      <Card.Title>Registration policy</Card.Title>
+      <Card.Description>
+        Whether POST /api/auth/register accepts a new account, and whether it needs a valid
+        invite token. Read fresh on every request, so a change here takes effect without a
+        redeploy. Code default is invite-only.
+      </Card.Description>
+    </Card.Header>
+    <Card.Content class="flex flex-col gap-2 sm:max-w-sm">
+      <SelectField
+        value={registrationPolicy}
+        onValueChange={(v) => saveRegistrationPolicy(v as RegistrationPolicy)}
+        options={REGISTRATION_POLICY_OPTIONS}
+        disabled={savingRegistrationPolicy}
+        fullWidth
+      />
+    </Card.Content>
+  </Card.Root>
 
   <Card.Root class="mt-8 max-w-3xl">
     <Card.Header>

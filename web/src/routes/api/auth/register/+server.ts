@@ -21,6 +21,7 @@ import {
   uniqueOrgSlugFromUsername,
   type OrgInvite,
 } from '@pitchbox/shared/orgs';
+import { loadRegistrationPolicy } from '@pitchbox/shared/registration-policy';
 
 // Same identifier/password shape as POST /api/auth/login (web/src/routes/api/
 // auth/login/+server.ts) - one convention for both routes, per #504. Email is
@@ -102,6 +103,35 @@ export async function POST(event: RequestEvent) {
         retry_after_seconds: Math.max(1, Math.ceil((ipLock.getTime() - now.getTime()) / 1000)),
       },
       { status: 429 },
+    );
+  }
+
+  // #505: the instance-wide switch, read fresh on every call so an operator
+  // opening or closing registration from settings/admin takes effect
+  // immediately, no redeploy. Checked before any other work so a probe
+  // against a closed/invite-only deployment never reaches the uniqueness
+  // checks below. Own error codes (not `invalid_credentials` or a bare 403)
+  // so the page can explain what happened rather than show a generic
+  // failure.
+  const regPolicy = await loadRegistrationPolicy(db);
+  if (regPolicy === 'off') {
+    await recordAuthFailure(db, ipBucket);
+    return json(
+      {
+        error: 'registration_closed',
+        message: 'Registration is disabled on this deployment. Ask its operator for an account.',
+      },
+      { status: 403 },
+    );
+  }
+  if (regPolicy === 'invite' && !parsed.data.token) {
+    await recordAuthFailure(db, ipBucket);
+    return json(
+      {
+        error: 'invite_required',
+        message: 'This deployment is invite-only. Ask an organization owner for an invite link.',
+      },
+      { status: 403 },
     );
   }
 

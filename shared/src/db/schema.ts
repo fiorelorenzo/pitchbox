@@ -626,7 +626,8 @@ export const appConfig = pgTable('app_config', {
 // has none of). `key` names the app_config row (or app_config-shaped
 // concern) that changed - 'default_runner', 'quota_defaults',
 // 'runner_config:<slug>', 'notification_webhooks', 'retention',
-// 'model_function:<fn>', 'user_promotion' - `before`/`after` hold the value
+// 'model_function:<fn>', 'registration_policy', 'user_promotion' - `before`/
+// `after` hold the value
 // on each side of the write, run through `redactInstanceAuditValue`
 // (shared/src/instance-audit.ts) before they ever reach this table so a
 // credential-shaped field is never stored raw. `recordInstanceAudit` is the
