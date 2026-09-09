@@ -19,6 +19,7 @@ import { loadGatewayCatalogue } from './gateway-catalogue.js';
 export const MODEL_FUNCTIONS = [
   'campaign_draft',
   'assist_suggest',
+  'assist_vision',
   'project_extract',
   'project_insights',
   'skill_generate',
@@ -56,6 +57,13 @@ export const MODEL_FUNCTION_META: readonly ModelFunctionMeta[] = [
     label: 'Answering in the panel',
     description:
       'The in-page companion suggesting a comment or a post while somebody waits for it. The only path here with a human watching an empty panel, so first-token latency is the constraint that matters.',
+    defaultModelId: FAST_DEFAULT,
+  },
+  {
+    fn: 'assist_vision',
+    label: 'Looking at an image in the panel',
+    description:
+      'The in-page companion reading the pixels of a post\u2019s image, chart or slide before suggesting a comment on it. Skipped entirely on a text-only post, so this only runs when the crop the extension captured is actually present.',
     defaultModelId: FAST_DEFAULT,
   },
   {

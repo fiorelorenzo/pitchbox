@@ -36,6 +36,8 @@
     "./assist/register": "./src/assist/register.ts",
     "./assist/tone": "./src/assist/tone.ts",
     "./assist/voice-profile": "./src/assist/voice-profile.ts",
+    "./assist/tools": "./src/assist/tools.ts",
+    "./assist/budget": "./src/assist/budget.ts",
     "./operator-profile": "./src/operator-profile.ts",
     "./operator-voice-profile": "./src/operator-voice-profile.ts",
     "./github-sources": "./src/github-sources.ts",

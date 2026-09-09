@@ -1,0 +1,9 @@
+#!/bin/bash
+# Pitchbox assist MCP server wrapper - forwards to the tsx-executed assist MCP
+# server source (cli/src/mcp/assist-server.ts). Exposes only the seven
+# read-only in-page-assistant tools (shared/src/assist/tools.ts) to the ACP
+# path's agent loop, bound to one organization and one project rather than to
+# a run - the campaign MCP server's 26 tools (bin/pitchbox-mcp) stay a
+# separate plane and are never reachable from here.
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+exec "$REPO_ROOT/node_modules/.bin/tsx" "$REPO_ROOT/cli/src/mcp/assist-index.ts" "$@"
