@@ -34,6 +34,7 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "brand:render": "tsx scripts/render-brand.ts",
+    "plans:export": "tsx scripts/export-plan-catalogue.ts",
     "set-version": "node scripts/set-version.mjs",
     "version:check": "node scripts/set-version.mjs --check"
   },

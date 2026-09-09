@@ -2,6 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { findValidInvite } from '@pitchbox/shared/orgs';
+import { isPlanId, PLAN_CATALOGUE, type PlanId } from '@pitchbox/shared/plans';
 import {
   loadRegistrationPolicy,
   DEFAULT_REGISTRATION_POLICY,
@@ -15,6 +16,25 @@ import type { PageServerLoad } from './$types';
 // anything else in `next` is just where the register form sends the browser
 // after a successful POST.
 const INVITE_NEXT = /^\/invite\/([^/?#]+)$/;
+
+/** `?plan=growth` from the pricing page's call to action (#558): the only
+ * carrier a self-serve signup has for "which plan did they mean to buy",
+ * since the account and its org do not exist yet to hold that on a row.
+ * `free` is not a plan worth preselecting - a fresh org already starts
+ * there - so only a paid id is ever returned. `?interval=year` follows the
+ * pricing page's own monthly/annual toggle; anything else defaults to
+ * monthly. An invited signup ignores both: they are joining an existing
+ * org whose plan an admin already chose, not buying one of their own. */
+function selectedPlanFromUrl(
+  url: URL,
+  hasInvite: boolean,
+): { plan: PlanId; interval: 'month' | 'year' } | null {
+  if (hasInvite) return null;
+  const raw = url.searchParams.get('plan');
+  if (!raw || !isPlanId(raw) || raw === 'free') return null;
+  const interval = url.searchParams.get('interval') === 'year' ? 'year' : 'month';
+  return { plan: raw, interval };
+}
 
 export const load: PageServerLoad = async (event) => {
   const authOn = process.env.PITCHBOX_AUTH === 'on';
@@ -53,5 +73,17 @@ export const load: PageServerLoad = async (event) => {
   // showing one that cannot possibly succeed is worse than showing nothing.
   const canRegister = policy === 'open' || (policy === 'invite' && invite !== null);
 
-  return { authOn, next, invite, policy, canRegister };
+  const selected = selectedPlanFromUrl(event.url, invite !== null);
+  const selectedPlanName = selected ? PLAN_CATALOGUE[selected.plan].name : null;
+
+  return {
+    authOn,
+    next,
+    invite,
+    policy,
+    canRegister,
+    selectedPlan: selected?.plan ?? null,
+    selectedInterval: selected?.interval ?? null,
+    selectedPlanName,
+  };
 };
