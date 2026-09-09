@@ -7,6 +7,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { GRACE_PERIOD_DAYS } from '@pitchbox/shared/billing/grace';
 import { POST as pairConsume } from '../src/routes/api/extension/pair/+server.js';
 
 type ConsumeEvent = Parameters<typeof pairConsume>[0];
@@ -96,7 +97,7 @@ describe('POST /api/extension/pair is read-only-gated by a failed payment (#554)
   });
 
   it("refuses redemption once the code's org grace window has elapsed, minting no device", async () => {
-    const org = await makePastDueOrg('pairing-payment-required-over', 10);
+    const org = await makePastDueOrg('pairing-payment-required-over', GRACE_PERIOD_DAYS + 1);
     await insertPairing(org.id, 'CODE-PAY-OVER-0001');
 
     const res = await pairConsume(consumeEvent('CODE-PAY-OVER-0001', '198.51.100.10'));

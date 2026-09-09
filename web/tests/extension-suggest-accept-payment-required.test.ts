@@ -6,6 +6,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { GRACE_PERIOD_DAYS } from '@pitchbox/shared/billing/grace';
 import {
   defaultLinkedInAssistSettings,
   saveLinkedInAssistSettings,
@@ -122,7 +123,10 @@ describe('POST /api/extension/suggest/accept is read-only-gated by a failed paym
   });
 
   it('refuses with plan_payment_required once the grace window has elapsed, and files no draft', async () => {
-    const { org, project } = await seedPastDueOrgProject('payment-required-accept-over', 10);
+    const { org, project } = await seedPastDueOrgProject(
+      'payment-required-accept-over',
+      GRACE_PERIOD_DAYS + 1,
+    );
     await mintDevice(org.id, 'tok-accept-over');
 
     const res = await accept({

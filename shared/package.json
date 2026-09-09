@@ -99,6 +99,7 @@
     "./billing/checkout": "./src/billing/checkout.ts",
     "./billing/portal": "./src/billing/portal.ts",
     "./billing/webhook": "./src/billing/webhook.ts",
+    "./billing/grace": "./src/billing/grace.ts",
     "./usage": "./src/usage.ts",
     "./onboarding": "./src/onboarding.ts"
   },

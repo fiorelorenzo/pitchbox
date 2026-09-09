@@ -5,6 +5,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { GRACE_PERIOD_DAYS } from '@pitchbox/shared/billing/grace';
 import { POST as projectsPost } from '../src/routes/api/projects/+server.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -84,7 +85,7 @@ describe('POST /api/projects is read-only-gated by a failed payment (#554)', () 
   });
 
   it('refuses with plan_payment_required once the grace window has elapsed, creating nothing', async () => {
-    const orgId = await makePastDueOrg('projects-payment-required-over', 10);
+    const orgId = await makePastDueOrg('projects-payment-required-over', GRACE_PERIOD_DAYS + 1);
 
     const res = await projectsPost(
       postEvent(orgId, { name: 'Should not exist', defaultAgentRunner: 'cloud' }),
