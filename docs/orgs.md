@@ -52,7 +52,12 @@ Each returns `false` for cross-tenant access; the route then returns 404.
    The invite is valid for **7 days** and is single-use (the row is marked `accepted_at` once consumed).
 
 2. **Invitee visits `/invite/<token>`**
-   - Not logged in? Redirected to `/login?next=/invite/<token>`.
+   - Not logged in? Redirected to `/register?next=/invite/<token>` (#504) -
+     an invite is an account nobody has yet, not a login form. `/register`
+     prefills the email field when the invite carried one and offers a
+     "Sign in instead" link back to `/login` for someone who already has an
+     account. Registering with the invite's token accepts it in the same
+     transaction that creates the account.
    - Logged in? The page server calls `acceptInvite`, creates a membership, and redirects to `/`.
 
 3. **Programmatic accept**
@@ -70,6 +75,7 @@ Each returns `false` for cross-tenant access; the route then returns 404.
 ## Database
 
 ```
+users                 id, username (unique), password_hash, email (nullable, unique), is_instance_admin
 organizations         id, slug (unique), name
 memberships           id, organization_id, user_id, role, created_at  (unique org+user)
 org_invites           id, organization_id, token (unique), email, role,

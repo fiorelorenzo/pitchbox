@@ -67,13 +67,25 @@ export async function POST(event: RequestEvent) {
     );
   }
 
+  // Decision (#507, 2026-09-09): login stays username-only rather than
+  // accepting either a username or an email. Password recovery (a separate
+  // future child of #503) identifies people by address through its own
+  // route, not by widening what this form's single identifier field means -
+  // the two flows don't need to share an input shape. Accepting both here
+  // would also touch the bootstrap branch just below, which writes the
+  // submitted value straight into `users.username`: an email-shaped string
+  // would either have to be rejected there anyway or silently become a
+  // username, neither of which is the small change it looks like from this
+  // form alone. `register` below reuses this exact zod shape unchanged.
   let userId: number;
   const total = await countUsers(db);
   if (total === 0) {
     // First user becomes the owner - and the instance admin - on first login
     // attempt (#137: instance-admin gates instance-wide config and must not
     // be handed to every self-created-org owner, only this bootstrap one).
-    userId = await createUser(db, parsed.data.username, parsed.data.password, {
+    userId = await createUser(db, {
+      username: parsed.data.username,
+      password: parsed.data.password,
       isInstanceAdmin: true,
     });
   } else {

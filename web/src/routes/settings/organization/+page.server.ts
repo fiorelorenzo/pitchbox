@@ -69,6 +69,7 @@ export const load: PageServerLoad = async (event) => {
     members: members.map((m) => ({
       userId: m.userId,
       username: m.username,
+      email: m.email,
       role: m.role,
       joinedAt: m.createdAt.toISOString(),
     })),

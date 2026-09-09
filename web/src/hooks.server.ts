@@ -109,13 +109,17 @@ function isExemptPath(pathname: string): boolean {
   return (
     pathname.startsWith('/api/extension/') ||
     pathname.startsWith('/login') ||
-    // Only login/logout are exempt - a signed-in-or-not caller has to be
-    // able to reach them. `/api/auth/unlock` and `/api/auth/failures` are
+    // A visitor with no session has to be able to reach both halves of
+    // sign-up too (#504): /register itself, and /invite/<token>'s own
+    // redirect there for someone with no account yet. `/api/auth/unlock`
+    // and `/api/auth/failures` stay OUT of this list on purpose - they are
     // admin-only management endpoints and must go through the same
     // session + org/role resolution as every other /api/* route below, or
     // `requireRole` in those handlers has nothing to gate on (#132).
+    pathname.startsWith('/register') ||
     pathname.startsWith('/api/auth/login') ||
     pathname.startsWith('/api/auth/logout') ||
+    pathname.startsWith('/api/auth/register') ||
     pathname.startsWith('/_app/') ||
     pathname.startsWith('/favicon')
   );
@@ -185,7 +189,11 @@ export const handle = async ({ event, resolve }) => {
             headers: { 'content-type': 'application/json' },
           });
         }
-        return new Response(null, { status: 302, headers: { location: `/login?next=${next}` } });
+        // An invite link is an account nobody has yet (#504) - send a
+        // session-less visitor to create one, not to a login form for a
+        // user that doesn't exist. Every other route still goes to /login.
+        const base = event.url.pathname.startsWith('/invite/') ? '/register' : '/login';
+        return new Response(null, { status: 302, headers: { location: `${base}?next=${next}` } });
       }
       // Verified internal dispatch to /api/run (see INTERNAL_TOKEN above):
       // fall through with no locals.user / locals.org, same as the

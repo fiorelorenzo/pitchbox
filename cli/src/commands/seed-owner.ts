@@ -64,7 +64,7 @@ export async function seedOwner(): Promise<SeedOwnerResult> {
   // one bootstrap owner - not a self-created-org admin - and instance-wide
   // config (default runner, quota defaults, webhook config) must be gated on
   // that distinction.
-  const userId = await createUser(db, username, password, { isInstanceAdmin: true });
+  const userId = await createUser(db, { username, password, isInstanceAdmin: true });
   return { created: true, userId, username };
 }
 
