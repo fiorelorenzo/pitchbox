@@ -24,6 +24,10 @@ const suggest = vi.fn();
 const acceptSuggestion = vi.fn();
 const armed = vi.fn(async () => ({ ok: true as const, data: {} }));
 const sent = vi.fn(async () => ({ ok: true as const, data: {} }));
+// #556: only reached from `setRefused`'s `billingLinkFor` branch (the two
+// plan refusals) - every other test in this file never calls it, so a
+// resolved default here changes nothing for them.
+const pickPairing = vi.fn(async () => ({ backendUrl: 'https://app.pitchbox.app' }));
 
 vi.mock('../../src/lib/api.js', () => ({
   api: {
@@ -33,6 +37,7 @@ vi.mock('../../src/lib/api.js', () => ({
     armed: () => armed(),
     sent: () => sent(),
   },
+  pickPairing: () => pickPairing(),
 }));
 
 const logged: Array<Record<string, unknown>> = [];
@@ -749,6 +754,11 @@ describe('every refusal says which one it is', () => {
       'quota_exhausted',
       'backend_unreachable',
       'selector_health_degraded',
+      // #556: the plan's own ceiling and a failed payment - distinct from
+      // each other and from `quota_exhausted`, so the panel can say which
+      // one stopped it.
+      'plan_limit_reached',
+      'plan_payment_required',
     ].map((reason) => refusalMessage(reason).key);
 
     expect(new Set(keys).size).toBe(keys.length);
@@ -780,6 +790,158 @@ describe('every refusal says which one it is', () => {
     await settle();
 
     expect(panelText()).not.toBe(killed);
+  });
+});
+
+describe('a plan refusal explains itself and links to billing (#556)', () => {
+  it('renders its own message for a spent suggestion limit, with a billing link', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'refused', reason: 'plan_limit_reached', detail: {} });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(panelText()).toMatch(/suggestion limit/i);
+    const link = shadow().querySelector<HTMLAnchorElement>('.assist-link');
+    expect(link?.getAttribute('href')).toBe('https://app.pitchbox.app/settings/billing');
+    expect(link?.getAttribute('target')).toBe('_blank');
+  });
+
+  it('renders a distinct message for a failed payment, also with a billing link', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'refused', reason: 'plan_payment_required', detail: {} });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(panelText()).toMatch(/payment/i);
+    expect(panelText()).not.toMatch(/suggestion limit/i);
+    const link = shadow().querySelector<HTMLAnchorElement>('.assist-link');
+    expect(link?.getAttribute('href')).toBe('https://app.pitchbox.app/settings/billing');
+  });
+
+  it('never links out for a refusal #556 did not name', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'refused', reason: 'quota_exhausted', detail: {} });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(shadow().querySelector('.assist-link')).toBeNull();
+  });
+});
+
+describe('the loop narrates its own steps (#573)', () => {
+  it('names the tool it is running, collapses a parallel step into one line, and hands off to writing', async () => {
+    const composer = renderPost();
+    // Driven from out here, one `settle()` per event, rather than paced by
+    // internal awaits inside the mock: the panel's own re-render only ever
+    // needs one round trip to settle, and stacking several nested delays
+    // inside a single `suggest()` call raced against the outer `settle()`
+    // and left later events observed before they had actually rendered.
+    let deliver: ((event: Record<string, unknown>) => void) | undefined;
+    // extension/tsconfig.json targets a lib without `Promise.withResolvers`
+    // (cli/src/lib/password.ts hit the same wall) - the executor form is
+    // the one that typechecks here.
+    let finish!: (value: { ok: true; data: { ok: true } }) => void;
+    const suggestPromise = new Promise<{ ok: true; data: { ok: true } }>((resolve) => {
+      finish = resolve;
+    });
+    suggest.mockImplementation((_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+      deliver = onEvent;
+      return suggestPromise;
+    });
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    deliver!({ kind: 'status', phase: 'read_thread' });
+    await settle();
+    expect(panelText()).toContain('Reading the thread…');
+
+    // A parallel step collapses into one line naming the set, not two lines.
+    deliver!({ kind: 'status', phase: 'read_thread,look_at_image' });
+    await settle();
+    expect(panelText()).toContain('Reading the thread and looking at the image…');
+
+    deliver!({ kind: 'status', phase: 'my_prior_takes' });
+    await settle();
+    expect(panelText()).toContain('Checking your prior takes…');
+
+    deliver!({ kind: 'status', phase: 'slow' });
+    await settle();
+    expect(panelText()).toContain('This is taking longer than usual.');
+
+    deliver!({ kind: 'status', phase: 'writing' });
+    await settle();
+    expect(panelText()).toContain('Writing…');
+
+    deliver!({ kind: 'chunk', text: 'A reply.', section: 'draft' });
+    deliver!({ kind: 'done', reasoning: '', draft: 'A reply.', skipped: false, ms: 900 });
+    finish({ ok: true, data: { ok: true } });
+    await settle();
+    expect(shadow().querySelector('textarea')?.value).toBe('A reply.');
+  });
+
+  it('never shows a raw tool name for a step this build does not recognise', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'status', phase: 'some_future_tool' });
+        onEvent({ kind: 'chunk', text: 'A reply.', section: 'draft' });
+        onEvent({ kind: 'done', reasoning: '', draft: 'A reply.', skipped: false, ms: 900 });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(panelText()).not.toContain('some_future_tool');
+  });
+
+  it('says it answered with what it had once the hard budget cuts a draft short', async () => {
+    const composer = renderPost();
+    suggest.mockImplementation(
+      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
+        onEvent({ kind: 'chunk', text: 'A reply.', section: 'draft' });
+        onEvent({
+          kind: 'done',
+          reasoning: '',
+          draft: 'A reply.',
+          skipped: false,
+          ms: 90_000,
+          budgetExhausted: true,
+        });
+        return { ok: true as const, data: { ok: true } };
+      },
+    );
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(panelText()).toContain('Answered with what it had time to gather.');
   });
 });
 

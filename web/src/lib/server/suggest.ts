@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from 'node:fs/promises';
+import type { ModelMessage } from 'ai';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDb } from './db.js';
@@ -14,6 +15,7 @@ import {
 import { resolveEntitlements } from '@pitchbox/shared/plans';
 import {
   buildSuggestionPrompt,
+  buildRetunePrompt,
   type CurrentProject,
   type ObservedPost,
   type RetuneDirection,
@@ -36,6 +38,11 @@ import {
 } from '@pitchbox/shared/style-check';
 import { ASSIST_TOOLS } from '@pitchbox/shared/assist/tools';
 import { buildAssistToolSet } from '@pitchbox/shared/assist/loop';
+import {
+  createAssistSession,
+  deleteAssistSession,
+  getAssistSession,
+} from '@pitchbox/shared/assist/session';
 import {
   ASSIST_HARD_TIMEOUT_MS,
   ASSIST_MAX_STEPS,
@@ -94,6 +101,18 @@ export interface SuggestionResult {
     cacheCreationTokens: number;
     costUsd: number | null;
   };
+  /** Set only when this call continued a live session (#576) - the id the
+   * caller hands back on the *next* retune or hint so it continues from
+   * here instead of starting over. Absent when no tool set was attached
+   * (nothing to continue from) or the run never produced a usable
+   * conversation to persist (a hard abort raced it). */
+  sessionId?: string;
+  /** True when the hard ceiling (or an equivalent early stop - a mid-stream
+   * provider error, a cost ceiling) cut the loop short and this is only
+   * whatever had already streamed, not a deliberately finished answer
+   * (docs/design/in-page-agent.md, "a partial suggestion beats an error").
+   * Absent/false on an ordinary completion. */
+  budgetExhausted?: boolean;
 }
 
 export interface SuggestionHandle {
@@ -225,22 +244,19 @@ export function runSuggestion(args: {
    * halves (#382). The caller decides what to do with each half - the SSE
    * route turns non-empty pieces into `chunk` events with a `section`. */
   onChunk?: (chunk: EnvelopeChunk) => void;
+  /** #576: a live session id from a prior `done` event - when present and
+   * still live, this call continues that turn's own gathered context
+   * instead of rebuilding the whole prompt (`buildRetunePrompt` rather than
+   * `buildSuggestionPrompt`). Absent, expired, or scoped to a different
+   * org/project/kind falls back to today's full rebuild. */
+  continueSessionId?: string;
+  /** #573: fires with the tool name(s) the loop is running, as soon as they
+   * are known. Undefined for the ACP path, which has no equivalent hook. */
+  onToolStep?: (toolNames: string[]) => void;
+  /** #573: fires once, past `ASSIST_SOFT_BUDGET_MS` of wall-clock time with
+   * no result yet - the panel's "this is taking longer than usual" state. */
+  onSlow?: () => void;
 }): SuggestionHandle {
-  const prompt = buildSuggestionPrompt({
-    kind: args.kind,
-    post: args.post,
-    currentProject: args.currentProject,
-    persona: args.persona,
-    voiceProfile: args.voiceProfile,
-    projects: args.projects,
-    repos: args.repos,
-    examples: args.examples,
-    hint: args.hint,
-    retune: args.retune,
-    tone: args.tone,
-    toneNotes: args.toneNotes,
-  });
-
   // `cancel()` can arrive before the runner exists: resolving its config and
   // making a temp directory are both awaits, and a human who closes the panel
   // immediately lands in that window. A cancel that only forwards to a handle
@@ -344,6 +360,42 @@ export function runSuggestion(args: {
           })
         : undefined;
 
+    // #576: reading a session also consumes it - a retune uses its prior
+    // context at most once, so a second concurrent request against the same
+    // id falls back to a full rebuild rather than racing this one for it.
+    // Scoped to this org/project/kind: a foreign or mismatched id is treated
+    // exactly like an expired one, never trusted.
+    const continuedSession =
+      args.continueSessionId && toolSet
+        ? getAssistSession(args.continueSessionId, {
+            orgId: toolOrgId,
+            projectId: args.projectId,
+            kind: args.kind,
+          })
+        : null;
+    if (continuedSession && args.continueSessionId) deleteAssistSession(args.continueSessionId);
+    const priorMessages = continuedSession ?? undefined;
+    // #576: a live continuation replaces the whole rebuilt prompt with the
+    // small steer-only turn - everything else (the operator, the voice, the
+    // post, the examples) is already in `priorMessages`, behind whatever
+    // tool calls the model already made for it.
+    const prompt = continuedSession
+      ? buildRetunePrompt({ retune: args.retune, hint: args.hint })
+      : buildSuggestionPrompt({
+          kind: args.kind,
+          post: args.post,
+          currentProject: args.currentProject,
+          persona: args.persona,
+          voiceProfile: args.voiceProfile,
+          projects: args.projects,
+          repos: args.repos,
+          examples: args.examples,
+          hint: args.hint,
+          retune: args.retune,
+          tone: args.tone,
+          toneNotes: args.toneNotes,
+        });
+
     // `rawText` is the whole response, unsplit - used only to tell an actual
     // zero-text turn (a real failure) apart from a well-formed response whose
     // envelope happens to carry no draft (#382: that is a success, not an
@@ -351,6 +403,7 @@ export function runSuggestion(args: {
     let rawText = '';
     const splitter = new EnvelopeSplitter();
 
+    let slowTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       const handle = runner.run({
         prompt,
@@ -372,6 +425,14 @@ export function runSuggestion(args: {
               costCeilingUsd: ASSIST_COST_CEILING_USD,
             }
           : undefined,
+        // #576: the prior turn's own gathered conversation, or undefined on
+        // a fresh suggestion - `prompt` above already carries the full
+        // context in that case, so this changes nothing.
+        priorMessages,
+        // #573: narrates which tool(s) the loop is actually running, the
+        // moment they are known - undefined for the ACP path, which has no
+        // equivalent hook to call back on.
+        onToolStep: args.onToolStep,
         onTextChunk: (chunk) => {
           rawText += chunk;
           // `args.onChunk?.(splitter.push(chunk))` looks equivalent but is
@@ -391,7 +452,14 @@ export function runSuggestion(args: {
       // A cancel that landed between the last gate and this assignment still
       // has to reach the process it just missed.
       if (cancelled) handle.cancel();
+      // #573: "taking longer than usual" is honest wall-clock elapsed time
+      // against the same threshold the loop itself answers-now at
+      // (ASSIST_SOFT_BUDGET_MS) - a passive UI signal, not a second
+      // enforcement point, so it needs no runner hook of its own and applies
+      // to the ACP path exactly as it does to the SDK one.
+      slowTimer = setTimeout(() => args.onSlow?.(), ASSIST_SOFT_BUDGET_MS);
       const run = await handle.result;
+      clearTimeout(slowTimer);
 
       if (cancelled) throw new Cancelled();
       if (!rawText.trim()) {
@@ -431,6 +499,24 @@ export function runSuggestion(args: {
         styleFindings = enforcement.findings;
       }
 
+      // #576: this turn's own conversation - whatever it continued, plus
+      // the turn it just ran - becomes the next retune's session, so a
+      // second retune never re-pays for the same read_thread/look_at_image
+      // call either. Only when a tool set was actually attached (nothing
+      // gathered to continue from otherwise) and the run actually produced
+      // something to persist.
+      let sessionId: string | undefined;
+      if (toolSet && run.responseMessages && run.responseMessages.length > 0) {
+        sessionId = createAssistSession(
+          { orgId: toolOrgId, projectId: args.projectId, kind: args.kind },
+          [
+            ...(priorMessages ?? []),
+            { role: 'user', content: prompt },
+            ...(run.responseMessages as ModelMessage[]),
+          ],
+        );
+      }
+
       return {
         reasoning: envelope.reasoning,
         draft,
@@ -447,8 +533,14 @@ export function runSuggestion(args: {
               costUsd: run.usage.costUsd,
             }
           : undefined,
+        sessionId,
+        // #573: a genuine early stop with text already in hand - never a
+        // clean end_turn - so the panel says it answered with what it had
+        // instead of treating this as an ordinary finish.
+        budgetExhausted: run.exitCode !== 0,
       };
     } finally {
+      clearTimeout(slowTimer);
       await rm(cwd, { recursive: true, force: true }).catch(() => {});
     }
   })();

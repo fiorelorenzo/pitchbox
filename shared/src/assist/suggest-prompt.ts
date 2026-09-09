@@ -530,3 +530,42 @@ export function buildSuggestionPrompt(args: {
 
   return parts.join('\n\n');
 }
+
+/**
+ * The continuation turn a retune or a hint-on-a-regenerate sends when the
+ * loop's prior context is still live (#576, `shared/src/assist/session.ts`).
+ * Deliberately not `buildSuggestionPrompt` run again: everything that
+ * function assembles - the operator, the voice, the post, the examples - is
+ * already in the conversation this continues, sitting behind whatever
+ * `read_thread`/`look_at_image`/`author_history`/`operator_voice`/
+ * `project_knowledge`/`my_prior_takes` calls the model already made. Rebuilding
+ * it here would double the very cost a continuation exists to avoid. Only
+ * the steer, the house style (never optional) and the envelope instruction
+ * (the split still has to hold) travel again.
+ */
+export function buildRetunePrompt(args: { retune?: RetuneDirection; hint?: string }): string {
+  const parts: string[] = [
+    "You already gathered everything above for this post - the thread, the image if there was one, the author's history, your voice and your prior takes. Do not call any of those tools again unless something is genuinely missing; rewrite from what you already have.",
+  ];
+
+  if (args.retune) {
+    parts.push(
+      `The operator asked you to retune this one draft, which outranks the tone above but not the house style: ${RETUNE_INSTRUCTION[args.retune]}`,
+    );
+  }
+  if (args.hint?.trim()) {
+    parts.push(
+      `The operator added this steer, which outranks your own angle but not the house style:\n${clamp(args.hint, 500)}`,
+    );
+  }
+  if (!args.retune && !args.hint?.trim()) {
+    parts.push(
+      'The operator asked for another take on the same draft. Keep everything you already know and write it again, varying your phrasing.',
+    );
+  }
+
+  parts.push(`${HOUSE_STYLE_HEADING}${HOUSE_STYLE_SECTION}`);
+  parts.push(envelopeInstruction());
+
+  return parts.join('\n\n');
+}

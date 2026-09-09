@@ -16,7 +16,8 @@
    * differently is drift, so this file changes whenever that one does.
    */
   import PanelFrame from './panel-frame.svelte';
-  import { t } from '../lib/i18n/index.js';
+  import { t, locale } from '../lib/i18n/index.js';
+  import { describeStatus } from './shared/assist-status.js';
   import type { PostAssistPanelProps } from './linkedin-post-assist.js';
   import type { RetuneDirection } from '../lib/api.js';
 
@@ -73,7 +74,7 @@
         </div>
       {:else if assistState.phase === 'streaming'}
         <p class="assist-status" aria-live="polite">
-          {$t(assistState.status === 'reading' ? 'assist.status.reading' : 'assist.status.writing')}
+          {describeStatus(assistState.status, $t, $locale)}
         </p>
         {#if assistState.reasoning}
           <p class="assist-hint">{assistState.reasoning}</p>
@@ -95,6 +96,9 @@
           value={assistState.draft}
           oninput={onTextareaInput}
         ></textarea>
+        {#if assistState.phase === 'ready' && assistState.budgetExhausted}
+          <p class="assist-hint" role="status">{$t('assist.status.budget_exhausted')}</p>
+        {/if}
         <div class="assist-row">
           <button type="button" class="assist-button" onclick={onAccept}>
             {$t('assist.action.accept')}
@@ -188,6 +192,13 @@
         {/if}
       {:else if assistState.phase === 'refused'}
         <p class="assist-refusal" role="alert">{$t(assistState.messageKey, assistState.messageParams)}</p>
+        {#if assistState.link}
+          <p class="assist-hint">
+            <a class="assist-link" href={assistState.link} target="_blank" rel="noopener noreferrer">
+              {$t('assist.action.open_billing')}
+            </a>
+          </p>
+        {/if}
         <div class="assist-row">
           <button type="button" class="assist-button assist-button--ghost" onclick={onRequest}>
             {$t('assist.action.retry')}

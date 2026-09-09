@@ -293,6 +293,19 @@ export const en = {
 
   'dashboard.connection.no-active-tab': 'No active tab',
 
+  // #556: the plan readout PairingList.svelte shows per paired backend,
+  // display only - the server refuses regardless of what this says
+  // (docs/design/DECISIONS.md D28). `plan-remaining-low` is the same fact
+  // as `plan-remaining`, worded to stand out once suggestionsRemaining
+  // drops to the 80%-used warning threshold #557 already established
+  // elsewhere in this product.
+  'dashboard.connection.plan-remaining':
+    '{plan} plan: {remaining} of {limit} suggestions left this period',
+  'dashboard.connection.plan-remaining-low':
+    '{plan} plan: only {remaining} of {limit} suggestions left this period',
+  'dashboard.connection.plan-unlimited': '{plan} plan: unlimited suggestions',
+  'dashboard.connection.plan-read-only': '{plan} plan: read-only until the payment issue is fixed',
+
   // In-page panel chrome. The wordmark is the product name, so it is not
   // translated; everything else on this surface is.
   'panel.title': 'Pitchbox',
@@ -305,6 +318,24 @@ export const en = {
   'assist.comment.resting.cta': 'Suggest a comment',
   'assist.status.reading': 'Reading the post…',
   'assist.status.writing': 'Writing…',
+  // #573: the loop's own step narration - see
+  // content/shared/assist-status.ts's own doc comment for how a tool name
+  // becomes one of these clauses and how several running at once combine.
+  // Lowercase and without a leading capital: `describeStatus` capitalises
+  // whichever one (or combination) actually renders.
+  'assist.status.step.read_thread': 'reading the thread',
+  'assist.status.step.look_at_image': 'looking at the image',
+  'assist.status.step.author_history': 'checking what you have said to them before',
+  'assist.status.step.operator_voice': 'finding how you have written about this',
+  'assist.status.step.project_knowledge': 'checking what it knows about this project',
+  'assist.status.step.my_prior_takes': 'checking your prior takes',
+  'assist.status.step.check_style': 'checking the style',
+  'assist.status.step.unknown': 'still working on it',
+  // Past the 35s soft budget (docs/design/in-page-agent.md section 2, D27).
+  'assist.status.slow': 'This is taking longer than usual.',
+  // A genuine early stop at the 90s hard ceiling with a draft already in
+  // hand - said plainly rather than surfaced as an error (D27).
+  'assist.status.budget_exhausted': 'Answered with what it had time to gather.',
   'assist.comment.ready.label': 'Suggested comment (editable)',
   'assist.action.accept': 'Insert',
   'assist.action.retry': 'Try again',
@@ -353,6 +384,13 @@ export const en = {
   'assist.refusal.selector_health_degraded':
     "LinkedIn's layout changed and Pitchbox could not read this post reliably.",
   'assist.refusal.generation_failed': 'Something went wrong while writing the suggestion.',
+  // #556: the plan's own ceiling and a failed payment past its grace
+  // window - distinct from `quota_exhausted` (the platform's own daily
+  // cap) so the panel can say which one stopped it, each with a link that
+  // opens `/settings/billing` in a new tab (D28).
+  'assist.refusal.plan_limit_reached': "Your plan's suggestion limit for this period is used up.",
+  'assist.refusal.plan_payment_required': 'Fix your payment to keep using the assistant.',
+  'assist.action.open_billing': 'Open billing settings',
   // The content script's own extension context dies on a reload/update of
   // the extension itself while this tab stayed open - every message.send
   // to the background worker then fails the same way `backend_unreachable`

@@ -5,7 +5,9 @@ import './shared/trusted-types-shim.js';
 import { claimDocument } from './shared/claim-document.js';
 import {
   api,
+  pickPairing,
   type AcceptRefusalReason,
+  type AssistStatusPhase,
   type RetuneDirection,
   type SuggestEvent,
   type SuggestUsage,
@@ -270,6 +272,11 @@ const KNOWN_REFUSALS: Record<AssistRefusal, true> = {
   selector_health_degraded: true,
   generation_failed: true,
   extension_reloaded: true,
+  // #556: the plan's own ceiling and a failed payment past its grace
+  // window - distinct from `quota_exhausted` so the panel can say which
+  // one stopped it and point at billing rather than a generic upgrade.
+  plan_limit_reached: true,
+  plan_payment_required: true,
 };
 
 /**
@@ -310,6 +317,12 @@ export function refusalMessage(reason: string): {
   return { key: 'assist.refusal.unknown', params: { reason } };
 }
 
+/** Whether `reason` is one #556 gives its own link to billing settings, in
+ * a new tab, alongside its message. */
+function billingLinkFor(reason: string): boolean {
+  return reason === 'plan_limit_reached' || reason === 'plan_payment_required';
+}
+
 /**
  * State machine (#382): `reasoning` and `draft` travel apart through every
  * phase that carries both, so nothing here can ever hand the model's
@@ -321,13 +334,20 @@ export function refusalMessage(reason: string): {
  */
 export type CommentAssistState =
   | { phase: 'resting' }
-  | { phase: 'streaming'; status: 'reading' | 'writing'; reasoning: string; draft: string }
-  | { phase: 'ready'; reasoning: string; draft: string }
+  | { phase: 'streaming'; status: AssistStatusPhase; reasoning: string; draft: string }
+  | { phase: 'ready'; reasoning: string; draft: string; budgetExhausted?: boolean }
   | { phase: 'edited'; reasoning: string; draft: string }
   | { phase: 'accepting'; reasoning: string; draft: string }
   | { phase: 'inserted' }
   | { phase: 'no_draft'; reasoning: string; skipped: boolean }
-  | { phase: 'refused'; messageKey: string; messageParams?: Record<string, string> };
+  | {
+      phase: 'refused';
+      messageKey: string;
+      messageParams?: Record<string, string>;
+      /** #556: opens `/settings/billing` on the paired backend, in a new
+       * tab - present only for the two plan refusals. */
+      link?: string;
+    };
 
 export type CommentAssistPanelProps = {
   subject?: string;
@@ -349,13 +369,13 @@ function resolveAnchor(composer: HTMLElement): Element {
   return composer.closest('form') ?? composer;
 }
 
-function logRefusal(reason: string): void {
+function logRefusal(reason: string, detail?: Record<string, unknown>): void {
   logFromContent({
     level: 'warn',
     source: 'linkedin-action',
     message: 'activity.linkedin-action.suggestion-refused',
     messageParams: { reason },
-    meta: { reason, script: 'linkedin-comment-assist' },
+    meta: { reason, script: 'linkedin-comment-assist', ...detail },
   });
 }
 
@@ -445,6 +465,11 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
   let personalProjectId: number | null = null;
   let lastUsage: SuggestUsage | undefined;
   let lastMs: number | undefined;
+  // #576: the live session id from the last `done` event, if any - handed
+  // straight back on the next retune so the loop continues instead of
+  // starting over. Cleared implicitly by a fresh `resting`/`streaming` cycle
+  // never reading it before a `done` sets it again.
+  let lastSessionId: string | undefined;
 
   // What the panel shows the instant it appears, and whether anything is
   // asked for at all (#439): a result already generated for this card, then
@@ -488,23 +513,28 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
 
   if (autoRequest) void requestSuggestion();
 
-  function setRefused(reason: string): void {
-    logRefusal(reason);
+  async function setRefused(reason: string, detail?: Record<string, unknown>): Promise<void> {
+    logRefusal(reason, detail);
     const { key, params } = refusalMessage(reason);
+    let link: string | undefined;
+    if (billingLinkFor(reason)) {
+      const pairing = await pickPairing();
+      if (pairing) link = `${pairing.backendUrl}/settings/billing`;
+    }
     if (handle.alive) {
-      handle.update({ state: { phase: 'refused', messageKey: key, messageParams: params } });
+      handle.update({ state: { phase: 'refused', messageKey: key, messageParams: params, link } });
     }
   }
 
   async function requestSuggestion(retune?: RetuneDirection): Promise<void> {
     if (!capturedPost) {
-      setRefused('selector_health_degraded');
+      void setRefused('selector_health_degraded');
       return;
     }
     // Checked before the request, not inferred from its failure: a dead
     // context fails the same way an unreachable backend does (#438).
     if (!extensionContextAlive()) {
-      setRefused('extension_reloaded');
+      void setRefused('extension_reloaded');
       return;
     }
     handle.update({ state: { phase: 'streaming', status: 'reading', reasoning: '', draft: '' } });
@@ -512,20 +542,20 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
     const assistRes = await api.linkedinAssist();
     if (!handle.alive) return;
     if (!assistRes.ok) {
-      setRefused('backend_unreachable');
+      void setRefused('backend_unreachable');
       return;
     }
     const { assist } = assistRes.data;
     if (assist.killSwitch) {
-      setRefused('kill_switch');
+      void setRefused('kill_switch');
       return;
     }
     if (!assist.enabled) {
-      setRefused('assist_disabled');
+      void setRefused('assist_disabled');
       return;
     }
     if (assist.projectId === null) {
-      setRefused('project_not_bound');
+      void setRefused('project_not_bound');
       return;
     }
     boundProjectId = assist.projectId;
@@ -557,6 +587,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
           image,
         },
         retune,
+        sessionId: lastSessionId,
       },
       (event: SuggestEvent) => {
         if (!handle.alive) return;
@@ -574,6 +605,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
           case 'done':
             lastUsage = event.usage;
             lastMs = event.ms;
+            lastSessionId = event.sessionId;
             currentReasoning = event.reasoning;
             if (event.draft === null) {
               logNoDraft(event.skipped);
@@ -586,27 +618,28 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
                 phase: 'ready',
                 reasoning: event.reasoning,
                 draft: event.draft,
+                budgetExhausted: event.budgetExhausted,
               };
               lastResultFor.set(anchor, ready);
               handle.update({ state: ready });
             }
             break;
           case 'failed':
-            setRefused('generation_failed');
+            void setRefused('generation_failed');
             break;
           case 'refused':
-            setRefused(event.reason);
+            void setRefused(event.reason, event.detail);
             break;
         }
       },
     );
     if (!handle.alive) return;
-    if (!res.ok) setRefused('backend_unreachable');
+    if (!res.ok) void setRefused('backend_unreachable');
   }
 
   async function acceptAndInsert(): Promise<void> {
     if (personalProjectId === null || !capturedPost) {
-      setRefused('selector_health_degraded');
+      void setRefused('selector_health_degraded');
       return;
     }
     handle.update({
@@ -627,11 +660,11 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
     });
     if (!handle.alive) return;
     if (!res.ok) {
-      setRefused('backend_unreachable');
+      void setRefused('backend_unreachable');
       return;
     }
     if (!res.data.accepted) {
-      setRefused(res.data.refused);
+      void setRefused(res.data.refused);
       return;
     }
 

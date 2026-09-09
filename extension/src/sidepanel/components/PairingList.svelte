@@ -13,7 +13,8 @@
   import { Input } from '$ui/input';
   import * as AlertDialog from '$ui/alert-dialog';
   import { t } from '$ext/i18n';
-  import { api } from '$ext/api';
+  import { api, type LinkedInAssistPlanState } from '$ext/api';
+  import PlanReadout from './PlanReadout.svelte';
   import {
     patchPairing,
     removePairing,
@@ -75,6 +76,23 @@
   type ConnectionTestResult = { ok: true; version: string } | { ok: false; error: string };
   let testPending = $state<Record<string, boolean>>({});
   let testResults = $state<Record<string, ConnectionTestResult>>({});
+
+  // #556: the plan and remaining-suggestion allowance per paired backend,
+  // display only - the server refuses regardless of what this says (D28
+  // in docs/design/DECISIONS.md). Fetched here rather than through home's
+  // own `getSettings()`/`chrome.storage` read: this is live backend state,
+  // not a stored pairing field, so it follows `testConnection`'s own
+  // per-row network-call posture instead of the storage-ownership rule.
+  let plans = $state<Record<string, LinkedInAssistPlanState>>({});
+
+  $effect(() => {
+    for (const p of pairings) void loadPlan(p.backendUrl);
+  });
+
+  async function loadPlan(backendUrl: string): Promise<void> {
+    const res = await api.linkedinAssist(backendUrl);
+    if (res.ok) plans = { ...plans, [backendUrl]: res.data.plan };
+  }
 
   // Every mutation below routes through home, which re-reads storage and
   // hands a fresh `pairings` back down.
@@ -353,6 +371,9 @@
                 ·
                 {$t('dashboard.connection.sync-ago', { ago: fmtAgo(p.lastDmSyncAt) })}
               </div>
+              {#if plans[p.backendUrl]}
+                <PlanReadout plan={plans[p.backendUrl]} />
+              {/if}
               {#if testResult}
                 <div
                   class="pl-4 text-xs {testResult.ok

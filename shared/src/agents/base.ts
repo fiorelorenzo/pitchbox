@@ -34,6 +34,20 @@ export interface AgentRunOptions {
    */
   tools?: Record<string, unknown>;
   /**
+   * A prior turn's own conversation, fed back in ahead of `prompt` instead of
+   * rebuilding the whole context from scratch (#576) - the in-page
+   * assistant's own continuation path. Only the `cloud` runner (`SdkRunner`)
+   * reads this: it prepends these as `messages` before the new user turn
+   * built from `prompt`, so a model that already called `read_thread` or
+   * `look_at_image` sees their results already in context rather than
+   * needing to call them again. Left untyped here (an opaque conversation,
+   * not a runner-agnostic shape) because only the SDK path's own AI SDK
+   * message format can consume it - `AcpRunner` ignores it exactly as it
+   * ignores `tools`/`toolLoopBudget`, since it has no equivalent notion of a
+   * continued turn.
+   */
+  priorMessages?: unknown[];
+  /**
    * Step/time/token/cost budget for a native tool-calling loop (#566),
    * enforced only by the `cloud` runner (`SdkRunner`) - `AcpRunner` ignores
    * it exactly as it ignores `budgetRemainingUsd`, since its own coding-agent
@@ -92,6 +106,17 @@ export interface AgentRunOptions {
    * this instead.
    */
   onTextChunk?: (text: string) => void;
+  /**
+   * Called with the tool name(s) the model decided to run in the current
+   * step, as soon as they are known and before any of them execute (#573).
+   * Several tools requested in the same step arrive as one call carrying
+   * every name gathered so far in that step, so a caller narrating this into
+   * a status line naturally ends up with the full set the moment they are
+   * all known rather than one line per tool. Only the `cloud` runner
+   * (`SdkRunner`) fires this - `AcpRunner` has no native tool-calling loop of
+   * its own to observe.
+   */
+  onToolStep?: (toolNames: string[]) => void;
 }
 
 export interface AgentRunResult {
@@ -108,6 +133,13 @@ export interface AgentRunResult {
     costUsd: number | null;
     costReported: boolean;
   };
+  /**
+   * This turn's own assistant/tool messages, in the shape `priorMessages`
+   * above expects back - present only when the `cloud` runner ran with a
+   * tool set attached (#576). Undefined for every other runner and for a
+   * tool-less suggestion: there is nothing to continue from.
+   */
+  responseMessages?: unknown[];
 }
 
 export interface AgentRunHandle {

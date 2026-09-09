@@ -26,6 +26,21 @@ export type LinkedInAssistState = {
   dailyPostCap: number;
 };
 
+/** The exact shape served alongside `assist` by the same endpoint (#556):
+ * the plan's own name, the suggestion allowance for this period and how
+ * much of it is left (both null when unlimited - self-host, or a plan with
+ * no ceiling), and whether the org is read-only from a failed payment. For
+ * display only - the panel never predicts a refusal from this, it only
+ * explains one the server already returned. */
+export type LinkedInAssistPlanState = {
+  id: string;
+  name: string;
+  suggestionsUsed: number;
+  suggestionsLimit: number | null;
+  suggestionsRemaining: number | null;
+  readOnly: boolean;
+};
+
 // #436, spike #435's "Plane 3": types mirror the server's own zod schemas
 // (web/src/routes/api/extension/project-source-match/+server.ts) rather
 // than importing them, matching every other api.ts shape on this file.
@@ -139,6 +154,30 @@ export type SuggestUsage = {
  */
 export type RetuneDirection = 'drier' | 'warmer' | 'shorter';
 
+/**
+ * Every `status` phase the loop can honestly report (#573,
+ * docs/design/in-page-agent.md): `reading` before the loop has decided
+ * anything and `writing` once real draft text starts are unchanged; a live
+ * tool step reports as that tool's own name (or several, comma-joined, when
+ * a step ran more than one in parallel), and `slow` marks the "taking longer
+ * than usual" threshold. `(string & {})` keeps autocomplete on the known
+ * values while still accepting a comma-joined combination or a future name
+ * this build does not recognise yet - `shared/content/assist-status.ts`
+ * degrades an unknown one to its raw text rather than dropping it.
+ */
+export type AssistStatusPhase =
+  | 'reading'
+  | 'writing'
+  | 'slow'
+  | 'read_thread'
+  | 'look_at_image'
+  | 'author_history'
+  | 'operator_voice'
+  | 'project_knowledge'
+  | 'my_prior_takes'
+  | 'check_style'
+  | (string & {});
+
 /** Every `refused` value POST /api/extension/suggest can answer with, ahead of the stream.
  * `no_recent_activity` only ever answers a `kind: 'post'` request: the observation
  * buffer this project's account has filled has nothing recent enough to draft from. */
@@ -147,7 +186,12 @@ export type SuggestRefusalReason =
   | 'kill_switch'
   | 'project_not_bound'
   | 'quota_exhausted'
-  | 'no_recent_activity';
+  | 'no_recent_activity'
+  // #556: the plan's own ceiling and a failed payment past its grace window -
+  // distinct from `quota_exhausted` (the platform's own daily cap) and from
+  // each other, so the panel can say which one stopped it and what to do.
+  | 'plan_limit_reached'
+  | 'plan_payment_required';
 
 /** Every `refused` value POST /api/extension/suggest/accept can answer with: the same
  * assist gate as /suggest, plus shared/src/assist-accept.ts's own refusals for a
@@ -171,7 +215,7 @@ export type AcceptRefusalReason =
  * happens.
  */
 export type SuggestEvent =
-  | { kind: 'status'; phase: 'reading' | 'writing' }
+  | { kind: 'status'; phase: AssistStatusPhase }
   | { kind: 'chunk'; text: string; section: 'reasoning' | 'draft' }
   | {
       kind: 'done';
@@ -180,6 +224,13 @@ export type SuggestEvent =
       skipped: boolean;
       usage?: SuggestUsage;
       ms: number;
+      // #576: hand this back on the next retune/hint so the loop continues
+      // instead of starting over. Absent when there was nothing to persist.
+      sessionId?: string;
+      // #573: a genuine early stop with a draft already in hand - the panel
+      // says it answered with what it had rather than treating this as an
+      // ordinary, deliberate finish.
+      budgetExhausted?: boolean;
     }
   | { kind: 'failed'; message: string }
   | { kind: 'refused'; reason: SuggestRefusalReason; detail: Record<string, unknown> };
@@ -300,8 +351,8 @@ export function parseSuggestSseFrame(frame: string): SuggestEvent | null {
   }
   switch (eventKind) {
     case 'status':
-      return data.phase === 'reading' || data.phase === 'writing'
-        ? { kind: 'status', phase: data.phase }
+      return typeof data.phase === 'string'
+        ? { kind: 'status', phase: data.phase as AssistStatusPhase }
         : null;
     case 'chunk':
       return typeof data.text === 'string' &&
@@ -317,6 +368,9 @@ export function parseSuggestSseFrame(frame: string): SuggestEvent | null {
             skipped: data.skipped,
             usage: data.usage as SuggestUsage | undefined,
             ms: typeof data.ms === 'number' ? data.ms : 0,
+            sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined,
+            budgetExhausted:
+              typeof data.budgetExhausted === 'boolean' ? data.budgetExhausted : undefined,
           }
         : null;
     case 'failed':
@@ -551,7 +605,7 @@ export const api = {
    */
   linkedinAssist: async (
     backendUrl?: string,
-  ): Promise<ApiResult<{ assist: LinkedInAssistState }>> => {
+  ): Promise<ApiResult<{ assist: LinkedInAssistState; plan: LinkedInAssistPlanState }>> => {
     const p = await pickPairing(backendUrl);
     if (!p) return { ok: false, status: 0, error: 'not configured' };
     return getJson(p, '/api/extension/linkedin-assist');
@@ -642,6 +696,10 @@ export const api = {
       /** #409: a per-call regeneration direction, forwarded verbatim - never
        * stored, never a substitute for a tone setting. */
       retune?: RetuneDirection;
+      /** #576: a live session id from a prior `done` event - continues that
+       * turn's gathered context instead of a full rebuild. Omit for a first
+       * suggestion; there is nothing yet to continue. */
+      sessionId?: string;
       platform?: string;
     },
     onEvent: (event: SuggestEvent) => void,

@@ -8,7 +8,13 @@
 import { mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { streamText, stepCountIs, type ToolSet, type PrepareStepFunction } from 'ai';
+import {
+  streamText,
+  stepCountIs,
+  type ToolSet,
+  type PrepareStepFunction,
+  type ModelMessage,
+} from 'ai';
 import {
   createGateway,
   type GatewayProvider,
@@ -228,6 +234,16 @@ export class SdkRunner implements AgentRunner {
         throw new Error('SdkRunner.run needs either a prompt or a playbookPath');
       }
 
+      // #576: a retune/hint continuation supplies the prior turn's own
+      // conversation (assistant text, tool calls, tool results) so the model
+      // sees what it already gathered instead of re-deriving it. Untyped at
+      // the `AgentRunOptions` boundary (base.ts) since that module stays
+      // runner-agnostic; cast to this call's own message shape here, the one
+      // place that actually reads it.
+      const messages: ModelMessage[] = opts.priorMessages
+        ? [...(opts.priorMessages as ModelMessage[]), { role: 'user', content: userText }]
+        : [{ role: 'user', content: userText }];
+
       const gateway = this.createGatewayFn({ apiKey });
       const model = gateway(modelId);
 
@@ -388,12 +404,23 @@ export class SdkRunner implements AgentRunner {
         let stepUsage: SdkLanguageModelUsage | undefined;
         let finishUsage: SdkLanguageModelUsage | undefined;
         let finishReason: string | undefined;
+        // #573: the tool name(s) the current step is running, reset at each
+        // `start-step` and reported via `onToolStep` the moment a tool call
+        // is known - before it executes, so a caller narrating this into a
+        // status line is never behind the work it describes.
+        let stepToolNames: string[] = [];
+        // #576: this turn's own assistant/tool messages, captured once the
+        // stream settles, for a caller to persist and feed back in as the
+        // next call's `priorMessages`. Left undefined when no tool set was
+        // attached (nothing worth continuing from) or the stream never
+        // settled (a hard abort raced it).
+        let capturedResponseMessages: unknown[] | undefined;
 
         try {
           const streamResult = this.streamTextFn({
             model,
             system,
-            messages: [{ role: 'user', content: userText }],
+            messages,
             tools,
             stopWhen: stepCountIs(this.stepCeiling),
             prepareStep,
@@ -418,7 +445,12 @@ export class SdkRunner implements AgentRunner {
               }
               flushPendingText();
 
-              if (part.type === 'finish-step') {
+              if (part.type === 'start-step') {
+                stepToolNames = [];
+              } else if (part.type === 'tool-call') {
+                if (!stepToolNames.includes(part.toolName)) stepToolNames.push(part.toolName);
+                opts.onToolStep?.(stepToolNames.slice());
+              } else if (part.type === 'finish-step') {
                 stepCount += 1;
                 stepUsage = addSdkUsage(stepUsage, part.usage);
                 // Stop the run the moment its own accumulated cost would
@@ -462,6 +494,15 @@ export class SdkRunner implements AgentRunner {
               log(
                 `[loop-error] ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
               );
+            }
+          }
+          if (tools) {
+            try {
+              capturedResponseMessages = (await streamResult.responseMessages) as unknown[];
+            } catch {
+              // Best-effort: an aborted or errored stream may never settle
+              // this - the caller loses continuation for this one turn,
+              // never the answer itself.
             }
           }
         } finally {
@@ -543,7 +584,13 @@ export class SdkRunner implements AgentRunner {
           `# sdk run finished ${new Date().toISOString()} stopReason=${stopReasonKind} exitCode=${exitCode}`,
         );
 
-        return { exitCode, logPath, tokensUsed, usage: usageResult };
+        return {
+          exitCode,
+          logPath,
+          tokensUsed,
+          usage: usageResult,
+          responseMessages: capturedResponseMessages,
+        };
       } finally {
         clearTimeout(timeoutTimer);
         await toolSet?.close().catch(() => {});
