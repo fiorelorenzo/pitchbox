@@ -274,6 +274,58 @@ describe('GET /api/extension/linkedin-assist (device read path)', () => {
     expect(body.assist.projectId).toBeNull();
     expect(body.assist.enabled).toBe(false);
   });
+
+  // #556: the panel and the side panel need the plan's name, allowance and
+  // remaining count, and whether the org is read-only, purely for display -
+  // extended onto this endpoint rather than a second poll.
+  it('resolves the self-host default: unlimited, still named by the code catalogue', async () => {
+    const { orgId, projectId } = await seedOrg('la-plan-selfhost');
+    await saveLinkedInAssistSettings(getDb(), orgId, {
+      ...defaultLinkedInAssistSettings(),
+      enabled: true,
+      projectId,
+    });
+    const token = 'device-token-plan-selfhost';
+    await mintDevice(orgId, token);
+
+    const body = await (await deviceGet({ request: deviceRequest(token) })).json();
+    expect(body.plan).toEqual({
+      id: 'free',
+      name: 'Free',
+      suggestionsUsed: 0,
+      suggestionsLimit: null,
+      suggestionsRemaining: null,
+      readOnly: false,
+    });
+  });
+
+  it('resolves the cloud edition Free tier numbers for an org with no subscription or grant', async () => {
+    const savedEdition = process.env.PITCHBOX_EDITION;
+    process.env.PITCHBOX_EDITION = 'cloud';
+    try {
+      const { orgId, projectId } = await seedOrg('la-plan-cloud');
+      await saveLinkedInAssistSettings(getDb(), orgId, {
+        ...defaultLinkedInAssistSettings(),
+        enabled: true,
+        projectId,
+      });
+      const token = 'device-token-plan-cloud';
+      await mintDevice(orgId, token);
+
+      const body = await (await deviceGet({ request: deviceRequest(token) })).json();
+      expect(body.plan).toEqual({
+        id: 'free',
+        name: 'Free',
+        suggestionsUsed: 0,
+        suggestionsLimit: 50,
+        suggestionsRemaining: 50,
+        readOnly: false,
+      });
+    } finally {
+      if (savedEdition === undefined) delete process.env.PITCHBOX_EDITION;
+      else process.env.PITCHBOX_EDITION = savedEdition;
+    }
+  });
 });
 
 // The role gate is exactly the kind of bug ISO-1 (#132) hid: a hand-injected

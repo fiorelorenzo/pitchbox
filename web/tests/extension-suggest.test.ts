@@ -11,6 +11,7 @@ import {
 } from '@pitchbox/shared/linkedin-assist';
 import { ingestObservedTargets } from '@pitchbox/shared/observed-targets';
 import { DRAFT_MARKER, SKIP_MARKER } from '@pitchbox/shared/assist/envelope';
+import { ASSIST_SESSION_TTL_MS } from '@pitchbox/shared/assist/session';
 
 /**
  * The real-time suggestion endpoint (#312). What these tests defend is the
@@ -37,6 +38,18 @@ const ENVELOPE_CHUNKS = [
   'happened.',
 ];
 let responseChunks: string[] = ENVELOPE_CHUNKS;
+
+/** #573: tool-step sets a test wants the fake runner to announce, in order,
+ * before it emits any text - mirrors `SdkRunner`'s own `onToolStep`
+ * contract (one call per step, carrying that step's full tool-name set). */
+let toolStepsToEmit: string[][] = [];
+/** #576: the conversation a test wants the fake runner to hand back as this
+ * turn's own `responseMessages`, so `runSuggestion` has something to
+ * persist into a continuable session. Undefined mirrors a tool-less turn. */
+let responseMessagesToReturn: unknown[] | undefined;
+/** #573: overrides the fake run's `exitCode` - non-zero with non-empty text
+ * is what `runSuggestion` reads as "the budget cut this short". */
+let exitCodeToReturn = 0;
 
 let lastOptions: AgentRunOptions | null = null;
 /** The runner config the route actually handed to the registry, so a test can
@@ -69,10 +82,11 @@ vi.mock('@pitchbox/shared/agents/registry', () => ({
           },
         };
       }
+      for (const toolNames of toolStepsToEmit) opts.onToolStep?.(toolNames);
       for (const c of responseChunks) opts.onTextChunk?.(c);
       return {
         result: Promise.resolve({
-          exitCode: 0,
+          exitCode: exitCodeToReturn,
           logPath: '/dev/null',
           usage: {
             // Modelled on the real measurement in #313's comment: the prompt
@@ -86,6 +100,7 @@ vi.mock('@pitchbox/shared/agents/registry', () => ({
             costUsd: 0.004,
             costReported: true,
           },
+          responseMessages: responseMessagesToReturn,
         }),
         cancel: () => {
           cancelCalls += 1;
@@ -115,6 +130,9 @@ async function reset() {
   cancelCalls = 0;
   hangForever = false;
   responseChunks = ENVELOPE_CHUNKS;
+  toolStepsToEmit = [];
+  responseMessagesToReturn = undefined;
+  exitCodeToReturn = 0;
 }
 
 /**
@@ -203,6 +221,9 @@ describe('POST /api/extension/suggest', () => {
   it('streams the suggestion in chunks and closes with a terminal event', async () => {
     const { org, project } = await seedOrgProject('org-a');
     await mintDevice(org.id, 'tok');
+    // #576: a tool set was attached and produced something to persist -
+    // the route's `done` payload should carry the session id back.
+    responseMessagesToReturn = [{ role: 'assistant', content: 'gathered context' }];
 
     const res = await suggest({
       request: request('tok', { ...POST_BODY, projectId: project.id }),
@@ -222,6 +243,8 @@ describe('POST /api/extension/suggest', () => {
       draft: string | null;
       skipped: boolean;
       usage?: { outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number };
+      sessionId?: string;
+      budgetExhausted?: boolean;
     };
     expect(done.reasoning).toBe(REASONING);
     expect(done.draft).toBe(DRAFT);
@@ -232,6 +255,10 @@ describe('POST /api/extension/suggest', () => {
     // path's `runs` row to not read as broken accounting.
     expect(done.usage?.cacheReadTokens).toBe(780);
     expect(done.usage?.cacheCreationTokens).toBe(0);
+    // #576: forwarded straight from `runSuggestion`'s own result.
+    expect(typeof done.sessionId).toBe('string');
+    // #573: an ordinary, clean finish is never flagged as cut short.
+    expect(done.budgetExhausted).toBe(false);
   });
 
   // #382: the fail-safe this endpoint exists for. Every `chunk` event carries
@@ -241,6 +268,9 @@ describe('POST /api/extension/suggest', () => {
   it('tags each chunk with its section and flips to writing only when the draft begins', async () => {
     const { org, project } = await seedOrgProject('org-section');
     await mintDevice(org.id, 'tok-section');
+    // #573: a tool step the route must translate into its own status event,
+    // before the draft ever starts.
+    toolStepsToEmit = [['read_thread', 'look_at_image']];
 
     const res = await suggest({
       request: request('tok-section', { ...POST_BODY, projectId: project.id }),
@@ -278,13 +308,14 @@ describe('POST /api/extension/suggest', () => {
     const firstDraftIdx = chunkEvents.map((e) => e.data.section).indexOf('draft');
     expect(lastReasoningIdx).toBeLessThan(firstDraftIdx);
 
-    // "writing" appears exactly once, and only after the draft chunks start
-    // arriving - "reading" is the only status during the reasoning stretch.
+    // "writing" appears exactly once, after the tool step's own comma-joined
+    // phase and only once the draft chunks start arriving - "reading" is the
+    // very first status, before the loop has decided anything.
     const statusEvents = events.filter((e) => e.kind === 'status') as Array<{
       data: { phase: string };
     }>;
     const statusPhases = statusEvents.map((e) => e.data.phase);
-    expect(statusPhases).toEqual(['reading', 'writing']);
+    expect(statusPhases).toEqual(['reading', 'read_thread,look_at_image', 'writing']);
   });
 
   // The fail-safe itself: a model that never emits the marker (ignored the
@@ -606,6 +637,187 @@ describe('POST /api/extension/suggest', () => {
       expect(lastOptions?.prompt).not.toContain('whatever the panel scraped');
       expect(lastOptions?.prompt).toContain('Recent Author');
     });
+  });
+});
+
+// #573/#576: `runSuggestion` itself is the one place both the tool-step
+// narration hook and the session-continuation branching actually decide
+// anything - the route only forwards what it returns. Calling it directly
+// here (like the #410 test below already does) is deliberate: the
+// per-device rate limiter is in-memory, keyed by a device id every test in
+// this file shares (TRUNCATE ... RESTART IDENTITY), and its whole 20-call
+// budget is already spent by the route-level describes above (see the note
+// at the end of the tone describe) - these tests would blow it for no
+// reason, since none of them need auth, quota or the SSE framing at all.
+describe('runSuggestion narrates its own steps and budget (#573)', () => {
+  beforeEach(reset);
+
+  it('reports a genuine early stop as budgetExhausted, an ordinary finish as clean', async () => {
+    const { project } = await seedOrgProject('org-budget');
+
+    exitCodeToReturn = 1;
+    const cutShort = await runSuggestion({
+      kind: 'post_comment',
+      post: POST_BODY.post,
+      currentProject: { name: project.name, description: project.description },
+      persona: null,
+      voiceProfile: null,
+      projects: [],
+      repos: [],
+      projectId: project.id,
+      orgId: project.organizationId,
+      runnerSlug: project.defaultAgentRunner,
+    }).result;
+    expect(cutShort.draft).toBe(DRAFT);
+    expect(cutShort.budgetExhausted).toBe(true);
+
+    exitCodeToReturn = 0;
+    const clean = await runSuggestion({
+      kind: 'post_comment',
+      post: POST_BODY.post,
+      currentProject: { name: project.name, description: project.description },
+      persona: null,
+      voiceProfile: null,
+      projects: [],
+      repos: [],
+      projectId: project.id,
+      orgId: project.organizationId,
+      runnerSlug: project.defaultAgentRunner,
+    }).result;
+    expect(clean.budgetExhausted).toBe(false);
+  });
+
+  it('forwards the loop\'s own tool steps to onToolStep as they are known', async () => {
+    const { project } = await seedOrgProject('org-narrate');
+    toolStepsToEmit = [['read_thread'], ['read_thread', 'look_at_image']];
+    const seen: string[][] = [];
+
+    await runSuggestion({
+      kind: 'post_comment',
+      post: POST_BODY.post,
+      currentProject: { name: project.name, description: project.description },
+      persona: null,
+      voiceProfile: null,
+      projects: [],
+      repos: [],
+      projectId: project.id,
+      orgId: project.organizationId,
+      runnerSlug: project.defaultAgentRunner,
+      onToolStep: (toolNames) => seen.push(toolNames),
+    }).result;
+
+    expect(seen).toEqual([['read_thread'], ['read_thread', 'look_at_image']]);
+  });
+});
+
+// #576: a retune keeps the loop's own gathered context instead of paying to
+// re-read the thread and re-run the vision call for the same information a
+// second time. Same rate-limit reasoning as the describe above - every case
+// here is `runSuggestion`'s own branching, called directly.
+describe('runSuggestion session continuation (#576)', () => {
+  beforeEach(reset);
+
+  function baseArgs(project: { id: number; name: string; description: string | null; organizationId: number; defaultAgentRunner: string }) {
+    return {
+      kind: 'post_comment' as const,
+      post: POST_BODY.post,
+      currentProject: { name: project.name, description: project.description },
+      persona: null,
+      voiceProfile: null,
+      projects: [],
+      repos: [],
+      projectId: project.id,
+      orgId: project.organizationId,
+      runnerSlug: project.defaultAgentRunner,
+    };
+  }
+
+  it('hands back a session id, and a retune against it continues instead of rebuilding', async () => {
+    const { project } = await seedOrgProject('org-session');
+    responseMessagesToReturn = [{ role: 'assistant', content: 'gathered: thread + image' }];
+
+    const first = await runSuggestion(baseArgs(project)).result;
+    expect(typeof first.sessionId).toBe('string');
+    // The baseline a continuation is measured against: a fresh suggestion's
+    // prompt carries the whole rebuilt context.
+    const fullPromptLength = lastOptions?.prompt?.length ?? 0;
+    expect(lastOptions?.prompt).toContain('Your task:');
+    expect(lastOptions?.priorMessages).toBeUndefined();
+
+    await runSuggestion({
+      ...baseArgs(project),
+      retune: 'drier',
+      continueSessionId: first.sessionId,
+    }).result;
+
+    // A continuation sends the prior turn's own conversation back in - the
+    // original user turn plus whatever the model gathered - and a short
+    // steer-only turn on top, never the full rebuilt prompt again. That is
+    // most of the latency and cost #576 exists to stop paying twice.
+    expect(lastOptions?.priorMessages).toHaveLength(2);
+    expect(lastOptions?.priorMessages?.[0]).toMatchObject({ role: 'user' });
+    expect(lastOptions?.priorMessages?.[1]).toEqual({
+      role: 'assistant',
+      content: 'gathered: thread + image',
+    });
+    expect(lastOptions?.prompt).not.toContain('Your task:');
+    expect(lastOptions?.prompt).toContain('already gathered');
+    expect(lastOptions?.prompt?.length ?? 0).toBeLessThan(fullPromptLength);
+  });
+
+  it('acts on a hint against the prior draft without rebuilding the context', async () => {
+    const { project } = await seedOrgProject('org-session-hint');
+    responseMessagesToReturn = [{ role: 'assistant', content: 'gathered once' }];
+
+    const first = await runSuggestion(baseArgs(project)).result;
+    await runSuggestion({
+      ...baseArgs(project),
+      hint: 'mention the launch date',
+      continueSessionId: first.sessionId,
+    }).result;
+
+    expect(lastOptions?.priorMessages).toBeDefined();
+    expect(lastOptions?.prompt).toContain('mention the launch date');
+  });
+
+  it('falls back to a full rebuild for a session id scoped to a different org', async () => {
+    const { project: projectA } = await seedOrgProject('org-session-a');
+    responseMessagesToReturn = [{ role: 'assistant', content: 'org a context' }];
+    const first = await runSuggestion(baseArgs(projectA)).result;
+
+    const { project: projectB } = await seedOrgProject('org-session-b');
+    await runSuggestion({
+      ...baseArgs(projectB),
+      retune: 'drier',
+      continueSessionId: first.sessionId,
+    }).result;
+
+    // A foreign session id is treated exactly like a missing one: the full
+    // context is rebuilt rather than leaking org A's gathered thread/image
+    // into org B's answer.
+    expect(lastOptions?.priorMessages).toBeUndefined();
+    expect(lastOptions?.prompt).toContain('Your task:');
+  });
+
+  it('re-gathers past the session lifetime instead of answering from a stale post', async () => {
+    const { project } = await seedOrgProject('org-session-ttl');
+    responseMessagesToReturn = [{ role: 'assistant', content: 'about to expire' }];
+    const first = await runSuggestion(baseArgs(project)).result;
+
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(ASSIST_SESSION_TTL_MS + 1);
+    try {
+      await runSuggestion({
+        ...baseArgs(project),
+        retune: 'drier',
+        continueSessionId: first.sessionId,
+      }).result;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(lastOptions?.priorMessages).toBeUndefined();
+    expect(lastOptions?.prompt).toContain('Your task:');
   });
 });
 

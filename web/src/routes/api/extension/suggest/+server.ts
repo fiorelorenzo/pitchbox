@@ -115,6 +115,12 @@ const BodySchema = z
     // comment on `assistSettings` below for why this is the one field on
     // this plane the request may legitimately carry.
     retune: z.enum(RETUNE_DIRECTIONS).optional(),
+    // #576: a live session id from a prior `done` event, so a retune or a
+    // hint-on-a-regenerate continues that turn's gathered context instead
+    // of starting over. Never trusted blind - `runSuggestion` re-checks it
+    // against this request's own org/project/kind and falls back to a full
+    // rebuild on anything that doesn't match or has expired.
+    sessionId: z.string().max(200).optional(),
     platform: z.string().min(1).max(40).default('linkedin'),
   })
   .superRefine((val, ctx) => {
@@ -400,6 +406,18 @@ export async function POST(event: RequestEvent) {
         projectId: project.id,
         orgId: auth.organizationId ?? undefined,
         runnerSlug: project.defaultAgentRunner,
+        continueSessionId: body.sessionId,
+        // #573: the tool name(s) the loop is running, comma-joined - the
+        // panel translates each into the operator's own words and collapses
+        // several into one line. Sent only before the draft starts: once
+        // `writing` has fired the step narration is over regardless of what
+        // the model does with a tool afterward (`check_style` included).
+        onToolStep: (toolNames) => {
+          if (!wroteDraft) send('status', { phase: toolNames.join(',') });
+        },
+        onSlow: () => {
+          if (!wroteDraft) send('status', { phase: 'slow' });
+        },
         onChunk: (chunk) => {
           if (chunk.reasoning) send('chunk', { text: chunk.reasoning, section: 'reasoning' });
           if (chunk.draft) {
@@ -451,6 +469,14 @@ export async function POST(event: RequestEvent) {
               skipped: res.skipped,
               usage: res.usage,
               ms: res.ms,
+              // #576: the panel hands this back on the next retune/hint so
+              // the loop continues instead of starting over. Absent when no
+              // tool set was attached or the run never settled into one.
+              sessionId: res.sessionId,
+              // #573: a genuine early stop with a draft already in hand -
+              // the panel says it answered with what it had rather than
+              // treating this as an ordinary, deliberate finish.
+              budgetExhausted: res.budgetExhausted,
             });
             controller.close();
           } catch (err) {
