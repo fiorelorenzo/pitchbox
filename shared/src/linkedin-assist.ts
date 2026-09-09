@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
 import { QUOTA_DEFAULTS } from './db/seed-core.js';
 import { projectBelongsToOrg } from './orgs.js';
-import { ensurePersonalProject } from './personal-project.js';
 
 // The org-level off switch and owner for the in-page LinkedIn assistant
 // (LI-19, #316, docs/linkedin-integration-design.md). Until this exists the
@@ -129,20 +128,14 @@ export async function saveLinkedInAssistSettings(
 
 /** The exact shape served to the extension by GET /api/extension/linkedin-assist. */
 export type LinkedInAssistDeviceState = {
-  /** Effective, not raw: false whenever the bound project no longer exists, or `killSwitch` is set, even if the stored flag is true. */
+  /** Effective, not raw: false whenever `killSwitch` is set, even if the stored flag is true. #523: no longer requires a live bound project - the assistant binds to the operator, and a project is optional context a suggestion may name. */
   enabled: boolean;
-  /** Effective: also requires `enabled` and a live bound project. */
+  /** Effective: also requires `enabled`. Unlike `enabled` itself, the collector still needs nothing about a project - it only ever wrote to `observed_targets`. */
   collectorEnabled: boolean;
   /** Raw flag, exposed separately so a consumer can render "stopped by an admin" distinctly from "never turned on". */
   killSwitch: boolean;
-  /** Null when unbound or when the stored project id no longer resolves in this org. */
+  /** Null when unbound or when the stored project id no longer resolves in this org. Context only (#523): a suggestion works with this null, and files under no project when it is. */
   projectId: number | null;
-  /** The org's `personal` project (shared/src/personal-project.ts, decision
-   * 2026-09-07), always present: an accepted suggestion has to file
-   * somewhere even when nothing is bound, and the panel uses this id for
-   * that regardless of what `projectId` names. Created on first read if it
-   * somehow does not exist yet, so this never goes stale like `projectId` can. */
-  personalProjectId: number;
   dailyCommentCap: number;
   dailyPostCap: number;
 };
@@ -150,28 +143,23 @@ export type LinkedInAssistDeviceState = {
 /**
  * Collapses stored settings into the effective state a device should act on.
  * Re-validates the bound project against the org on every read (jsonb holds
- * no foreign key) so a deleted project can't leave a stale "enabled: true,
- * projectId: <gone>" reading after the fact.
+ * no foreign key) so a deleted project can't leave a stale "projectId: <gone>"
+ * reading after the fact.
  */
 export async function loadLinkedInAssistDeviceState(
   db: Db,
   organizationId: number,
 ): Promise<LinkedInAssistDeviceState> {
   const settings = await loadLinkedInAssistSettings(db, organizationId);
-  const [projectLive, personalProjectId] = await Promise.all([
-    settings.projectId != null
-      ? projectBelongsToOrg(db, settings.projectId, organizationId)
-      : Promise.resolve(false),
-    ensurePersonalProject(db, organizationId),
-  ]);
+  const projectLive =
+    settings.projectId != null ? await projectBelongsToOrg(db, settings.projectId, organizationId) : false;
   const projectId = settings.projectId != null && projectLive ? settings.projectId : null;
-  const boundAndLive = settings.enabled && projectId != null && !settings.killSwitch;
+  const boundAndLive = settings.enabled && !settings.killSwitch;
   return {
     enabled: boundAndLive,
     collectorEnabled: boundAndLive && settings.collectorEnabled,
     killSwitch: settings.killSwitch,
     projectId,
-    personalProjectId,
     dailyCommentCap: settings.dailyCommentCap,
     dailyPostCap: settings.dailyPostCap,
   };
@@ -185,9 +173,9 @@ export type EffectiveVoice = {
 
 /**
  * Resolves the voice a suggestion should be written in, given the project it
- * is actually being filed under - not the org's bound project, which the
- * personal-project carve-out (2026-09-07) already lets a request diverge
- * from. Precedence: the project's own override if it set one, else the org's
+ * is actually being filed under - which may be null (#523: a suggestion can
+ * be about no product at all), and need not be the org's bound project.
+ * Precedence: the project's own override if it set one, else the org's
  * `linkedin_assist` tone, which itself already falls back to
  * `DEFAULT_ASSIST_TONE` when nothing was ever saved (`loadLinkedInAssistSettings`
  * above) - so this is the one place all three levels collapse into a single
@@ -195,7 +183,8 @@ export type EffectiveVoice = {
  *
  * `project` only needs its two voice columns, not a full row, so a caller
  * that already selected the project (the suggest route does, to enforce the
- * binding) can pass it straight through with no second query.
+ * binding) can pass it straight through with no second query. Pass
+ * `{ voiceTone: null, voiceToneNotes: null }` when no project is filed at all.
  *
  * An unrecognised `voiceTone` (a column written by an older build, or a
  * value nobody offers anymore) is treated the same as unset - it falls

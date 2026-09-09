@@ -203,37 +203,3 @@ export async function recordVoiceSamples(
     .returning({ id: schema.operatorVoiceSamples.id });
   return inserted.length;
 }
-
-/**
- * Makes sure `projectId` has an active LinkedIn account row, so an accepted
- * suggestion under the personal project never fails with `no_account`
- * (`shared/src/assist-accept.ts`'s own gate). LinkedIn accounts carry no
- * credential (docs/linkedin-integration-design.md, "Accounts carry no
- * credential") - this is an identity row, not a connection. A no-op once
- * one already exists for this project/platform pair, so a repeat capture
- * never creates a second one.
- */
-export async function ensureOperatorAccount(
-  db: Db,
-  args: { projectId: number; platformId: number; handle: string },
-): Promise<void> {
-  const [existing] = await db
-    .select({ id: schema.accounts.id })
-    .from(schema.accounts)
-    .where(
-      and(
-        eq(schema.accounts.projectId, args.projectId),
-        eq(schema.accounts.platformId, args.platformId),
-      ),
-    )
-    .limit(1);
-  if (existing) return;
-
-  await db.insert(schema.accounts).values({
-    projectId: args.projectId,
-    platformId: args.platformId,
-    handle: args.handle,
-    role: 'personal',
-    active: true,
-  });
-}

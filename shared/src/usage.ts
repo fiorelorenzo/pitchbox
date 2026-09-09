@@ -112,20 +112,22 @@ export async function getOrgUsage(
       // Produced suggestions, not accepted ones - the assist ledger (#522)
       // writes one row the moment a suggestion's stream finishes, whether or
       // not a human ever accepts it, and that is the moment the money (and
-      // the plan's suggestion count) is actually spent.
-      projectIds.length === 0
-        ? Promise.resolve(0)
-        : db
-            .select({ n: count() })
-            .from(schema.assistUsage)
-            .where(
-              and(
-                inArray(schema.assistUsage.projectId, projectIds),
-                gte(schema.assistUsage.createdAt, period.start),
-                lt(schema.assistUsage.createdAt, period.end),
-              ),
-            )
-            .then(([r]) => Number(r?.n ?? 0)),
+      // the plan's suggestion count) is actually spent. Filtered by
+      // `organizationId` directly, not through the org's project ids: #523
+      // made `assist_usage.project_id` nullable (a suggestion can be about
+      // no product at all), so a project-id membership test would silently
+      // drop exactly the suggestions this issue exists to keep counted.
+      db
+        .select({ n: count() })
+        .from(schema.assistUsage)
+        .where(
+          and(
+            eq(schema.assistUsage.organizationId, orgId),
+            gte(schema.assistUsage.createdAt, period.start),
+            lt(schema.assistUsage.createdAt, period.end),
+          ),
+        )
+        .then(([r]) => Number(r?.n ?? 0)),
       projectIds.length === 0
         ? Promise.resolve(0)
         : db

@@ -1,29 +1,36 @@
-// Materialises an accepted in-page suggestion (LI-16, #313) into the same
-// ledger a campaign draft lands in. A suggestion is ephemeral until the human
-// accepts it (web/src/lib/server/suggest.ts): no runs row, no draft. This is
-// the other half - the accept path - and it deliberately walks the same
-// checks `cli/src/commands/drafts.ts`'s `createDrafts` applies to a campaign
-// draft (blocklist, contact dedup, `checkUncontactable`), so a suggestion
-// Pitchbox helped write is never invisible to quota, contact history or
-// analytics (docs/linkedin-integration-design.md, "Bookkeeping").
+// Writes an accepted in-page suggestion into the assist plane's own ledger
+// (#521). Until 2026-09-09 this materialised a `drafts` row and a `runs` row
+// of kind `assist` purely because `drafts.run_id` was NOT NULL - borrowing a
+// campaign-shaped bookkeeping unit for a plane that has no campaign, no run
+// and no draft state machine of its own (see the historical shape in
+// `shared/src/db/migrations/0013_assist_run_kind.sql`, now reversed by
+// `shared/src/db/migrations/0021_assist_accepted_suggestions.sql`). A
+// suggestion is ephemeral until the human accepts it
+// (`web/src/lib/server/suggest.ts`); this is the other half - the accept
+// path - and it deliberately walks the same checks
+// `cli/src/commands/drafts.ts`'s `createDrafts` applies to a campaign draft
+// (blocklist, contact dedup, `checkUncontactable`), so a suggestion Pitchbox
+// helped write is never invisible to quota, contact history or analytics
+// (docs/linkedin-integration-design.md, "Bookkeeping").
 //
-// `drafts.run_id` is NOT NULL, so rather than making that column nullable
-// this creates a `runs` row of kind = 'assist' (project-targeted, no
-// campaign) to hang the draft off - see the `runs_kind_target_chk` migration
-// (shared/src/db/migrations/0013_assist_run_kind.sql) and
-// shared/src/runlog/contract.ts (an assist run has no playbook and no finish
-// tool, so it is written already terminal, in the same transaction as the
-// draft, and is deliberately absent from `PLAYBOOK_FINISH_TOOL`).
+// What does NOT survive from the borrowed campaign path, by decision
+// (#521): the per-account draft quota. The assist plane already has its own
+// per-device and per-org rate limits (`web/src/routes/api/extension/suggest`)
+// and the plan's own suggestions-per-period ceiling; what actually needs
+// bounding is money, which `assist_usage` already ledgers per suggestion
+// regardless of accept. There is therefore no `accounts` row and no
+// `no_account` refusal on this path anymore either - the campaign `accounts`
+// table has nothing left to answer here.
 import { and, eq } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
-import { isBlocklisted, isKeywordBlocklisted, isSubredditBlocklisted } from './blocklist.js';
+import { isBlocklisted, isKeywordBlocklisted } from './blocklist.js';
 import {
   checkContactDedup,
   checkUncontactable,
   parseDedupPolicy,
   DEFAULT_DEDUP_POLICY,
 } from './contact-dedup.js';
-import { checkQuota, getAccountUsage, loadQuotaLimits, mapDraftKindToQuotaKind } from './quota.js';
+import { loadOperatorProfile } from './operator-profile.js';
 import { resolvePricingForRunner, computeCostUsd } from './runlog/usage.js';
 import type { DraftKind } from './quota-types.js';
 
@@ -36,75 +43,59 @@ export interface AcceptSuggestionUsage {
 }
 
 export interface AcceptSuggestionInput {
-  projectId: number;
   organizationId: number;
+  /** Context only (#523): the product this suggestion is about, if any.
+   * Null files the suggestion under no project at all. */
+  projectId: number | null;
   platformId: number;
   kind: DraftKind;
   /** Null for a kind whose audience is public rather than one person (e.g. a
    * top-level `post`), so no blocklist/dedup/contact-history check applies. */
-  targetUser: string | null;
+  authorHandle: string | null;
+  authorName?: string | null;
+  postUrn?: string | null;
+  postUrl?: string | null;
   body: string;
-  sourceRef?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
+  /** The model's own draft text, kept only when the human changed it before
+   * accepting - omit or pass the same value as `body` when they did not. */
+  editedFrom?: string | null;
+  deviceId: number | null;
   agentRunner: string;
   usage?: AcceptSuggestionUsage | null;
-  /** Extra context recorded on the `runs.params` jsonb, for analytics/debugging. */
-  runParams?: Record<string, unknown>;
 }
 
 export type AcceptSuggestionRefusal =
-  | { reason: 'no_account' }
   | { reason: 'blocked'; detail: string | null }
   | { reason: 'uncontactable'; detail: string | null }
-  | { reason: 'recently_contacted'; priorContactedAt: string }
-  | { reason: 'quota_exhausted'; window: 'day'; limit: number; used: number };
+  | { reason: 'recently_contacted'; priorContactedAt: string };
 
 export type AcceptSuggestionResult =
-  | { ok: true; draftId: number; runId: number; dedupWarning: string | null }
+  | { ok: true; id: number; dedupWarning: string | null }
   | { ok: false; refusal: AcceptSuggestionRefusal };
+
+// A suggestion accepted before the human's own LinkedIn profile was ever
+// captured has no operator handle to record - contact_history.account_handle
+// is NOT NULL, and this is the honest placeholder rather than an invented
+// identity. Once `operator_profiles` has a row (LI-21), every later accept
+// records the real one.
+const UNKNOWN_OPERATOR_HANDLE = 'unknown-operator';
 
 /**
  * Validate an accepted suggestion against the same gates a campaign draft
- * goes through, then write the `runs` + `drafts` (+ `draft_events`) rows in
- * one transaction. Every check below runs before the transaction opens, so a
- * refusal leaves neither row behind - "no partial write" from #313's
- * acceptance criteria.
+ * goes through, then write it into the assist plane's own ledger
+ * (`assist_accepted_suggestions`) plus a `contact_history` row, in one
+ * transaction. Every check below runs before the transaction opens, so a
+ * refusal leaves no partial write behind.
  */
-export async function acceptSuggestionIntoDraft(
+export async function acceptSuggestion(
   db: Db,
   input: AcceptSuggestionInput,
 ): Promise<AcceptSuggestionResult> {
-  const [account] = await db
-    .select()
-    .from(schema.accounts)
-    .where(
-      and(
-        eq(schema.accounts.projectId, input.projectId),
-        eq(schema.accounts.platformId, input.platformId),
-        eq(schema.accounts.active, true),
-      ),
-    )
-    .limit(1);
-  if (!account) return { ok: false, refusal: { reason: 'no_account' } };
-
-  if (input.targetUser) {
+  if (input.authorHandle) {
     const r = await isBlocklisted(db, {
       platformId: input.platformId,
       projectId: input.projectId,
-      targetUser: input.targetUser,
-    });
-    if (r.blocked) return { ok: false, refusal: { reason: 'blocked', detail: r.reason } };
-  }
-
-  // Subreddit blocklist: mirrors createDrafts for parity, though LinkedIn
-  // metadata never carries `subreddit` - this only ever fires for a future
-  // platform that reuses this path and does.
-  const subreddit = typeof input.metadata?.subreddit === 'string' ? input.metadata.subreddit : null;
-  if ((input.kind === 'post' || input.kind === 'post_comment') && subreddit) {
-    const r = await isSubredditBlocklisted(db, {
-      platformId: input.platformId,
-      projectId: input.projectId,
-      subreddit,
+      targetUser: input.authorHandle,
     });
     if (r.blocked) return { ok: false, refusal: { reason: 'blocked', detail: r.reason } };
   }
@@ -119,7 +110,7 @@ export async function acceptSuggestionIntoDraft(
   }
 
   let dedupWarning: string | null = null;
-  if (input.targetUser) {
+  if (input.authorHandle) {
     // #335: a DM target already known to reject message requests is skipped
     // outright, ahead of the ordinary dedup window below. LinkedIn never
     // produces a `dm` suggestion (quota ships at zero, no scenario), but this
@@ -128,7 +119,7 @@ export async function acceptSuggestionIntoDraft(
     if (input.kind === 'dm') {
       const uncontactableCheck = await checkUncontactable(db, {
         platformId: input.platformId,
-        targetUser: input.targetUser,
+        targetUser: input.authorHandle,
         organizationId: input.organizationId,
       });
       if (uncontactableCheck.uncontactable) {
@@ -146,7 +137,7 @@ export async function acceptSuggestionIntoDraft(
     const dedupPolicy = policyRow ? parseDedupPolicy(policyRow.value) : { ...DEFAULT_DEDUP_POLICY };
     const dedup = await checkContactDedup(db, {
       platformId: input.platformId,
-      targetUser: input.targetUser,
+      targetUser: input.authorHandle,
       windowDays: dedupPolicy.windowDays,
       organizationId: input.organizationId,
     });
@@ -164,48 +155,16 @@ export async function acceptSuggestionIntoDraft(
     }
   }
 
-  // Quota: a precondition here for the same reason it is one for /suggest -
-  // accepting what cannot be sent wastes the human's edit and the draft would
-  // just sit blocked at send time. Only the day window: /suggest's own
-  // precondition checks day only, and the week window still gates at send
-  // through evaluateDraftSend.
-  const [platform] = await db
-    .select({ slug: schema.platforms.slug })
-    .from(schema.platforms)
-    .where(eq(schema.platforms.id, input.platformId));
-  const [limits, usage] = await Promise.all([
-    loadQuotaLimits(db, platform?.slug ?? 'reddit'),
-    getAccountUsage(db, account.id),
-  ]);
-  const quotaKind = mapDraftKindToQuotaKind(input.kind);
-  const day = checkQuota({
-    platformLimit: limits[quotaKind].perDay,
-    accountLimit: account.dailyLimit,
-    used: usage[quotaKind].day,
-  });
-  if (day.remaining <= 0) {
-    return {
-      ok: false,
-      refusal: { reason: 'quota_exhausted', window: 'day', limit: day.limit, used: day.used },
-    };
-  }
-
-  // #522: `input.usage` is a client-reported block - the extension's own
-  // copy of the `usage` a /suggest `done` event carried, echoed back here
-  // because a suggestion is never persisted server-side until accept. That
-  // was harmless when it only annotated a draft; it stopped being harmless
-  // once assistant spend counts against a budget (shared/src/org-quota.ts's
-  // getOrgMonthToDateCostUsd). The authoritative figure for that budget now
-  // lives in `assist_usage`, written from the server's own AgentRunner
-  // result the moment the suggestion's stream finished
-  // (web/src/routes/api/extension/suggest/+server.ts) - never from the
-  // client - so this run's own `cost_usd` is left null rather than trusted
-  // from the device, and org-quota's sum excludes `kind = 'assist'` runs
-  // for exactly that reason: counting this row too would double the
-  // suggestion's cost. What the device reported and what this repo's own
-  // price table recomputes from its token counts are both kept on `params`
-  // instead - visible for audit (a device that lies is visible, not
-  // authoritative), never read back into a spend decision.
+  // #522: usage here is a client-reported block - the extension's own copy
+  // of the `usage` a /suggest `done` event carried, echoed back because a
+  // suggestion is never persisted server-side until accept. The
+  // authoritative spend figure lives in `assist_usage`, written from the
+  // server's own AgentRunner result the moment the suggestion's stream
+  // finished (web/src/routes/api/extension/suggest/+server.ts) - never from
+  // the client - so both what the device reported and what this repo's own
+  // price table recomputes from its token counts are kept here for audit (a
+  // device that lies is visible, not authoritative), never read back into a
+  // budget decision.
   const pricing = resolvePricingForRunner(input.agentRunner, undefined);
   const recomputedCostUsd = input.usage
     ? computeCostUsd(
@@ -219,61 +178,53 @@ export async function acceptSuggestionIntoDraft(
       )
     : null;
   const reportedCostUsd = input.usage?.costUsd ?? null;
-  const params = {
-    ...(input.runParams ?? {}),
-    ...(recomputedCostUsd != null ? { recomputedCostUsd } : {}),
-    ...(reportedCostUsd != null ? { reportedCostUsd } : {}),
-  };
+
+  const operatorProfile = await loadOperatorProfile(db, input.organizationId);
+  const accountHandle = operatorProfile?.handle ?? UNKNOWN_OPERATOR_HANDLE;
 
   const written = await db.transaction(async (tx) => {
-    const [run] = await tx
-      .insert(schema.runs)
+    const [row] = await tx
+      .insert(schema.assistAcceptedSuggestions)
       .values({
-        kind: 'assist',
-        campaignId: null,
+        organizationId: input.organizationId,
         projectId: input.projectId,
+        platformId: input.platformId,
+        deviceId: input.deviceId,
+        kind: input.kind,
+        postUrn: input.postUrn ?? null,
+        authorHandle: input.authorHandle,
+        authorName: input.authorName ?? null,
+        postUrl: input.postUrl ?? null,
+        body: input.body,
+        editedFrom:
+          input.editedFrom != null && input.editedFrom !== input.body ? input.editedFrom : null,
         agentRunner: input.agentRunner,
-        trigger: 'manual',
-        // Terminal on write: an assist run has no agent that could call a
-        // finish tool (shared/src/runlog/contract.ts), so it must never sit
-        // in `running` waiting for one, or it reads as `playbook_incomplete`.
-        status: 'success',
-        finishedAt: new Date(),
         inputTokens: input.usage?.inputTokens ?? null,
         outputTokens: input.usage?.outputTokens ?? null,
         cacheReadTokens: input.usage?.cacheReadTokens ?? null,
         cacheCreationTokens: input.usage?.cacheCreationTokens ?? null,
-        costUsd: null,
-        params,
+        reportedCostUsd: reportedCostUsd != null ? reportedCostUsd.toFixed(4) : null,
+        recomputedCostUsd: recomputedCostUsd != null ? recomputedCostUsd.toFixed(4) : null,
       })
-      .returning({ id: schema.runs.id });
+      .returning({ id: schema.assistAcceptedSuggestions.id });
 
-    const [draft] = await tx
-      .insert(schema.drafts)
-      .values({
-        runId: run.id,
-        projectId: input.projectId,
+    // #521: recorded unconditionally on accept, not gated behind a later
+    // "sent" detection the assist plane never actually wired for the
+    // in-page panel (unlike a draft opened from the Inbox) - a suggestion
+    // inserted into LinkedIn's own composer is the moment Lorenzo decided
+    // this counts as contact, so a campaign will not DM someone the
+    // assistant just answered in public.
+    if (input.authorHandle) {
+      await tx.insert(schema.contactHistory).values({
         platformId: input.platformId,
-        accountId: account.id,
-        kind: input.kind,
-        state: 'pending_review',
-        targetUser: input.targetUser,
-        body: input.body,
-        sourceRef: input.sourceRef ?? {},
-        metadata: input.metadata ?? {},
-        dedupWarning,
-      })
-      .returning({ id: schema.drafts.id });
+        accountHandle,
+        targetUser: input.authorHandle,
+        organizationId: input.organizationId,
+      });
+    }
 
-    await tx.insert(schema.draftEvents).values({
-      draftId: draft.id,
-      event: 'created',
-      actor: 'system',
-      details: {},
-    });
-
-    return { runId: run.id, draftId: draft.id };
+    return { id: row.id };
   });
 
-  return { ok: true, draftId: written.draftId, runId: written.runId, dedupWarning };
+  return { ok: true, id: written.id, dedupWarning };
 }
