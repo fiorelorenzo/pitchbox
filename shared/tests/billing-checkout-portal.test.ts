@@ -1,14 +1,16 @@
 // #550 (a Stripe customer per org, a Checkout session per plan) and #552
-// (the customer portal). The customer race and the "no price"/"no
-// customer" refusals are exercised against a fake StripeClient; starting a
-// real Checkout/portal session is exercised against the real test-mode
-// account, since that is the only way to know the payload this module
-// actually sends is one Stripe accepts (see docs/billing.md's Managed
-// Payments constraints, and the PR for the parameters this deliberately
-// never sets).
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+// (the customer portal). The customer race and the "no price"/"no customer"
+// refusals are exercised against a fake StripeClient, so this file needs no
+// credential and runs anywhere.
+//
+// Starting a **real** Checkout or portal session is the only way to know the
+// payload this module sends is one Stripe accepts, and that check now lives in
+// `scripts/stripe-probe.ts` (`pnpm run stripe:probe`) rather than here. It used
+// to be two tests reading `~/.config/pitchbox-stripe-test.key`, which passes on
+// the machine holding the key and fails on a runner: it turned `main` red on
+// 2026-09-09 while every PR was green, because the PR path skips this suite.
+// The Managed Payments constraints those probes exercise are recorded in
+// docs/billing.md.
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -16,7 +18,6 @@ import { getDb, schema } from '../src/db/client.js';
 import { ensureStripeCustomer } from '../src/billing/customer.js';
 import { createCheckoutSession, UnknownPriceError } from '../src/billing/checkout.js';
 import { createPortalSession, NoStripeCustomerError } from '../src/billing/portal.js';
-import { createStripeClient } from '../src/stripe/client.js';
 import type { StripeClient, StripeCustomer } from '../src/stripe/client.js';
 
 const createdOrgIds: number[] = [];
@@ -115,23 +116,6 @@ describe('createCheckoutSession', () => {
     ).rejects.toBeInstanceOf(UnknownPriceError);
   });
 
-  it('starts a real test-mode Checkout session for growth/month with Managed Payments enabled', async () => {
-    const secretKey = readFileSync(
-      join(homedir(), '.config/pitchbox-stripe-test.key'),
-      'utf8',
-    ).trim();
-    const stripe = createStripeClient(secretKey);
-    const db = getDb();
-    const orgId = await makeOrg();
-    const session = await createCheckoutSession(db, stripe, {
-      orgId,
-      planId: 'growth',
-      interval: 'month',
-      successUrl: 'https://example.test/settings/billing?checkout=success',
-      cancelUrl: 'https://example.test/settings/billing?checkout=cancelled',
-    });
-    expect(session.url).toMatch(/^https:\/\/checkout\.stripe\.com\//);
-  });
 });
 
 describe('createPortalSession', () => {
@@ -147,20 +131,4 @@ describe('createPortalSession', () => {
     ).rejects.toBeInstanceOf(NoStripeCustomerError);
   });
 
-  it('starts a real test-mode portal session for an org with a Stripe customer', async () => {
-    const secretKey = readFileSync(
-      join(homedir(), '.config/pitchbox-stripe-test.key'),
-      'utf8',
-    ).trim();
-    const stripe = createStripeClient(secretKey);
-    const db = getDb();
-    const orgId = await makeOrg();
-    await ensureStripeCustomer(db, stripe, orgId);
-    const session = await createPortalSession(db, stripe, {
-      orgId,
-      returnUrl: 'https://example.test/settings/billing',
-      portalConfiguration: null,
-    });
-    expect(session.url).toMatch(/^https:\/\/billing\.stripe\.com\//);
-  });
 });

@@ -1,12 +1,18 @@
 // The Stripe webhook is the only writer of subscription state (#551).
 // These exercise the state machine directly - applyStripeEvent - against a
 // fake StripeClient standing in for the network, since the signature check
-// itself lives at the route layer (web/tests covers that). The one test
-// that needs a real Stripe object (`maps a real Stripe product's metadata`)
-// hits the actual test-mode account: no fixture stands in for the shape
-// `scripts/stripe-setup.ts` actually produced there.
+// itself lives at the route layer (web/tests covers that).
+//
+// The metadata-mapping test asserts against `fixtures/stripe/catalogue.json`,
+// which is a **recording of the real test-mode account**, refreshed on purpose
+// with `pnpm run stripe:record`. It used to read the account live, which meant
+// it also read `~/.config/pitchbox-stripe-test.key`: that passes on the
+// machine that holds the key and fails everywhere else, and it turned `main`
+// red on 2026-09-09 with `ENOENT /home/runner/.config/pitchbox-stripe-test.key`
+// while every PR was green, because the PR path skips this suite. A test that
+// needs a credential the runner cannot have is not a test, it is a local
+// script. Same reasoning as the landing's token snapshot (DECISIONS.md D24).
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -307,19 +313,18 @@ describe('applyStripeEvent', () => {
     expect(freshOrg.planSource).toBe('grant');
   });
 
-  it("maps a real Stripe product's metadata (growth) to org_subscriptions limits", async () => {
-    const secretKey = readFileSync(
-      join(homedir(), '.config/pitchbox-stripe-test.key'),
-      'utf8',
-    ).trim();
-    const stripe = createStripeClient(secretKey);
-    const price = await stripe.getPriceByLookupKey('pitchbox_growth_monthly');
-    expect(price).not.toBeNull();
-    const productId = typeof price!.product === 'string' ? price!.product : price!.product.id;
-    const product = await stripe.getProduct(productId);
-    expect(product.metadata.plan).toBe('growth');
+  it("maps the real Stripe product's recorded metadata (growth) to org_subscriptions limits", async () => {
+    const catalogue = JSON.parse(
+      readFileSync(join(import.meta.dirname, 'fixtures/stripe/catalogue.json'), 'utf8'),
+    ) as Record<string, { price: { unit_amount: number }; product: { metadata: Record<string, string> } }>;
+    const recorded = catalogue.pitchbox_growth_monthly;
+    // The recording is what the account really answers, so this still proves
+    // the mapping against Stripe's own shape and its string-typed metadata,
+    // rather than against a hand-written object that agrees with the code.
+    expect(recorded.price.unit_amount).toBe(7900);
+    expect(recorded.product.metadata.plan).toBe('growth');
 
-    const limits = limitsFromProductMetadata(product.metadata);
+    const limits = limitsFromProductMetadata(recorded.product.metadata);
     expect(limits).toEqual({
       planId: 'growth',
       limitRuns: 2000,

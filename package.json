@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p cli && tsc --noEmit -p daemon && pnpm -F @pitchbox/extension check && pnpm -F web check",
     "migrate": "pnpm -F shared migrate",
     "migrate:generate": "pnpm -F shared migrate:generate",
+    "stripe:probe": "tsx scripts/stripe-probe.ts",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "dev": "bash scripts/dev.sh",
