@@ -4,6 +4,7 @@
   import { page } from '$app/stores';
   import {
     Activity,
+    ListChecks,
     Bot,
     Puzzle,
     Gauge,
@@ -18,14 +19,14 @@
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
-  // Flat rail of ten (#254 shipped seven; LI-19/#316 added LinkedIn assist;
-  // 2026-09-07's companion decisions added Companion; #506 added Password).
-  // Status/Agent runners/Browser extension/Quota never 403 - each loader
-  // gates its own data set (member sees an "Admin access required" card
-  // instead of a thrown error) - so they're always shown, same as General
-  // used to be. Password is self-service (gated on being signed in at all,
-  // not an org role - docs/permissions.md) rather than org-scoped, so it
-  // uses `data.signedIn` instead of `data.isAdmin`/`data.authOn`.
+  // Flat rail of eleven (#254 shipped seven; LI-19/#316 added LinkedIn assist;
+  // 2026-09-07's companion decisions added Companion; #506 added Password;
+  // #516 added Onboarding). Status/Agent runners/Browser extension/Quota
+  // never 403 - each loader gates its own data set (member sees an "Admin
+  // access required" card instead of a thrown error) - so they're always
+  // shown, same as General used to be. Password and Onboarding are
+  // self-service (gated on being signed in / having an org context at all,
+  // not an org role - docs/permissions.md) rather than admin-only.
   // Organization needs an org context (auth on); Retention, Security,
   // LinkedIn assist and Companion loaders call requireRole(event, 'admin')
   // and do throw, so those stay role-filtered here too. The server loaders
@@ -33,6 +34,7 @@
   const items = $derived(
     [
       { href: '/settings/status', label: 'Status', icon: Activity, show: true },
+      { href: '/settings/onboarding', label: 'Onboarding', icon: ListChecks, show: true },
       { href: '/settings/runners', label: 'Agent runners', icon: Bot, show: true },
       { href: '/settings/extension', label: 'Browser extension', icon: Puzzle, show: true },
       { href: '/settings/quota', label: 'Quota', icon: Gauge, show: true },

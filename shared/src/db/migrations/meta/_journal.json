@@ -204,6 +204,13 @@
       "when": 1788960000016,
       "tag": "0029_stripe_customer_and_events",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788960000017,
+      "tag": "0030_onboarding_state",
+      "breakpoints": true
     }
   ]
 }
