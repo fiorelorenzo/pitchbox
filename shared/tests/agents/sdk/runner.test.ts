@@ -32,6 +32,16 @@ async function* gen(...parts: unknown[]): AsyncGenerator<unknown> {
   for (const p of parts) yield p;
 }
 
+// Narrow shape of what these tests actually pass to a captured
+// `prepareStep` and read back from it - not `ai`'s full `PrepareStepFunction`
+// generic (which would drag `ToolSet`/`Context` type params into every call
+// site here for no benefit), but typed enough to avoid an unchecked `any`.
+type TestPrepareStep = (args: {
+  stepNumber: number;
+  steps: Array<{ usage: { inputTokens?: number; outputTokens?: number } }>;
+  instructions?: string;
+}) => Promise<{ toolChoice?: string; instructions?: string } | undefined>;
+
 function fakeToolSet(): { fn: () => Promise<PitchboxToolSet>; closeCalls: number[] } {
   const closeCalls: number[] = [];
   const fn = async (): Promise<PitchboxToolSet> => ({
@@ -651,5 +661,144 @@ describe('SdkRunner', () => {
       instructions: undefined,
     });
     expect(forced.toolChoice).toBe('none');
+  });
+
+  it('forces toolChoice:none once accumulated cost (main-loop steps) crosses the cost ceiling', async () => {
+    let capturedPrepareStep: TestPrepareStep | undefined;
+    const runner = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGatewayWithPricing('google/gemini-3.1-flash-lite', {
+        input: '0.00002',
+        output: '0.00002',
+      }),
+      streamTextFn: vi.fn((opts: { prepareStep?: TestPrepareStep }) => {
+        capturedPrepareStep = opts.prepareStep;
+        return { fullStream: gen({ type: 'finish', finishReason: 'stop', totalUsage: {} }) };
+      }) as unknown as typeof streamText,
+    });
+    const handle = runner.run({
+      ...baseOpts(),
+      prompt: 'hi',
+      tools: {},
+      // Well clear of the step/wall-clock/token arms - isolates the cost
+      // arm as the one that trips.
+      toolLoopBudget: {
+        maxSteps: 10,
+        softBudgetMs: 1_000_000,
+        tokenBudget: 1_000_000,
+        costCeilingUsd: 0.5,
+      },
+    });
+    await handle.result;
+    // 10,000 input + 500 output tokens at $0.00002/token = $0.21 - under
+    // the $0.5 ceiling.
+    expect(
+      await capturedPrepareStep!({
+        stepNumber: 1,
+        steps: [{ usage: { inputTokens: 10_000, outputTokens: 500 } }],
+        instructions: undefined,
+      }),
+    ).toBeUndefined();
+    // A second step like that pushes accumulated cost to $0.42 - still
+    // under. A third crosses it: $0.63.
+    const forced = await capturedPrepareStep!({
+      stepNumber: 3,
+      steps: [
+        { usage: { inputTokens: 10_000, outputTokens: 500 } },
+        { usage: { inputTokens: 10_000, outputTokens: 500 } },
+        { usage: { inputTokens: 10_000, outputTokens: 500 } },
+      ],
+      instructions: undefined,
+    });
+    expect(forced?.toolChoice).toBe('none');
+    expect(forced?.instructions).toMatch(/budget/i);
+  });
+
+  it('never forces toolChoice:none from the cost ceiling when the model has no catalogue pricing, since an unknown cost cannot be judged against it', async () => {
+    let capturedPrepareStep: TestPrepareStep | undefined;
+    const runner = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGateway(), // empty catalogue - no pricing
+      streamTextFn: vi.fn((opts: { prepareStep?: TestPrepareStep }) => {
+        capturedPrepareStep = opts.prepareStep;
+        return { fullStream: gen({ type: 'finish', finishReason: 'stop', totalUsage: {} }) };
+      }) as unknown as typeof streamText,
+    });
+    const handle = runner.run({
+      ...baseOpts(),
+      prompt: 'hi',
+      tools: {},
+      toolLoopBudget: {
+        maxSteps: 10,
+        softBudgetMs: 1_000_000,
+        // Comfortably above the usage below - isolates the cost arm
+        // (which must skip on unknown pricing) from the token arm.
+        tokenBudget: 10_000_000,
+        costCeilingUsd: 0.000001, // would trip on any priced usage at all
+      },
+    });
+    await handle.result;
+    expect(
+      await capturedPrepareStep!({
+        stepNumber: 1,
+        steps: [{ usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 } }],
+        instructions: undefined,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("folds a tool's own priced usage (e.g. look_at_image's vision call) into the final usage total, summed as dollars rather than repriced at the main loop's rate", async () => {
+    const { fn: createToolSetFn } = fakeToolSet();
+    const runner = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGatewayWithPricing('google/gemini-3.1-flash-lite', {
+        input: '0.000002',
+        output: '0.000002',
+      }),
+      createToolSetFn,
+      streamTextFn: fakeStreamText(() =>
+        gen(
+          // A tool result carrying its own already-priced usage, exactly
+          // the shape `shared/src/assist/tools.ts`'s `look_at_image`
+          // returns (#574) - priced against whichever model `assist_vision`
+          // resolved to, not against this run's own `google/gemini-3.1-
+          // flash-lite` (which is why this is summed as dollars, not
+          // re-derived from tokens at the main loop's per-token rate).
+          {
+            type: 'tool-result',
+            toolCallId: 'c1',
+            toolName: 'look_at_image',
+            input: {},
+            output: {
+              ok: true,
+              data: {
+                description: 'a chart',
+                usage: { inputTokens: 500, outputTokens: 100, costUsd: 0.01 },
+              },
+            },
+          },
+          {
+            type: 'finish-step',
+            finishReason: 'tool-calls',
+            usage: { inputTokens: 1000, outputTokens: 50, inputTokenDetails: {} },
+          },
+          {
+            type: 'finish',
+            finishReason: 'stop',
+            totalUsage: { inputTokens: 1000, outputTokens: 50 },
+          },
+        ),
+      ),
+    });
+    const handle = runner.run({ ...baseOpts(), prompt: 'hi', attachMcp: false });
+    const res = await handle.result;
+    // Main loop: 1,000 in + 50 out at $0.000002/token = $0.0021. Plus the
+    // tool's own $0.01 - summed, not repriced.
+    expect(res.usage?.inputTokens).toBe(1500);
+    expect(res.usage?.outputTokens).toBe(150);
+    expect(res.usage?.costUsd).toBeCloseTo(0.0021 + 0.01, 4);
   });
 });

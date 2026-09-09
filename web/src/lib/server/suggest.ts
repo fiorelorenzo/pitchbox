@@ -41,6 +41,7 @@ import {
   ASSIST_MAX_STEPS,
   ASSIST_SOFT_BUDGET_MS,
   ASSIST_TOKEN_BUDGET,
+  ASSIST_COST_CEILING_USD,
 } from '@pitchbox/shared/assist/budget';
 import { resolveDeviceOrgId } from './extension-auth.js';
 
@@ -368,6 +369,7 @@ export function runSuggestion(args: {
               maxSteps: ASSIST_MAX_STEPS,
               softBudgetMs: ASSIST_SOFT_BUDGET_MS,
               tokenBudget: ASSIST_TOKEN_BUDGET,
+              costCeilingUsd: ASSIST_COST_CEILING_USD,
             }
           : undefined,
         onTextChunk: (chunk) => {

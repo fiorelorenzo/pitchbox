@@ -8,6 +8,7 @@ import {
   ASSIST_MAX_STEPS,
   ASSIST_SOFT_BUDGET_MS,
   ASSIST_TOKEN_BUDGET,
+  ASSIST_COST_CEILING_USD,
 } from '@pitchbox/shared/assist/budget';
 import { DRAFT_MARKER } from '@pitchbox/shared/assist/envelope';
 
@@ -98,6 +99,7 @@ describe('runSuggestion: assist tool surface wiring (#566)', () => {
       maxSteps: ASSIST_MAX_STEPS,
       softBudgetMs: ASSIST_SOFT_BUDGET_MS,
       tokenBudget: ASSIST_TOKEN_BUDGET,
+      costCeilingUsd: ASSIST_COST_CEILING_USD,
     });
   });
 

@@ -11,12 +11,14 @@ import type {
 } from '@ai-sdk/provider';
 import { MockLanguageModelV4, convertArrayToReadableStream } from 'ai/test';
 import { getDb, schema } from '@pitchbox/shared/db';
+import { __resetModelCatalogueCacheForTests } from '@pitchbox/shared/agents/sdk/runner';
 import type { RunnerConfig } from '@pitchbox/shared/agents/config';
 import type { ObservedPost } from '@pitchbox/shared/assist/suggest-prompt';
 import {
   ASSIST_MAX_STEPS,
   ASSIST_SOFT_BUDGET_MS,
   ASSIST_TOKEN_BUDGET,
+  ASSIST_COST_CEILING_USD,
 } from '@pitchbox/shared/assist/budget';
 import { DRAFT_MARKER } from '@pitchbox/shared/assist/envelope';
 
@@ -31,7 +33,7 @@ import { DRAFT_MARKER } from '@pitchbox/shared/assist/envelope';
  * several steps and issues independent tool calls together rather than one
  * per turn; a suggestion needing nothing extra still takes one turn;
  * cancelling mid-step stops the loop from spending anything further; each of
- * the three soft budgets (steps, wall-clock, tokens) forces a usable draft
+ * the four soft budgets (steps, wall-clock, tokens, cost) forces a usable draft
  * rather than an error; and the usage the accept path ledgers is the sum
  * across every step, not just the last one.
  */
@@ -125,13 +127,19 @@ function textStep(
  * (`step` 0-based) and returns that turn's stream parts - `options
  * .toolChoice` is what `SdkRunner`'s own budget enforcement sets once it
  * forces a turn text-only, and every budget-edge test below reads it from
- * here rather than guessing at timing.
+ * here rather than guessing at timing. `modelPricing` defaults to an empty
+ * catalogue (every existing test's cost stays null, pricing not being
+ * their concern) - the cost-ceiling tests are the one caller that supplies
+ * real per-token rates, since `SdkRunner`'s cost check is skipped
+ * entirely (by design, same as `budgetRemainingUsd`) when pricing is
+ * unknown.
  */
 function useModel(
   script: (
     step: number,
     options: LanguageModelV4CallOptions,
   ) => LanguageModelV4StreamPart[] | Promise<LanguageModelV4StreamPart[]>,
+  modelPricing: Array<{ id: string; pricing: { input: string; output: string } }> = [],
 ): { callCount: () => number } {
   let callIndex = 0;
   const model = (id: string) =>
@@ -143,7 +151,9 @@ function useModel(
         return { stream: convertArrayToReadableStream(parts) };
       },
     });
-  const gateway = Object.assign(model, { getAvailableModels: async () => ({ models: [] }) });
+  const gateway = Object.assign(model, {
+    getAvailableModels: async () => ({ models: modelPricing }),
+  });
   // The one boundary cast in this file: `@ai-sdk/gateway`'s own
   // `GatewayProvider` type carries provider-specific extras `SdkRunner`
   // never reads - it only ever calls this as `(id) => LanguageModelV4` plus
@@ -159,6 +169,13 @@ async function reset() {
   await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
   currentGatewayFn = null;
   process.env.AI_GATEWAY_API_KEY = 'test-key';
+  // The runner's model-catalogue cache is process-wide with a 5-minute TTL
+  // by design (real deployments never re-fetch per run) - in this file's
+  // test process that means an earlier test's plain, empty-catalogue
+  // `useModel()` call would otherwise leak into a later test that supplies
+  // real pricing via a different fake gateway, exactly the trap
+  // `shared/tests/agents/sdk/runner.test.ts` already guards against (#574).
+  __resetModelCatalogueCacheForTests();
 }
 
 async function seedOrgProject(slug: string) {
@@ -368,6 +385,97 @@ describe('runSuggestion: the agent loop (#566)', () => {
 
     expect(callCount()).toBe(2);
     expect(result.draft).toBe('Here is my answer from what I already gathered.');
+  });
+
+  it('crossing the cost ceiling forces the model to answer with what it has, yielding a usable draft', async () => {
+    const { org, project } = await seedOrgProject('org-loop-cost');
+    const { callCount } = useModel(
+      (_step, options) => {
+        if (options.toolChoice?.type === 'none') {
+          return textStep(
+            `Budget spent.\n${DRAFT_MARKER}\nHere is my answer given what it already cost.`,
+          );
+        }
+        // 30,000 input + 1,000 output tokens at $0.00002/token = $0.62,
+        // comfortably over ASSIST_COST_CEILING_USD ($0.50) and well under
+        // ASSIST_TOKEN_BUDGET (60,000) - isolates the cost ceiling as the
+        // one that trips here, not the token budget (#574).
+        return toolCallStep([{ name: 'check_style', args: { text: 'a draft in progress' } }], {
+          inputTokens: 30_000,
+          outputTokens: 1_000,
+        });
+      },
+      [{ id: 'google/gemini-3.1-flash-lite', pricing: { input: '0.00002', output: '0.00002' } }],
+    );
+
+    const handle = runSuggestion(
+      suggestionArgs({ urn: 'urn:li:activity:9', authorName: 'A', text: 'hi' }, project.id, org.id),
+    );
+    const result = await handle.result;
+
+    expect(callCount()).toBe(2);
+    expect(result.draft).toBe('Here is my answer given what it already cost.');
+  });
+
+  it('a normal multi-step suggestion completes on its own - real pricing wired keeps the cost ceiling from forcing an early answer', async () => {
+    const { org, project } = await seedOrgProject('org-loop-cost-cheap');
+    const { callCount } = useModel(
+      (step, options) => {
+        if (options.toolChoice?.type === 'none') {
+          // Only reached if something forced text-only early - what tells
+          // an incorrectly-tripped ceiling apart from the assertions below.
+          return textStep(`Forced.\n${DRAFT_MARKER}\nCut short.`);
+        }
+        if (step === 0) {
+          return toolCallStep([{ name: 'read_thread' }], { inputTokens: 2_600, outputTokens: 40 });
+        }
+        if (step === 1) {
+          return toolCallStep([{ name: 'author_history' }], {
+            inputTokens: 4_100,
+            outputTokens: 40,
+          });
+        }
+        // House-style-clean (no filler opener, no wrap-up closer, no
+        // puffery) so the deterministic style checker never triggers its
+        // own extra model round trip (#572) and confuses this test's own
+        // call count with a different mechanism's.
+        return textStep(
+          `Two real tool calls, still cheap.\n${DRAFT_MARKER}\nGood to see this land, especially the p99 improvement.`,
+          { inputTokens: 4_962, outputTokens: 210 },
+        );
+      },
+      // The fast default's real derived rate (SSH-verified against the
+      // preview database, #574's own PR) - unlike every other test above,
+      // this one wires real pricing so the cost check actually runs.
+      [
+        {
+          id: 'google/gemini-3.1-flash-lite',
+          pricing: { input: '0.0000003087', output: '0.0000006860' },
+        },
+      ],
+    );
+
+    const handle = runSuggestion(
+      suggestionArgs(
+        {
+          urn: 'urn:li:activity:10',
+          authorName: 'A',
+          text: 'hi',
+          thread: { comments: [{ body: 'nice' }], renderedCount: 1, truncated: false },
+        },
+        project.id,
+        org.id,
+      ),
+    );
+    const result = await handle.result;
+
+    // Three natural turns (two independent tool calls, then the write) -
+    // real per-token pricing is wired, but this token profile stays two
+    // orders of magnitude under ASSIST_COST_CEILING_USD, so it never forces
+    // the early, generic "Forced/Cut short" answer above.
+    expect(callCount()).toBe(3);
+    expect(result.draft).toBe('Good to see this land, especially the p99 improvement.');
+    expect(result.usage?.costUsd).toBeLessThan(ASSIST_COST_CEILING_USD / 10);
   });
 
   it('usage is the sum across steps, not just the last one', async () => {

@@ -34,21 +34,30 @@ export interface AgentRunOptions {
    */
   tools?: Record<string, unknown>;
   /**
-   * Step/time/token budget for a native tool-calling loop (#566), enforced
-   * only by the `cloud` runner (`SdkRunner`) - `AcpRunner` ignores it exactly
-   * as it ignores `budgetRemainingUsd`, since its own coding-agent CLI drives
-   * its own turn loop. Past `maxSteps` steps, `softBudgetMs` wall-clock time
-   * since this run started, or `tokenBudget` input tokens accumulated across
-   * steps, the next step is offered no tools at all: the model is told to
-   * answer with whatever it already gathered rather than keep spending
-   * (docs/design/in-page-agent.md section 2). This is the soft nudge;
+   * Step/time/token/cost budget for a native tool-calling loop (#566),
+   * enforced only by the `cloud` runner (`SdkRunner`) - `AcpRunner` ignores
+   * it exactly as it ignores `budgetRemainingUsd`, since its own coding-agent
+   * CLI drives its own turn loop. Past `maxSteps` steps, `softBudgetMs`
+   * wall-clock time since this run started, `tokenBudget` input tokens
+   * accumulated across steps, or `costCeilingUsd` USD spent (steps plus any
+   * tool call that spent its own tokens, e.g. `look_at_image` - #574), the
+   * next step is offered no tools at all: the model is told to answer with
+   * whatever it already gathered rather than keep spending
+   * (docs/design/in-page-agent.md section 2). This is the soft nudge -
    * `timeoutMs` above stays the hard wall-clock ceiling that aborts the
-   * whole run regardless of what streamed.
+   * whole run regardless of what streamed, and `budgetRemainingUsd` below
+   * stays the org's own separate hard abort. `costCeilingUsd` is one
+   * suggestion's own ceiling, never the org's or the instance's - both of
+   * those still apply on top of it, unchanged (#574).
    */
   toolLoopBudget?: {
     maxSteps: number;
     softBudgetMs: number;
     tokenBudget: number;
+    /** Optional: omitted budgets (a caller with no priced ceiling in mind,
+     * or a test exercising the other three alone) simply never trip this
+     * arm of the check. */
+    costCeilingUsd?: number;
   };
   slug: string;
   env: Record<string, string>;

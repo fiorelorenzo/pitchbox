@@ -24,6 +24,7 @@ import {
   pricingFromCatalogueEntry,
   buildSdkUsage,
   addSdkUsage,
+  computeSdkCostUsd,
   type SdkStopReasonKind,
   type SdkUsage,
   type SdkLanguageModelUsage,
@@ -89,6 +90,45 @@ function posInt(raw: string | undefined): number | undefined {
   if (!raw) return undefined;
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * A tool's own result can carry a real spend the loop never saw directly -
+ * `look_at_image` is the one tool with a Gateway call behind it (design
+ * doc, "the only tool that spends tokens"), priced inside its own handler
+ * (`shared/src/assist/tools.ts`, #574) since only it knows which model
+ * answered. Read generically off `AssistToolAnswer`'s own shape (`{ok:true,
+ * data: {usage?} }`) rather than importing that type or matching on a tool
+ * name, so a future tool that spends its own tokens folds into the ledger
+ * and the cost ceiling with no second wiring point here.
+ */
+function extractToolUsage(
+  output: unknown,
+): { usage: SdkLanguageModelUsage; costUsd: number | null } | null {
+  if (typeof output !== 'object' || output === null) return null;
+  const answer = output as { ok?: unknown; data?: unknown };
+  if (answer.ok !== true || typeof answer.data !== 'object' || answer.data === null) return null;
+  const data = answer.data as { usage?: unknown };
+  if (typeof data.usage !== 'object' || data.usage === null) return null;
+  const usage = data.usage as {
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+    costUsd?: number | null;
+  };
+  if (usage.inputTokens == null && usage.outputTokens == null) return null;
+  return {
+    usage: {
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      inputTokenDetails: {
+        cacheReadTokens: usage.cacheReadTokens,
+        cacheWriteTokens: usage.cacheCreationTokens,
+      },
+    },
+    costUsd: usage.costUsd ?? null,
+  };
 }
 
 export class SdkRunner implements AgentRunner {
@@ -226,24 +266,62 @@ export class SdkRunner implements AgentRunner {
         tools = toolSet?.tools as ToolSet | undefined;
       }
 
-      // The step/time/token budget (#566, docs/design/in-page-agent.md
-      // section 2) is a nudge, not a hard stop: once any threshold trips,
-      // the next step is offered no tools at all, so the model must answer
-      // with whatever it already gathered instead of calling another one.
-      // `stepNumber` is zero-based and `steps` holds only the steps already
-      // completed (ai's own `prepareStep` contract), so this fires on the
-      // step *at* the index budget - "five tool steps plus the writing
-      // turn" reads as steps 0-4 free, step 5 forced text-only.
+      // The step/time/token/cost budget (#566/#574, docs/design/in-page-
+      // agent.md section 2) is a nudge, not a hard stop: once any threshold
+      // trips, the next step is offered no tools at all, so the model must
+      // answer with whatever it already gathered instead of calling another
+      // one. `stepNumber` is zero-based and `steps` holds only the steps
+      // already completed (ai's own `prepareStep` contract), so this fires
+      // on the step *at* the index budget - "five tool steps plus the
+      // writing turn" reads as steps 0-4 free, step 5 forced text-only.
       const loopBudget = opts.toolLoopBudget;
       const loopStartedAt = Date.now();
+      // `look_at_image` is the one tool with a real Gateway call behind it
+      // (design doc, "the only tool that spends tokens") - its `tool-result`
+      // carries a priced `usage` block `streamText`'s own step usage never
+      // sees, since that call happens outside the loop it drives directly.
+      // Accumulated here (written by the `tool-result` branch below,
+      // read by `prepareStep`'s cost check and the final usage assembly)
+      // rather than left for either to guess at (#574).
+      let toolCostSoFarUsd = 0;
+      let toolUsageSoFar: SdkLanguageModelUsage = {};
       const prepareStep: PrepareStepFunction<ToolSet> | undefined = loopBudget
         ? ({ stepNumber, steps, instructions }) => {
             const elapsedMs = Date.now() - loopStartedAt;
             const tokensSoFar = steps.reduce((sum, step) => sum + (step.usage.inputTokens ?? 0), 0);
+            // Priced from the same `pricing` the running Gateway-budget
+            // check below already resolved for this model - unpriced
+            // (`pricing` undefined) means this arm never trips rather than
+            // guessing, the same fallback direction `budgetRemainingUsd`
+            // already takes.
+            const stepsCostSoFarUsd =
+              loopBudget.costCeilingUsd != null
+                ? (computeSdkCostUsd(
+                    {
+                      inputTokens: tokensSoFar,
+                      outputTokens: steps.reduce(
+                        (sum, step) => sum + (step.usage.outputTokens ?? 0),
+                        0,
+                      ),
+                      cacheReadTokens: steps.reduce(
+                        (sum, step) => sum + (step.usage.inputTokenDetails?.cacheReadTokens ?? 0),
+                        0,
+                      ),
+                      cacheCreationTokens: steps.reduce(
+                        (sum, step) => sum + (step.usage.inputTokenDetails?.cacheWriteTokens ?? 0),
+                        0,
+                      ),
+                    },
+                    pricing,
+                  ) ?? 0)
+                : 0;
             const overBudget =
               stepNumber >= loopBudget.maxSteps - 1 ||
               elapsedMs >= loopBudget.softBudgetMs ||
-              tokensSoFar >= loopBudget.tokenBudget;
+              tokensSoFar >= loopBudget.tokenBudget ||
+              (loopBudget.costCeilingUsd != null &&
+                pricing != null &&
+                stepsCostSoFarUsd + toolCostSoFarUsd >= loopBudget.costCeilingUsd);
             if (!overBudget) return undefined;
             // `instructions` only carries a plain string in this runner's
             // own usage (a suggestion never sets `system`) - a structured
@@ -362,6 +440,12 @@ export class SdkRunner implements AgentRunner {
                 finishReason = part.finishReason;
               } else if (part.type === 'error') {
                 sawErrorPart = true;
+              } else if (part.type === 'tool-result') {
+                const toolUsage = extractToolUsage(part.output);
+                if (toolUsage) {
+                  toolUsageSoFar = addSdkUsage(toolUsageSoFar, toolUsage.usage);
+                  if (toolUsage.costUsd != null) toolCostSoFarUsd += toolUsage.costUsd;
+                }
               }
 
               const produced = normalizeSdkPart(part, raw, seq);
@@ -414,10 +498,34 @@ export class SdkRunner implements AgentRunner {
             : 0;
 
         // `pricing` was already resolved before the stream started (above),
-        // so the final usage is priced with the exact same table the
+        // so the main loop's usage is priced with the exact same table the
         // mid-stream check used - no second catalogue fetch here.
         const usage = finishUsage ?? stepUsage ?? {};
-        const usageResult = buildSdkUsage(usage, { pricing });
+        const mainUsageResult = buildSdkUsage(usage, { pricing });
+        // Folded in, not repriced: `toolCostSoFarUsd`/`toolUsageSoFar` were
+        // already priced inside the tool's own handler against whichever
+        // model answered THAT call (`shared/src/assist/tools.ts`'s
+        // `look_at_image`, #574) - summing dollars here is correct where
+        // repricing tool-attributed tokens at the main loop's rate would
+        // not be, since `assist_suggest` and `assist_vision` can resolve to
+        // different models.
+        const toolTokens = {
+          inputTokens: toolUsageSoFar.inputTokens ?? 0,
+          outputTokens: toolUsageSoFar.outputTokens ?? 0,
+          cacheReadTokens: toolUsageSoFar.inputTokenDetails?.cacheReadTokens ?? 0,
+          cacheCreationTokens: toolUsageSoFar.inputTokenDetails?.cacheWriteTokens ?? 0,
+        };
+        const usageResult = {
+          inputTokens: mainUsageResult.inputTokens + toolTokens.inputTokens,
+          outputTokens: mainUsageResult.outputTokens + toolTokens.outputTokens,
+          cacheReadTokens: mainUsageResult.cacheReadTokens + toolTokens.cacheReadTokens,
+          cacheCreationTokens: mainUsageResult.cacheCreationTokens + toolTokens.cacheCreationTokens,
+          costUsd:
+            mainUsageResult.costUsd != null || toolCostSoFarUsd > 0
+              ? Number(((mainUsageResult.costUsd ?? 0) + toolCostSoFarUsd).toFixed(4))
+              : mainUsageResult.costUsd,
+          costReported: mainUsageResult.costReported,
+        };
         const tokensUsed = usageResult.inputTokens + usageResult.outputTokens;
 
         const sdkUsageForEvent: SdkUsage = {
