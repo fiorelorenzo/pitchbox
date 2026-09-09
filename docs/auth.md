@@ -76,6 +76,10 @@ Override by inserting/updating that row directly - the login route reads it on e
 
 `/settings/security` lists the last 50 entries in `auth_failures` and exposes an **Unlock account** action that clears the `user:<username>` bucket via `POST /api/auth/unlock`. The IP bucket is not cleared by default - pass `{ "ip": "..." }` to clear that too.
 
+## Account recovery from the shell
+
+A self-host that never configures email still needs a way in when a password is lost, and no console. `pitchbox user:create <username> [--admin]`, `pitchbox user:reset-password <username>`, and `pitchbox user:list` (see `docs/cli.md`) cover it: create an account, set a password, and grant instance-admin are each an explicit action, not one magic command that does all three. `user:create` and `user:reset-password` never accept a password as an argument - `PITCHBOX_CLI_PASSWORD`, piped stdin, or an echo-suppressed prompt only - and `user:reset-password` deletes that user's sessions and clears their `auth_failures` bucket, the same recovery `/settings/password` performs on itself.
+
 ## Organizations and memberships
 
 The schema already carries `organizations` + `memberships`. On a fresh install a single `default` org is seeded, and the first user is auto-joined as `owner`. The data model is the same across editions - a single-org self-host is just a multi-tenant cloud install with one tenant.

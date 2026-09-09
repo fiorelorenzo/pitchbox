@@ -29,3 +29,17 @@ pitchbox drafts:regenerate <id> [--hint "..."]
 ```
 
 Regeneration runs as an agent job dispatched by the web app. The dashboard's `POST /api/drafts/[id]/regenerate` (and the Inbox **Regenerate** action) launch a `draft_regeneration` run that rewrites the draft body honoring the reviewer hint, records the hint into `draft_regeneration_hints`, appends a `regenerated` draft_event that snapshots the previous body (so the change is undoable), and re-scores the draft. The CLI command is a thin pointer to that web flow.
+
+## `pitchbox user:create <username> [--admin]`
+
+Creates an account (and default-org owner membership, same `createUser()` path `seed:owner` and first-login bootstrap use) - the way an operator with shell access gets in without writing a `password_hash` into Postgres by hand. Fails with `user_exists` and an actionable message, not a stack trace, on a username that already exists. `--admin` grants instance-admin at creation; it is a separate, explicit flag rather than something a fresh account gets for free.
+
+The password is never a command-line argument - it lands in shell history and is visible to every other process on the box via `ps`. It's read, in order: from `PITCHBOX_CLI_PASSWORD`, or from stdin when piped (`echo "$PW" | pitchbox user:create alice`), or from an interactive echo-suppressed prompt otherwise.
+
+## `pitchbox user:reset-password <username>`
+
+Sets a new password for an existing account: rehashes, revokes every one of that account's sessions, and clears its `auth_failures` login-throttle bucket - same as the self-service `/settings/password` flow, minus the "keep my own tab signed in" exception (there is no signed-in tab from a shell). Fails with `user_not_found` and an actionable message on an unknown username. Reads the password the same way `user:create` does - see above.
+
+## `pitchbox user:list`
+
+Read-only. Prints every account's id, username, email, instance-admin flag, and org membership/role - the fastest way to answer "who can get into this deployment" without a database client.

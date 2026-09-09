@@ -12,12 +12,12 @@ export type SeedOwnerResult =
 // Mirrors the `Body` schema in web/src/routes/api/auth/login/+server.ts, so a
 // seeded owner always satisfies the same rules the login route enforces.
 // Keep these in sync if either changes.
-const OwnerUsername = z
+export const OwnerUsername = z
   .string()
   .min(1)
   .max(64)
   .regex(/^[a-zA-Z0-9_.-]+$/);
-const OwnerPassword = z.string().min(8).max(256);
+export const OwnerPassword = z.string().min(8).max(256);
 
 // Core logic, extracted from the commander action so it can be reused by both
 // the `pitchbox` CLI and (if ever needed) the Pitchbox MCP server. Meant to
