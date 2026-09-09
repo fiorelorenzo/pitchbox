@@ -19,3 +19,13 @@ cloud
 private
 .claude
 .DS_Store
+# scripts/deploy.sh writes its pre-migrate restore point into backups/<utc>/
+# next to this file, i.e. inside the build context, and Dockerfile.app ends
+# with `COPY . .`. A restore point is deployment state, never image content:
+# it belongs to the host and must not travel into a layer. The `.env` entries
+# above do not cover it, since a leading-dot pattern only matches the context
+# root. Found on 2026-09-10, when a restore point with different ownership
+# failed a build outright at `error from sender: ... permission denied`.
+backups
+**/*.sql.gz
+**/encryption_key.env
