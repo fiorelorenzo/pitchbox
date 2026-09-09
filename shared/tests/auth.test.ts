@@ -1,8 +1,7 @@
 import { describe, expect, it, beforeEach, afterAll } from 'vitest';
-import { eq, sql, and } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDb, getPool } from '../src/db/client.js';
 import { users, projects } from '../src/db/schema.js';
-import { PERSONAL_PROJECT_SLUG } from '../src/personal-project.js';
 import {
   hashPassword,
   verifyPassword,
@@ -53,20 +52,21 @@ describe('shared/auth', () => {
     expect(await countUsers(getDb())).toBe(1);
   });
 
-  // reset() truncates `organizations`, so this exercises the fresh-install
-  // path inside createUser (no seed:core has run): the default org is
-  // created inline, and it must not have to wait for a migration to get its
-  // `personal` project (shared/src/personal-project.ts, decision 2026-09-07).
-  it('createUser creates the personal project for a freshly-created default org', async () => {
+  // #523 retired the personal project: createUser used to hand a
+  // freshly-created default org a `personal` project inline, and this test
+  // pinned that retired auto-creation rather than an observable contract a
+  // caller still relies on. Deleted, not re-pinned to the new internals -
+  // replaced by the actual #523 acceptance criterion below.
+  it('gives a freshly-created default org no project it did not ask for', async () => {
     const id = await createUser(getDb(), { username: 'frank', password: 'a-very-long-password' });
     const org = await loadOrganizationForUser(getDb(), id);
     expect(org).not.toBeNull();
 
-    const [personalProject] = await getDb()
+    const orgProjects = await getDb()
       .select()
       .from(projects)
-      .where(and(eq(projects.organizationId, org!.id), eq(projects.slug, PERSONAL_PROJECT_SLUG)));
-    expect(personalProject).toBeDefined();
+      .where(eq(projects.organizationId, org!.id));
+    expect(orgProjects).toHaveLength(0);
   });
 
   it('createUser defaults isInstanceAdmin to false, and honours the opt-in (#137)', async () => {

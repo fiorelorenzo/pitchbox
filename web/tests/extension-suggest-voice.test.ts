@@ -8,7 +8,6 @@ import {
   defaultLinkedInAssistSettings,
   saveLinkedInAssistSettings,
 } from '@pitchbox/shared/linkedin-assist';
-import { ensurePersonalProject } from '@pitchbox/shared/personal-project';
 import { loadCompanionContext } from '@pitchbox/shared/assist/context';
 import { loadActiveTemplates } from '@pitchbox/shared/templates';
 import { buildSuggestionPrompt } from '@pitchbox/shared/assist/suggest-prompt';
@@ -16,8 +15,8 @@ import { DRAFT_MARKER } from '@pitchbox/shared/assist/envelope';
 
 /**
  * #408: a per-project voice override, resolved against the project a
- * suggestion is actually being filed under (the bound project, or the org's
- * `personal` carve-out) rather than the org's bound project alone. Kept in
+ * suggestion is actually being filed under, or the org's own default when
+ * none is named at all (#523 made naming a project optional). Kept in
  * its own file rather than folded into extension-suggest.test.ts because
  * that file's `perDevice` rate limiter (20/60s) is a module-level singleton
  * shared by every test in the process that imports it, and its own tests
@@ -118,10 +117,12 @@ const POST_BODY = {
 describe('per-project voice (#408)', () => {
   beforeEach(reset);
 
-  it('the same post answered under the product project and the personal project produces different registers', async () => {
+  it('the same post answered under the product project and with no project produces different registers', async () => {
     const { org, project: product } = await seedOrgProject('voice-product');
     // Org default is 'warm'; the product project overrides to 'technical'.
-    // The personal project gets no override, so it inherits the org's 'warm'.
+    // A request naming no project at all gets no override, so it inherits
+    // the org's 'warm' (#523: naming none is never a bypass of the binding,
+    // and resolves voice the same way an unset project override would).
     await saveLinkedInAssistSettings(getDb(), org.id, {
       ...defaultLinkedInAssistSettings(),
       enabled: true,
@@ -129,7 +130,6 @@ describe('per-project voice (#408)', () => {
       tone: 'warm',
     });
     await setProjectVoice(product.id, 'technical');
-    const personalId = await ensurePersonalProject(getDb(), org.id);
     await mintDevice(org.id, 'tok-product-vs-personal');
 
     const productRes = await suggest({
@@ -140,19 +140,19 @@ describe('per-project voice (#408)', () => {
     await productRes.text();
     const productPrompt = lastOptions?.prompt ?? '';
 
-    const personalRes = await suggest({
-      request: request('tok-product-vs-personal', { ...POST_BODY, projectId: personalId }),
+    const noProjectRes = await suggest({
+      request: request('tok-product-vs-personal', POST_BODY),
     } as never);
-    await personalRes.text();
-    const personalPrompt = lastOptions?.prompt ?? '';
+    await noProjectRes.text();
+    const noProjectPrompt = lastOptions?.prompt ?? '';
 
     expect(productPrompt).toContain('mechanisms, numbers and tradeoffs');
     expect(productPrompt).not.toContain('address the author as a person');
 
-    expect(personalPrompt).toContain('address the author as a person');
-    expect(personalPrompt).not.toContain('mechanisms, numbers and tradeoffs');
+    expect(noProjectPrompt).toContain('address the author as a person');
+    expect(noProjectPrompt).not.toContain('mechanisms, numbers and tradeoffs');
 
-    expect(productPrompt).not.toBe(personalPrompt);
+    expect(productPrompt).not.toBe(noProjectPrompt);
   });
 
   it('a project with no override produces the exact prompt as before this change, byte for byte', async () => {

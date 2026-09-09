@@ -72,7 +72,7 @@ async function makeRun(opts: {
 
 async function makeAssistUsage(opts: {
   organizationId: number;
-  projectId: number;
+  projectId: number | null;
   createdAt: Date;
 }) {
   const db = getDb();
@@ -170,7 +170,7 @@ describe('getOrgUsage: runs', () => {
     const { orgId, projectId } = await makeCloudOrg();
     await makeRun({ projectId, status: 'success', startedAt: NOW });
     await makeRun({ projectId, status: 'failed', startedAt: NOW });
-    await makeRun({ projectId, kind: 'assist', status: 'success', startedAt: NOW });
+    await makeRun({ projectId, kind: 'draft_regeneration', status: 'success', startedAt: NOW });
     await makeRun({ projectId, status: 'running', startedAt: NOW });
 
     const usage = await getOrgUsage(getDb(), orgId, PERIOD);
@@ -204,13 +204,42 @@ describe('getOrgUsage: suggestions', () => {
     const { orgId, projectId } = await makeCloudOrg();
     await makeAssistUsage({ organizationId: orgId, projectId, createdAt: NOW });
     await makeAssistUsage({ organizationId: orgId, projectId, createdAt: NOW });
-    // Accepting one writes a `runs` row (kind: 'assist') - it must not be
-    // double-counted as a second suggestion.
-    await makeRun({ projectId, kind: 'assist', startedAt: NOW });
+    // #521: accepting one writes a row in the assist plane's own ledger
+    // (assist_accepted_suggestions), never a `runs` row any more - it must
+    // not be double-counted as a second suggestion.
+    const [platform] = await getDb()
+      .select({ id: schema.platforms.id })
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'linkedin'));
+    await getDb()
+      .insert(schema.assistAcceptedSuggestions)
+      .values({
+        organizationId: orgId,
+        projectId,
+        platformId: platform.id,
+        kind: 'post_comment',
+        body: 'accepted suggestion text',
+        agentRunner: 'claude-code',
+        createdAt: NOW,
+      });
 
     const usage = await getOrgUsage(getDb(), orgId, PERIOD);
     expect(usage.suggestions.used).toBe(2);
     expect(usage.suggestions.limit).toBe(PLAN_CATALOGUE.free.suggestionsPerMonth);
+  });
+
+  // #523 made `assist_usage.project_id` nullable - a suggestion can be
+  // about no product at all - and getOrgUsage filters this count by
+  // `organizationId` directly rather than through the org's project ids
+  // precisely so a null-project suggestion is never silently dropped. Proven
+  // by removing that direct filter (switching to a project-id membership
+  // test as the old code did) and watching this fail with `used: 0`.
+  it('counts a suggestion with no project, filtered by organization id directly (#523)', async () => {
+    const { orgId } = await makeCloudOrg();
+    await makeAssistUsage({ organizationId: orgId, projectId: null, createdAt: NOW });
+
+    const usage = await getOrgUsage(getDb(), orgId, PERIOD);
+    expect(usage.suggestions.used).toBe(1);
   });
 });
 

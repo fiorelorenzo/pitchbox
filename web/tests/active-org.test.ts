@@ -1,12 +1,11 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { sql, eq, and } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
 import {
   listUserOrganizations,
   loadActiveOrganization,
   createOrganization,
 } from '@pitchbox/shared/orgs';
-import { PERSONAL_PROJECT_SLUG } from '@pitchbox/shared/personal-project';
 
 async function reset() {
   const db = getDb();
@@ -74,25 +73,22 @@ describe('active-org resolution', () => {
     expect(orgs.some((o) => o.id === org.id)).toBe(true);
   });
 
-  // Decision 2026-09-07 (shared/src/personal-project.ts): a new org must not
-  // wait for a migration to have a `personal` project - it exists the moment
-  // the org does.
-  it('creates the personal project alongside a new org', async () => {
+  // #523 retired the personal project: createOrganization used to hand a
+  // fresh org a `personal` project the moment it existed, and this test
+  // pinned that retired auto-creation rather than an observable contract a
+  // caller still relies on. Deleted, not re-pinned to the new internals -
+  // replaced by the actual #523 acceptance criterion below.
+  it('gives a fresh org no project it did not ask for', async () => {
     const uid = await seedUser('u6');
     const org = await createOrganization(getDb(), {
       slug: 'ao-personal',
       name: 'Personal Test',
       ownerUserId: uid,
     });
-    const [personalProject] = await getDb()
+    const projects = await getDb()
       .select()
       .from(schema.projects)
-      .where(
-        and(
-          eq(schema.projects.organizationId, org.id),
-          eq(schema.projects.slug, PERSONAL_PROJECT_SLUG),
-        ),
-      );
-    expect(personalProject).toBeDefined();
+      .where(eq(schema.projects.organizationId, org.id));
+    expect(projects).toHaveLength(0);
   });
 });

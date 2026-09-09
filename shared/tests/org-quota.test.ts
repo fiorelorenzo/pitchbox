@@ -93,23 +93,32 @@ async function makeRun(opts: { projectId: number; costUsd: string | null; starte
     startedAt: opts.startedAt,
   });
 }
-/** A `kind: 'assist'` run - what accepting a suggestion writes
- * (shared/src/assist-accept.ts) to hang the resulting draft's `run_id` off.
- * `costUsd` defaults to null (#522: the accept path never sets it anymore),
- * but can be overridden to prove the org total ignores it regardless. */
-async function makeAssistRun(opts: {
+/** A row in the assist plane's own ledger (`assist_accepted_suggestions`,
+ * #521) - what accepting a suggestion writes now, never a `runs` row.
+ * `reportedCostUsd`/`recomputedCostUsd` are kept only for audit (#522: the
+ * real spend figure lives in `assist_usage`, ledgered once at suggest
+ * time), so a value here must never add to the org total. */
+async function makeAcceptedSuggestion(opts: {
+  organizationId: number;
   projectId: number;
-  costUsd?: string | null;
-  startedAt: Date;
+  reportedCostUsd?: string | null;
+  createdAt: Date;
 }) {
   const db = getDb();
-  await db.insert(schema.runs).values({
-    kind: 'assist',
+  const [platform] = await db
+    .select({ id: schema.platforms.id })
+    .from(schema.platforms)
+    .where(eq(schema.platforms.slug, 'linkedin'));
+  await db.insert(schema.assistAcceptedSuggestions).values({
+    organizationId: opts.organizationId,
     projectId: opts.projectId,
-    trigger: 'manual',
-    status: 'success',
-    costUsd: opts.costUsd ?? null,
-    startedAt: opts.startedAt,
+    platformId: platform.id,
+    kind: 'post_comment',
+    body: 'accepted suggestion text',
+    agentRunner: 'claude-code',
+    reportedCostUsd: opts.reportedCostUsd ?? null,
+    recomputedCostUsd: opts.reportedCostUsd ?? null,
+    createdAt: opts.createdAt,
   });
 }
 
@@ -461,23 +470,30 @@ describe('getOrgPeriodCostUsd: assistant usage (#522)', () => {
       });
     }
     // Two of those twenty were accepted - shared/src/assist-accept.ts writes
-    // a `runs` row (kind: 'assist') to hang the resulting draft off, but
-    // never sets that row's own cost_usd (#522).
-    await makeAssistRun({ projectId, startedAt: now });
-    await makeAssistRun({ projectId, startedAt: now });
+    // a row into the assist plane's own ledger (assist_accepted_suggestions,
+    // #521), never a `runs` row, and that row's own cost columns are kept
+    // only for audit (#522).
+    await makeAcceptedSuggestion({ organizationId: orgId, projectId, createdAt: now });
+    await makeAcceptedSuggestion({ organizationId: orgId, projectId, createdAt: now });
 
     const total = await getOrgPeriodCostUsd(getDb(), orgId, monthPeriod(now));
     expect(total).toBeCloseTo(0.2, 4);
   });
 
-  it('ignores an assist run even if its own cost_usd were somehow set, so accepting never double-counts', async () => {
+  it('ignores an accepted suggestion\u2019s own cost columns even if set, so accepting never double-counts', async () => {
     const { orgId, projectId } = await setupOrg();
     const now = new Date('2026-07-15T12:00:00Z');
     await makeAssistUsage({ organizationId: orgId, projectId, costUsd: '0.0090', createdAt: now });
-    // A defensive scenario: an assist run whose cost_usd was set to the same
-    // figure the assist_usage row already carries. If getOrgPeriodCostUsd
-    // summed kind='assist' runs too, this suggestion would count twice.
-    await makeAssistRun({ projectId, costUsd: '0.0090', startedAt: now });
+    // A defensive scenario: an accepted suggestion whose own reported/
+    // recomputed cost columns were set to the same figure the assist_usage
+    // row already carries. If getOrgPeriodCostUsd summed
+    // assist_accepted_suggestions too, this suggestion would count twice.
+    await makeAcceptedSuggestion({
+      organizationId: orgId,
+      projectId,
+      reportedCostUsd: '0.0090',
+      createdAt: now,
+    });
 
     const total = await getOrgPeriodCostUsd(getDb(), orgId, monthPeriod(now));
     expect(total).toBeCloseTo(0.009, 4);
