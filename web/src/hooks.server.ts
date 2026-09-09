@@ -108,6 +108,12 @@ function isInternalDispatchRequest(event: { request: Request; url: URL }): boole
 function isExemptPath(pathname: string): boolean {
   return (
     pathname.startsWith('/api/extension/') ||
+    // The Stripe webhook (#551) is a signed, unauthenticated-by-cookie
+    // delivery from Stripe's own servers - it verifies `Stripe-Signature`
+    // itself (shared/src/stripe/signature.ts) instead of a session, and
+    // must be reachable with auth on or off since the signing secret, not
+    // a Pitchbox account, is the boundary.
+    pathname.startsWith('/api/stripe/webhook') ||
     pathname.startsWith('/login') ||
     // A visitor with no session has to be able to reach both halves of
     // sign-up too (#504): /register itself, and /invite/<token>'s own
@@ -165,6 +171,9 @@ const TRUSTED_ORIGIN_SET = trustedOriginSet();
 function blocksCrossOriginMutation(event: { request: Request; url: URL }): boolean {
   if (!event.url.pathname.startsWith('/api/')) return false;
   if (event.url.pathname.startsWith('/api/extension/')) return false;
+  // Same reasoning as `isExemptPath` above: Stripe never sends an `Origin`
+  // header a browser would, but explicit beats "happens to fall through".
+  if (event.url.pathname.startsWith('/api/stripe/webhook')) return false;
   if (!MUTATING_METHODS.has(event.request.method)) return false;
   const origin = event.request.headers.get('origin');
   if (!origin) return false;

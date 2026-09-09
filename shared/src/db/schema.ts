@@ -98,6 +98,19 @@ export const organizations = pgTable('organizations', {
   plan: text('plan').notNull().default('free'),
   planSource: text('plan_source').notNull().default('default'),
   planUpdatedAt: timestamp('plan_updated_at', { withTimezone: true }).notNull().defaultNow(),
+  // The Stripe customer for this org, created lazily on first checkout
+  // (#550) and independent of whether a subscription currently exists:
+  // `org_subscriptions.stripe_customer_id` is NOT NULL and that row *is*
+  // the subscription (deleted wholesale when Stripe's isn't there any
+  // more, see below), so a customer created before any subscription - or
+  // surviving after one is cancelled and its row is torn down - has
+  // nowhere else to live. One customer per org (never per user): the
+  // subscription belongs to the tenant, seats are an org attribute, and
+  // the checkout route reuses this column instead of minting a second
+  // Stripe customer on a repeat visit. Unique, not `.references` a Stripe
+  // object - Stripe is external, nothing here can enforce a foreign key
+  // into it.
+  stripeCustomerId: text('stripe_customer_id').unique(),
 });
 
 // The Stripe side of a plan (#544, #551 writes it): a subscription has its
@@ -138,6 +151,7 @@ export const orgSubscriptions = pgTable(
     // 'canceled', ...) - the grace-window and read-only handling that reads
     // this is #548/#556, not built here.
     status: text('status').notNull(),
+    currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull(),
     currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
     cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
     limitRuns: integer('limit_runs'),
@@ -159,6 +173,29 @@ export const orgSubscriptions = pgTable(
     ),
   }),
 );
+
+// Idempotency ledger for the Stripe webhook (#551): `id` is Stripe's own
+// event id, inserted with `onConflictDoNothing` before anything else the
+// handler does, in its own statement rather than the same transaction as
+// the state write below - the handler still has a Stripe API call to make
+// (`shared/src/billing/webhook.ts` refetches the live subscription rather
+// than trusting the event's embedded snapshot) and a DB transaction has no
+// business sitting open across that. Zero rows affected on the insert
+// means this event id already exists; `processedAt` on *that* row is what
+// decides what happens next - already set means a true replay (answer 200,
+// touch nothing else), still null means a previous delivery was recorded
+// but crashed before finishing, so the handler reprocesses it rather than
+// swallowing it as a duplicate of work that never actually happened.
+// `processedAt` itself is written in the same transaction as the
+// `org_subscriptions`/`organizations` write it accompanies, so it is never
+// observed set without that write having committed too.
+export const stripeEvents = pgTable('stripe_events', {
+  id: text('id').primaryKey(),
+  type: text('type').notNull(),
+  receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+  payload: jsonb('payload').notNull().default({}),
+});
 
 export const memberships = pgTable(
   'memberships',
