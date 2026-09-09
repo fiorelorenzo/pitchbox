@@ -39,6 +39,7 @@
     "./operator-profile": "./src/operator-profile.ts",
     "./operator-voice-profile": "./src/operator-voice-profile.ts",
     "./github-sources": "./src/github-sources.ts",
+    "./github-app": "./src/github-app.ts",
     "./project-sources": "./src/project-sources.ts",
     "./project-source-sync": "./src/project-source-sync.ts",
     "./personal-project": "./src/personal-project.ts",
