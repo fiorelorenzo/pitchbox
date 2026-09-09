@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { mintDeviceToken } from '$lib/server/extension-auth.js';
+import { billingPeriodFor } from '@pitchbox/shared/org-quota';
+import { getOrgUsage } from '@pitchbox/shared/usage';
 import { RateLimiter } from '$lib/server/rate-limit.js';
 
 const Body = z.object({
@@ -54,6 +56,27 @@ export async function POST({ request, getClientAddress }: RequestEvent) {
     .returning();
   if (!pairing) throw error(404, 'invalid_or_expired_code');
   if (pairing.organizationId == null) throw error(500, 'no_org');
+
+  // #548: the plan's own device-count ceiling. The code is already
+  // consumed by the atomic claim above by the time this runs - a
+  // refusal here still burns a one-time code, the trade-off for not
+  // racing a separate read-only pre-check against the same claim.
+  const period = await billingPeriodFor(db, pairing.organizationId);
+  const usage = await getOrgUsage(db, pairing.organizationId, period);
+  if (
+    usage.extensionDevices.limit != null &&
+    usage.extensionDevices.used >= usage.extensionDevices.limit
+  ) {
+    return json(
+      {
+        error: 'plan_limit_reached',
+        metric: 'extensionDevices',
+        limit: usage.extensionDevices.limit,
+        used: usage.extensionDevices.used,
+      },
+      { status: 402 },
+    );
+  }
 
   // #200: surface which org/device the pairing belongs to, not just a token.
   const [org] = await db

@@ -26,7 +26,9 @@ import {
   getOrgQuotaSnapshot,
   assertOrgConcurrencyAdmitted,
   getInstanceQuotaSnapshot,
+  billingPeriodFor,
 } from '@pitchbox/shared/org-quota';
+import { getOrgUsage } from '@pitchbox/shared/usage';
 import type { ScenarioSlug } from '@pitchbox/shared/campaigns';
 import { getDb, schema } from './db.js';
 import { and, desc, eq } from 'drizzle-orm';
@@ -210,6 +212,32 @@ async function dispatchRun(
       // one's text. It races safely against any other concurrent dispatch
       // for this org - see its own doc comment (shared/src/org-quota.ts).
       await assertOrgConcurrencyAdmitted(db, orgId, run.id);
+    }
+    // #548: the plan's own run-count ceiling, separate from the Gateway
+    // budget above - a Free or Solo org can run out of its plan's runs long
+    // before it runs out of money, and self-host never sees this at all.
+    // Checked for every runner slug (not only 'cloud'): self-host and any
+    // grant/subscription resolve through the same `resolveEntitlements`
+    // every other enforcement point reads, so a self-host install (always
+    // `runsPerMonth: null`) never runs the count and never refuses here.
+    // `getOrgUsage`'s run count already includes this run's own row - it
+    // was inserted with status 'running' before dispatchRun was ever
+    // called, the same "count yourself in" shape assertOrgConcurrencyAdmitted
+    // uses - so admission is `used <= limit`, not `used < limit`. The
+    // message says "plan limit" and never "quota" so classifyFailure's
+    // PLAN_LIMIT_PATTERNS tags this `plan_limit_reached`, distinct from the
+    // budget/concurrency refusals above.
+    if (orgId != null) {
+      const period = await billingPeriodFor(db, orgId);
+      const usage = await getOrgUsage(db, orgId, period);
+      if (usage.runs.limit != null && usage.runs.used > usage.runs.limit) {
+        throw new Error(
+          `This organization has reached its plan limit of ${usage.runs.limit} run${
+            usage.runs.limit === 1 ? '' : 's'
+          } this period and cannot start another until the period resets or an operator ` +
+            `upgrades the plan.`,
+        );
+      }
     }
     // Pre-flight the snapshot. A run whose runner cannot start here fails the
     // same way whatever the reason, but the message has to say so: before #219

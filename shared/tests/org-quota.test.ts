@@ -1,23 +1,31 @@
-// Exercises shared/src/org-quota.ts: the month-to-date run-cost sum and the
-// quota snapshot (CLD-P5, docs/cloud-runner-productionization-design.md
-// section 5) minted into the runner JWT's `quota` claim
-// (shared/src/agents/cloud/jwt.ts via shared/src/agents/cloud.ts). Each test
-// creates its own organization + project (unique slug) rather than reusing
-// the seeded 'default' org, and cleans up via cascade delete on the org -
-// this DB is shared across test files and teardown intentionally leaves data
-// for inspection.
+// Exercises shared/src/org-quota.ts: an org's billing-period spend sum and
+// the quota snapshot the dispatch pre-flight reads
+// (web/src/lib/server/runner.ts) before every cloud-runner run. #545: the
+// spend window used to be the UTC calendar month unconditionally
+// (`startOfMonthUtc`); it is now the org's billing period
+// (`billingPeriodFor`) - a live subscription's own Stripe period, or a
+// calendar month anchored on the org's own `createdAt` day-of-month for an
+// org with no subscription (free or self-host). Each test creates its own
+// organization + project (unique slug) rather than reusing the seeded
+// 'default' org, and cleans up via cascade delete on the org - this DB is
+// shared across test files and teardown intentionally leaves data for
+// inspection.
 import { randomUUID } from 'node:crypto';
 import { describe, it, expect, afterEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { getDb, getPool, schema } from '../src/db/client.js';
 import {
   assertOrgConcurrencyAdmitted,
-  getOrgMonthToDateCostUsd,
-  getOrgMonthToDateSpend,
+  billingPeriodFor,
+  calendarPeriodFor,
+  getOrgPeriodCostUsd,
+  getOrgPeriodSpend,
   getOrgQuotaFields,
   getOrgQuotaSnapshot,
+  resolveBillingPeriod,
   setOrgQuota,
   startOfMonthUtc,
+  type Period,
 } from '../src/org-quota.js';
 
 const createdOrgIds: number[] = [];
@@ -32,8 +40,23 @@ afterEach(async () => {
   }
 });
 
+// An anchor on the 1st of a month far in the past reproduces the exact
+// "plain calendar month" window every test below expects
+// (calendarPeriodFor's day-of-month clamping only bites for anchors after
+// the 1st) - most of these tests are about the underlying SUM query, not
+// about #545's anchoring behavior itself, which gets its own describe
+// blocks further down.
+const CALENDAR_ANCHOR = new Date('2020-01-01T00:00:00Z');
+function monthPeriod(now: Date): Period {
+  return calendarPeriodFor(CALENDAR_ANCHOR, now);
+}
+
 async function setupOrg(
-  opts: { monthlyRunBudgetUsd?: string | null; maxConcurrentRuns?: number | null } = {},
+  opts: {
+    monthlyRunBudgetUsd?: string | null;
+    maxConcurrentRuns?: number | null;
+    createdAt?: Date;
+  } = {},
 ) {
   const db = getDb();
   const slug = `org-quota-test-${randomUUID()}`;
@@ -44,6 +67,7 @@ async function setupOrg(
       name: slug,
       monthlyRunBudgetUsd: opts.monthlyRunBudgetUsd ?? null,
       maxConcurrentRuns: opts.maxConcurrentRuns ?? null,
+      createdAt: opts.createdAt ?? CALENDAR_ANCHOR,
     })
     .returning();
   createdOrgIds.push(org.id);
@@ -134,7 +158,10 @@ async function makeRunningRun(projectId: number): Promise<number> {
 async function setupOrgWithTwoProjects() {
   const db = getDb();
   const slug = `org-quota-test-${randomUUID()}`;
-  const [org] = await db.insert(schema.organizations).values({ slug, name: slug }).returning();
+  const [org] = await db
+    .insert(schema.organizations)
+    .values({ slug, name: slug, createdAt: CALENDAR_ANCHOR })
+    .returning();
   createdOrgIds.push(org.id);
   const [projectA] = await db
     .insert(schema.projects)
@@ -193,8 +220,83 @@ describe('startOfMonthUtc', () => {
   });
 });
 
-describe('getOrgMonthToDateCostUsd', () => {
-  it('sums only this org runs started on or after the first of the month', async () => {
+describe('calendarPeriodFor', () => {
+  it('anchors the period on the day-of-month of `anchor`, not the 1st (#545)', () => {
+    const anchor = new Date('2026-01-20T00:00:00Z');
+    const p = calendarPeriodFor(anchor, new Date('2026-09-09T00:00:00Z'));
+    expect(p.start.toISOString()).toBe('2026-08-20T00:00:00.000Z');
+    expect(p.end.toISOString()).toBe('2026-09-20T00:00:00.000Z');
+  });
+
+  it('flips to the next period exactly at the anchor day, not before or after', () => {
+    const anchor = new Date('2026-01-20T00:00:00Z');
+    const justBefore = calendarPeriodFor(anchor, new Date('2026-09-19T23:59:59.999Z'));
+    expect(justBefore.end.toISOString()).toBe('2026-09-20T00:00:00.000Z');
+    const atBoundary = calendarPeriodFor(anchor, new Date('2026-09-20T00:00:00Z'));
+    expect(atBoundary.start.toISOString()).toBe('2026-09-20T00:00:00.000Z');
+    expect(atBoundary.end.toISOString()).toBe('2026-10-20T00:00:00.000Z');
+  });
+
+  it('clamps a month-end anchor to the target month real length rather than overflowing', () => {
+    // Anchored on the 31st: February (28 days in 2026) can't hold a 31st, so
+    // that period is short, and the following one starts on Feb 28 - a
+    // billing period is bounded by real calendar days, not a fixed count.
+    const anchor = new Date('2026-01-31T00:00:00Z');
+    const inFeb = calendarPeriodFor(anchor, new Date('2026-02-15T00:00:00Z'));
+    expect(inFeb.start.toISOString()).toBe('2026-01-31T00:00:00.000Z');
+    expect(inFeb.end.toISOString()).toBe('2026-02-28T00:00:00.000Z');
+    const inLateFeb = calendarPeriodFor(anchor, new Date('2026-02-28T12:00:00Z'));
+    expect(inLateFeb.start.toISOString()).toBe('2026-02-28T00:00:00.000Z');
+    expect(inLateFeb.end.toISOString()).toBe('2026-03-31T00:00:00.000Z');
+  });
+
+  it('preserves the anchor time-of-day, not just the date', () => {
+    const anchor = new Date('2026-01-20T15:30:00Z');
+    const p = calendarPeriodFor(anchor, new Date('2026-09-09T00:00:00Z'));
+    expect(p.start.toISOString()).toBe('2026-08-20T15:30:00.000Z');
+  });
+});
+
+describe('resolveBillingPeriod', () => {
+  it('a live subscription period always wins over the calendar fallback', () => {
+    const subscriptionPeriod: Period = {
+      start: new Date('2026-01-20T00:00:00Z'),
+      end: new Date('2026-02-20T00:00:00Z'),
+    };
+    const p = resolveBillingPeriod(
+      { orgCreatedAt: new Date('2026-01-01T00:00:00Z'), subscriptionPeriod },
+      new Date('2026-01-25T00:00:00Z'),
+    );
+    expect(p).toEqual(subscriptionPeriod);
+  });
+
+  it('falls back to the creation-anchored calendar month with no subscription', () => {
+    const p = resolveBillingPeriod(
+      { orgCreatedAt: new Date('2026-01-20T00:00:00Z'), subscriptionPeriod: null },
+      new Date('2026-09-09T00:00:00Z'),
+    );
+    expect(p.start.toISOString()).toBe('2026-08-20T00:00:00.000Z');
+    expect(p.end.toISOString()).toBe('2026-09-20T00:00:00.000Z');
+  });
+
+  // #545 acceptance: a free org's window is stable and does not shift when
+  // it subscribes, or after its subscription lapses - it is always derived
+  // from `organizations.createdAt`, never from Stripe. Losing the
+  // subscription (subscriptionPeriod: null again) falls back to the exact
+  // same calendar anchor it always had, not a window that shifted to
+  // whenever the subscription happened to end.
+  it('a lapsed subscription falls back to the SAME calendar anchor the org always had', () => {
+    const orgCreatedAt = new Date('2026-01-20T00:00:00Z');
+    const now = new Date('2026-09-09T00:00:00Z');
+    const neverSubscribed = resolveBillingPeriod({ orgCreatedAt, subscriptionPeriod: null }, now);
+    const lapsed = resolveBillingPeriod({ orgCreatedAt, subscriptionPeriod: null }, now);
+    expect(lapsed).toEqual(neverSubscribed);
+    expect(lapsed.start.toISOString()).toBe('2026-08-20T00:00:00.000Z');
+  });
+});
+
+describe('getOrgPeriodCostUsd', () => {
+  it('sums only this org runs started within the period', async () => {
     const { orgId, projectId } = await setupOrg();
     const now = new Date('2026-07-15T12:00:00Z');
     const thisMonthEarly = new Date('2026-07-01T00:00:00Z');
@@ -205,7 +307,7 @@ describe('getOrgMonthToDateCostUsd', () => {
     await makeRun({ projectId, costUsd: '2.2500', startedAt: thisMonthLate });
     await makeRun({ projectId, costUsd: '99.0000', startedAt: lastMonth });
 
-    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    const total = await getOrgPeriodCostUsd(getDb(), orgId, monthPeriod(now));
     expect(total).toBeCloseTo(3.75, 4);
   });
 
@@ -215,25 +317,29 @@ describe('getOrgMonthToDateCostUsd', () => {
     await makeRun({ projectId, costUsd: null, startedAt: new Date('2026-07-02T00:00:00Z') });
     await makeRun({ projectId, costUsd: '4.0000', startedAt: new Date('2026-07-03T00:00:00Z') });
 
-    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    const total = await getOrgPeriodCostUsd(getDb(), orgId, monthPeriod(now));
     expect(total).toBeCloseTo(4.0, 4);
   });
 
   it('returns 0 for an org with no runs at all', async () => {
     const { orgId } = await setupOrg();
-    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, new Date('2026-07-15T12:00:00Z'));
+    const total = await getOrgPeriodCostUsd(
+      getDb(),
+      orgId,
+      monthPeriod(new Date('2026-07-15T12:00:00Z')),
+    );
     expect(total).toBe(0);
   });
 
-  it('never counts a different org run, even started the same month', async () => {
+  it('never counts a different org run, even started the same period', async () => {
     const orgA = await setupOrg();
     const orgB = await setupOrg();
     const now = new Date('2026-07-15T12:00:00Z');
     await makeRun({ projectId: orgA.projectId, costUsd: '10.0000', startedAt: now });
     await makeRun({ projectId: orgB.projectId, costUsd: '20.0000', startedAt: now });
 
-    expect(await getOrgMonthToDateCostUsd(getDb(), orgA.orgId, now)).toBeCloseTo(10, 4);
-    expect(await getOrgMonthToDateCostUsd(getDb(), orgB.orgId, now)).toBeCloseTo(20, 4);
+    expect(await getOrgPeriodCostUsd(getDb(), orgA.orgId, monthPeriod(now))).toBeCloseTo(10, 4);
+    expect(await getOrgPeriodCostUsd(getDb(), orgB.orgId, monthPeriod(now))).toBeCloseTo(20, 4);
   });
 
   // Regression coverage for the double-count bug the old
@@ -247,7 +353,7 @@ describe('getOrgMonthToDateCostUsd', () => {
     const now = new Date('2026-07-15T12:00:00Z');
     await makeCampaignRun({ campaignId, projectId: null, costUsd: '5.0000', startedAt: now });
 
-    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    const total = await getOrgPeriodCostUsd(getDb(), orgId, monthPeriod(now));
     expect(total).toBeCloseTo(5.0, 4);
   });
 
@@ -265,7 +371,7 @@ describe('getOrgMonthToDateCostUsd', () => {
       startedAt: now,
     });
 
-    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    const total = await getOrgPeriodCostUsd(getDb(), orgId, monthPeriod(now));
     expect(total).toBeCloseTo(7.0, 4);
   });
 
@@ -288,15 +394,33 @@ describe('getOrgMonthToDateCostUsd', () => {
       startedAt: now,
     });
 
-    expect(await getOrgMonthToDateCostUsd(getDb(), orgA.orgId, now)).toBeCloseTo(10, 4);
-    expect(await getOrgMonthToDateCostUsd(getDb(), orgB.orgId, now)).toBeCloseTo(20, 4);
+    expect(await getOrgPeriodCostUsd(getDb(), orgA.orgId, monthPeriod(now))).toBeCloseTo(10, 4);
+    expect(await getOrgPeriodCostUsd(getDb(), orgB.orgId, monthPeriod(now))).toBeCloseTo(20, 4);
+  });
+
+  // #545: a run started before the period's start (e.g. under a previous
+  // billing period, or before a mid-cycle upgrade) must never leak into the
+  // new period's sum - the old calendar-month code had no upper bound at
+  // all, which happened to be safe only because nothing sums a period other
+  // than "now"'s own; a genuine period with a real end now needs the check.
+  it('excludes a run started on or after the period end', async () => {
+    const { orgId, projectId } = await setupOrg();
+    const period: Period = {
+      start: new Date('2026-01-20T00:00:00Z'),
+      end: new Date('2026-02-20T00:00:00Z'),
+    };
+    await makeRun({ projectId, costUsd: '5.0000', startedAt: new Date('2026-02-19T23:59:59Z') });
+    await makeRun({ projectId, costUsd: '99.0000', startedAt: new Date('2026-02-20T00:00:00Z') });
+
+    const total = await getOrgPeriodCostUsd(getDb(), orgId, period);
+    expect(total).toBeCloseTo(5.0, 4);
   });
 });
 
 // #522: the org total must see the LinkedIn assistant's spend too, not only
-// campaign/project runs - see the doc comment on getOrgMonthToDateSpend for
-// why assist_usage exists as a separate ledger.
-describe('getOrgMonthToDateCostUsd: assistant usage (#522)', () => {
+// campaign/project runs - see the doc comment on getOrgPeriodSpend for why
+// assist_usage exists as a separate ledger.
+describe('getOrgPeriodCostUsd: assistant usage (#522)', () => {
   it('a suggestion that was streamed and never accepted still counts toward the org total', async () => {
     const { orgId, projectId } = await setupOrg();
     const now = new Date('2026-07-15T12:00:00Z');
@@ -309,7 +433,7 @@ describe('getOrgMonthToDateCostUsd: assistant usage (#522)', () => {
       createdAt: now,
     });
 
-    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    const total = await getOrgPeriodCostUsd(getDb(), orgId, monthPeriod(now));
     expect(total).toBeCloseTo(0.009, 4);
   });
 
@@ -319,7 +443,7 @@ describe('getOrgMonthToDateCostUsd: assistant usage (#522)', () => {
     await makeRun({ projectId, costUsd: '5.0000', startedAt: now });
     await makeAssistUsage({ organizationId: orgId, projectId, costUsd: '0.5000', createdAt: now });
 
-    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    const total = await getOrgPeriodCostUsd(getDb(), orgId, monthPeriod(now));
     expect(total).toBeCloseTo(5.5, 4);
   });
 
@@ -342,7 +466,7 @@ describe('getOrgMonthToDateCostUsd: assistant usage (#522)', () => {
     await makeAssistRun({ projectId, startedAt: now });
     await makeAssistRun({ projectId, startedAt: now });
 
-    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    const total = await getOrgPeriodCostUsd(getDb(), orgId, monthPeriod(now));
     expect(total).toBeCloseTo(0.2, 4);
   });
 
@@ -351,11 +475,11 @@ describe('getOrgMonthToDateCostUsd: assistant usage (#522)', () => {
     const now = new Date('2026-07-15T12:00:00Z');
     await makeAssistUsage({ organizationId: orgId, projectId, costUsd: '0.0090', createdAt: now });
     // A defensive scenario: an assist run whose cost_usd was set to the same
-    // figure the assist_usage row already carries. If getOrgMonthToDateCostUsd
+    // figure the assist_usage row already carries. If getOrgPeriodCostUsd
     // summed kind='assist' runs too, this suggestion would count twice.
     await makeAssistRun({ projectId, costUsd: '0.0090', startedAt: now });
 
-    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    const total = await getOrgPeriodCostUsd(getDb(), orgId, monthPeriod(now));
     expect(total).toBeCloseTo(0.009, 4);
   });
 
@@ -376,25 +500,25 @@ describe('getOrgMonthToDateCostUsd: assistant usage (#522)', () => {
       createdAt: now,
     });
 
-    expect(await getOrgMonthToDateCostUsd(getDb(), orgA.orgId, now)).toBeCloseTo(1, 4);
-    expect(await getOrgMonthToDateCostUsd(getDb(), orgB.orgId, now)).toBeCloseTo(2, 4);
+    expect(await getOrgPeriodCostUsd(getDb(), orgA.orgId, monthPeriod(now))).toBeCloseTo(1, 4);
+    expect(await getOrgPeriodCostUsd(getDb(), orgB.orgId, monthPeriod(now))).toBeCloseTo(2, 4);
   });
 });
 
-describe('getOrgMonthToDateSpend', () => {
+describe('getOrgPeriodSpend', () => {
   it('keeps campaign and assistant spend apart, and sums them into a total', async () => {
     const { orgId, projectId } = await setupOrg();
     const now = new Date('2026-07-15T12:00:00Z');
     await makeRun({ projectId, costUsd: '5.0000', startedAt: now });
     await makeAssistUsage({ organizationId: orgId, projectId, costUsd: '1.2500', createdAt: now });
 
-    const spend = await getOrgMonthToDateSpend(getDb(), orgId, now);
+    const spend = await getOrgPeriodSpend(getDb(), orgId, monthPeriod(now));
     expect(spend.campaignUsd).toBeCloseTo(5, 4);
     expect(spend.assistantUsd).toBeCloseTo(1.25, 4);
     expect(spend.totalUsd).toBeCloseTo(6.25, 4);
   });
 
-  it('only counts assist usage from on or after the first of the month', async () => {
+  it('only counts assist usage from within the period', async () => {
     const { orgId, projectId } = await setupOrg();
     const now = new Date('2026-07-15T12:00:00Z');
     await makeAssistUsage({
@@ -410,13 +534,120 @@ describe('getOrgMonthToDateSpend', () => {
       createdAt: new Date('2026-07-01T00:00:00Z'),
     });
 
-    const spend = await getOrgMonthToDateSpend(getDb(), orgId, now);
+    const spend = await getOrgPeriodSpend(getDb(), orgId, monthPeriod(now));
     expect(spend.assistantUsd).toBeCloseTo(0.5, 4);
   });
 });
 
+describe('billingPeriodFor', () => {
+  it('an org with no subscription gets the creation-anchored calendar month', async () => {
+    const { orgId } = await setupOrg({ createdAt: new Date('2026-01-20T00:00:00Z') });
+    const period = await billingPeriodFor(getDb(), orgId, new Date('2026-09-09T00:00:00Z'));
+    expect(period.start.toISOString()).toBe('2026-08-20T00:00:00.000Z');
+    expect(period.end.toISOString()).toBe('2026-09-20T00:00:00.000Z');
+  });
+
+  it('an org with a live subscription gets exactly its stored Stripe period, regardless of createdAt', async () => {
+    const { orgId } = await setupOrg({ createdAt: new Date('2026-01-01T00:00:00Z') });
+    const db = getDb();
+    const [platform] = await db.select({ id: schema.platforms.id }).from(schema.platforms).limit(1);
+    await db.insert(schema.orgSubscriptions).values({
+      organizationId: orgId,
+      stripeCustomerId: 'cus_test',
+      stripeSubscriptionId: `sub_test_${randomUUID()}`,
+      planId: 'solo',
+      status: 'active',
+      currentPeriodStart: new Date('2026-01-20T00:00:00Z'),
+      currentPeriodEnd: new Date('2026-02-20T00:00:00Z'),
+      limitPremiumModels: false,
+    });
+    void platform;
+
+    const period = await billingPeriodFor(getDb(), orgId, new Date('2026-01-25T00:00:00Z'));
+    expect(period.start.toISOString()).toBe('2026-01-20T00:00:00.000Z');
+    expect(period.end.toISOString()).toBe('2026-02-20T00:00:00.000Z');
+  });
+});
+
+// #545 acceptance: an org with a subscription starting on the 20th has its
+// allowance reset on the 20th, and spend from BEFORE the subscription
+// (under the old free-plan calendar window) stays in the old period rather
+// than counting against the new one.
+describe('#545 acceptance: subscribing mid-cycle resets the spend window', () => {
+  it('spend before a mid-cycle subscription never counts toward the new period', async () => {
+    const { orgId, projectId } = await setupOrg({
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      monthlyRunBudgetUsd: '10.00',
+    });
+    // Free-plan spend on the 15th, under the org's original calendar-month
+    // window (anchored on Jan 1st).
+    await makeRun({ projectId, costUsd: '8.00', startedAt: new Date('2026-01-15T00:00:00Z') });
+
+    const db = getDb();
+    await db.insert(schema.orgSubscriptions).values({
+      organizationId: orgId,
+      stripeCustomerId: 'cus_test',
+      stripeSubscriptionId: `sub_test_${randomUUID()}`,
+      planId: 'solo',
+      status: 'active',
+      currentPeriodStart: new Date('2026-01-20T00:00:00Z'),
+      currentPeriodEnd: new Date('2026-02-20T00:00:00Z'),
+      limitPremiumModels: false,
+    });
+
+    // A run under the new subscription period, well within its own $10 budget.
+    await makeRun({ projectId, costUsd: '2.00', startedAt: new Date('2026-01-25T00:00:00Z') });
+
+    const snapshot = await getOrgQuotaSnapshot(getDb(), orgId, new Date('2026-01-25T00:00:00Z'));
+    // If the pre-subscription $8 leaked into the new period, remaining would
+    // be 0 (10 - 8 - 2); it must instead reflect only the post-subscription run.
+    expect(snapshot.remainingUsd).toBeCloseTo(8, 4);
+  });
+
+  it("resets the allowance again once the org's period rolls over on the 20th", async () => {
+    const { orgId, projectId } = await setupOrg({
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      monthlyRunBudgetUsd: '10.00',
+    });
+    const db = getDb();
+    await db.insert(schema.orgSubscriptions).values({
+      organizationId: orgId,
+      stripeCustomerId: 'cus_test',
+      stripeSubscriptionId: `sub_test_${randomUUID()}`,
+      planId: 'solo',
+      status: 'active',
+      currentPeriodStart: new Date('2026-01-20T00:00:00Z'),
+      currentPeriodEnd: new Date('2026-02-20T00:00:00Z'),
+      limitPremiumModels: false,
+    });
+    await makeRun({ projectId, costUsd: '9.00', startedAt: new Date('2026-01-25T00:00:00Z') });
+
+    // Still inside the same Stripe period the row above just spent $9 of the
+    // $10 budget: 1 remaining.
+    const stillInPeriod = await getOrgQuotaSnapshot(
+      getDb(),
+      orgId,
+      new Date('2026-02-19T00:00:00Z'),
+    );
+    expect(stillInPeriod.remainingUsd).toBeCloseTo(1, 4);
+
+    // Stripe rolls `current_period_start`/`end` forward when the webhook
+    // fires (#551, out of scope here) - simulate that write directly.
+    await db
+      .update(schema.orgSubscriptions)
+      .set({
+        currentPeriodStart: new Date('2026-02-20T00:00:00Z'),
+        currentPeriodEnd: new Date('2026-03-20T00:00:00Z'),
+      })
+      .where(eq(schema.orgSubscriptions.organizationId, orgId));
+
+    const nextPeriod = await getOrgQuotaSnapshot(getDb(), orgId, new Date('2026-02-21T00:00:00Z'));
+    expect(nextPeriod.remainingUsd).toBeCloseTo(10, 4);
+  });
+});
+
 describe('getOrgQuotaSnapshot', () => {
-  it('computes remainingUsd as budget minus month-to-date spend when a budget is set', async () => {
+  it('computes remainingUsd as budget minus period-to-date spend when a budget is set', async () => {
     const { orgId, projectId } = await setupOrg({ monthlyRunBudgetUsd: '100.00' });
     const now = new Date('2026-07-15T12:00:00Z');
     await makeRun({ projectId, costUsd: '37.50', startedAt: now });

@@ -10,7 +10,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { getOrgMonthToDateCostUsd } from '@pitchbox/shared/org-quota';
+import { billingPeriodFor, getOrgPeriodCostUsd } from '@pitchbox/shared/org-quota';
 import type {
   AgentRunHandle,
   AgentRunOptions,
@@ -176,7 +176,7 @@ describe('cloud run dispatch is budget-gated (#419)', () => {
     expect((await runRow(runId))?.status).not.toBe('running');
   });
 
-  it("persists the SDK runner's own reported cost, and getOrgMonthToDateCostUsd agrees with it exactly", async () => {
+  it("persists the SDK runner's own reported cost, and getOrgPeriodCostUsd agrees with it exactly", async () => {
     const { orgId, campaignId } = await seedCloudCampaign('gw-cost-sum', '10.00');
     fakeResult = {
       exitCode: 0,
@@ -201,7 +201,11 @@ describe('cloud run dispatch is budget-gated (#419)', () => {
     // Not the same call as the write above: this re-reads via the exact
     // helper the dashboard and the org-quota settings page call, proving the
     // two never diverge rather than just re-asserting the row we just wrote.
-    const monthToDate = await getOrgMonthToDateCostUsd(getDb(), orgId);
+    const monthToDate = await getOrgPeriodCostUsd(
+      getDb(),
+      orgId,
+      await billingPeriodFor(getDb(), orgId),
+    );
     expect(monthToDate).toBeCloseTo(2.5, 4);
   });
 
@@ -230,7 +234,11 @@ describe('cloud run dispatch is budget-gated (#419)', () => {
     expect(secondRun?.status).toBe('failed');
     expect(secondRun?.failureReason).toBe('quota_exhausted');
 
-    const monthToDate = await getOrgMonthToDateCostUsd(getDb(), orgId);
+    const monthToDate = await getOrgPeriodCostUsd(
+      getDb(),
+      orgId,
+      await billingPeriodFor(getDb(), orgId),
+    );
     expect(monthToDate).toBeCloseTo(3, 4);
   });
 });

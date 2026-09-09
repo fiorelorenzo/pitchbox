@@ -14,6 +14,7 @@ export type RunFailureReason =
   | 'quota_exhausted'
   | 'instance_quota_exhausted'
   | 'concurrency_exhausted'
+  | 'plan_limit_reached'
   | 'playbook_error'
   | 'playbook_incomplete'
   | 'network'
@@ -31,6 +32,7 @@ export const RUN_FAILURE_REASONS: readonly RunFailureReason[] = [
   'quota_exhausted',
   'instance_quota_exhausted',
   'concurrency_exhausted',
+  'plan_limit_reached',
   'playbook_error',
   'playbook_incomplete',
   'network',
@@ -99,6 +101,15 @@ const INSTANCE_QUOTA_PATTERNS = ['instance-wide'];
 // never says "quota" or "rate limit" and needs its own pattern here.
 const CONCURRENCY_PATTERNS = ['concurrency limit'];
 
+// #548: a plan's own metered limits (runsPerMonth today) are a different
+// failure than the org's Gateway budget above - "you've used every run your
+// plan allows this period" has a different fix (wait for the next period or
+// upgrade) than "you're out of money" (raise the budget) or "you already
+// have N runs going" (wait or raise the concurrency cap). The pre-flight's
+// refusal text says "plan limit" specifically and never "quota" so it never
+// collides with QUOTA_PATTERNS below.
+const PLAN_LIMIT_PATTERNS = ['plan limit'];
+
 const NETWORK_PATTERNS = [
   'econnrefused',
   'econnreset',
@@ -161,6 +172,7 @@ export function classifyFailure(events: ParsedEvent[], exitCode: number | null):
   if (INSTANCE_QUOTA_PATTERNS.some((p) => haystack.includes(p))) return 'instance_quota_exhausted';
   if (QUOTA_PATTERNS.some((p) => haystack.includes(p))) return 'quota_exhausted';
   if (CONCURRENCY_PATTERNS.some((p) => haystack.includes(p))) return 'concurrency_exhausted';
+  if (PLAN_LIMIT_PATTERNS.some((p) => haystack.includes(p))) return 'plan_limit_reached';
   if (NETWORK_PATTERNS.some((p) => haystack.includes(p))) return 'network';
   if (PROVIDER_ERROR_PATTERNS.some((p) => haystack.includes(p))) return 'provider_error';
   if (CONTENT_FILTERED_PATTERNS.some((p) => haystack.includes(p))) return 'content_filtered';

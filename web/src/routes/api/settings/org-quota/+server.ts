@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { getDb } from '$lib/server/db.js';
 import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import {
-  getOrgMonthToDateSpend,
+  billingPeriodFor,
+  getOrgPeriodSpend,
   getOrgQuotaFields,
   getOrgQuotaSnapshot,
   setOrgQuota,
@@ -27,8 +28,9 @@ async function quotaResponse(orgId: number) {
   const db = getDb();
   const fields = await getOrgQuotaFields(db, orgId);
   if (!fields) throw error(404, 'not_found');
+  const period = await billingPeriodFor(db, orgId);
   const [spend, snapshot] = await Promise.all([
-    getOrgMonthToDateSpend(db, orgId),
+    getOrgPeriodSpend(db, orgId, period),
     getOrgQuotaSnapshot(db, orgId),
   ]);
   return json({

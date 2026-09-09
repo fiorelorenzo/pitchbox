@@ -3,7 +3,11 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '../../../lib/server/db.js';
 import { resolveOrgId } from '../../../lib/server/auth.js';
 import { listOrgMembers, listPendingInvites } from '@pitchbox/shared/orgs';
-import { getOrgMonthToDateSpend, getOrgQuotaSnapshot } from '@pitchbox/shared/org-quota';
+import {
+  billingPeriodFor,
+  getOrgPeriodSpend,
+  getOrgQuotaSnapshot,
+} from '@pitchbox/shared/org-quota';
 
 export const load: PageServerLoad = async (event) => {
   const authOn = process.env.PITCHBOX_AUTH === 'on';
@@ -49,8 +53,9 @@ export const load: PageServerLoad = async (event) => {
     remainingUsd: number | null;
   } | null = null;
   if (canManage && org) {
+    const period = await billingPeriodFor(db, orgId);
     const [spend, snapshot] = await Promise.all([
-      getOrgMonthToDateSpend(db, orgId),
+      getOrgPeriodSpend(db, orgId, period),
       getOrgQuotaSnapshot(db, orgId),
     ]);
     quota = {
