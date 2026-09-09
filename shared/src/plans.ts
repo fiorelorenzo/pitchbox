@@ -24,6 +24,7 @@
 import { eq } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
 import { isCloud } from './edition.js';
+import { pastDueSince, graceEndsAt } from './billing/grace.js';
 
 export const PLAN_IDS = ['free', 'solo', 'growth', 'scale'] as const;
 export type PlanId = (typeof PLAN_IDS)[number];
@@ -192,7 +193,26 @@ export type Entitlements = {
    * (mirrored from a live Stripe subscription), or 'default' (the code
    * catalogue, because nothing above applied - the common case for Free). */
   source: 'self-host' | 'grant' | 'subscription' | 'default';
+  /** Non-null only for a mirrored subscription whose Stripe status is
+   * `past_due` (#554): the instant its grace window ends
+   * (`shared/src/billing/grace.ts`'s `graceEndsAt(pastDueSince(...))`), 7
+   * days after the first `invoice.payment_failed` since the subscription's
+   * last `invoice.paid` - never restarted by a Smart Retries reattempt.
+   * `isOrgReadOnly` is the one predicate every enforcement point reads
+   * instead of comparing this itself. */
+  graceEndsAt: Date | null;
 };
+
+/**
+ * The one predicate an enforcement point checks for a failed-payment
+ * lockout, instead of comparing `graceEndsAt` itself: `true` once `now` has
+ * passed the grace window a `past_due` subscription was granted. A grant or
+ * self-host org, and a subscription that has never missed a payment, never
+ * carry a `graceEndsAt` at all, so this is always `false` for them.
+ */
+export function isOrgReadOnly(entitlements: Entitlements, now: Date = new Date()): boolean {
+  return entitlements.graceEndsAt != null && now.getTime() >= entitlements.graceEndsAt.getTime();
+}
 
 /**
  * Resolves the entitlements an organization actually gets, in precedence
@@ -227,6 +247,7 @@ export async function resolveEntitlements(db: Db, orgId: number): Promise<Entitl
       webhooks: true,
       planId,
       source: 'self-host',
+      graceEndsAt: null,
     };
   }
 
@@ -240,6 +261,13 @@ export async function resolveEntitlements(db: Db, orgId: number): Promise<Entitl
       .where(eq(schema.orgSubscriptions.organizationId, orgId))
       .limit(1);
     if (sub) {
+      // #554: only a subscription actually failing to pay right now carries
+      // a grace deadline - anything else (active, trialing, cancelled and
+      // already gone through clearSubscription) leaves it null, which is
+      // also what makes isOrgReadOnly false again the moment `invoice.paid`
+      // mirrors the subscription back to `active`.
+      const since =
+        sub.status === 'past_due' ? await pastDueSince(db, sub.stripeSubscriptionId) : null;
       return {
         runsPerMonth: sub.limitRuns,
         suggestionsPerMonth: sub.limitSuggestions,
@@ -253,6 +281,7 @@ export async function resolveEntitlements(db: Db, orgId: number): Promise<Entitl
         webhooks: PLAN_CATALOGUE[normalizePlanId(sub.planId)].webhooks,
         planId: normalizePlanId(sub.planId),
         source: 'subscription',
+        graceEndsAt: since == null ? null : graceEndsAt(since),
       };
     }
   }
@@ -271,5 +300,6 @@ export async function resolveEntitlements(db: Db, orgId: number): Promise<Entitl
     webhooks: plan.webhooks,
     planId: plan.id,
     source: org?.planSource === 'grant' ? 'grant' : 'default',
+    graceEndsAt: null,
   };
 }

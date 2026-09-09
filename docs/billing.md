@@ -130,13 +130,39 @@ build or request time. Run `plans:export` and commit the result whenever
 `PLAN_CATALOGUE` changes, the same way `stripe-setup.ts` needs a run after a
 metadata change.
 
-## What happens at a limit, and after a failed payment
+## What happens at a limit, at a downgrade, and after a failed payment
 
 - A limit is a **hard refusal** with an upgrade prompt: no silent degrade to a
-  cheaper model, no queueing, no billed overage.
-- A failed payment starts a **14-day grace period** during which the org keeps
-  its plan. Stripe's dunning runs in that window; if nothing succeeds, the org
-  drops to Free and its data stays intact.
+  cheaper model, no queueing, no billed overage. An org that ends up over a
+  new, lower limit (a downgrade, or a subscription lapsing to Free) keeps
+  every row it already has - it can read and run what exists, it just cannot
+  create past the new ceiling until it is back under it or upgrades.
+- An upgrade takes effect immediately: the webhook mirrors whatever Stripe's
+  live subscription reports, so a higher limit applies as soon as Stripe
+  raises the price, and usage already spent in the period keeps counting
+  against the new ceiling rather than resetting.
+- A downgrade is only ever mirrored once Stripe's live subscription actually
+  reports the new plan - never anticipated - so the org keeps its current
+  plan until whatever scheduling mechanism moved the change (a portal
+  cancellation uses `cancel_at_period_end` natively; a cross-tier price
+  switch needs its own Subscription Schedule, since Stripe's customer portal
+  can only auto-schedule a downgrade between two prices of the **same
+  product**, and Solo/Growth/Scale are three separate products) actually
+  applies it at period end.
+- A failed payment (`invoice.payment_failed`) starts a **7-day grace period**,
+  counted from the first failure rather than restarted by each Smart Retries
+  reattempt. The org keeps working normally during grace; a banner and a
+  notification both name the exact date it ends. Past it, the org is
+  **read-only**: no new runs, suggestions, accepts, projects, campaigns,
+  invites or devices (refused with `plan_payment_required`, distinct from
+  `plan_limit_reached`) - everything already there stays readable, the Inbox
+  keeps working, drafts can still be marked sent, and the extension's inbound
+  sync routes keep accepting data. The customer portal is never refused,
+  read-only or not - it is the one path back to a working account.
+  `isOrgReadOnly` (`shared/src/plans.ts`) is the one predicate every
+  enforcement point reads. `invoice.paid` clears grace and read-only in one
+  step; `customer.subscription.deleted` (cancelled, or Stripe gave up on
+  dunning) drops the org to Free, a real working plan, not a lockout.
 
 ## Running the setup
 

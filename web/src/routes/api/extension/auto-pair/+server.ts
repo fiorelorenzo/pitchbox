@@ -6,6 +6,7 @@ import { getDb, schema } from '$lib/server/db.js';
 import { mintDeviceToken } from '$lib/server/extension-auth.js';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
+import { isOrgReadOnly } from '@pitchbox/shared/plans';
 
 /**
  * One-shot pairing endpoint for the browser extension.
@@ -78,11 +79,16 @@ export async function POST({
   // row is inserted below this point.
   if (!organizationId) throw error(409, 'no_org');
 
+  // #554: a failed payment past its grace window refuses before the plan's
+  // own device-count ceiling below.
+  const period = await billingPeriodFor(db, organizationId);
+  const usage = await getOrgUsage(db, organizationId, period);
+  if (isOrgReadOnly(usage.entitlements)) {
+    return json({ error: 'plan_payment_required' }, { status: 402 });
+  }
   // #548: the plan's own device-count ceiling. Checked before minting a
   // token so a refused pairing never leaves an unusable token floating
   // around client-side.
-  const period = await billingPeriodFor(db, organizationId);
-  const usage = await getOrgUsage(db, organizationId, period);
   if (
     usage.extensionDevices.limit != null &&
     usage.extensionDevices.used >= usage.extensionDevices.limit

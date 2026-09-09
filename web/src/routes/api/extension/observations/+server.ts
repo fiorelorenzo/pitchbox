@@ -11,6 +11,7 @@ import {
 import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
+import { isOrgReadOnly } from '@pitchbox/shared/plans';
 
 // Server side of the observation buffer (#301): the extension's content
 // script watches linkedin.com passively and posts what it saw here, on a
@@ -69,6 +70,13 @@ export async function POST({ request }: { request: Request }) {
     .limit(1);
   if (!project) throw error(404, 'project not found');
 
+  // #554: a failed payment past its grace window refuses before the plan's
+  // own suggestion budget below, same 403 shape.
+  const period = await billingPeriodFor(db, project.organizationId);
+  const usage = await getOrgUsage(db, project.organizationId, period);
+  if (isOrgReadOnly(usage.entitlements)) {
+    throw error(403, 'plan_payment_required');
+  }
   // #548: the assist plane's own plan gate, mirroring the LinkedIn
   // switch's precedent on this exact route (AGENTS.md: "any new route on
   // that plane loads ... and refuses") - an org that has spent its whole
@@ -76,8 +84,6 @@ export async function POST({ request }: { request: Request }) {
   // buffer either, since nothing it collects from here on can still turn
   // into a suggestion this period. 403, matching this route's existing
   // shape: the collector has no human waiting on a rendered answer.
-  const period = await billingPeriodFor(db, project.organizationId);
-  const usage = await getOrgUsage(db, project.organizationId, period);
   if (usage.suggestions.limit != null && usage.suggestions.used >= usage.suggestions.limit) {
     throw error(403, 'plan_limit_reached');
   }

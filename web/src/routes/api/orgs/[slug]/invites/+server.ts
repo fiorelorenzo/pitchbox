@@ -7,6 +7,7 @@ import { loadMailEnv } from '@pitchbox/shared/mail/env';
 import { renderPlainTextMail } from '@pitchbox/shared/mail/template';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
+import { isOrgReadOnly } from '@pitchbox/shared/plans';
 
 const Body = z.object({
   email: z.email().optional(),
@@ -60,6 +61,11 @@ export async function POST(event: import('@sveltejs/kit').RequestEvent) {
   // at once (shared/src/usage.ts's getOrgUsage already counts it that way).
   const period = await billingPeriodFor(db, org.id);
   const usage = await getOrgUsage(db, org.id, period);
+  // #554: a failed payment past its grace window refuses before the plan's
+  // own seat limit below.
+  if (isOrgReadOnly(usage.entitlements)) {
+    return json({ error: 'plan_payment_required' }, { status: 402 });
+  }
   if (usage.seats.limit != null && usage.seats.used >= usage.seats.limit) {
     return json(
       {

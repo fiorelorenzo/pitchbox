@@ -2,6 +2,7 @@
 	import '../app.css';
 	import '$lib/platforms/register';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import BillingGraceBanner from '$lib/components/BillingGraceBanner.svelte';
 	import SseIndicator from '$lib/realtime/SseIndicator.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import CommandPalette from '$lib/components/command-palette/CommandPalette.svelte';
@@ -120,7 +121,10 @@
 			<Sidebar />
 		</div>
 
-		<main class="flex-1 overflow-auto p-4 sm:p-6 pt-14 md:pt-6 min-w-0">{@render children()}</main>
+		<main class="flex-1 overflow-auto p-4 sm:p-6 pt-14 md:pt-6 min-w-0">
+			<BillingGraceBanner billing={data.billing} />
+			{@render children()}
+		</main>
 	</div>
 
 	<!-- Global Cmd/Ctrl-K command palette: single instance for the whole app. -->

@@ -19,8 +19,11 @@ import { ensureStripeCustomer } from '../src/billing/customer.js';
 import { createCheckoutSession, UnknownPriceError } from '../src/billing/checkout.js';
 import { createPortalSession, NoStripeCustomerError } from '../src/billing/portal.js';
 import type { StripeClient, StripeCustomer } from '../src/stripe/client.js';
+import { isOrgReadOnly, resolveEntitlements } from '../src/plans.js';
 
 const createdOrgIds: number[] = [];
+
+const savedEdition = process.env.PITCHBOX_EDITION;
 
 afterEach(async () => {
   const db = getDb();
@@ -28,6 +31,8 @@ afterEach(async () => {
     const id = createdOrgIds.pop()!;
     await db.delete(schema.organizations).where(eq(schema.organizations.id, id));
   }
+  if (savedEdition === undefined) delete process.env.PITCHBOX_EDITION;
+  else process.env.PITCHBOX_EDITION = savedEdition;
 });
 
 async function makeOrg(): Promise<number> {
@@ -61,6 +66,15 @@ function fakeCustomerCreator(idsToReturn: string[]): StripeClient {
       const id = idsToReturn[call] ?? idsToReturn[idsToReturn.length - 1];
       call += 1;
       return { id, email: null, metadata: {} };
+    },
+  };
+}
+
+function fakePortalClient(url: string): StripeClient {
+  return {
+    ...notImplementedStripeClient(),
+    async createPortalSession() {
+      return { id: 'bps_test', url };
     },
   };
 }
@@ -128,5 +142,60 @@ describe('createPortalSession', () => {
         portalConfiguration: null,
       }),
     ).rejects.toBeInstanceOf(NoStripeCustomerError);
+  });
+
+  it('opens for a past_due, read-only org (#554) - the one path a failed payment must never refuse', async () => {
+    process.env.PITCHBOX_EDITION = 'cloud';
+    const db = getDb();
+    const orgId = await makeOrg();
+    const customerId = `cus_${randomUUID()}`;
+    const subscriptionId = `sub_${randomUUID()}`;
+    await db
+      .update(schema.organizations)
+      .set({ stripeCustomerId: customerId })
+      .where(eq(schema.organizations.id, orgId));
+    await db.insert(schema.orgSubscriptions).values({
+      organizationId: orgId,
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscriptionId,
+      planId: 'solo',
+      status: 'past_due',
+      currentPeriodStart: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+      currentPeriodEnd: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
+      limitRuns: 500,
+      limitSuggestions: 500,
+      limitProjects: 3,
+      limitSeats: 1,
+      limitDevices: 3,
+      limitConcurrency: 2,
+      limitBudgetUsd: '10.00',
+      limitRetentionDays: 30,
+      limitPremiumModels: false,
+    });
+    const failedEventId = `evt_${randomUUID()}`;
+    const failedAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    await db.insert(schema.stripeEvents).values({
+      id: failedEventId,
+      type: 'invoice.payment_failed',
+      receivedAt: failedAt,
+      processedAt: failedAt,
+      payload: {
+        id: failedEventId,
+        type: 'invoice.payment_failed',
+        created: Math.floor(failedAt.getTime() / 1000),
+        data: { object: { subscription: subscriptionId, customer: customerId } },
+      },
+    });
+
+    // Sanity: this org really is past its grace window, not merely past_due.
+    const entitlements = await resolveEntitlements(db, orgId);
+    expect(isOrgReadOnly(entitlements)).toBe(true);
+
+    const session = await createPortalSession(
+      db,
+      fakePortalClient('https://billing.stripe.com/test-session'),
+      { orgId, returnUrl: 'https://example.test/settings/billing', portalConfiguration: null },
+    );
+    expect(session.url).toBe('https://billing.stripe.com/test-session');
   });
 });

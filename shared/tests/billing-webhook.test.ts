@@ -20,6 +20,9 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '../src/db/client.js';
 import { applyStripeEvent, limitsFromProductMetadata } from '../src/billing/webhook.js';
 import type { StripeClient, StripeProduct, StripeSubscription } from '../src/stripe/client.js';
+import { isOrgReadOnly, resolveEntitlements } from '../src/plans.js';
+import { billingPeriodFor } from '../src/org-quota.js';
+import { getOrgUsage } from '../src/usage.js';
 
 const createdOrgIds: number[] = [];
 
@@ -68,6 +71,22 @@ const GROWTH_PRODUCT: StripeProduct = {
     limit_budget_usd: '30',
     limit_retention_days: '90',
     limit_premium_models: 'true',
+  },
+};
+
+const SOLO_PRODUCT: StripeProduct = {
+  id: 'prod_test_solo',
+  metadata: {
+    plan: 'solo',
+    limit_runs: '500',
+    limit_suggestions: '500',
+    limit_projects: '3',
+    limit_seats: '1',
+    limit_devices: '3',
+    limit_concurrency: '2',
+    limit_budget_usd: '10',
+    limit_retention_days: '30',
+    limit_premium_models: 'false',
   },
 };
 
@@ -339,5 +358,448 @@ describe('applyStripeEvent', () => {
       limitRetentionDays: 90,
       limitPremiumModels: true,
     });
+  });
+});
+
+describe('applyStripeEvent - upgrade now, downgrade at period end (#553)', () => {
+  const savedEdition = process.env.PITCHBOX_EDITION;
+  const createdProjectIds: number[] = [];
+
+  afterEach(async () => {
+    const db = getDb();
+    while (createdProjectIds.length > 0) {
+      const id = createdProjectIds.pop()!;
+      await db.delete(schema.projects).where(eq(schema.projects.id, id));
+    }
+    if (savedEdition === undefined) delete process.env.PITCHBOX_EDITION;
+    else process.env.PITCHBOX_EDITION = savedEdition;
+  });
+
+  it('an upgrade mid-period raises the ceiling without resetting usage already spent', async () => {
+    process.env.PITCHBOX_EDITION = 'cloud';
+    const org = await makeOrg();
+    const subscriptionId = `sub_${randomUUID()}`;
+    const periodStart = Math.floor(Date.now() / 1000) - 5 * 24 * 60 * 60;
+    const periodEnd = periodStart + 30 * 24 * 60 * 60;
+
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          product: SOLO_PRODUCT,
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodStart,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+
+    const [project] = await getDb()
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: `proj-${org.id}`, name: 'p' })
+      .returning();
+    createdProjectIds.push(project.id);
+    for (let i = 0; i < 4; i += 1) {
+      await getDb().insert(schema.runs).values({
+        kind: 'project_extraction',
+        projectId: project.id,
+        trigger: 'manual',
+        status: 'success',
+        startedAt: new Date(),
+      });
+    }
+
+    // The upgrade: same subscription, same period (Stripe prorates rather
+    // than resetting the billing cycle), Growth's product metadata now.
+    const result = await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          product: GROWTH_PRODUCT,
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodStart + 1,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+    expect(result.outcome).toBe('applied');
+
+    const period = await billingPeriodFor(getDb(), org.id);
+    const usage = await getOrgUsage(getDb(), org.id, period);
+    expect(usage.entitlements.planId).toBe('growth');
+    expect(usage.runs.limit).toBe(2000);
+    // The 4 runs recorded before the upgrade still count - a plan change
+    // never resets the period's own counter.
+    expect(usage.runs.used).toBe(4);
+  });
+
+  it('a downgrade does not apply before the mirrored period ends, and applies once it does', async () => {
+    process.env.PITCHBOX_EDITION = 'cloud';
+    const org = await makeOrg();
+    const subscriptionId = `sub_${randomUUID()}`;
+    const periodStart = Math.floor(Date.now() / 1000) - 5 * 24 * 60 * 60;
+    const periodEnd = periodStart + 30 * 24 * 60 * 60;
+
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          product: GROWTH_PRODUCT,
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodStart,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+
+    // A downgrade has been requested (e.g. scheduled for period end) but
+    // Stripe's own live subscription still reports the current phase
+    // unchanged - exactly what a pending change looks like before it
+    // transitions. Our webhook only ever mirrors what Stripe reports live,
+    // so it must not anticipate the switch.
+    const midPeriod = await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          product: GROWTH_PRODUCT,
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodStart + 1,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+    expect(midPeriod.outcome).toBe('applied');
+
+    let [row] = await getDb()
+      .select()
+      .from(schema.orgSubscriptions)
+      .where(eq(schema.orgSubscriptions.organizationId, org.id));
+    expect(row.planId).toBe('growth');
+    expect(row.limitProjects).toBe(10);
+
+    // The period actually rolls over: the scheduled change transitions the
+    // live subscription to Solo's price.
+    const newPeriodEnd = periodEnd + 30 * 24 * 60 * 60;
+    const afterRollover = await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          product: SOLO_PRODUCT,
+          currentPeriodStart: periodEnd,
+          currentPeriodEnd: newPeriodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodEnd + 1,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+    expect(afterRollover.outcome).toBe('applied');
+
+    [row] = await getDb()
+      .select()
+      .from(schema.orgSubscriptions)
+      .where(eq(schema.orgSubscriptions.organizationId, org.id));
+    expect(row.planId).toBe('solo');
+    expect(row.limitProjects).toBe(3);
+  });
+
+  it('an over-limit org after a downgrade keeps every project - nothing is deleted', async () => {
+    process.env.PITCHBOX_EDITION = 'cloud';
+    const org = await makeOrg();
+    const subscriptionId = `sub_${randomUUID()}`;
+    const periodStart = Math.floor(Date.now() / 1000) - 5 * 24 * 60 * 60;
+    const periodEnd = periodStart + 30 * 24 * 60 * 60;
+
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          product: GROWTH_PRODUCT,
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodStart,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+
+    // 5 projects - fits Growth's 10, would not fit Solo's 3.
+    for (let i = 0; i < 5; i += 1) {
+      const [project] = await getDb()
+        .insert(schema.projects)
+        .values({ organizationId: org.id, slug: `proj-${org.id}-${i}`, name: `p${i}` })
+        .returning();
+      createdProjectIds.push(project.id);
+    }
+
+    const newPeriodEnd = periodEnd + 30 * 24 * 60 * 60;
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          product: SOLO_PRODUCT,
+          currentPeriodStart: periodEnd,
+          currentPeriodEnd: newPeriodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodEnd + 1,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+
+    const remainingProjects = await getDb()
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.organizationId, org.id));
+    expect(remainingProjects).toHaveLength(5); // nothing deleted
+
+    const entitlements = await resolveEntitlements(getDb(), org.id);
+    expect(entitlements.projects).toBe(3); // the new, lower limit applies
+  });
+});
+
+describe('applyStripeEvent - grace window and read-only (#554)', () => {
+  const savedEdition = process.env.PITCHBOX_EDITION;
+  afterEach(async () => {
+    if (savedEdition === undefined) delete process.env.PITCHBOX_EDITION;
+    else process.env.PITCHBOX_EDITION = savedEdition;
+  });
+
+  async function notificationsFor(orgId: number) {
+    return getDb()
+      .select()
+      .from(schema.notifications)
+      .where(eq(schema.notifications.organizationId, orgId));
+  }
+
+  it('a payment failure notifies once and starts the grace window; a retry does not restart it or notify again', async () => {
+    process.env.PITCHBOX_EDITION = 'cloud';
+    const org = await makeOrg();
+    const subscriptionId = `sub_${randomUUID()}`;
+    const periodStart = Math.floor(Date.now() / 1000);
+    const periodEnd = periodStart + 30 * 24 * 60 * 60;
+
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodStart,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+
+    const firstFailureEventId = `evt_${randomUUID()}`;
+    const first = await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          status: 'past_due',
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        }),
+      }),
+      {
+        id: firstFailureEventId,
+        type: 'invoice.payment_failed',
+        created: periodStart + 1,
+        data: { object: { subscription: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+    expect(first.outcome).toBe('applied');
+
+    const [firstEventRow] = await getDb()
+      .select({ receivedAt: schema.stripeEvents.receivedAt })
+      .from(schema.stripeEvents)
+      .where(eq(schema.stripeEvents.id, firstFailureEventId));
+
+    const afterFirst = await notificationsFor(org.id);
+    expect(afterFirst).toHaveLength(1);
+    expect(afterFirst[0].kind).toBe('billing_payment_failed');
+
+    const entitlementsAfterFirst = await resolveEntitlements(getDb(), org.id);
+    expect(entitlementsAfterFirst.graceEndsAt?.getTime()).toBe(
+      firstEventRow.receivedAt.getTime() + 7 * 24 * 60 * 60 * 1000,
+    );
+    // Inside the freshly-granted window: not read-only yet.
+    expect(isOrgReadOnly(entitlementsAfterFirst)).toBe(false);
+    // Past the window: read-only, proven by moving the clock.
+    expect(
+      isOrgReadOnly(
+        entitlementsAfterFirst,
+        new Date(entitlementsAfterFirst.graceEndsAt!.getTime() + 1000),
+      ),
+    ).toBe(true);
+
+    // Smart Retries reattempts: another payment_failed while still past_due.
+    const second = await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          status: 'past_due',
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'invoice.payment_failed',
+        created: periodStart + 2,
+        data: { object: { subscription: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+    expect(second.outcome).toBe('applied');
+
+    const afterSecond = await notificationsFor(org.id);
+    expect(afterSecond).toHaveLength(1); // no duplicate notification
+
+    const entitlementsAfterSecond = await resolveEntitlements(getDb(), org.id);
+    // The retry never moved the deadline later.
+    expect(entitlementsAfterSecond.graceEndsAt?.getTime()).toBe(
+      entitlementsAfterFirst.graceEndsAt?.getTime(),
+    );
+  });
+
+  it('invoice.paid clears the grace window and read-only in one step', async () => {
+    process.env.PITCHBOX_EDITION = 'cloud';
+    const org = await makeOrg();
+    const subscriptionId = `sub_${randomUUID()}`;
+    const periodStart = Math.floor(Date.now() / 1000);
+    const periodEnd = periodStart + 30 * 24 * 60 * 60;
+
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          status: 'past_due',
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'invoice.payment_failed',
+        created: periodStart,
+        data: { object: { subscription: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+    const beforeRecovery = await resolveEntitlements(getDb(), org.id);
+    expect(beforeRecovery.graceEndsAt).not.toBeNull();
+
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          status: 'active',
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'invoice.paid',
+        created: periodStart + 1,
+        data: { object: { subscription: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+
+    const afterRecovery = await resolveEntitlements(getDb(), org.id);
+    expect(afterRecovery.graceEndsAt).toBeNull();
+    expect(isOrgReadOnly(afterRecovery)).toBe(false);
+  });
+
+  it('a cancelled subscription lands on free - a real working plan, not a locked account', async () => {
+    process.env.PITCHBOX_EDITION = 'cloud';
+    const org = await makeOrg({ plan: 'growth', planSource: 'stripe' });
+    const subscriptionId = `sub_${randomUUID()}`;
+
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          status: 'past_due',
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'invoice.payment_failed',
+        created: Math.floor(Date.now() / 1000),
+        data: { object: { subscription: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+
+    await applyStripeEvent(getDb(), fakeStripeClient({}), {
+      id: `evt_${randomUUID()}`,
+      type: 'customer.subscription.deleted',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+    });
+
+    const entitlements = await resolveEntitlements(getDb(), org.id);
+    expect(entitlements.planId).toBe('free');
+    expect(entitlements.graceEndsAt).toBeNull();
+    expect(isOrgReadOnly(entitlements)).toBe(false);
   });
 });

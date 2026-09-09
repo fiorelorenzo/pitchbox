@@ -15,6 +15,7 @@ export type RunFailureReason =
   | 'instance_quota_exhausted'
   | 'concurrency_exhausted'
   | 'plan_limit_reached'
+  | 'plan_payment_required'
   | 'playbook_error'
   | 'playbook_incomplete'
   | 'network'
@@ -33,6 +34,7 @@ export const RUN_FAILURE_REASONS: readonly RunFailureReason[] = [
   'instance_quota_exhausted',
   'concurrency_exhausted',
   'plan_limit_reached',
+  'plan_payment_required',
   'playbook_error',
   'playbook_incomplete',
   'network',
@@ -110,6 +112,14 @@ const CONCURRENCY_PATTERNS = ['concurrency limit'];
 // collides with QUOTA_PATTERNS below.
 const PLAN_LIMIT_PATTERNS = ['plan limit'];
 
+// #554: a failed payment past its grace window is a different failure than
+// a plan's own metered limit above - "the account is read-only until the
+// payment method is fixed" has a different fix (the customer portal) than
+// "you have used every run your plan allows this period" (wait or upgrade).
+// The refusal text says "read-only" and never "plan limit", so it never
+// collides with PLAN_LIMIT_PATTERNS.
+const PLAN_PAYMENT_REQUIRED_PATTERNS = ['read-only because of a failed payment'];
+
 const NETWORK_PATTERNS = [
   'econnrefused',
   'econnreset',
@@ -173,6 +183,8 @@ export function classifyFailure(events: ParsedEvent[], exitCode: number | null):
   if (QUOTA_PATTERNS.some((p) => haystack.includes(p))) return 'quota_exhausted';
   if (CONCURRENCY_PATTERNS.some((p) => haystack.includes(p))) return 'concurrency_exhausted';
   if (PLAN_LIMIT_PATTERNS.some((p) => haystack.includes(p))) return 'plan_limit_reached';
+  if (PLAN_PAYMENT_REQUIRED_PATTERNS.some((p) => haystack.includes(p)))
+    return 'plan_payment_required';
   if (NETWORK_PATTERNS.some((p) => haystack.includes(p))) return 'network';
   if (PROVIDER_ERROR_PATTERNS.some((p) => haystack.includes(p))) return 'provider_error';
   if (CONTENT_FILTERED_PATTERNS.some((p) => haystack.includes(p))) return 'content_filtered';
