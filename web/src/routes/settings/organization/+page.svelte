@@ -104,12 +104,18 @@
   // Invite dialog.
   let inviteOpen = $state(false);
   let inviteRole = $state<(typeof ROLES)[number]>('member');
+  let inviteEmail = $state('');
   let generating = $state(false);
   let generatedUrl = $state('');
+  let generatedEmail = $state('');
+  let generatedEmailSent = $state(false);
 
   function openInvite() {
     inviteRole = 'member';
+    inviteEmail = '';
     generatedUrl = '';
+    generatedEmail = '';
+    generatedEmailSent = false;
     inviteOpen = true;
   }
 
@@ -117,21 +123,31 @@
     if (!data.org || generating) return;
     generating = true;
     try {
+      const email = inviteEmail.trim();
       const res = await fetch(`/api/orgs/${data.org.slug}/invites`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ role: inviteRole }),
+        body: JSON.stringify({ role: inviteRole, ...(email ? { email } : {}) }),
       });
-      const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        url?: string;
+        emailSent?: boolean;
+        error?: string;
+      };
       if (!res.ok) {
         toast.error(
           body?.error === 'not_found'
             ? 'Only owners and admins can invite people'
-            : 'Could not create the invite',
+            : body?.error === 'invalid_body'
+              ? 'Enter a valid email address'
+              : 'Could not create the invite',
         );
         return;
       }
       generatedUrl = body.url ?? '';
+      generatedEmail = email;
+      generatedEmailSent = body.emailSent ?? false;
+      if (generatedEmailSent) toast.success(`Invite sent to ${email}`);
       await invalidateAll();
     } catch {
       toast.error('Could not create the invite');
@@ -685,7 +701,7 @@
     <Dialog.Header>
       <Dialog.Title>Invite a member</Dialog.Title>
       <Dialog.Description>
-        Pick a role, then share the generated link. It expires in 7 days.
+        Pick a role and, if you have it, an email address. It expires in 7 days.
       </Dialog.Description>
     </Dialog.Header>
     <div class="flex flex-col gap-4 py-2">
@@ -709,6 +725,19 @@
         <p class="text-xs text-muted-foreground">{ROLE_HINT[inviteRole]}</p>
       </div>
 
+      <div class="flex flex-col gap-2">
+        <span class="text-sm font-medium">Email (optional)</span>
+        <Input
+          type="email"
+          placeholder="person@example.com"
+          bind:value={inviteEmail}
+          disabled={!!generatedUrl}
+        />
+        <p class="text-xs text-muted-foreground">
+          If mail isn't set up on this deployment, you'll still get a link to share by hand.
+        </p>
+      </div>
+
       {#if generatedUrl}
         <div class="flex flex-col gap-2">
           <span class="text-sm font-medium">Invite link</span>
@@ -719,7 +748,14 @@
             </Button>
           </div>
           <p class="text-xs text-muted-foreground">
-            Anyone with this link can join as <span class="capitalize">{inviteRole}</span>.
+            {#if generatedEmail && generatedEmailSent}
+              Sent to {generatedEmail}. If it doesn't arrive, share this link instead.
+            {:else if generatedEmail && !generatedEmailSent}
+              Mail isn't configured on this deployment, so share this link with {generatedEmail}
+              yourself.
+            {:else}
+              Anyone with this link can join as <span class="capitalize">{inviteRole}</span>.
+            {/if}
           </p>
         </div>
       {/if}
@@ -730,7 +766,9 @@
         <Button onclick={() => (inviteOpen = false)}>Done</Button>
       {:else}
         <Button variant="ghost" onclick={() => (inviteOpen = false)}>Cancel</Button>
-        <Button onclick={generateInvite} loading={generating}>Generate link</Button>
+        <Button onclick={generateInvite} loading={generating}>
+          {inviteEmail.trim() ? 'Send invite' : 'Generate link'}
+        </Button>
       {/if}
     </Dialog.Footer>
   </Dialog.Content>
