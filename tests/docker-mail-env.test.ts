@@ -36,6 +36,21 @@ function webServiceBlock(): string {
   return next < 0 ? rest : rest.slice(0, next + 1);
 }
 
+/** The blue-green overlay's `x-web-common` anchor, which is what a deployed
+ * web container actually gets: that overlay disables the base `web` service
+ * and replaces its whole `environment` block, so a variable present only in
+ * the base file reaches nothing in production. Not theory: #579 added these
+ * to the base file alone, shipped, and prod's active web came up with no
+ * MAIL_PROVIDER (#580). */
+function blueGreenCommonBlock(): string {
+  const src = readFileSync(join(root, 'docker-compose.bluegreen.yml'), 'utf8');
+  const start = src.indexOf('x-web-common:');
+  if (start < 0) throw new Error('docker-compose.bluegreen.yml has no x-web-common anchor');
+  const rest = src.slice(start);
+  const next = rest.search(/\nservices:\n/);
+  return next < 0 ? rest : rest.slice(0, next);
+}
+
 describe('the deployed app receives the mail configuration it reads', () => {
   it('finds the variables to check, rather than passing on an empty set', () => {
     const vars = mailEnvVarsReadByTheLoader();
@@ -45,9 +60,18 @@ describe('the deployed app receives the mail configuration it reads', () => {
   });
 
   it.each(mailEnvVarsReadByTheLoader())(
-    'passes %s into the web container, interpolated from the deployment environment',
+    'passes %s into the base web service, interpolated from the deployment environment',
     (name) => {
       expect(webServiceBlock()).toMatch(
+        new RegExp(`^\\s+${name}: \\$\\{${name}(:-[^}]*)?\\}$`, 'm'),
+      );
+    },
+  );
+
+  it.each(mailEnvVarsReadByTheLoader())(
+    'passes %s into the blue-green web containers, which are what production runs',
+    (name) => {
+      expect(blueGreenCommonBlock()).toMatch(
         new RegExp(`^\\s+${name}: \\$\\{${name}(:-[^}]*)?\\}$`, 'm'),
       );
     },
