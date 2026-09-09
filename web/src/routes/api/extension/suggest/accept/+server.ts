@@ -88,7 +88,10 @@ export async function POST(event: RequestEvent) {
             .select()
             .from(schema.projects)
             .where(
-              and(eq(schema.projects.id, body.projectId), eq(schema.projects.organizationId, orgId)),
+              and(
+                eq(schema.projects.id, body.projectId),
+                eq(schema.projects.organizationId, orgId),
+              ),
             )
             .limit(1)
         )[0]

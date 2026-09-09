@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { sql, eq, and } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { POST as operatorProfilePost } from '../src/routes/api/extension/operator-profile/+server.js';

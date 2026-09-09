@@ -255,14 +255,14 @@ describe('api.suggest', () => {
 });
 
 describe('api.acceptSuggestion', () => {
-  it('returns the created draft and run id on success', async () => {
+  it('returns the ledger row id and dedup warning on success (#521)', async () => {
     seed();
     const { api } = await import('../../src/lib/api.js');
     vi.stubGlobal(
       'fetch',
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ ok: true, draftId: 42, runId: 7 }), { status: 200 }),
+          new Response(JSON.stringify({ ok: true, id: 42, dedupWarning: null }), { status: 200 }),
       ),
     );
 
@@ -274,7 +274,7 @@ describe('api.acceptSuggestion', () => {
     });
 
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.data).toEqual({ accepted: true, draftId: 42, runId: 7 });
+    if (res.ok) expect(res.data).toEqual({ accepted: true, id: 42, dedupWarning: null });
   });
 
   it('surfaces a refusal distinctly from a transport error', async () => {

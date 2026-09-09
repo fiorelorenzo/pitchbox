@@ -21,7 +21,7 @@
 // regardless of accept. There is therefore no `accounts` row and no
 // `no_account` refusal on this path anymore either - the campaign `accounts`
 // table has nothing left to answer here.
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
 import { isBlocklisted, isKeywordBlocklisted } from './blocklist.js';
 import {

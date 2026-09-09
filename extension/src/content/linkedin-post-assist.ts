@@ -205,7 +205,11 @@ function logNoDraft(skipped: boolean): void {
  * open (see `wirePostAssist` below); `mountPanel` itself is what keeps a
  * second click from stacking a second panel.
  */
-function mountAssistPanel(editor: HTMLElement, _modal: Element): void {
+function mountAssistPanel(editor: HTMLElement, modal: Element): void {
+  // Unlike the comment assist's `post`, the top-level post composer modal
+  // carries no separate scoping context to read - kept for call-site
+  // symmetry with `wireCommentAssist` rather than used here.
+  void modal;
   const anchor = editor.closest('form') ?? editor;
   for (const event of selectorHealthActivityEvents()) logFromContent(event);
 

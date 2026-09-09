@@ -191,7 +191,12 @@ export async function POST(event: RequestEvent) {
           await db
             .select()
             .from(schema.projects)
-            .where(and(eq(schema.projects.id, body.projectId), eq(schema.projects.organizationId, orgId)))
+            .where(
+              and(
+                eq(schema.projects.id, body.projectId),
+                eq(schema.projects.organizationId, orgId),
+              ),
+            )
             .limit(1)
         )[0]
       : undefined;

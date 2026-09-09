@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 /**
  * The in-page post composer assist (#315), against the real Svelte panel
@@ -45,9 +45,8 @@ vi.mock('../../src/lib/log-from-content.js', () => ({
 // Dynamic, not static: this module must load after the `vi.mock` calls
 // above are in place (vitest hoists `vi.mock` but not a static import),
 // matching `linkedin-comment-assist.test.ts`'s own established pattern.
-const { wirePostAssist, refusalMessage } = await import(
-  '../../src/content/linkedin-post-assist.js'
-);
+const { wirePostAssist, refusalMessage } =
+  await import('../../src/content/linkedin-post-assist.js');
 
 // #521/#523: an accepted suggestion files under `projectId` (the same value
 // used to request it) or under no project at all - there is no separate
@@ -628,4 +627,3 @@ describe('single-page navigation', () => {
     expect(document.querySelectorAll('pitchbox-panel-host').length).toBe(0);
   });
 });
-

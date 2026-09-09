@@ -152,7 +152,9 @@ export async function loadLinkedInAssistDeviceState(
 ): Promise<LinkedInAssistDeviceState> {
   const settings = await loadLinkedInAssistSettings(db, organizationId);
   const projectLive =
-    settings.projectId != null ? await projectBelongsToOrg(db, settings.projectId, organizationId) : false;
+    settings.projectId != null
+      ? await projectBelongsToOrg(db, settings.projectId, organizationId)
+      : false;
   const projectId = settings.projectId != null && projectLive ? settings.projectId : null;
   const boundAndLive = settings.enabled && !settings.killSwitch;
   return {

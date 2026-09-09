@@ -327,22 +327,23 @@ export async function getOrgPeriodSpend(
     .where(eq(schema.projects.organizationId, orgId));
   const projectIds = orgProjects.map((p) => p.id);
 
-  const [runRow] = projectIds.length === 0
-    ? [{ total: '0' }]
-    : await db
-        .select({ total: sql<string>`coalesce(sum(${schema.runs.costUsd}), 0)` })
-        .from(schema.runs)
-        .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
-        .where(
-          and(
-            or(
-              inArray(schema.runs.projectId, projectIds),
-              inArray(schema.campaigns.projectId, projectIds),
+  const [runRow] =
+    projectIds.length === 0
+      ? [{ total: '0' }]
+      : await db
+          .select({ total: sql<string>`coalesce(sum(${schema.runs.costUsd}), 0)` })
+          .from(schema.runs)
+          .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
+          .where(
+            and(
+              or(
+                inArray(schema.runs.projectId, projectIds),
+                inArray(schema.campaigns.projectId, projectIds),
+              ),
+              gte(schema.runs.startedAt, period.start),
+              lt(schema.runs.startedAt, period.end),
             ),
-            gte(schema.runs.startedAt, period.start),
-            lt(schema.runs.startedAt, period.end),
-          ),
-        );
+          );
 
   const [assistRow] = await db
     .select({ total: sql<string>`coalesce(sum(${schema.assistUsage.costUsd}), 0)` })

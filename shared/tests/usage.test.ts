@@ -211,17 +211,15 @@ describe('getOrgUsage: suggestions', () => {
       .select({ id: schema.platforms.id })
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'linkedin'));
-    await getDb()
-      .insert(schema.assistAcceptedSuggestions)
-      .values({
-        organizationId: orgId,
-        projectId,
-        platformId: platform.id,
-        kind: 'post_comment',
-        body: 'accepted suggestion text',
-        agentRunner: 'claude-code',
-        createdAt: NOW,
-      });
+    await getDb().insert(schema.assistAcceptedSuggestions).values({
+      organizationId: orgId,
+      projectId,
+      platformId: platform.id,
+      kind: 'post_comment',
+      body: 'accepted suggestion text',
+      agentRunner: 'claude-code',
+      createdAt: NOW,
+    });
 
     const usage = await getOrgUsage(getDb(), orgId, PERIOD);
     expect(usage.suggestions.used).toBe(2);

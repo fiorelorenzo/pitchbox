@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { sql, eq, and } from 'drizzle-orm';
+import { describe, expect, it, beforeEach } from 'vitest';
+import { sql, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { getDb, schema } from '@pitchbox/shared/db';
 import {
@@ -239,7 +239,7 @@ describe('POST /api/extension/suggest/accept', () => {
         editedFrom: POST_BODY.body,
       }),
     } as never);
-    expect((await sameText.json() as { ok: boolean }).ok).toBe(true);
+    expect(((await sameText.json()) as { ok: boolean }).ok).toBe(true);
 
     const changed = await accept({
       request: request('tokEdited', {
@@ -249,7 +249,7 @@ describe('POST /api/extension/suggest/accept', () => {
         editedFrom: 'The model\u2019s own draft text, before the human touched it.',
       }),
     } as never);
-    expect((await changed.json() as { ok: boolean }).ok).toBe(true);
+    expect(((await changed.json()) as { ok: boolean }).ok).toBe(true);
 
     const rows = await getDb()
       .select()
@@ -257,7 +257,9 @@ describe('POST /api/extension/suggest/accept', () => {
       .orderBy(schema.assistAcceptedSuggestions.id);
     expect(rows).toHaveLength(2);
     expect(rows[0].editedFrom).toBeNull();
-    expect(rows[1].editedFrom).toBe('The model\u2019s own draft text, before the human touched it.');
+    expect(rows[1].editedFrom).toBe(
+      'The model\u2019s own draft text, before the human touched it.',
+    );
   });
 
   // A feed post carries no URN at all (docs/linkedin-integration-design.md,
@@ -275,7 +277,7 @@ describe('POST /api/extension/suggest/accept', () => {
     const res = await accept({
       request: request('tokNoUrn', { ...POST_BODY, post: postWithoutUrn, projectId: project.id }),
     } as never);
-    expect((await res.json() as { ok: boolean }).ok).toBe(true);
+    expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
 
     const [row] = await getDb().select().from(schema.assistAcceptedSuggestions);
     expect(row.postUrn).toBeNull();
@@ -299,7 +301,7 @@ describe('POST /api/extension/suggest/accept', () => {
         projectId: project.id,
       }),
     } as never);
-    expect((await res.json() as { ok: boolean }).ok).toBe(true);
+    expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
 
     expect(await getDb().select().from(schema.assistAcceptedSuggestions)).toHaveLength(1);
     expect(await getDb().select().from(schema.contactHistory)).toHaveLength(0);
@@ -442,7 +444,7 @@ describe('POST /api/extension/suggest/accept', () => {
       const res = await accept({
         request: request('tokUsageOnce', POST_BODY),
       } as never);
-      expect((await res.json() as { ok: boolean }).ok).toBe(true);
+      expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
 
       const period = await billingPeriodFor(getDb(), org.id);
       const usage = await getOrgUsage(getDb(), org.id, period);
@@ -477,11 +479,11 @@ describe('POST /api/extension/suggest/accept', () => {
       const okB = await accept({
         request: request('tokIsoB', { ...POST_BODY, projectId: projectB.id }),
       } as never);
-      expect((await okB.json() as { ok: boolean }).ok).toBe(true);
+      expect(((await okB.json()) as { ok: boolean }).ok).toBe(true);
     });
 
     it("never lets org A's contact history warn on org B's identical target", async () => {
-      const { org: orgA, project: projectA, platform } = await seedOrgProject('acc-iso-dedup-a');
+      const { org: orgA, platform } = await seedOrgProject('acc-iso-dedup-a');
       const { org: orgB, project: projectB } = await seedOrgProject('acc-iso-dedup-b');
       await mintDevice(orgA.id, 'tokIsoDedupA');
       await mintDevice(orgB.id, 'tokIsoDedupB');

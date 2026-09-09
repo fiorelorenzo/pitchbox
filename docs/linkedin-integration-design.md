@@ -93,7 +93,7 @@ to six steps against seven read-only tools declared once in
 image, the target's contact history, the operator's voice, project
 knowledge, the operator's own prior takes, and a closing style check on the
 draft - before the writing turn. Still no campaign, no cron, no playbook,
-and still no `runs` row until the human accepts (see "Bookkeeping" below):
+and still no `runs` row, even after accept (see "Bookkeeping" below):
 the loop is its own isolated tool surface, driven natively by whichever
 runner backs the org (native tool calls on the SDK path, a dedicated
 `pitchbox-assist-mcp` entry point on the ACP path), never the 26-tool
@@ -112,7 +112,7 @@ narrates the loop through the same SSE `status` event it already used for a
 bare "reading the post" line, one tool name at a time in plain language,
 rather than a second channel.
 
-**Bookkeeping, which is where the two planes touch.** A suggestion is ephemeral until the human accepts it. On accept, the server materialises a real `drafts` row so the ledger stays complete: blocklist and quota are evaluated through `evaluateDraftSend` exactly as on the campaign path, `contact_history` gets its row, and analytics counts it. `drafts.run_id` is `NOT NULL` (`shared/src/db/schema.ts:296-298`), so rather than making that column nullable the accept path creates a `runs` row of a new `kind = 'assist'` (project-targeted, no campaign), which also gives the assist path the token and cost accounting the `runs` table already carries. The `runs_kind_target_chk` constraint gains that kind.
+**Bookkeeping, which is where the two planes touch.** A suggestion is ephemeral until the human accepts it. On accept, `acceptSuggestion` (`shared/src/assist-accept.ts`) writes a row into the assist plane's own ledger, `assist_accepted_suggestions` - never a `drafts` row and never a `runs` row (#521). It walks the same gates `cli/src/commands/drafts.ts`'s `createDrafts` applies to a campaign draft - blocklist, keyword blocklist, contact dedup, `checkUncontactable` - then writes an unconditional `contact_history` row, so a comment Pitchbox helped write is never invisible to quota, contact history or analytics. The borrowed shape this replaced - a `runs` row of `kind = 'assist'` purely because `drafts.run_id` is `NOT NULL` - is gone along with that `runs_kind_target_chk` branch; token and cost accounting live on the ledger row itself instead. The project a suggestion names is optional context, not a foreign key requirement: an accept can file under no project at all and still counts (#523).
 
 The separation Lorenzo asked for holds where it matters: no cron, no campaign, no playbook, no MCP, a dedicated real-time endpoint. What is shared is the ledger, because a comment that Pitchbox helped write and that does not appear in quota, contact history or analytics is a hole in the product's own accounting.
 

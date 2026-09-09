@@ -175,10 +175,16 @@ describe('POST /api/settings/linkedin-assist', () => {
     expect(await statusOf(() => POST(ev(orgId, 'admin', 'POST', body)))).toBe(200);
   });
 
-  it('refuses enabling assist without a bound project (400)', async () => {
+  it('enabling assist with no bound project is allowed (#523: a project is optional context)', async () => {
     const { orgId } = await seedOrg('la-unbound');
     const body = { ...defaultLinkedInAssistSettings(), enabled: true, projectId: null };
-    expect(await statusOf(() => POST(ev(orgId, 'admin', 'POST', body)))).toBe(400);
+    expect(await statusOf(() => POST(ev(orgId, 'admin', 'POST', body)))).toBe(200);
+
+    const token = 'device-token-la-unbound';
+    await mintDevice(orgId, token);
+    const read = await (await deviceGet({ request: deviceRequest(token) })).json();
+    expect(read.assist.projectId).toBeNull();
+    expect(read.assist.enabled).toBe(true);
   });
 
   it("refuses binding another organization's project (400)", async () => {
@@ -259,7 +265,7 @@ describe('GET /api/extension/linkedin-assist (device read path)', () => {
     expect(after.assist.collectorEnabled).toBe(false);
   });
 
-  it('treats a deleted bound project as unbound rather than leaking a dangling id', async () => {
+  it('treats a deleted bound project as unbound context, not as a reason to disable assist (#523)', async () => {
     const { orgId, projectId } = await seedOrg('la-deleted-project');
     await saveLinkedInAssistSettings(getDb(), orgId, {
       ...defaultLinkedInAssistSettings(),
@@ -272,7 +278,7 @@ describe('GET /api/extension/linkedin-assist (device read path)', () => {
     await mintDevice(orgId, token);
     const body = await (await deviceGet({ request: deviceRequest(token) })).json();
     expect(body.assist.projectId).toBeNull();
-    expect(body.assist.enabled).toBe(false);
+    expect(body.assist.enabled).toBe(true);
   });
 
   // #556: the panel and the side panel need the plan's name, allowance and
