@@ -47,6 +47,18 @@ export const users = pgTable(
     // unique index below is a plain column constraint rather than an
     // expression index, and two logins differing only in case collide.
     email: text('email'),
+    // Set the moment the account proves control of `email` by redeeming a
+    // single-use link (`email_verification_tokens` below) - null means
+    // unverified. #514: a self-registered account can spend real money
+    // through a run, so an unproven address must not be trusted the same
+    // as a proven one. Two accounts intentionally start non-null here
+    // rather than going through a link: one whose invite (`org_invites.
+    // email`) already named this exact address (the inviter's vouching
+    // stands in for the mail round trip - see `createUserRecord` /
+    // `POST /api/auth/register`), and any pre-#507 account with `email`
+    // still null, which `isEmailVerified` treats as verified since it has
+    // nothing to prove and no way to ever clear this column.
+    emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -173,6 +185,30 @@ export const passwordResetTokens = pgTable(
   (t) => ({
     tokenHashUnique: uniqueIndex('password_reset_tokens_token_hash_unique').on(t.tokenHash),
     byUser: index('password_reset_tokens_user_idx').on(t.userId),
+  }),
+);
+
+// email_verification_tokens (#514): backs POST /api/auth/verify/confirm and
+// /api/auth/verify/resend. Exactly `password_reset_tokens`' shape above -
+// hashed at rest, single use, time-limited - reused on purpose rather than
+// invented fresh, since both are "prove control of this mailbox" tokens
+// with the same threat model. The TTL just lives in shared/src/auth.ts
+// instead of here, same as password_reset_tokens' does.
+export const emailVerificationTokens = pgTable(
+  'email_verification_tokens',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+  },
+  (t) => ({
+    tokenHashUnique: uniqueIndex('email_verification_tokens_token_hash_unique').on(t.tokenHash),
+    byUser: index('email_verification_tokens_user_idx').on(t.userId),
   }),
 );
 

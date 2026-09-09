@@ -131,6 +131,15 @@ function isExemptPath(pathname: string): boolean {
     pathname.startsWith('/reset') ||
     pathname.startsWith('/api/auth/password/forgot') ||
     pathname.startsWith('/api/auth/password/reset') ||
+    // Email verification (#514): the link may be opened with no session at
+    // all (a different device, or the browser that registered having since
+    // signed out), so the confirm page and its API need to be reachable
+    // session-less too. Exact prefix again - not a blanket `/api/auth/
+    // verify`, which would also exempt POST /api/auth/verify/resend, a
+    // self-service action that must stay behind session resolution the
+    // same way POST /api/auth/password does.
+    pathname.startsWith('/verify') ||
+    pathname.startsWith('/api/auth/verify/confirm') ||
     pathname.startsWith('/_app/') ||
     pathname.startsWith('/favicon')
   );

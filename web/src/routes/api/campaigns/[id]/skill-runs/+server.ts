@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { runCampaignSkillGeneration } from '$lib/server/runner.js';
-import { requireOrgId } from '$lib/server/auth.js';
+import { requireOrgId, requireVerifiedEmail } from '$lib/server/auth.js';
 import { campaignBelongsToOrg } from '@pitchbox/shared/orgs';
 
 const PostBody = z.object({
@@ -24,6 +24,7 @@ export async function POST(event: RequestEvent) {
 
   const orgId = await requireOrgId(event);
   if (!(await campaignBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
+  await requireVerifiedEmail(event);
 
   const raw = await request.json().catch(() => null);
   const parsed = PostBody.safeParse(raw);

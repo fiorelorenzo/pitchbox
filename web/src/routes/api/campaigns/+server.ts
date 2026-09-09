@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { runCampaignSkillGeneration } from '$lib/server/runner.js';
 import { previewCron } from '@pitchbox/daemon/cron';
-import { requireOrgId } from '$lib/server/auth.js';
+import { requireOrgId, requireVerifiedEmail } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
 import { SCENARIO_SLUGS } from '@pitchbox/shared/campaigns';
@@ -37,6 +37,7 @@ export async function POST(event: RequestEvent) {
 
   const orgId = await requireOrgId(event);
   if (!(await projectBelongsToOrg(db, body.projectId, orgId))) throw error(404, 'not_found');
+  await requireVerifiedEmail(event);
 
   const [project] = await db
     .select()

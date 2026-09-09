@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { error, type RequestEvent } from '@sveltejs/kit';
-import { loadOrganizationForUser } from '@pitchbox/shared/auth';
+import { isEmailVerified, loadOrganizationForUser } from '@pitchbox/shared/auth';
 import { getDb, schema } from './db.js';
 
 /**
@@ -88,5 +88,31 @@ export async function isInstanceAdmin(event: RequestEvent): Promise<boolean> {
 export async function requireInstanceAdmin(event: RequestEvent): Promise<void> {
   if (!(await isInstanceAdmin(event))) {
     throw error(403, 'forbidden');
+  }
+}
+
+/**
+ * Require the signed-in caller's email to be verified, else throw 403
+ * `email_unverified` (#514). A no-op when there is no signed-in caller -
+ * auth off (self-host), or the daemon's internal-token dispatch to
+ * `POST /api/run`, which carries no session - same convention as
+ * `requireRole`/`requireInstanceAdmin`: nothing here to gate without a
+ * user. `isEmailVerified` (shared/src/auth.ts) is what actually decides:
+ * no email on file (a pre-#507 account) counts as verified, same as an
+ * account whose address has a real `email_verified_at`.
+ *
+ * Call this at the top of any route that dispatches a run (starting money
+ * being spent is the one thing an unverified, freshly self-registered
+ * account must not be able to do) - never inside `web/src/lib/server/
+ * runner.ts`'s dispatch internals, which have no request/session to read a
+ * caller from in the first place (a scheduled campaign run has no live
+ * "who clicked this" at all).
+ */
+export async function requireVerifiedEmail(event: RequestEvent): Promise<void> {
+  const user = event.locals?.user;
+  if (!user) return; // auth off, or the daemon's session-less internal dispatch
+  const db = getDb();
+  if (!(await isEmailVerified(db, user.id))) {
+    throw error(403, 'email_unverified');
   }
 }

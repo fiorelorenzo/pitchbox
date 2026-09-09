@@ -5,6 +5,7 @@ import { getCampaignReadiness } from '$lib/server/campaign-readiness.js';
 import { getDb } from '$lib/server/db.js';
 import { campaignBelongsToOrg } from '@pitchbox/shared/orgs';
 import { normalizeTrigger } from '$lib/utils/run-trigger.js';
+import { requireVerifiedEmail } from '$lib/server/auth.js';
 
 export async function POST(event: RequestEvent) {
   const { request } = event;
@@ -20,11 +21,15 @@ export async function POST(event: RequestEvent) {
   // path has no request-scoped org (it calls this route without auth), so it
   // is intentionally left unguarded here - optional chaining keeps a fake
   // event with no `locals` from crashing rather than being rejected.
+  // requireVerifiedEmail is the same no-op-without-a-session shape (#514):
+  // a session caller with an unverified address is refused before this ever
+  // reaches the runner; the daemon's own dispatch has no session to gate.
   if (event.locals?.org) {
     if (!(await campaignBelongsToOrg(getDb(), body.campaignId, event.locals.org.id))) {
       throw error(404, 'not_found');
     }
   }
+  await requireVerifiedEmail(event);
 
   const readiness = await getCampaignReadiness(body.campaignId);
   if (!readiness.ready) {

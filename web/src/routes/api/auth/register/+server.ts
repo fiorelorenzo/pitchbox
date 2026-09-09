@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getDb } from '../../../../lib/server/db.js';
 import {
   clearAuthFailures,
+  createEmailVerificationToken,
   createSession,
   createUserRecord,
   deleteSession,
@@ -13,6 +14,9 @@ import {
   normalizeEmail,
   recordAuthFailure,
 } from '@pitchbox/shared/auth';
+import { createMailTransport } from '@pitchbox/shared/mail/registry';
+import { loadMailEnv } from '@pitchbox/shared/mail/env';
+import { renderPlainTextMail } from '@pitchbox/shared/mail/template';
 import {
   acceptInvite,
   createOrganization,
@@ -160,6 +164,15 @@ export async function POST(event: RequestEvent) {
     }
   }
 
+  // #514: the inviter already vouched for this address by naming it on the
+  // invite, so a registration that supplies the exact same (normalized)
+  // address is born verified - no mail round trip, no window where the
+  // account can sign in but not run. An invite with no email on it, or one
+  // whose email differs from what the registrant typed, gets the ordinary
+  // unverified flow below.
+  const inviteEmail = invite?.email ?? null;
+  const inviteEmailMatches = inviteEmail != null && normalizeEmail(inviteEmail) === email;
+
   let userId: number;
   try {
     userId = await db.transaction(async (tx) => {
@@ -172,6 +185,7 @@ export async function POST(event: RequestEvent) {
         username: parsed.data.username,
         password: parsed.data.password,
         email,
+        emailVerifiedAt: inviteEmailMatches ? new Date() : null,
       });
       if (invite) {
         const accepted = await acceptInvite(tx, invite.token, id);
@@ -227,5 +241,25 @@ export async function POST(event: RequestEvent) {
     secure: process.env.NODE_ENV === 'production',
     expires: session.expiresAt,
   });
-  return json({ ok: true });
+
+  // #514: exactly one verification mail per registration, and none at all
+  // for the invite-matched case above (the account is already verified -
+  // sending one anyway would be a mail promising a step that isn't there).
+  // Same link-building convention as /api/auth/password/forgot: the
+  // request's own origin, never a hardcoded host.
+  if (!inviteEmailMatches) {
+    const { token } = await createEmailVerificationToken(db, userId);
+    const verifyUrl = `${event.url.origin}/verify/${token}`;
+    const rendered = renderPlainTextMail(
+      'Verify your Pitchbox email address',
+      `Welcome to Pitchbox. Confirm this address to start running campaigns.\n\n` +
+        `Open this link within 48 hours to verify:\n${verifyUrl}\n\n` +
+        `You can sign in and look around before you verify - you just can't ` +
+        `start a run yet. If you didn't create this account, ignore this message.`,
+    );
+    const transport = createMailTransport(loadMailEnv());
+    await transport.send({ to: email, ...rendered });
+  }
+
+  return json({ ok: true, emailVerified: inviteEmailMatches });
 }
