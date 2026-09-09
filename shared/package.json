@@ -82,7 +82,8 @@
     "./mail/registry": "./src/mail/registry.ts",
     "./mail/template": "./src/mail/template.ts",
     "./mail/env": "./src/mail/env.ts",
-    "./registration-policy": "./src/registration-policy.ts"
+    "./registration-policy": "./src/registration-policy.ts",
+    "./plans": "./src/plans.ts"
   },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",
