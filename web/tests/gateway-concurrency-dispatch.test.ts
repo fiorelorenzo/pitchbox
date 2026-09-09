@@ -128,16 +128,36 @@ async function runRow(runId: number) {
 
 /** dispatchRun's completion write runs off `handle.result`'s own promise
  * chain, outside runCampaign's own await for a real dispatch (see
- * gateway-budget-dispatch.test.ts) - `run:finished` on the realtime bus is
- * the actual completion signal. */
-function waitForRunFinished(orgId: number): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
+ * gateway-budget-dispatch.test.ts), so `run:finished` on the realtime bus is
+ * the actual completion signal.
+ *
+ * It has to be subscribed BEFORE dispatching and matched on the event's own
+ * `runId`. The previous version subscribed once per expected run after
+ * dispatching and resolved on the first `run:finished` each subscriber saw -
+ * and since the bus broadcasts to every subscriber, a single event resolved
+ * all of them, so with three runs in flight the test read the rows while two
+ * were still `running`. That passed in isolation and only failed under the
+ * full suite, which is where it was caught (main, 2026-09-09). */
+function runFinishedWatcher(orgId: number) {
+  const finished = new Set<number>();
+  const waiting = new Map<number, () => void>();
   const unsubscribe = subscribe(orgId, (evt) => {
     if (evt.kind !== 'run:finished') return;
-    unsubscribe();
-    resolve();
+    const runId = (evt.data as { runId?: number } | undefined)?.runId;
+    if (typeof runId !== 'number') return;
+    finished.add(runId);
+    waiting.get(runId)?.();
+    waiting.delete(runId);
   });
-  return promise;
+  return {
+    finished(runId: number): Promise<void> {
+      if (finished.has(runId)) return Promise.resolve();
+      const { promise, resolve } = Promise.withResolvers<void>();
+      waiting.set(runId, resolve);
+      return promise;
+    },
+    stop: unsubscribe,
+  };
 }
 
 describe('cloud run dispatch is concurrency-capped (#485)', () => {
@@ -188,23 +208,32 @@ describe('cloud run dispatch is concurrency-capped (#485)', () => {
   it('lets a run start once the org is under its concurrency cap', async () => {
     const { orgId, campaignIds } = await seedCloudOrg('conc-under-cap', 2, 1);
 
-    const finished = waitForRunFinished(orgId);
-    const { runId } = await runCampaign(campaignIds[0]);
-    await finished;
+    const watcher = runFinishedWatcher(orgId);
+    try {
+      const { runId } = await runCampaign(campaignIds[0]);
+      await watcher.finished(runId);
 
-    expect(createCalls).toBe(1);
-    expect((await runRow(runId))?.status).not.toBe('running');
+      expect(createCalls).toBe(1);
+      expect((await runRow(runId))?.status).not.toBe('running');
+    } finally {
+      watcher.stop();
+    }
   });
 
   it('is never capped when max_concurrent_runs is unset (unlimited)', async () => {
     const { orgId, campaignIds } = await seedCloudOrg('conc-unlimited', null, 3);
 
-    const results = await Promise.all(campaignIds.map((id) => runCampaign(id)));
-    await Promise.all(results.map(() => waitForRunFinished(orgId)));
+    const watcher = runFinishedWatcher(orgId);
+    try {
+      const results = await Promise.all(campaignIds.map((id) => runCampaign(id)));
+      await Promise.all(results.map(({ runId }) => watcher.finished(runId)));
 
-    expect(createCalls).toBe(3);
-    for (const { runId } of results) {
-      expect((await runRow(runId))?.status).not.toBe('running');
+      expect(createCalls).toBe(3);
+      for (const { runId } of results) {
+        expect((await runRow(runId))?.status).not.toBe('running');
+      }
+    } finally {
+      watcher.stop();
     }
   });
 

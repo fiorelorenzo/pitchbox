@@ -55,13 +55,19 @@ async function seedOrgOwner(orgSlug: string) {
 }
 
 function registerEvent(body: unknown, jar: CookieJar): RequestEvent {
-  const request = new Request('http://localhost/api/auth/register', {
+  const url = 'http://localhost/api/auth/register';
+  const request = new Request(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
   return {
     request,
+    // The route builds the verification link from the request's own origin
+    // (#514, web/src/lib/trusted-origins.js), so a synthetic event without a
+    // url makes it throw rather than answer - which is a fixture gap, not a
+    // route defect.
+    url: new URL(url),
     cookies: makeCookies(jar),
     getClientAddress: () => '10.2.0.1',
   } as unknown as RequestEvent;
