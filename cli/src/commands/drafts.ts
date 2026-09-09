@@ -22,6 +22,7 @@ import {
 import { notify } from '@pitchbox/shared/notifications';
 import { getProjectOrgId } from '@pitchbox/shared/orgs';
 import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
+import { enforceHouseStyle, type StyleFinding } from '@pitchbox/shared/style-check';
 import { buildRedditComposeUrl } from '@pitchbox/shared/platforms/reddit';
 import { buildHackernewsComposeUrl } from '@pitchbox/shared/platforms/hackernews';
 import { buildMastodonComposeUrl } from '@pitchbox/shared/platforms/mastodon';
@@ -324,10 +325,38 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
     allowed.push(d);
   }
 
-  const rows = allowed.flatMap((d) => {
+  // House style (#572) is enforced here, deterministically, before
+  // persistence. `drafts:create` runs after the agent turn that wrote the
+  // draft has already exited, so there is no live model to send a targeted
+  // rewrite instruction back to - `enforceHouseStyle`'s `rewrite` argument
+  // is left unset on purpose. Mechanical repair still runs unconditionally
+  // (a banned character never reaches the inbox), and any structural
+  // finding it cannot fix mechanically travels with the draft in
+  // `metadata.styleFindings` rather than being silently accepted: a
+  // suggestion the operator can fix beats one he does not know is wrong.
+  // Applies to `body` and `title` - the two fields a target actually reads;
+  // `reasoning` is operator-facing only and is never sent.
+  const styled = await Promise.all(
+    allowed.map(async (d) => {
+      const bodyResult = await enforceHouseStyle(d.body);
+      const titleResult = d.title != null ? await enforceHouseStyle(d.title) : null;
+      const variantResults = d.variants
+        ? await Promise.all(d.variants.map((v) => enforceHouseStyle(v)))
+        : null;
+      return {
+        ...d,
+        styledBody: bodyResult.text,
+        styledTitle: titleResult ? titleResult.text : (d.title ?? null),
+        styleFindings: [...bodyResult.findings, ...(titleResult?.findings ?? [])],
+        styledVariants: variantResults ? variantResults.map((r) => r.text) : null,
+        variantStyleFindings: variantResults ? variantResults.map((r) => r.findings) : null,
+      };
+    }),
+  );
+
+  const rows = styled.flatMap((d) => {
     const baseMeta = d.subreddit ? { ...d.metadata, subreddit: d.subreddit } : d.metadata;
-    const variantBodies = d.variants && d.variants.length > 0 ? [d.body, ...d.variants] : null;
-    if (!variantBodies) {
+    if (!d.styledVariants) {
       return [
         {
           runId,
@@ -338,14 +367,14 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
           state: 'pending_review' as const,
           fitScore: d.fitScore ?? null,
           targetUser: d.targetUser ?? null,
-          title: d.title ?? null,
-          body: d.body,
+          title: d.styledTitle,
+          body: d.styledBody,
           composeUrl: buildComposeUrl(platform?.slug ?? null, {
             kind: d.kind,
             targetUser: d.targetUser ?? null,
             subreddit: d.subreddit ?? null,
-            title: d.title ?? null,
-            body: d.body,
+            title: d.styledTitle,
+            body: d.styledBody,
             subject: offerSubject,
             instanceUrl: accountsById.get(d.accountId)?.instanceUrl ?? null,
             sourceRef: d.sourceRef,
@@ -353,7 +382,17 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
           }),
           reasoning: d.reasoning ?? null,
           sourceRef: d.sourceRef,
-          metadata: baseMeta,
+          metadata:
+            d.styleFindings.length > 0
+              ? {
+                  ...baseMeta,
+                  styleFindings: d.styleFindings.map((f: StyleFinding) => ({
+                    ruleId: f.ruleId,
+                    message: f.message,
+                    span: f.span,
+                  })),
+                }
+              : baseMeta,
           dedupWarning: d.dedupWarning ?? null,
           variantGroupId: null as string | null,
           variantLabel: null as string | null,
@@ -364,7 +403,24 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
         },
       ];
     }
-    const grouped = groupVariants(variantBodies.map((b) => ({ body: b })));
+    const seeds = [d.styledBody, ...d.styledVariants].map((body, i) => {
+      const findings: StyleFinding[] =
+        i === 0 ? d.styleFindings : (d.variantStyleFindings?.[i - 1] ?? []);
+      return {
+        body,
+        metadata:
+          findings.length > 0
+            ? {
+                styleFindings: findings.map((f) => ({
+                  ruleId: f.ruleId,
+                  message: f.message,
+                  span: f.span,
+                })),
+              }
+            : undefined,
+      };
+    });
+    const grouped = groupVariants(seeds);
     return grouped.rows.map((r) => ({
       runId,
       projectId: campaign.projectId,
@@ -374,13 +430,13 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
       state: 'pending_review' as const,
       fitScore: d.fitScore ?? null,
       targetUser: d.targetUser ?? null,
-      title: d.title ?? null,
+      title: d.styledTitle,
       body: r.body,
       composeUrl: buildComposeUrl(platform?.slug ?? null, {
         kind: d.kind,
         targetUser: d.targetUser ?? null,
         subreddit: d.subreddit ?? null,
-        title: d.title ?? null,
+        title: d.styledTitle,
         body: r.body,
         subject: offerSubject,
         instanceUrl: accountsById.get(d.accountId)?.instanceUrl ?? null,
@@ -389,7 +445,7 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
       }),
       reasoning: d.reasoning ?? null,
       sourceRef: d.sourceRef,
-      metadata: baseMeta,
+      metadata: { ...baseMeta, ...(r.metadata ?? {}) },
       dedupWarning: d.dedupWarning ?? null,
       variantGroupId: r.variantGroupId,
       variantLabel: r.variantLabel,

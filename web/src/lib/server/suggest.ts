@@ -22,6 +22,12 @@ import type {
   VoiceProfileSummary,
 } from '@pitchbox/shared/assist/context';
 import type { AssistTone } from '@pitchbox/shared/assist/tone';
+import type { AgentRunner } from '@pitchbox/shared/agents';
+import {
+  buildRewriteInstruction,
+  enforceHouseStyle,
+  type StyleFinding,
+} from '@pitchbox/shared/style-check';
 
 /**
  * Runs one suggestion: a single-turn agent invocation with no playbook, no MCP
@@ -45,6 +51,12 @@ export interface SuggestionResult {
   /** The text the human may insert, or null when the model gave nothing to
    * insert - no marker, or an explicit skip (#382, envelope.ts). */
   draft: string | null;
+  /** House style findings (#572) the mechanical repair pass and one
+   * targeted-rewrite round trip could not resolve on `draft`. Empty or
+   * absent means the draft is clean; a non-empty list travels with the
+   * draft rather than being silently accepted - the caller shows it next
+   * to the draft instead of trusting it blind. */
+  styleFindings?: StyleFinding[];
   /** True when the model explicitly declined to write a draft. */
   skipped: boolean;
   ms: number;
@@ -113,6 +125,57 @@ export function resolveAssistRunnerConfig(
   const pinned = config.model?.trim();
   if (pinned) return config;
   return { ...config, model: functionModel?.trim() || ASSIST_DEFAULT_MODEL };
+}
+
+/**
+ * The single targeted-rewrite round trip #572 asks for: one more turn on the
+ * same runner that wrote the draft, naming the remaining structural
+ * findings once, no streaming and no MCP tools attached - the same shape as
+ * the suggestion turn itself, minus the parts a rewrite does not need.
+ *
+ * Returns the model's raw reply, unparsed, or `null` on a spawn failure or a
+ * cancel that landed mid-flight. `enforceHouseStyle` is what extracts and
+ * validates the reply (`extractRewrite`), exactly as suspiciously as the
+ * suggestion turn's own envelope is treated: a reply with no marker is a
+ * failed rewrite, never a draft.
+ */
+async function runStyleRewrite(
+  runner: AgentRunner,
+  text: string,
+  findings: StyleFinding[],
+  orgId: number | undefined,
+  isCancelled: () => boolean,
+  setCancelHandle: (cancel: () => void) => void,
+): Promise<string | null> {
+  const cwd = await mkdtemp(join(tmpdir(), 'pitchbox-style-rewrite-'));
+  if (isCancelled()) {
+    await rm(cwd, { recursive: true, force: true }).catch(() => {});
+    return null;
+  }
+  let rawText = '';
+  try {
+    const handle = runner.run({
+      prompt: buildRewriteInstruction(text, findings),
+      attachMcp: false,
+      slug: 'assist-style-rewrite',
+      env: {},
+      cwd,
+      timeoutMs: SUGGESTION_TIMEOUT_MS,
+      orgId,
+      onTextChunk: (chunk) => {
+        rawText += chunk;
+      },
+    });
+    setCancelHandle(handle.cancel);
+    if (isCancelled()) handle.cancel();
+    await handle.result;
+    if (isCancelled()) return null;
+    return rawText.trim() ? rawText : null;
+  } catch {
+    return null;
+  } finally {
+    await rm(cwd, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 export function runSuggestion(args: {
@@ -240,7 +303,17 @@ export function runSuggestion(args: {
         orgId: args.orgId,
         onTextChunk: (chunk) => {
           rawText += chunk;
-          args.onChunk?.(splitter.push(chunk));
+          // `args.onChunk?.(splitter.push(chunk))` looks equivalent but is
+          // not: optional-call short-circuiting skips evaluating its
+          // arguments too, so a caller with no `onChunk` (every direct
+          // caller of `runSuggestion` that isn't the SSE route - #572's own
+          // integration test is one) would never feed the splitter at all,
+          // and `envelope.draft` would always come back null regardless of
+          // what the model actually said. Pushing unconditionally keeps
+          // `onChunk`-less callers correct without changing anything for
+          // the streaming route, which always passes one.
+          const pushed = splitter.push(chunk);
+          args.onChunk?.(pushed);
         },
       });
       cancelHandle = handle.cancel;
@@ -260,9 +333,37 @@ export function runSuggestion(args: {
         );
       }
       const envelope = splitter.finish();
+
+      // #572: everything the human may insert is held to the same
+      // deterministic house-style check a campaign draft is. Only `draft`
+      // goes through it - `reasoning` is operator-facing and never posted,
+      // the same reason the assist plane never lets it near the composer
+      // (#382, envelope.ts). A cancel is checked before the round trip
+      // starts; once `runStyleRewrite` is under way it watches the same
+      // flag itself.
+      let draft = envelope.draft;
+      let styleFindings: StyleFinding[] = [];
+      if (draft != null && !cancelled) {
+        const enforcement = await enforceHouseStyle(draft, (rewriteText, findings) =>
+          runStyleRewrite(
+            runner,
+            rewriteText,
+            findings,
+            args.orgId,
+            () => cancelled,
+            (handle) => {
+              cancelHandle = handle;
+            },
+          ),
+        );
+        draft = enforcement.text;
+        styleFindings = enforcement.findings;
+      }
+
       return {
         reasoning: envelope.reasoning,
-        draft: envelope.draft,
+        draft,
+        styleFindings: styleFindings.length > 0 ? styleFindings : undefined,
         skipped: envelope.skipped,
         ms: Date.now() - started,
         model: resolvedConfig.model,

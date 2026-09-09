@@ -94,6 +94,71 @@ describe('pitchbox drafts:create', () => {
     expect(drafts[0].qualityModel).toBeNull();
   });
 
+  it('enforces house style on the body through drafts:create (#572): mechanical repair applies, and a structural finding travels with the draft instead of being silently accepted', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'style-demo', name: 'D' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({ projectId: project.id, platformId: platform.id, handle: 'alice', role: 'personal' })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c',
+        skillSlug: 'reddit-scout',
+        config: {},
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    const payload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'dm',
+        subreddit: 'rpg',
+        targetUser: 'carol',
+        // An em dash (character-level: mechanically repaired) plus a
+        // rhetorical-question opener (structural: not mechanically
+        // fixable, no live model on this path to send it back to).
+        body: 'Ever wondered why builds are slow\u2014ours got faster this week?',
+        metadata: {},
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, payload);
+    const lines = out.trim().split('\n');
+    const res = JSON.parse(lines[lines.length - 1]);
+    expect(res.ok).toBe(true);
+    expect(res.data.inserted).toBe(1);
+
+    const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.runId, run.id));
+    // The em dash is gone, replaced with a comma, and nothing else changed.
+    expect(draft.body).toBe('Ever wondered why builds are slow, ours got faster this week?');
+    // The rhetorical-question opener could not be mechanically repaired and
+    // has no live model to round-trip against here: it is shown, not
+    // dropped.
+    const metadata = draft.metadata as { styleFindings?: Array<{ ruleId: string }> };
+    expect(metadata.styleFindings).toBeDefined();
+    expect(metadata.styleFindings!.map((f) => f.ruleId)).toContain('rhetorical-question-opener');
+    expect(metadata.styleFindings!.map((f) => f.ruleId)).not.toContain('em-dash');
+  });
+
   it('persists an inline quality score supplied at creation (issue #41)', async () => {
     const db = getDb();
     const [platform] = await db
