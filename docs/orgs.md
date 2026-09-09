@@ -1,6 +1,6 @@
 # Organizations
 
-Pitchbox supports multi-tenant orgs. On a fresh install a `default` org is seeded and the first user joins as `owner`. Every project, campaign, draft, run, account, and blocklist entry is scoped to an org through `projects.organization_id`.
+Pitchbox supports multi-tenant orgs. On a fresh install a `default` org is seeded and the first user joins as `owner`. Every project, campaign, draft, run, account, and blocklist entry is scoped to an org through `projects.organization_id`. Nobody who arrives after that first user ever lands in `default` automatically: an invited user joins whichever org sent the invite, and a self-registered user (`/register` with no token, only reachable when [registration is open](auth.md#registration)) gets a brand-new single-owner org of their own instead.
 
 ## Roles
 
@@ -45,11 +45,19 @@ Each returns `false` for cross-tenant access; the route then returns 404.
    {
      "token": "…48 hex chars…",
      "url": "https://.../invite/<token>",
-     "expiresAt": "…ISO8601…"
+     "expiresAt": "…ISO8601…",
+     "emailSent": true
    }
    ```
 
-   The invite is valid for **7 days** and is single-use (the row is marked `accepted_at` once consumed).
+   The invite is valid for **7 days** and is single-use (the row is marked
+   `accepted_at` once consumed). When the request carries `email`, the
+   invite is also sent through whatever [mail transport](self-hosting.md#outbound-email)
+   is configured, using the same link; `emailSent` reports whether a real
+   transport actually took it, since the null default (nothing configured)
+   logs it instead of delivering it. The `url` in the response is the
+   fallback either way - `/settings/organization`'s **Invite member** dialog
+   always shows a **Copy link** action next to a pending invite, sent or not.
 
 2. **Invitee visits `/invite/<token>`**
    - Not logged in? Redirected to `/register?next=/invite/<token>` (#504) -
