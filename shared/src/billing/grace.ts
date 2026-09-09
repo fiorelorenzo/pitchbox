@@ -25,7 +25,17 @@ import { schema } from '../db/client.js';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = PgDatabase<any, any, any>;
 
-export const GRACE_PERIOD_DAYS = 7;
+// 14, and this number is not ours to pick freely: the published terms already
+// promise it. `https://pitchbox.app/terms` (and its Italian twin) say "If a
+// payment fails you keep your plan for 14 days while Stripe retries; after
+// that the organization falls back to Free, with its data intact", and
+// `docs/billing.md` says the same. #554's body said 7, which is where this
+// started, but a live page a customer can read outranks an issue body: a
+// window shorter than the promise is a term we would be breaking, and one
+// longer is a promise we can keep quietly. Change this only together with the
+// terms in `pitchbox-landing`'s `src/lib/legal.ts`, in both languages, and
+// with `docs/billing.md`.
+export const GRACE_PERIOD_DAYS = 14;
 const GRACE_PERIOD_MS = GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
 
 /**

@@ -149,7 +149,7 @@ metadata change.
   can only auto-schedule a downgrade between two prices of the **same
   product**, and Solo/Growth/Scale are three separate products) actually
   applies it at period end.
-- A failed payment (`invoice.payment_failed`) starts a **7-day grace period**,
+- A failed payment (`invoice.payment_failed`) starts a **14-day grace period**,
   counted from the first failure rather than restarted by each Smart Retries
   reattempt. The org keeps working normally during grace; a banner and a
   notification both name the exact date it ends. Past it, the org is
