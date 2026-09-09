@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { appConfig } from '../db/schema.js';
+import { loadGatewayCatalogue } from './gateway-catalogue.js';
 
 // Which model does which job (#411). Before this, the only knob was
 // `runner_configs`, keyed by runner slug and shared by every plane, which is
@@ -206,4 +207,58 @@ export async function resolveModelForRun(
 ): Promise<string | undefined> {
   if (!runnerTakesGatewayModel(args.runnerSlug)) return undefined;
   return resolveFunctionModel(db, modelFunctionForPlaybook(args.playbookSlug));
+}
+
+/**
+ * A model counts as "premium" once the Gateway catalogue prices its output
+ * tokens at or above this line (#547). What actually matters is the run
+ * cost, not the per-token number: measured on the preview database, the
+ * same `campaign` kind costs $0.17 to $0.37 per run on the Claude-class
+ * agentic path against $0.0051 on `google/gemini-3.1-flash-lite`
+ * (`FAST_DEFAULT` above) - a 30x-plus gap driven entirely by which model
+ * ran it. Flash Lite prices output at $0.0000006/token; Claude Sonnet-class
+ * models, the cheapest ones actually capable of the agentic path, start at
+ * $0.000015/token, 25x higher. $0.000005/token sits between the two with
+ * headroom on both sides, so a routine vendor pricing update does not flip
+ * the classification.
+ */
+export const PREMIUM_OUTPUT_PRICE_PER_TOKEN_USD = 0.000005;
+
+/**
+ * Classifies a Gateway model id by price rather than by name, so a new
+ * Claude/GPT-class model needs no allow-list edit to count as premium. A
+ * model the catalogue cannot price - an unknown id, a self-host deployment
+ * with no Gateway key, a transient catalogue fetch failure - counts as
+ * premium too: the safe direction when the alternative is silently letting
+ * an unpriced model through a plan's gate.
+ */
+export async function isPremiumModel(modelId: string): Promise<boolean> {
+  const catalogue = await loadGatewayCatalogue();
+  const model = catalogue.models.find((m) => m.id === modelId);
+  if (!model || model.outputPerToken == null) return true;
+  return model.outputPerToken >= PREMIUM_OUTPUT_PRICE_PER_TOKEN_USD;
+}
+
+/**
+ * The premium-model gate (#547), applied at every point a model is resolved
+ * for a dispatch - never in the admin form, which only hides an option
+ * rather than enforcing anything (`shared/src/edition.ts` makes the same
+ * argument for runner slugs). `modelId` is whatever the caller already
+ * resolved - an admin's `model_functions` pin, an operator's
+ * `runner_configs` pin, or the coded default - and an org whose plan does
+ * not allow premium models runs on `fn`'s coded default fast model
+ * regardless of which of those it was. A plan that does allow premium
+ * models never reaches `isPremiumModel`, so a self-host deployment
+ * (unlimited on every axis) never pays for a Gateway catalogue fetch it has
+ * no key for. This is not a substitute for the org's own USD run budget
+ * (`shared/src/org-quota.ts`) - it is what keeps that budget from being hit
+ * in three runs.
+ */
+export async function gateModelForPlan(
+  fn: ModelFunction,
+  modelId: string,
+  allowPremium: boolean,
+): Promise<string> {
+  if (allowPremium) return modelId;
+  return (await isPremiumModel(modelId)) ? defaultModelForFunction(fn) : modelId;
 }

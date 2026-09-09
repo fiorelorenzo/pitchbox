@@ -1,7 +1,13 @@
 import { createAgentRunner } from '@pitchbox/shared/agents/registry';
 import type { AgentRunner } from '@pitchbox/shared/agents';
 import { loadRunnerConfig } from '@pitchbox/shared/agents/config';
-import { resolveModelForRun } from '@pitchbox/shared/ai/model-functions';
+import {
+  resolveModelForRun,
+  modelFunctionForPlaybook,
+  gateModelForPlan,
+  runnerTakesGatewayModel,
+} from '@pitchbox/shared/ai/model-functions';
+import { resolveEntitlements } from '@pitchbox/shared/plans';
 import { detectRunner, isDetectionConclusive } from '@pitchbox/shared/agents/detect';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
@@ -230,8 +236,23 @@ async function dispatchRun(
       runnerSlug: slug,
       playbookSlug: opts.playbookSlug,
     });
-    const withModel =
+    let withModel =
       functionModel && !config.model?.trim() ? { ...config, model: functionModel } : config;
+    // The premium-model gate (#547): whatever the model above resolved to,
+    // an org whose plan does not allow premium models runs on the coded
+    // fast default instead - checked after every pin so neither
+    // `runner_configs` nor `model_functions` can reach around it. Only the
+    // `cloud` slug asks the Gateway for a model at all, and `orgId` is the
+    // same one the budget/concurrency checks above already resolved.
+    if (runnerTakesGatewayModel(slug) && withModel.model && orgId != null) {
+      const entitlements = await resolveEntitlements(db, orgId);
+      const gated = await gateModelForPlan(
+        modelFunctionForPlaybook(opts.playbookSlug),
+        withModel.model,
+        entitlements.premiumModels,
+      );
+      if (gated !== withModel.model) withModel = { ...withModel, model: gated };
+    }
     runner = createAgentRunner(run.agentRunner, withModel);
   } catch (err) {
     const errMsg = String(err instanceof Error ? err.message : err);
