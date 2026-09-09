@@ -38,7 +38,9 @@ function lastJson(out: string) {
 async function reset() {
   // Same convention as seed-owner.test.ts: never truncate `organizations`
   // (would drop the `default` org other test files in this suite share).
-  await getDb().execute(sql`TRUNCATE users, sessions, memberships, auth_failures RESTART IDENTITY CASCADE`);
+  await getDb().execute(
+    sql`TRUNCATE users, sessions, memberships, auth_failures RESTART IDENTITY CASCADE`,
+  );
   await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
 }
 
@@ -62,14 +64,19 @@ describe('pitchbox user:create', () => {
     const [membership] = await db
       .select({ role: schema.memberships.role, orgSlug: schema.organizations.slug })
       .from(schema.memberships)
-      .innerJoin(schema.organizations, eq(schema.organizations.id, schema.memberships.organizationId))
+      .innerJoin(
+        schema.organizations,
+        eq(schema.organizations.id, schema.memberships.organizationId),
+      )
       .where(eq(schema.memberships.userId, user.id));
     expect(membership.role).toBe('owner');
     expect(membership.orgSlug).toBe('default');
   });
 
   it('grants instance-admin only when --admin is passed explicitly', async () => {
-    const res = cliResult('user:create bob --admin', { PITCHBOX_CLI_PASSWORD: 'correct horse battery' });
+    const res = cliResult('user:create bob --admin', {
+      PITCHBOX_CLI_PASSWORD: 'correct horse battery',
+    });
     expect(res.ok).toBe(true);
     expect(res.data.isInstanceAdmin).toBe(true);
 
@@ -80,7 +87,9 @@ describe('pitchbox user:create', () => {
 
   it('fails with an actionable message on a second run against an existing username, rather than a stack trace', async () => {
     cli('user:create carol', { PITCHBOX_CLI_PASSWORD: 'correct horse battery' });
-    const res = cliResult('user:create carol', { PITCHBOX_CLI_PASSWORD: 'another password entirely' });
+    const res = cliResult('user:create carol', {
+      PITCHBOX_CLI_PASSWORD: 'another password entirely',
+    });
     expect(res.ok).toBe(false);
     expect(res.error).toBe('user_exists');
     expect(res.details.message).toMatch(/already exists/);
@@ -117,7 +126,9 @@ describe('pitchbox user:reset-password', () => {
     await db.insert(schema.sessions).values({ id: 'sess-erin-2', userId: user.id, expiresAt });
     await db.insert(schema.authFailures).values({ identifier: `user:erin`, kind: 'login' });
 
-    const res = cliResult('user:reset-password erin', { PITCHBOX_CLI_PASSWORD: 'brand new password' });
+    const res = cliResult('user:reset-password erin', {
+      PITCHBOX_CLI_PASSWORD: 'brand new password',
+    });
     expect(res.ok).toBe(true);
     expect(res.data.reset).toBe(true);
     expect(res.data.sessionsRevoked).toBe(2);
@@ -140,7 +151,9 @@ describe('pitchbox user:reset-password', () => {
   });
 
   it('fails with an actionable message against a username that does not exist, rather than a stack trace', async () => {
-    const res = cliResult('user:reset-password ghost', { PITCHBOX_CLI_PASSWORD: 'brand new password' });
+    const res = cliResult('user:reset-password ghost', {
+      PITCHBOX_CLI_PASSWORD: 'brand new password',
+    });
     expect(res.ok).toBe(false);
     expect(res.error).toBe('user_not_found');
     expect(res.details.message).toMatch(/No user named/);

@@ -37,8 +37,7 @@ export async function createUserCli(args: {
 }): Promise<UserCreateResult> {
   const usernameCheck = OwnerUsername.safeParse(args.username);
   if (!usernameCheck.success) {
-    const message =
-      'Invalid username: must be 1-64 characters, letters/digits/"_"/"."/"-" only.';
+    const message = 'Invalid username: must be 1-64 characters, letters/digits/"_"/"."/"-" only.';
     return { created: false, reason: 'invalid_username', message };
   }
   const passwordCheck = OwnerPassword.safeParse(args.password);
