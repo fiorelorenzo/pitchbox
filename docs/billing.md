@@ -72,6 +72,32 @@ come from the product's `metadata` (`limit_projects`, `limit_runs`,
 `limit_budget_usd`, `limit_retention_days`, `limit_premium_models`), so changing
 what a plan includes is a metadata edit plus a script run, not a deploy.
 
+## Where an org's entitlements actually come from
+
+`shared/src/plans.ts` is the one place in the app that turns a plan into
+numbers (`resolveEntitlements(db, orgId)`), and everything else - the
+extension payload, a settings form, an enforcement point - reads its return
+value rather than a plan id. It carries its own fallback catalogue, kept
+equal to the table above and to the Stripe metadata `scripts/stripe-setup.ts`
+writes: not a second source of truth, but what an org resolves to _before_
+Stripe is asked - Free (which has no Stripe object, ever), an instance-admin
+grant (never Stripe-backed), and the gap before a subscription's first
+webhook lands. `organizations.plan`/`plan_source`/`plan_updated_at` record
+which plan and why; `org_subscriptions` mirrors a live subscription's
+metadata limits per org, one row per org, separate from `organizations`
+because a subscription has its own lifecycle - Stripe can delete it out from
+under us (see "A customer can ask Stripe to delete their data" below), and
+that has to look like a row disappearing, not a pile of nulled columns.
+
+Precedence, highest first: self-host (unlimited, no plan, no Stripe key
+required); an instance-admin grant (`plan_source='grant'`), which survives
+whatever Stripe says about the same org; a mirrored subscription
+(`org_subscriptions`); the fallback catalogue, keyed by `organizations.plan`
+and normalized to Free if that value does not name a real plan. `webhooks` is
+a feature flag rather than a metered limit, so it has no Stripe metadata
+counterpart and always comes from the catalogue, keyed by plan id, even for a
+mirrored subscription.
+
 ## What happens at a limit, and after a failed payment
 
 - A limit is a **hard refusal** with an upgrade prompt: no silent degrade to a

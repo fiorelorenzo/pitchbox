@@ -13,6 +13,8 @@ import {
 } from './db/schema.js';
 import { ensurePersonalProject } from './personal-project.js';
 import { loadOrgQuotaDefaults, loadSelfRegistrationQuotaDefaults } from './org-quota.js';
+import { isCloud } from './edition.js';
+import { PLAN_CATALOGUE, type PlanId } from './plans.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = PgDatabase<any, any, any>;
@@ -361,7 +363,7 @@ export async function loadActiveOrganization(
 
 /**
  * Creates an organization with an owner membership, its `personal` project,
- * and a default run quota (#515) - the single primitive behind both a
+ * and a starting run quota - the single primitive behind both a
  * self-registered account's own org (`POST /api/auth/register`'s no-invite
  * path, #513) and an existing user creating an additional org (`POST
  * /api/orgs`). Neither caller is an operator who has configured anything
@@ -371,14 +373,25 @@ export async function loadActiveOrganization(
  * its unlimited, unconfigured caps - it is the single-tenant self-host
  * fallback, not a self-created tenant.
  *
- * `quotaSource` (#540) picks which `app_config` defaults the new org
- * starts with. Defaults to `'invited'` (`org_quota_defaults`), what
- * `POST /api/orgs` always passes implicitly: that caller already has an
- * account on this instance, invited or not. The register route's no-invite
- * branch alone passes `'self_registration'`
- * (`self_registration_quota_defaults`), a separate, lower key so raising
- * what an invited or paying tenant gets never also raises what a stranger
- * who just typed an email into `/register` gets.
+ * Two different sources for that starting budget/concurrency, and which one
+ * applies depends on the edition (#544), not on `quotaSource`:
+ *
+ * - **Cloud**: every new org starts on the Free plan (`organizations.plan`
+ *   keeps its column default of `'free'`/`'default'`), and Free's own
+ *   `monthlyRunBudgetUsd`/`maxConcurrentRuns` (`shared/src/plans.ts`) are
+ *   what land on the row - `quotaSource` is accepted but does not change the
+ *   numbers, since a stranger and an invited tenant both land on the same
+ *   plan until they pay or get a grant.
+ * - **Self-host has no plans** (`resolveEntitlements` always returns
+ *   unlimited there, so `organizations.plan` is never read): it keeps
+ *   reading the `app_config` knobs an operator can edit without a redeploy,
+ *   same as before this issue. `quotaSource` (#540) picks which one:
+ *   `'invited'` (`org_quota_defaults`), what `POST /api/orgs` always passes
+ *   implicitly (that caller already has an account on this instance, invited
+ *   or not), or `'self_registration'` (`self_registration_quota_defaults`),
+ *   passed only by the register route's no-invite branch - a separate, lower
+ *   key so raising what an invited or paying tenant gets never also raises
+ *   what a stranger who just typed an email into `/register` gets.
  */
 export async function createOrganization(
   db: Db,
@@ -389,17 +402,26 @@ export async function createOrganization(
     quotaSource?: 'invited' | 'self_registration';
   },
 ): Promise<{ id: number; slug: string; role: string }> {
-  const quotaDefaults =
-    args.quotaSource === 'self_registration'
-      ? await loadSelfRegistrationQuotaDefaults(db)
-      : await loadOrgQuotaDefaults(db);
+  let monthlyRunBudgetUsd: number | null;
+  let maxConcurrentRuns: number | null;
+  if (isCloud()) {
+    monthlyRunBudgetUsd = PLAN_CATALOGUE.free.monthlyRunBudgetUsd;
+    maxConcurrentRuns = PLAN_CATALOGUE.free.maxConcurrentRuns;
+  } else {
+    const quotaDefaults =
+      args.quotaSource === 'self_registration'
+        ? await loadSelfRegistrationQuotaDefaults(db)
+        : await loadOrgQuotaDefaults(db);
+    monthlyRunBudgetUsd = quotaDefaults.monthlyRunBudgetUsd;
+    maxConcurrentRuns = quotaDefaults.maxConcurrentRuns;
+  }
   const [org] = await db
     .insert(organizations)
     .values({
       slug: args.slug,
       name: args.name,
-      monthlyRunBudgetUsd: quotaDefaults.monthlyRunBudgetUsd.toFixed(2),
-      maxConcurrentRuns: quotaDefaults.maxConcurrentRuns,
+      monthlyRunBudgetUsd: monthlyRunBudgetUsd == null ? null : monthlyRunBudgetUsd.toFixed(2),
+      maxConcurrentRuns,
     })
     .returning();
   await db
@@ -412,6 +434,44 @@ export async function createOrganization(
   // means a brand new org is never waiting on a migration to have one.
   await ensurePersonalProject(db, org.id);
   return { id: org.id, slug: org.slug, role: 'owner' };
+}
+
+/**
+ * Sets an organization's plan (#544) - the only writer of
+ * `organizations.plan`/`plan_source`/`plan_updated_at` outside the Stripe
+ * webhook (#551, not built here, which is expected to call this with
+ * `source: 'stripe'`). `source: 'grant'` is what an instance-admin grant
+ * route (gated by `requireInstanceAdmin`, not an org's own admin) uses - my
+ * own org, a client's org, a friend's org, all stop being billing problems
+ * this way. Syncs `monthly_run_budget_usd`/`max_concurrent_runs` from the
+ * new plan's own numbers in the same update, so the existing dispatch checks
+ * (`getOrgQuotaSnapshot`, `assertOrgConcurrencyAdmitted` in
+ * `shared/src/org-quota.ts`) keep enforcing the right ceiling without
+ * themselves knowing plans exist - see `resolveEntitlements`
+ * (`shared/src/plans.ts`) for why a grant then outranks whatever a
+ * subscription mirrors for the same org. Returns true if a row was updated,
+ * false if the org does not exist.
+ */
+export async function setOrgPlan(
+  db: Db,
+  orgId: number,
+  planId: PlanId,
+  source: 'grant' | 'stripe',
+): Promise<boolean> {
+  const plan = PLAN_CATALOGUE[planId];
+  const rows = await db
+    .update(organizations)
+    .set({
+      plan: planId,
+      planSource: source,
+      planUpdatedAt: new Date(),
+      monthlyRunBudgetUsd:
+        plan.monthlyRunBudgetUsd == null ? null : plan.monthlyRunBudgetUsd.toFixed(2),
+      maxConcurrentRuns: plan.maxConcurrentRuns,
+    })
+    .where(eq(organizations.id, orgId))
+    .returning({ id: organizations.id });
+  return rows.length > 0;
 }
 
 /**

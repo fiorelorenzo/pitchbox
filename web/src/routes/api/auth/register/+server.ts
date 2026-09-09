@@ -195,11 +195,14 @@ export async function POST(event: RequestEvent) {
         // organization, never `default` (the single-tenant self-host
         // fallback stays untouched either way), through the same
         // createOrganization primitive an already-logged-in user's `POST
-        // /api/orgs` uses. `quotaSource: 'self_registration'` (#540) is the
-        // one thing that differs: this account has had zero human review,
-        // so it starts on the lower self-registration default rather than
-        // the shared org_quota_defaults an invited or manually-provisioned
-        // org gets.
+        // /api/orgs` uses. `quotaSource: 'self_registration'` (#540) only
+        // matters on self-host: this account has had zero human review, so
+        // it starts on the lower self-registration default rather than the
+        // shared org_quota_defaults an invited or manually-provisioned org
+        // gets. On the cloud edition it does nothing - every fresh org
+        // starts on the Free plan (#544, shared/src/plans.ts) regardless of
+        // how it was created, since Free's own numbers are already the
+        // low-trust ceiling this used to provide.
         const slug = await uniqueOrgSlugFromUsername(tx, parsed.data.username);
         await createOrganization(tx, {
           slug,

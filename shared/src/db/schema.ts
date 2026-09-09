@@ -84,7 +84,81 @@ export const organizations = pgTable('organizations', {
   // and nothing replaced it until this).
   monthlyRunBudgetUsd: numeric('monthly_run_budget_usd', { precision: 10, scale: 2 }),
   maxConcurrentRuns: integer('max_concurrent_runs'),
+  // The plan an org is on (#544, shared/src/plans.ts's PlanId) and where that
+  // value came from - not itself an entitlement source, a *record* of the
+  // most recent decision so setOrgPlan (shared/src/orgs.ts) has something to
+  // update atomically with the derived monthlyRunBudgetUsd/maxConcurrentRuns
+  // above. `resolveEntitlements` (shared/src/plans.ts) is what actually
+  // reads the numbers a plan means; this column is the input to that
+  // resolution, not a duplicate of its output.
+  // 'default': nobody has decided anything - a fresh org, always 'free'.
+  // 'grant': an instance admin set it by hand (setOrgPlan), and wins over
+  // any org_subscriptions row below.
+  // 'stripe': the last write came from the Stripe webhook (#551).
+  plan: text('plan').notNull().default('free'),
+  planSource: text('plan_source').notNull().default('default'),
+  planUpdatedAt: timestamp('plan_updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// The Stripe side of a plan (#544, #551 writes it): a subscription has its
+// own lifecycle independent of the org's - it can lapse, get cancelled, or
+// simply vanish (a customer asking Stripe to delete their data removes the
+// Stripe objects from our account too, docs/billing.md "Emails and
+// support"), none of which is an event that happens to `organizations`
+// itself. A separate table, one row per org, rather than more nullable
+// columns on `organizations`, so that disappearance is a row delete
+// (`resolveEntitlements` falls through to the plan catalogue) instead of a
+// pile of columns that must be nulled out in lockstep.
+//
+// `limit_*` mirrors the product metadata `scripts/stripe-setup.ts` writes
+// (docs/billing.md "The plan catalogue lives in Stripe, not in the code"):
+// `limit_devices`/etc. follow the same convention the script already uses,
+// where the *string* `'0'` in Stripe metadata means unlimited on that axis
+// - the webhook handler that populates this table is expected to parse
+// that into a real SQL NULL before writing here, not store a literal 0.
+// The webhook is expected to write every column atomically from the
+// subscription's product metadata in one insert/update, never leave a row
+// half populated - `resolveEntitlements` prefers this row wholesale over
+// the code catalogue once it exists, it does not merge field by field.
+export const orgSubscriptions = pgTable(
+  'org_subscriptions',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    stripeCustomerId: text('stripe_customer_id').notNull(),
+    stripeSubscriptionId: text('stripe_subscription_id').notNull(),
+    // The plan the subscription's Stripe product names (its `metadata.plan`),
+    // mirrored here rather than re-derived from a price id lookup on every
+    // read. May outrun `organizations.plan` for one webhook delivery; the
+    // webhook is expected to write both in the same transaction.
+    planId: text('plan_id').notNull(),
+    // Stripe subscription status verbatim ('active', 'trialing', 'past_due',
+    // 'canceled', ...) - the grace-window and read-only handling that reads
+    // this is #548/#556, not built here.
+    status: text('status').notNull(),
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
+    cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+    limitRuns: integer('limit_runs'),
+    limitSuggestions: integer('limit_suggestions'),
+    limitProjects: integer('limit_projects'),
+    limitSeats: integer('limit_seats'),
+    limitDevices: integer('limit_devices'),
+    limitConcurrency: integer('limit_concurrency'),
+    limitBudgetUsd: numeric('limit_budget_usd', { precision: 10, scale: 2 }),
+    limitRetentionDays: integer('limit_retention_days'),
+    limitPremiumModels: boolean('limit_premium_models').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byOrg: uniqueIndex('org_subscriptions_org_unique').on(t.organizationId),
+    byStripeSubscription: uniqueIndex('org_subscriptions_stripe_subscription_unique').on(
+      t.stripeSubscriptionId,
+    ),
+  }),
+);
 
 export const memberships = pgTable(
   'memberships',
