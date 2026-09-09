@@ -3,6 +3,7 @@ import { sql, eq } from 'drizzle-orm';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { load as loadHome } from '../src/routes/+page.server.js';
+import { skipOnboarding } from '@pitchbox/shared/onboarding';
 
 /**
  * The home page's campaigns widget only ever rendered `data.campaigns.slice(0,
@@ -52,6 +53,17 @@ describe('home page campaigns widget', () => {
       skillSlug: 's',
     }));
     await db.insert(schema.campaigns).values(campaigns);
+    // #609: the home loader gates a first-ever visit on the onboarding
+    // wizard. This test seeds campaigns directly and shares the `default`
+    // org with the rest of the suite, so whether it redirects depends on
+    // which file happens to load `default`'s dashboard first - exactly the
+    // ordering hazard #616 is about. Opt this org out explicitly instead of
+    // relying on being non-first.
+    await skipOnboarding(
+      db,
+      { organizationId: org.id, userId: null },
+      { authOn: false, username: null },
+    );
 
     const data = await loadHome(fakeEvent(org.id));
 

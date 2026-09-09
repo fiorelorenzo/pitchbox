@@ -113,6 +113,10 @@ describe('the attached image (#569): the schema rejects what the cap forbids', (
       }),
     } as never);
     expect(res.headers.get('content-type')).toContain('text/event-stream');
+    // #616: drain to `done`, or the ledger write in the route's
+    // `handle.result.then(...)` (after this call already returned) keeps
+    // running past this test and races the next file's TRUNCATE.
+    await res.text();
   });
 
   it('accepts an image with no dataUrl at all - the capture-unavailable, alt-only fallback', async () => {
@@ -130,6 +134,7 @@ describe('the attached image (#569): the schema rejects what the cap forbids', (
       }),
     } as never);
     expect(res.headers.get('content-type')).toContain('text/event-stream');
+    await res.text(); // #616: drain to `done` - see the comment above.
   });
 
   // Hostile fixture (#569 acceptance): an oversized image, whether from a
@@ -166,6 +171,7 @@ describe('the attached image (#569): the schema rejects what the cap forbids', (
       }),
     } as never);
     expect(res.headers.get('content-type')).toContain('text/event-stream');
+    await res.text(); // #616: drain to `done` - see the comment above.
   });
 
   it('rejects a dataUrl that is not an image data URL at all - a licdn URL handed over instead of pixels', async () => {

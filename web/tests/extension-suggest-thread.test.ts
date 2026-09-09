@@ -129,6 +129,10 @@ describe('the visible thread (#568): the schema rejects what the caps forbid', (
       }),
     } as never);
     expect(res.headers.get('content-type')).toContain('text/event-stream');
+    // #616: drain to `done`, or the ledger write in the route's
+    // `handle.result.then(...)` (after this call already returned) keeps
+    // running past this test and races the next file's TRUNCATE.
+    await res.text();
   });
 
   it('rejects more comments than MAX_THREAD_COMMENTS', async () => {
