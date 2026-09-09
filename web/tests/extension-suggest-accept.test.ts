@@ -212,7 +212,18 @@ describe('POST /api/extension/suggest/accept', () => {
       cacheReadTokens: 812,
       cacheCreationTokens: 0,
     });
-    expect(runs[0].costUsd).toBe('0.0091');
+    // #522: the accept path's `usage.costUsd` is a number the extension
+    // echoed back from an earlier `done` event - it never authorises this
+    // run's own cost_usd anymore (that would double-count against
+    // assist_usage, which ledgered the real figure server-side when the
+    // suggestion's stream finished). Both the device's claim and this
+    // repo's own recompute from the token counts land on `params` instead,
+    // visible for audit rather than authoritative for any budget decision.
+    expect(runs[0].costUsd).toBeNull();
+    expect(runs[0].params).toMatchObject({
+      reportedCostUsd: POST_BODY.usage.costUsd,
+      recomputedCostUsd: 0.0009,
+    });
     expect(runs[0].finishedAt).not.toBeNull();
 
     const drafts = await getDb().select().from(schema.drafts);
@@ -228,6 +239,31 @@ describe('POST /api/extension/suggest/accept', () => {
       version: 0,
     });
     expect(drafts[0].sourceRef).toMatchObject({ externalId: POST_BODY.post.urn });
+  });
+
+  // #522: a device that lies about its cost must be visible, not
+  // authoritative - recomputedCostUsd is what a budget decision would use
+  // (via assist_usage, not this row), reportedCostUsd is what the device
+  // claimed. The two land in `params` precisely so a mismatch like this one
+  // is something an operator can find.
+  it('recomputes the run cost from token counts rather than trusting a device that misreports it', async () => {
+    const { org, project, platform } = await seedOrgProject('acc-lying-device');
+    await seedAccount(project.id, platform.id);
+    await mintDevice(org.id, 'tokLying');
+
+    const res = await accept({
+      request: request('tokLying', {
+        ...POST_BODY,
+        projectId: project.id,
+        usage: { ...POST_BODY.usage, costUsd: 0 },
+      }),
+    } as never);
+    const body = (await res.json()) as { ok: boolean };
+    expect(body.ok).toBe(true);
+
+    const [run] = await getDb().select().from(schema.runs);
+    expect(run.costUsd).toBeNull();
+    expect(run.params).toMatchObject({ reportedCostUsd: 0, recomputedCostUsd: 0.0009 });
   });
 
   // A feed post carries no URN at all (docs/linkedin-integration-design.md,

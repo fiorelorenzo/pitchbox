@@ -737,6 +737,71 @@ export const extensionPairings = pgTable('extension_pairings', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Per-suggestion usage ledger for the in-page LinkedIn assistant (#522).
+// `POST /api/extension/suggest` deliberately writes no `runs` row (see the
+// header comment on that route) and, before this table, a suggestion's cost
+// reached the database only if a human accepted it - a panel that streams
+// twenty suggestions of which two are used had nineteen invisible ones as
+// far as the ledger was concerned. This is the fix: one row per finished
+// suggestion, written the moment the stream ends regardless of whether it is
+// ever accepted, so `getOrgMonthToDateCostUsd` (org-quota.ts) sees the whole
+// cost of the feature rather than the fraction someone chose to keep.
+//
+// A dedicated table rather than a synthetic `runs` row per suggestion, on
+// purpose: the run list and the analytics that read it are about outreach
+// activity, and nineteen invisible-to-a-human "runs" per twenty suggestions
+// would pollute both. `organizationId` is nullable (mirrors
+// extension_devices/extension_pairings: a self-host device paired with auth
+// off has no org), `projectId` is not - a suggestion is always grounded in
+// one project. `deviceId` is `set null` rather than `cascade` so revoking or
+// deleting a device never erases spend history already counted against a
+// budget.
+export const assistUsage = pgTable(
+  'assist_usage',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    organizationId: integer('organization_id').references(() => organizations.id, {
+      onDelete: 'cascade',
+    }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    deviceId: integer('device_id').references(() => extensionDevices.id, {
+      onDelete: 'set null',
+    }),
+    platformId: integer('platform_id')
+      .notNull()
+      .references(() => platforms.id),
+    kind: text('kind').notNull(), // 'post_comment' | 'post' - assist/suggest-prompt.ts's SuggestionKind
+    agentRunner: text('agent_runner').notNull(),
+    // The resolved model the suggestion actually asked for (e.g. 'sonnet',
+    // the ACP alias - see suggest.ts's ASSIST_DEFAULT_MODEL - or a Gateway
+    // model id for the cloud runner). Kept even when cost is null so a price
+    // table gap can be closed once, later, without re-deriving which model
+    // every historical suggestion used.
+    model: text('model'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    cacheReadTokens: integer('cache_read_tokens'),
+    cacheCreationTokens: integer('cache_creation_tokens'),
+    // The runner's own cost figure for this suggestion - self-reported by
+    // the backend when available, otherwise computed from the token columns
+    // above via the runner's price table (shared/src/runlog/usage.ts,
+    // shared/src/agents/sdk/event-normalizer.ts). Never client-supplied:
+    // this is written from the server's own AgentRunner result before the
+    // panel ever sees it, unlike the usage block `/suggest/accept` receives
+    // back from the extension (see assist-accept.ts). Null when the backend
+    // reported nothing and pricing for its model is unknown - a residual gap
+    // named in #522's PR body, not silently priced at a guess.
+    costUsd: numeric('cost_usd', { precision: 10, scale: 4 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byOrgCreated: index('assist_usage_org_created_idx').on(t.organizationId, t.createdAt),
+    byProjectCreated: index('assist_usage_project_created_idx').on(t.projectId, t.createdAt),
+  }),
+);
+
 export const messages = pgTable(
   'messages',
   {

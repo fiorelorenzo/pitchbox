@@ -3,7 +3,7 @@
 // (shared/src/agents/sdk/runner.ts, web/src/lib/server/runner.ts). Mirrors the
 // per-account quota helper's style (shared/src/quota.ts) but is org-scoped and
 // budget/concurrency based rather than per-account daily/weekly counts.
-import { and, eq, gte, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, ne, or, sql } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { schema, type Db } from './db/client.js';
 
@@ -81,29 +81,52 @@ export function startOfMonthUtc(now: Date): Date {
 }
 
 /**
- * Sum of `runs.cost_usd` for every run belonging to `orgId`, started on or
- * after the first of the current calendar month (UTC). Runs with a null
- * `cost_usd` (no usage reported) contribute 0.
+ * Org month-to-date spend, split into campaign/other-run cost and assistant
+ * (in-page suggestion) cost, both started/created on or after the first of
+ * the current calendar month (UTC). #522: the assistant plane writes no
+ * `runs` row for a suggestion (see web/src/routes/api/extension/suggest -
+ * a suggestion is ephemeral until a human accepts it), so its spend lives in
+ * `assist_usage` instead, one row per finished suggestion whether accepted
+ * or not. Kept apart rather than pre-summed, per #522's decision: an
+ * operator asking "why am I out of budget" needs to see which half spent it
+ * (`getOrgMonthToDateCostUsd` below still returns the single number a
+ * budget decision needs).
  *
- * Resolves the org's project ids first, then matches runs against them
- * directly (`runs.projectId`) or transitively via their campaign
- * (`runs.campaignId` -> `campaigns.projectId`), mirroring the dashboard's
- * spend widget (web/src/routes/+page.server.ts, the `runOrgMatch` /
- * `spendRow` query). This deliberately never joins the `projects` table
- * itself: an `innerJoin(projects, or(eq(projects.id, runs.projectId),
- * eq(projects.id, campaigns.projectId)))` (as `getRunOrgId`/`runBelongsToOrg`
- * in shared/src/orgs.ts use for single-row lookups) can match two distinct
- * project rows for one run whenever `runs.projectId` and
- * `campaigns.projectId` disagree, which would double-count that run's cost
- * in this un-grouped SUM and could falsely trip `quota_exceeded`. Filtering
- * by project id membership instead of joining the table keeps each run a
- * single row regardless of how many of its project references resolve.
+ * The `runs` side deliberately excludes `kind = 'assist'`: accepting a
+ * suggestion (shared/src/assist-accept.ts) still writes a `runs` row so the
+ * draft has somewhere to hang off `run_id`, but that row's own `cost_usd` is
+ * always null now - the suggestion's cost was already ledgered here the
+ * moment its stream finished, and summing both would count an accepted
+ * suggestion twice (once here, once there).
+ *
+ * The `runs` query resolves the org's project ids first, then matches runs
+ * against them directly (`runs.projectId`) or transitively via their
+ * campaign (`runs.campaignId` -> `campaigns.projectId`), mirroring the
+ * dashboard's spend widget (web/src/routes/+page.server.ts, the
+ * `runOrgMatch` / `spendRow` query). This deliberately never joins the
+ * `projects` table itself: an `innerJoin(projects, or(eq(projects.id,
+ * runs.projectId), eq(projects.id, campaigns.projectId)))` (as
+ * `getRunOrgId`/`runBelongsToOrg` in shared/src/orgs.ts use for single-row
+ * lookups) can match two distinct project rows for one run whenever
+ * `runs.projectId` and `campaigns.projectId` disagree, which would
+ * double-count that run's cost in this un-grouped SUM and could falsely trip
+ * `quota_exceeded`. Filtering by project id membership instead of joining
+ * the table keeps each run a single row regardless of how many of its
+ * project references resolve. `assist_usage` carries its own `projectId`
+ * directly (a suggestion is always grounded in one project, never a
+ * campaign), so its side needs no such join at all.
  */
-export async function getOrgMonthToDateCostUsd(
+export interface OrgMonthToDateSpend {
+  campaignUsd: number;
+  assistantUsd: number;
+  totalUsd: number;
+}
+
+export async function getOrgMonthToDateSpend(
   db: Db,
   orgId: number,
   now: Date = new Date(),
-): Promise<number> {
+): Promise<OrgMonthToDateSpend> {
   const monthStart = startOfMonthUtc(now);
 
   const orgProjects = await db
@@ -112,17 +135,18 @@ export async function getOrgMonthToDateCostUsd(
     .where(eq(schema.projects.organizationId, orgId));
   const projectIds = orgProjects.map((p) => p.id);
   // `inArray(x, [])` is a SQL error, and an org with no projects has no runs
-  // to sum anyway.
+  // or assist usage to sum anyway.
   if (projectIds.length === 0) {
-    return 0;
+    return { campaignUsd: 0, assistantUsd: 0, totalUsd: 0 };
   }
 
-  const [row] = await db
+  const [runRow] = await db
     .select({ total: sql<string>`coalesce(sum(${schema.runs.costUsd}), 0)` })
     .from(schema.runs)
     .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
     .where(
       and(
+        ne(schema.runs.kind, 'assist'),
         or(
           inArray(schema.runs.projectId, projectIds),
           inArray(schema.campaigns.projectId, projectIds),
@@ -130,7 +154,35 @@ export async function getOrgMonthToDateCostUsd(
         gte(schema.runs.startedAt, monthStart),
       ),
     );
-  return Number(row?.total ?? 0);
+
+  const [assistRow] = await db
+    .select({ total: sql<string>`coalesce(sum(${schema.assistUsage.costUsd}), 0)` })
+    .from(schema.assistUsage)
+    .where(
+      and(
+        inArray(schema.assistUsage.projectId, projectIds),
+        gte(schema.assistUsage.createdAt, monthStart),
+      ),
+    );
+
+  const campaignUsd = Number(runRow?.total ?? 0);
+  const assistantUsd = Number(assistRow?.total ?? 0);
+  return { campaignUsd, assistantUsd, totalUsd: campaignUsd + assistantUsd };
+}
+
+/**
+ * The single number a budget decision uses (org-quota's own gate in
+ * getOrgQuotaSnapshot, the instance-wide ceiling): campaign spend plus
+ * assistant spend, month-to-date. See getOrgMonthToDateSpend for the split
+ * and why the two are kept apart for a human but combined here for a cap.
+ */
+export async function getOrgMonthToDateCostUsd(
+  db: Db,
+  orgId: number,
+  now: Date = new Date(),
+): Promise<number> {
+  const { totalUsd } = await getOrgMonthToDateSpend(db, orgId, now);
+  return totalUsd;
 }
 
 /**

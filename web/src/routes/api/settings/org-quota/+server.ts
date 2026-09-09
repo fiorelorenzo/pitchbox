@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getDb } from '$lib/server/db.js';
 import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import {
-  getOrgMonthToDateCostUsd,
+  getOrgMonthToDateSpend,
   getOrgQuotaFields,
   getOrgQuotaSnapshot,
   setOrgQuota,
@@ -27,14 +27,19 @@ async function quotaResponse(orgId: number) {
   const db = getDb();
   const fields = await getOrgQuotaFields(db, orgId);
   if (!fields) throw error(404, 'not_found');
-  const [monthToDateCostUsd, snapshot] = await Promise.all([
-    getOrgMonthToDateCostUsd(db, orgId),
+  const [spend, snapshot] = await Promise.all([
+    getOrgMonthToDateSpend(db, orgId),
     getOrgQuotaSnapshot(db, orgId),
   ]);
   return json({
     monthlyRunBudgetUsd: fields.monthlyRunBudgetUsd,
     maxConcurrentRuns: fields.maxConcurrentRuns,
-    monthToDateCostUsd,
+    monthToDateCostUsd: spend.totalUsd,
+    // #522: campaign and assistant spend shown apart, so an operator asking
+    // "why am I out of budget" can see which half spent it - the cap itself
+    // (remainingUsd below) still runs on the combined total.
+    campaignUsd: spend.campaignUsd,
+    assistantUsd: spend.assistantUsd,
     remainingUsd: snapshot.remainingUsd,
   });
 }

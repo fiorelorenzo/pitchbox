@@ -34,6 +34,8 @@
     monthlyRunBudgetUsd: number | null;
     maxConcurrentRuns: number | null;
     monthToDateCostUsd: number;
+    campaignUsd: number;
+    assistantUsd: number;
     remainingUsd: number | null;
   };
   type PageData = {
@@ -499,6 +501,16 @@
               <span class="text-sm font-medium">Remaining budget</span>
               <span class="text-sm text-muted-foreground">
                 {data.quota.remainingUsd == null ? 'Unlimited' : money(data.quota.remainingUsd)}
+              </span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-sm font-medium">Campaign spend</span>
+              <span class="text-sm text-muted-foreground">{money(data.quota.campaignUsd)}</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-sm font-medium">Assistant spend</span>
+              <span class="text-sm text-muted-foreground">
+                {money(data.quota.assistantUsd)} - LinkedIn suggestions, not campaign runs
               </span>
             </div>
           </div>

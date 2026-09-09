@@ -1,5 +1,5 @@
 import { getDb, schema } from '$lib/server/db.js';
-import { and, desc, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
 
@@ -32,7 +32,7 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
       },
       recentRuns: [],
       campaigns: [],
-      spend: { cost24h: 0, cost7d: 0 },
+      spend: { cost24h: 0, cost7d: 0, assistCost24h: 0, assistCost7d: 0 },
     };
   }
 
@@ -126,6 +126,11 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     .limit(5);
 
   // ----- Spend (last 24h / 7d) -----
+  // Campaign/other-run cost excludes `kind = 'assist'` on purpose: an
+  // accepted suggestion's own `runs` row always has a null `cost_usd` now
+  // (shared/src/assist-accept.ts) - the assistant's spend lives entirely in
+  // `assist_usage` below, ledgered once per suggestion whether accepted or
+  // not (#522). Summing both would double an accepted suggestion's cost.
   const [spendRow] = await db
     .select({
       cost24h: sql<
@@ -137,10 +142,25 @@ export async function load(event: import('@sveltejs/kit').RequestEvent) {
     })
     .from(schema.runs)
     .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
-    .where(runOrgMatch);
+    .where(and(ne(schema.runs.kind, 'assist'), runOrgMatch));
+
+  const [assistSpendRow] = await db
+    .select({
+      cost24h: sql<
+        string | null
+      >`COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= ${since24h}), 0)`,
+      cost7d: sql<
+        string | null
+      >`COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= ${since7d}), 0)`,
+    })
+    .from(schema.assistUsage)
+    .where(inArray(schema.assistUsage.projectId, projectIds));
+
   const spend = {
     cost24h: Number(spendRow?.cost24h ?? 0),
     cost7d: Number(spendRow?.cost7d ?? 0),
+    assistCost24h: Number(assistSpendRow?.cost24h ?? 0),
+    assistCost7d: Number(assistSpendRow?.cost7d ?? 0),
   };
 
   // ----- Run stats (last 7 days, campaign runs only - the three cards on

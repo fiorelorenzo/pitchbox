@@ -13,6 +13,7 @@ import { getDb, getPool, schema } from '../src/db/client.js';
 import {
   assertOrgConcurrencyAdmitted,
   getOrgMonthToDateCostUsd,
+  getOrgMonthToDateSpend,
   getOrgQuotaFields,
   getOrgQuotaSnapshot,
   setOrgQuota,
@@ -66,6 +67,51 @@ async function makeRun(opts: { projectId: number; costUsd: string | null; starte
     status: 'success',
     costUsd: opts.costUsd,
     startedAt: opts.startedAt,
+  });
+}
+/** A `kind: 'assist'` run - what accepting a suggestion writes
+ * (shared/src/assist-accept.ts) to hang the resulting draft's `run_id` off.
+ * `costUsd` defaults to null (#522: the accept path never sets it anymore),
+ * but can be overridden to prove the org total ignores it regardless. */
+async function makeAssistRun(opts: {
+  projectId: number;
+  costUsd?: string | null;
+  startedAt: Date;
+}) {
+  const db = getDb();
+  await db.insert(schema.runs).values({
+    kind: 'assist',
+    projectId: opts.projectId,
+    trigger: 'manual',
+    status: 'success',
+    costUsd: opts.costUsd ?? null,
+    startedAt: opts.startedAt,
+  });
+}
+
+/** One row of the #522 assist-usage ledger: what `/api/extension/suggest`
+ * writes for every suggestion, streamed and accepted or not, the moment its
+ * stream finishes. */
+async function makeAssistUsage(opts: {
+  organizationId: number | null;
+  projectId: number;
+  costUsd: string | null;
+  createdAt: Date;
+}) {
+  const db = getDb();
+  const [platform] = await db
+    .select({ id: schema.platforms.id })
+    .from(schema.platforms)
+    .where(eq(schema.platforms.slug, 'linkedin'));
+  await db.insert(schema.assistUsage).values({
+    organizationId: opts.organizationId,
+    projectId: opts.projectId,
+    deviceId: null,
+    platformId: platform.id,
+    kind: 'post_comment',
+    agentRunner: 'claude-code',
+    costUsd: opts.costUsd,
+    createdAt: opts.createdAt,
   });
 }
 
@@ -247,6 +293,128 @@ describe('getOrgMonthToDateCostUsd', () => {
   });
 });
 
+// #522: the org total must see the LinkedIn assistant's spend too, not only
+// campaign/project runs - see the doc comment on getOrgMonthToDateSpend for
+// why assist_usage exists as a separate ledger.
+describe('getOrgMonthToDateCostUsd: assistant usage (#522)', () => {
+  it('a suggestion that was streamed and never accepted still counts toward the org total', async () => {
+    const { orgId, projectId } = await setupOrg();
+    const now = new Date('2026-07-15T12:00:00Z');
+    // No runs row at all - exactly what /api/extension/suggest leaves behind
+    // for a suggestion nobody accepted.
+    await makeAssistUsage({
+      organizationId: orgId,
+      projectId,
+      costUsd: '0.0090',
+      createdAt: now,
+    });
+
+    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    expect(total).toBeCloseTo(0.009, 4);
+  });
+
+  it('adds assistant spend on top of campaign spend rather than replacing it', async () => {
+    const { orgId, projectId } = await setupOrg();
+    const now = new Date('2026-07-15T12:00:00Z');
+    await makeRun({ projectId, costUsd: '5.0000', startedAt: now });
+    await makeAssistUsage({ organizationId: orgId, projectId, costUsd: '0.5000', createdAt: now });
+
+    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    expect(total).toBeCloseTo(5.5, 4);
+  });
+
+  it('twenty suggestions with two accepted are counted twenty times, not twice', async () => {
+    const { orgId, projectId } = await setupOrg();
+    const now = new Date('2026-07-15T12:00:00Z');
+    // Every suggestion ledgers its own cost the moment its stream finishes,
+    // whether or not a human ever accepts it.
+    for (let i = 0; i < 20; i += 1) {
+      await makeAssistUsage({
+        organizationId: orgId,
+        projectId,
+        costUsd: '0.0100',
+        createdAt: now,
+      });
+    }
+    // Two of those twenty were accepted - shared/src/assist-accept.ts writes
+    // a `runs` row (kind: 'assist') to hang the resulting draft off, but
+    // never sets that row's own cost_usd (#522).
+    await makeAssistRun({ projectId, startedAt: now });
+    await makeAssistRun({ projectId, startedAt: now });
+
+    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    expect(total).toBeCloseTo(0.2, 4);
+  });
+
+  it('ignores an assist run even if its own cost_usd were somehow set, so accepting never double-counts', async () => {
+    const { orgId, projectId } = await setupOrg();
+    const now = new Date('2026-07-15T12:00:00Z');
+    await makeAssistUsage({ organizationId: orgId, projectId, costUsd: '0.0090', createdAt: now });
+    // A defensive scenario: an assist run whose cost_usd was set to the same
+    // figure the assist_usage row already carries. If getOrgMonthToDateCostUsd
+    // summed kind='assist' runs too, this suggestion would count twice.
+    await makeAssistRun({ projectId, costUsd: '0.0090', startedAt: now });
+
+    const total = await getOrgMonthToDateCostUsd(getDb(), orgId, now);
+    expect(total).toBeCloseTo(0.009, 4);
+  });
+
+  it('never counts a different org assist usage row', async () => {
+    const orgA = await setupOrg();
+    const orgB = await setupOrg();
+    const now = new Date('2026-07-15T12:00:00Z');
+    await makeAssistUsage({
+      organizationId: orgA.orgId,
+      projectId: orgA.projectId,
+      costUsd: '1.0000',
+      createdAt: now,
+    });
+    await makeAssistUsage({
+      organizationId: orgB.orgId,
+      projectId: orgB.projectId,
+      costUsd: '2.0000',
+      createdAt: now,
+    });
+
+    expect(await getOrgMonthToDateCostUsd(getDb(), orgA.orgId, now)).toBeCloseTo(1, 4);
+    expect(await getOrgMonthToDateCostUsd(getDb(), orgB.orgId, now)).toBeCloseTo(2, 4);
+  });
+});
+
+describe('getOrgMonthToDateSpend', () => {
+  it('keeps campaign and assistant spend apart, and sums them into a total', async () => {
+    const { orgId, projectId } = await setupOrg();
+    const now = new Date('2026-07-15T12:00:00Z');
+    await makeRun({ projectId, costUsd: '5.0000', startedAt: now });
+    await makeAssistUsage({ organizationId: orgId, projectId, costUsd: '1.2500', createdAt: now });
+
+    const spend = await getOrgMonthToDateSpend(getDb(), orgId, now);
+    expect(spend.campaignUsd).toBeCloseTo(5, 4);
+    expect(spend.assistantUsd).toBeCloseTo(1.25, 4);
+    expect(spend.totalUsd).toBeCloseTo(6.25, 4);
+  });
+
+  it('only counts assist usage from on or after the first of the month', async () => {
+    const { orgId, projectId } = await setupOrg();
+    const now = new Date('2026-07-15T12:00:00Z');
+    await makeAssistUsage({
+      organizationId: orgId,
+      projectId,
+      costUsd: '9.0000',
+      createdAt: new Date('2026-06-30T23:59:59Z'),
+    });
+    await makeAssistUsage({
+      organizationId: orgId,
+      projectId,
+      costUsd: '0.5000',
+      createdAt: new Date('2026-07-01T00:00:00Z'),
+    });
+
+    const spend = await getOrgMonthToDateSpend(getDb(), orgId, now);
+    expect(spend.assistantUsd).toBeCloseTo(0.5, 4);
+  });
+});
+
 describe('getOrgQuotaSnapshot', () => {
   it('computes remainingUsd as budget minus month-to-date spend when a budget is set', async () => {
     const { orgId, projectId } = await setupOrg({ monthlyRunBudgetUsd: '100.00' });
@@ -264,6 +432,28 @@ describe('getOrgQuotaSnapshot', () => {
 
     const snapshot = await getOrgQuotaSnapshot(getDb(), orgId, now);
     expect(snapshot.remainingUsd).toBeCloseTo(-5.0, 4);
+  });
+
+  // #522 acceptance: the existing per-org budget check
+  // (web/src/lib/server/runner.ts reads getOrgQuotaSnapshot before every
+  // cloud-runner dispatch) has to be able to refuse a run on assistant
+  // spend alone, with zero campaign runs ever having happened.
+  it('goes over budget from assistant usage alone, with no campaign runs at all', async () => {
+    const { orgId, projectId } = await setupOrg({ monthlyRunBudgetUsd: '5.00' });
+    const now = new Date('2026-07-15T12:00:00Z');
+    for (let i = 0; i < 10; i += 1) {
+      await makeAssistUsage({
+        organizationId: orgId,
+        projectId,
+        costUsd: '0.6000',
+        createdAt: now,
+      });
+    }
+
+    const snapshot = await getOrgQuotaSnapshot(getDb(), orgId, now);
+    expect(snapshot.remainingUsd).toBeCloseTo(-1.0, 4);
+    expect(snapshot.remainingUsd).not.toBeNull();
+    expect(snapshot.remainingUsd!).toBeLessThanOrEqual(0);
   });
 
   it('returns remainingUsd: null (unlimited) when the org has no configured budget', async () => {

@@ -115,15 +115,25 @@ describe('snapshot chain drift (#527)', () => {
 
   it('fails when the newest migration in the journal has no snapshot', () => {
     // Reproduces #527 directly: copy the real chain, then remove the
-    // snapshot for the newest migration the way it was actually missing
-    // (0024_password_reset_tokens never had one committed until this fix).
+    // snapshot for whichever migration is currently newest, the way it was
+    // actually missing (0024_password_reset_tokens never had one committed
+    // until that fix). Derived from the real journal rather than a literal
+    // migration number: the repo's newest migration moves forward every time
+    // one lands (#522 added 0025), and a hardcoded "24" here would silently
+    // stop reproducing #527 the moment a later migration shipped - it would
+    // delete an unrelated, no-longer-newest snapshot and report no drift for
+    // the wrong reason instead of failing loudly.
+    const latestIdx = Math.max(...readJournalMigrations(migrationsFolder).map((m) => m.idx));
+
     const dir = mkdtempSync(join(tmpdir(), 'pb-snapshot-drift-'));
     tmpDirs.push(dir);
     cpSync(migrationsFolder, dir, { recursive: true });
-    unlinkSync(join(dir, 'meta', '0024_snapshot.json'));
+    unlinkSync(join(dir, 'meta', `${String(latestIdx).padStart(4, '0')}_snapshot.json`));
 
     const drift = findSnapshotChainDrift(dir);
-    expect(drift).toEqual({ latestJournalIdx: 24, latestSnapshotIdx: 23 });
+    expect(drift).not.toBeNull();
+    expect(drift!.latestJournalIdx).toBe(latestIdx);
+    expect(drift!.latestSnapshotIdx).not.toBe(latestIdx);
   });
 
   it('does not flag a migration that legitimately has no snapshot of its own', () => {

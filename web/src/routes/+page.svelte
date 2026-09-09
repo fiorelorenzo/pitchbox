@@ -10,6 +10,7 @@
 		TrendingUp,
 		AlertTriangle,
 		DollarSign,
+		Bot,
 	} from '@lucide/svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
@@ -59,7 +60,7 @@
 			runStats7d: { total: number; success: number; failed: number; running: number };
 			recentRuns: Run[];
 			campaigns: Campaign[];
-			spend: { cost24h: number; cost7d: number };
+			spend: { cost24h: number; cost7d: number; assistCost24h: number; assistCost7d: number };
 		};
 	} = $props();
 
@@ -145,10 +146,16 @@
 		hint="Last 7 days"
 	/>
 	<StatCard
-		label="Spend (24h / 7d)"
+		label="Campaign spend (24h / 7d)"
 		value={`$${data.spend.cost24h.toFixed(2)}`}
 		icon={DollarSign}
 		hint={`$${data.spend.cost7d.toFixed(2)} over the last 7 days`}
+	/>
+	<StatCard
+		label="Assistant spend (24h / 7d)"
+		value={`$${data.spend.assistCost24h.toFixed(2)}`}
+		icon={Bot}
+		hint={`$${data.spend.assistCost7d.toFixed(2)} over the last 7 days - LinkedIn suggestions, separate from campaign spend`}
 	/>
 	<StatCard
 		label="Unique people contacted"
