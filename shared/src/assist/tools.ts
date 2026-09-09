@@ -37,6 +37,8 @@ import { isBlocklisted } from '../blocklist.js';
 import { loadVoiceProfile } from '../operator-voice-profile.js';
 import { resolveEntitlements } from '../plans.js';
 import { resolveFunctionModel, gateModelForPlan } from '../ai/model-functions.js';
+import { loadGatewayCatalogue } from '../ai/gateway-catalogue.js';
+import { buildSdkUsage, type SdkModelPricing } from '../agents/sdk/event-normalizer.js';
 import { checkStyle, type StyleFinding } from '../style-check.js';
 import { PERSONAL_PROJECT_SLUG } from '../personal-project.js';
 import {
@@ -267,12 +269,22 @@ export interface LookAtImageResult {
   /** Present only when a real vision call ran - the only tool whose result
    * carries a spend the loop's total usage has to fold in (design doc,
    * "look_at_image is a real model call and the only tool that spends
-   * tokens"). */
+   * tokens"). `costUsd` is priced here, not left for the loop to guess at:
+   * the loop only knows this call happened by reading `tool-result`, has no
+   * way to know which model answered it, and `resolveFunctionModel`/
+   * `gateModelForPlan` above already resolved that model in this handler -
+   * pricing it anywhere else would mean re-resolving the same model a
+   * second time or threading it back out through the tool's answer shape
+   * for no reason (#574). */
   usage?: {
     inputTokens?: number;
     outputTokens?: number;
     cacheReadTokens?: number;
     cacheCreationTokens?: number;
+    /** Null when the catalogue has no pricing for the resolved model -
+     * never a guess (`pricingFromCatalogueEntry`'s own rule, mirrored here
+     * via the lighter shared catalogue, `shared/src/ai/gateway-catalogue.ts`). */
+    costUsd?: number | null;
   };
   clamp: { descriptionTruncated: boolean };
 }
@@ -396,6 +408,28 @@ const lookAtImage: AssistTool<Record<string, never>, LookAtImageResult> = {
         ],
       });
 
+      // Priced from the same shared, process-wide-cached catalogue
+      // `gateModelForPlan` (via `isPremiumModel`) already warmed a few
+      // lines up for the same `gatedModelId` - no second Gateway round
+      // trip in the common case (#574).
+      const catalogue = await loadGatewayCatalogue();
+      const priced = catalogue.models.find((m) => m.id === gatedModelId);
+      const pricing: SdkModelPricing | undefined =
+        priced?.inputPerToken != null && priced.outputPerToken != null
+          ? {
+              inputPerToken: priced.inputPerToken,
+              outputPerToken: priced.outputPerToken,
+              // The lighter shared catalogue carries no cache-discount
+              // fields - one vision call rarely repeats a cached prefix
+              // anyway, so this falls back to the plain input rate, the
+              // same direction `pricingFromCatalogueEntry` already takes
+              // for a provider that reports no discount.
+              cachedInputPerToken: priced.inputPerToken,
+              cacheCreationPerToken: priced.inputPerToken,
+            }
+          : undefined;
+      const priceUsage = buildSdkUsage(result.usage, { pricing });
+
       const { description, textInImage } = splitVisionResponse(result.text);
       const { text: clampedDescription, truncated } = clampText(
         description,
@@ -414,6 +448,7 @@ const lookAtImage: AssistTool<Record<string, never>, LookAtImageResult> = {
             outputTokens: result.usage.outputTokens,
             cacheReadTokens: result.usage.inputTokenDetails?.cacheReadTokens,
             cacheCreationTokens: result.usage.inputTokenDetails?.cacheWriteTokens,
+            costUsd: priceUsage.costUsd,
           },
           clamp: { descriptionTruncated: truncated },
         },
