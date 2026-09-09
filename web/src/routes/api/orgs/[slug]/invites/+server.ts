@@ -7,6 +7,7 @@ import { loadMailEnv } from '@pitchbox/shared/mail/env';
 import { renderPlainTextMail } from '@pitchbox/shared/mail/template';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
+import { checkUsageThresholds } from '@pitchbox/shared/usage-notifications';
 import { isOrgReadOnly } from '@pitchbox/shared/plans';
 
 const Body = z.object({
@@ -61,6 +62,13 @@ export async function POST(event: import('@sveltejs/kit').RequestEvent) {
   // at once (shared/src/usage.ts's getOrgUsage already counts it that way).
   const period = await billingPeriodFor(db, org.id);
   const usage = await getOrgUsage(db, org.id, period);
+  // #557: a courtesy notification never blocks the invite, admitted or
+  // refused by the checks below.
+  try {
+    await checkUsageThresholds(db, org.id, usage, period);
+  } catch (err) {
+    console.error('[invites] checkUsageThresholds failed:', err);
+  }
   // #554: a failed payment past its grace window refuses before the plan's
   // own seat limit below.
   if (isOrgReadOnly(usage.entitlements)) {

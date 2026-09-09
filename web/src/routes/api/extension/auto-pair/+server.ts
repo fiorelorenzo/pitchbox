@@ -6,6 +6,7 @@ import { getDb, schema } from '$lib/server/db.js';
 import { mintDeviceToken } from '$lib/server/extension-auth.js';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
+import { checkUsageThresholds } from '@pitchbox/shared/usage-notifications';
 import { isOrgReadOnly } from '@pitchbox/shared/plans';
 
 /**
@@ -83,6 +84,13 @@ export async function POST({
   // own device-count ceiling below.
   const period = await billingPeriodFor(db, organizationId);
   const usage = await getOrgUsage(db, organizationId, period);
+  // #557: a courtesy notification never blocks pairing, admitted or
+  // refused by the checks below.
+  try {
+    await checkUsageThresholds(db, organizationId, usage, period);
+  } catch (err) {
+    console.error('[extension/auto-pair] checkUsageThresholds failed:', err);
+  }
   if (isOrgReadOnly(usage.entitlements)) {
     return json({ error: 'plan_payment_required' }, { status: 402 });
   }

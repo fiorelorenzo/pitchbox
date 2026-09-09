@@ -27,6 +27,7 @@ import {
 import { loadRecentObservedTarget } from '@pitchbox/shared/observed-targets';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
+import { checkUsageThresholds } from '@pitchbox/shared/usage-notifications';
 import { isOrgReadOnly } from '@pitchbox/shared/plans';
 
 // The real-time plane. What makes the in-page assistant a separate subsystem
@@ -190,6 +191,13 @@ export async function POST(event: RequestEvent) {
 
   const period = await billingPeriodFor(db, project.organizationId);
   const usage = await getOrgUsage(db, project.organizationId, period);
+  // #557: a courtesy notification never blocks a suggestion, admitted or
+  // refused by the checks below.
+  try {
+    await checkUsageThresholds(db, project.organizationId, usage, period);
+  } catch (err) {
+    console.error('[extension/suggest] checkUsageThresholds failed:', err);
+  }
   // #554: a failed payment past its grace window refuses before the plan's
   // own suggestions ceiling below, same renderable-200 shape, distinct code
   // so the panel (#556) can render "fix your payment" rather than "upgrade".
