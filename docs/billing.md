@@ -184,6 +184,24 @@ migrated on purpose.
 A webhook signing secret is returned only when the endpoint is created. Pass
 `--secrets-out` or copy it from the run output; Stripe never shows it again.
 
+## Verifying against the real account
+
+`scripts/stripe-setup.ts` only ever writes to Stripe; nothing checks that what
+this repo sends is actually accepted, or that the recorded catalogue still
+matches the account, until `pnpm run stripe:probe` (`scripts/stripe-probe.ts`)
+does. It talks to the real **test-mode** account (`~/.config/pitchbox-stripe-
+test.key`), so it cannot run on a CI runner and is deliberately a script, not
+a test in the suite: `shared/tests/billing-checkout-portal.test.ts` used to
+hold this check and turned `main` red on a runner that had no key while every
+PR stayed green, which is what moved it here. It proves three things no
+fixture can: the Checkout payload this repo builds is one Stripe accepts
+under Managed Payments (including that the parameters Stripe rejects are
+absent), a portal session opens for a customer this repo created, and the
+prices/metadata recorded in `shared/tests/fixtures/stripe/catalogue.json`
+still match the live account (`--refresh` rewrites that fixture after a
+deliberate catalogue change). Run it before a billing release and after any
+change to the price catalogue. It never writes to the app database.
+
 ## Environment
 
 | Variable                      | Where             | What                                                                                                                       |

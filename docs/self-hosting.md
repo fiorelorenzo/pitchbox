@@ -40,6 +40,17 @@ configured, is `invite`** - a self-host that wants nobody to register at all
 sets it to `off` and creates accounts only through `seed:owner` or
 `pitchbox user:create` (see [CLI reference](./cli.md)).
 
+## Billing
+
+Self-host is free and unlimited. `PITCHBOX_BILLING` unset (or anything other
+than `on`) is the self-host posture: no Stripe client is ever built, no
+Stripe key is needed, and `shared/src/plans.ts`'s `resolveEntitlements`
+returns the unlimited shape for every org on this deployment without
+counting anything - there is no plan, no metered ceiling, and no read-only
+state to fall into. The hosted plans, what each meters, and what happens at
+a limit or a failed payment are all a cloud-edition concern: see
+[Billing](./billing.md).
+
 ## Outbound email
 
 Invites and password reset send mail through one pluggable transport

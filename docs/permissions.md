@@ -71,7 +71,11 @@ LinkedIn assist switch, so this page's loader throws the same way),
 companion may cite; the GET is member-level, listed below, since reading it
 back is no more sensitive than reading a project),
 `orgs/[slug]/invites` POST, `orgs/[slug]/invites/[token]` DELETE,
-`orgs/[slug]/members/[userId]` PATCH + DELETE (with the member-management rules).
+`orgs/[slug]/members/[userId]` PATCH + DELETE (with the member-management rules),
+`billing/checkout` POST, `billing/portal` POST (cloud edition only - buying,
+changing or cancelling a plan; 404 under `billing_disabled` whenever
+`PITCHBOX_BILLING` is unset or self-host has no Stripe key, same posture
+`api/auth/*` takes when `PITCHBOX_AUTH` is off).
 
 **owner** (enforced inside the members endpoint logic): granting or revoking the
 `owner` role.

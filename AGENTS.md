@@ -346,6 +346,19 @@ agent CLIs to stay lean.
   model unless an operator pinned one in `runner_configs`, which still wins.
   Before optimising this path again, measure it on an idle box: a six-agent
   wave running here inflated the same measurement by nearly 4x.
+- **A plan limit is enforced server-side at the effect, never in the extension
+  or by trusting a client-reported count.** `shared/src/plans.ts`'s
+  `resolveEntitlements(db, orgId)` is the only place that turns a plan into
+  numbers (`null` means unlimited); `shared/src/usage.ts`'s `getOrgUsage`
+  is the one snapshot every enforcement point reads rather than running its
+  own query. Self-host always resolves unlimited and never calls Stripe.
+  Every route that creates something a plan meters (a project, a run, a
+  suggestion, a seat, a device, an invite) checks the snapshot at the point
+  it writes, the same lesson #358 already taught for the LinkedIn assist
+  switch: a limit rendered in the UI and skipped by the route it is meant to
+  gate is not a limit. See [`docs/billing.md`](docs/billing.md) for the
+  catalogue, the refusal shapes, and what read-only means.
+- **The assist plane and the campaign plane touch in exactly one place: the accept.** A suggestion is ephemeral text streamed to a panel until the human accepts it; accepting is what materialises a real `drafts` row and runs the same `evaluateDraftSend`/quota/`contact_history` bookkeeping the campaign path uses (`docs/linkedin-integration-design.md` "Bookkeeping, which is where the two planes touch"). Three things an agent working on either plane would otherwise get wrong: the assistant reads only the rendered DOM the human's own browsing already produced, and where it needs pixels (a post's attached image) those come from `chrome.tabs.captureVisibleTab` on the tab already open, never a fetch of a licdn URL - no code on either side ever issues a request toward linkedin.com or licdn (`docs/design/in-page-agent.md`, `extension/src/background/capture-post-media.ts`); the house style a draft is held to is enforced by `shared/src/style-check.ts`'s mechanical checker, not by asking the model nicely in the prompt, because a prompted rule slips exactly as often as a model slips and a checked one does not; and the operator's voice profile (`shared/src/assist/voice-profile.ts`) is derived by counting traits across a corpus, deliberately never a model call, for the same reasons `resolveAssistRunnerConfig` above cares about latency and determinism.
 - **`PITCHBOX_ROOT`** in `.env` must be an absolute path; the daemon and CLI use it to locate the repo when spawned by an agent from a different cwd.
 - **Secrets.** Account credentials are encrypted with `ENCRYPTION_KEY` via `shared/src/crypto.ts`. Never log decrypted secrets or commit `.env`.
 - **Do not run tests against the dev DB.** Vitest pins `DATABASE_URL` to `pitchbox_test` in `vitest.config.ts`; if you override it, match that pattern.

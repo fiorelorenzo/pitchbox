@@ -29,7 +29,7 @@ The asymmetry that decides the design: a restricted Reddit account costs a throw
 These are non-negotiable and enforced in CI, not left to reviewer memory. Each one has a counterexample already in the codebase, which is the point: the existing Reddit code does these things legitimately for Reddit and must not be copied for LinkedIn.
 
 1. **No LinkedIn session credential ever leaves the browser.** No `li_at`, no CSRF token, no `localStorage` or cookie read whose value is transmitted anywhere. Counterexample not to copy: `extension/src/content/chat-token.ts`, which reads Reddit's Matrix access token out of `localStorage` and forwards it to the service worker so the server-side poller can use it.
-2. **No request to linkedin.com is ever initiated by Pitchbox.** The extension reads only the DOM the human's own navigation already rendered. No `fetch`, no `XMLHttpRequest`, no voluntary navigation, no background polling of a LinkedIn endpoint. Counterexample not to copy: `extension/src/background/inbox-sync.ts`, which fetches `reddit.com/message/inbox.json` on a `chrome.alarms` schedule.
+2. **No request to linkedin.com is ever initiated by Pitchbox.** The extension reads only the DOM the human's own navigation already rendered. No `fetch`, no `XMLHttpRequest`, no voluntary navigation, no background polling of a LinkedIn endpoint. This extends to a post's attached image: when image-aware suggestions are on, the pixels the assistant sees come from `chrome.tabs.captureVisibleTab` on the tab already open (`extension/src/background/capture-post-media.ts`, #569) - **capture the rendered tab, never fetch licdn** - not a `fetch` of the media's own licdn URL, which would be exactly the request this rule forbids. Counterexample not to copy: `extension/src/background/inbox-sync.ts`, which fetches `reddit.com/message/inbox.json` on a `chrome.alarms` schedule.
 3. **No synthetic interaction.** Pitchbox never calls `.click()` on a LinkedIn control, never dispatches a synthetic submit, never submits on the human's behalf. It may insert text into a composer the human opened, in response to an explicit action by the human, and nothing more. The human presses LinkedIn's own button.
 4. **No server-side automation of linkedin.com.** No Playwright, no headless browser, no stealth stack pointed at LinkedIn, in any edition, local or cloud.
 5. **Direct messages are off.** The `dm` quota for LinkedIn ships at zero and there is no `linkedin-scout` scenario. Cold DM on LinkedIn requires either InMail or a connection request, and unsolicited connection-plus-pitch is the single behaviour most reliably associated with restriction.
@@ -85,7 +85,32 @@ This plane does not create a campaign, does not schedule anything and does not r
 
 `POST /api/extension/suggest`, authenticated by the existing device bearer token (`requireExtensionAuth`), org-scoped like every other extension route. Body: the observed post context plus the project to write as. Response: server-sent events streaming the suggestion as it is produced, so the panel shows text arriving instead of a spinner with nothing behind it.
 
-**What produces the text.** A single-turn agent invocation with no playbook and no MCP server attached: the prompt is the project's voice profile, the post, and the house-style rules. One shot, no tool loop, no `runs` row driving it. This keeps the product's authentication model intact, which matters more than the last few seconds of latency: Pitchbox authenticates through the human's own `claude` CLI subscription, and introducing a required provider API key would break self-hosting for the sake of a faster first token. Expect five to ten seconds for the first suggestion, dominated by process spawn. If that proves too slow in real use, warm-session pooling is a recorded follow-up (LI-21), not a thing to build speculatively.
+**What produces the text.** A tool-calling agent loop, not a single turn:
+`runSuggestion` (`web/src/lib/server/suggest.ts`) builds the prompt from the
+project's voice profile, the post and the house-style rules, then drives up
+to six steps against seven read-only tools declared once in
+`shared/src/assist/tools.ts` - reading the thread, looking at an attached
+image, the target's contact history, the operator's voice, project
+knowledge, the operator's own prior takes, and a closing style check on the
+draft - before the writing turn. Still no campaign, no cron, no playbook,
+and still no `runs` row until the human accepts (see "Bookkeeping" below):
+the loop is its own isolated tool surface, driven natively by whichever
+runner backs the org (native tool calls on the SDK path, a dedicated
+`pitchbox-assist-mcp` entry point on the ACP path), never the 26-tool
+campaign MCP server. This keeps the product's authentication model intact
+exactly as before - Pitchbox authenticates through the human's own `claude`
+CLI subscription on the ACP path, and a required provider API key to run the
+loop in-process on every edition would break self-hosting for the sake of a
+faster first token - see the design of record,
+[`docs/design/in-page-agent.md`](design/in-page-agent.md), for that argument
+and the two alternatives it rejects. The same document owns the step and
+budget contract (a soft budget past which the agent is told to answer with
+what it has, a hard ceiling past which whatever draft text has already
+streamed is what the operator gets rather than an error) and the tool
+contracts and refusal shapes; this document does not restate them. The panel
+narrates the loop through the same SSE `status` event it already used for a
+bare "reading the post" line, one tool name at a time in plain language,
+rather than a second channel.
 
 **Bookkeeping, which is where the two planes touch.** A suggestion is ephemeral until the human accepts it. On accept, the server materialises a real `drafts` row so the ledger stays complete: blocklist and quota are evaluated through `evaluateDraftSend` exactly as on the campaign path, `contact_history` gets its row, and analytics counts it. `drafts.run_id` is `NOT NULL` (`shared/src/db/schema.ts:296-298`), so rather than making that column nullable the accept path creates a `runs` row of a new `kind = 'assist'` (project-targeted, no campaign), which also gives the assist path the token and cost accounting the `runs` table already carries. The `runs_kind_target_chk` constraint gains that kind.
 
