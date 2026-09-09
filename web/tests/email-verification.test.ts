@@ -5,6 +5,7 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { createSession, hashPassword } from '@pitchbox/shared/auth';
 import { createInvite } from '@pitchbox/shared/orgs';
+import { saveRegistrationPolicy } from '@pitchbox/shared/registration-policy';
 import { POST as registerPost } from '../src/routes/api/auth/register/+server.js';
 import { POST as verifyConfirm } from '../src/routes/api/auth/verify/confirm/+server.js';
 import { POST as verifyResend } from '../src/routes/api/auth/verify/resend/+server.js';
@@ -25,6 +26,10 @@ async function reset() {
   await db.execute(sql`DELETE FROM campaigns`);
   await db.execute(sql`DELETE FROM projects`);
   await db.execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
+  // These tests register without an invite token, which only #505's 'open'
+  // policy allows - the code default is 'invite'. Same reasoning as
+  // register.test.ts's own reset().
+  await saveRegistrationPolicy(db, 'open');
 }
 
 async function seedOrgUser(args: {

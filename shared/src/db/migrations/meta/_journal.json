@@ -176,6 +176,13 @@
       "when": 1788960000012,
       "tag": "0025_supreme_molecule_man",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788960000013,
+      "tag": "0026_email_verification_tokens",
+      "breakpoints": true
     }
   ]
 }
