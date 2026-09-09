@@ -32,6 +32,7 @@ import {
   resetSelectorHealth,
   selectorHealthActivityEvents,
 } from './shared/linkedin-dom.js';
+import { captureObservedImage } from './shared/media-capture.js';
 import CommentAssistPanel from './linkedin-comment-assist-panel.svelte';
 
 /**
@@ -429,6 +430,12 @@ export function composerHasOwnText(composer: HTMLElement): boolean {
  */
 function mountAssistPanel(composer: HTMLElement, post?: Element): void {
   const anchor = resolveAnchor(composer);
+  // #569: the same element `readAssistPostFromCard`/`readAssistPost` above
+  // resolved from, kept around so a suggestion request can also capture its
+  // attached media - image capture is async (a round trip through the
+  // background worker) so it happens at request time, not folded into
+  // `capturedPost`'s own synchronous read.
+  const postElement = post ?? findFeedPosts(document)[0];
   const capturedPost = post ? readAssistPostFromCard(post, document) : readAssistPost(document);
   for (const event of selectorHealthActivityEvents()) logFromContent(event);
 
@@ -524,6 +531,13 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
     boundProjectId = assist.projectId;
     personalProjectId = assist.personalProjectId;
 
+    // #569: captured here, not folded into `capturedPost`, because it is
+    // the one field on this request that costs a round trip through the
+    // background worker - see media-capture.ts's own doc comment for the
+    // three outcomes this can resolve to.
+    const image = postElement ? await captureObservedImage(postElement, document) : undefined;
+    if (!handle.alive) return;
+
     let reasoning = '';
     let draft = '';
     const res = await api.suggest(
@@ -540,6 +554,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
           reactionCount: capturedPost.reactionCount,
           commentCount: capturedPost.commentCount,
           thread: capturedPost.thread,
+          image,
         },
         retune,
       },

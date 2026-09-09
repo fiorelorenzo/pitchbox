@@ -17,6 +17,7 @@
   import { t } from '$ext/i18n';
   import PairingList from '../components/PairingList.svelte';
   import LinkedInAccessRow from '../components/LinkedInAccessRow.svelte';
+  import ImageCaptureAccessRow from '../components/ImageCaptureAccessRow.svelte';
   import HomeStateLine from '../components/HomeStateLine.svelte';
   import { getSettings, type Pairing } from '$ext/storage';
   import { getLinkedInAccessState } from '$ext/linkedin-access';
@@ -108,6 +109,16 @@
         <div class="flex flex-col gap-2 border-t pt-3">
           <LinkedInAccessRow onchange={(g) => (linkedInGranted = g)} />
         </div>
+
+        <!-- Image-aware suggestions (#569) only mean anything once LinkedIn
+             access itself is on - nothing runs on LinkedIn without that
+             grant regardless, so offering this first would be a control
+             with nothing to control yet. -->
+        {#if linkedInGranted}
+          <div class="flex flex-col gap-2 border-t pt-3">
+            <ImageCaptureAccessRow />
+          </div>
+        {/if}
 
         <div class="flex flex-col gap-2 border-t pt-3">
           <div class="flex items-center justify-between gap-2">

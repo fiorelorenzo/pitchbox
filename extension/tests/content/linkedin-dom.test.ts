@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   detectPageKind,
   findFeedPosts,
@@ -11,6 +11,7 @@ import {
   findPostComposer,
   findPostComposerModal,
   findPostSubmitButton,
+  findPostMedia,
   readOwnProfileHandle,
   readOwnProfilePageHandle,
   readOwnProfile,
@@ -709,5 +710,127 @@ describe('readOwnPosts: synthetic markup', () => {
       </div>
     `);
     expect(readOwnPosts(document)).toEqual([]);
+  });
+});
+
+describe('findPostMedia (#569): synthetic markup', () => {
+  // Neither fixture contains a post with attached media (see
+  // fixtures/linkedin/README.md: images become empty `<img>` slots and the
+  // only ones either real capture actually has are profile avatars) - same
+  // disclaimer as `findCommentSubmitButton`/`findPostComposer` above, and
+  // the module's own doc comment on `findPostMedia` names it explicitly.
+  function stubRect(el: Element, width: number, height: number, onScreen = true): void {
+    const left = onScreen ? 0 : -9999;
+    const top = onScreen ? 0 : -9999;
+    const rect = {
+      top,
+      left,
+      right: left + width,
+      bottom: top + height,
+      width,
+      height,
+      x: left,
+      y: top,
+    };
+    vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({ ...rect, toJSON: () => rect });
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('innerWidth', 1000);
+    vi.stubGlobal('innerHeight', 800);
+  });
+
+  it('finds a substantial image and excludes the author avatar wrapped in a profile link', () => {
+    render(`
+      <div role="article" data-urn="urn:li:activity:7000000000000000001">
+        <a href="/in/example-person/"><img id="avatar" /></a>
+        <img id="media" alt="A chart showing quarterly growth" />
+      </div>
+    `);
+    const [post] = findFeedPosts(document);
+    stubRect(document.getElementById('avatar')!, 48, 48);
+    stubRect(document.getElementById('media')!, 400, 300);
+    const media = findPostMedia(post);
+    expect(media?.element.id).toBe('media');
+    expect(media?.kind).toBe('image');
+    expect(media?.alt).toBe('A chart showing quarterly growth');
+    expect(media?.partial).toBe(false);
+  });
+
+  it('returns null when the only substantial-sized element is the avatar', () => {
+    render(`
+      <div role="article" data-urn="urn:li:activity:7000000000000000001">
+        <a href="/in/example-person/"><img id="avatar" /></a>
+      </div>
+    `);
+    const [post] = findFeedPosts(document);
+    stubRect(document.getElementById('avatar')!, 400, 400);
+    expect(findPostMedia(post)).toBeNull();
+  });
+
+  it('excludes an image below the minimum rendered size (a reaction icon, not the post media)', () => {
+    render(`
+      <div role="article" data-urn="urn:li:activity:7000000000000000001">
+        <img id="icon" />
+      </div>
+    `);
+    const [post] = findFeedPosts(document);
+    stubRect(document.getElementById('icon')!, 24, 24);
+    expect(findPostMedia(post)).toBeNull();
+  });
+
+  it('reports a video element as video_frame, never as a plain image', () => {
+    render(`
+      <div role="article" data-urn="urn:li:activity:7000000000000000001">
+        <video id="clip"></video>
+      </div>
+    `);
+    const [post] = findFeedPosts(document);
+    stubRect(document.getElementById('clip')!, 400, 300);
+    expect(findPostMedia(post)?.kind).toBe('video_frame');
+  });
+
+  it('reports more than one substantial image as a carousel page, and picks the one on screen', () => {
+    render(`
+      <div role="article" data-urn="urn:li:activity:7000000000000000001">
+        <img id="onscreen" alt="page one" />
+        <img id="offscreen" alt="page two" />
+      </div>
+    `);
+    const [post] = findFeedPosts(document);
+    stubRect(document.getElementById('onscreen')!, 400, 300, true);
+    stubRect(document.getElementById('offscreen')!, 400, 300, false);
+    const media = findPostMedia(post);
+    expect(media?.kind).toBe('carousel_page');
+    expect(media?.partial).toBe(true);
+    expect(media?.element.id).toBe('onscreen');
+  });
+
+  it('falls back to an off-screen candidate when nothing intersects the viewport, so alt is still readable', () => {
+    render(`
+      <div role="article" data-urn="urn:li:activity:7000000000000000001">
+        <img id="scrolled-away" alt="scrolled out of view" />
+      </div>
+    `);
+    const [post] = findFeedPosts(document);
+    stubRect(document.getElementById('scrolled-away')!, 400, 300, false);
+    const media = findPostMedia(post);
+    expect(media?.element.id).toBe('scrolled-away');
+    expect(media?.alt).toBe('scrolled out of view');
+  });
+
+  it('records selector health for postMedia against a classic post-detail page', () => {
+    render(`
+      <div role="article" data-urn="urn:li:activity:7000000000000000001">
+        <img id="media" />
+      </div>
+    `);
+    const [post] = findFeedPosts(document);
+    stubRect(document.getElementById('media')!, 400, 300);
+    findPostMedia(post);
+    const entry = getSelectorHealthReport().find(
+      (e) => e.selector === 'postMedia' && e.pageKind === 'post-detail-classic',
+    );
+    expect(entry?.lastResult).toBe('match');
   });
 });

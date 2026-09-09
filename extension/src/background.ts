@@ -6,6 +6,7 @@ import { registerLinkedInPostAssistScript } from './background/linkedin-post-ass
 import { registerLinkedInProfileCaptureScript } from './background/linkedin-profile-capture-registration.js';
 import { registerLinkedInSourceCaptureScript } from './background/linkedin-source-capture-registration.js';
 import { injectIntoOpenLinkedInTabs } from './background/inject-open-tabs.js';
+import { captureAndCropTabRegion } from './background/capture-post-media.js';
 import {
   getSettings,
   patchPairing,
@@ -426,7 +427,7 @@ chrome.alarms.onAlarm.addListener(async (a) => {
   else if ((agg.inserted ?? 0) > 0) console.log('[pitchbox] sync:', agg);
 });
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'pitchbox:dm-sync:run') {
     runAllSyncs()
       .then((r) => sendResponse(aggregate(r)))
@@ -479,6 +480,28 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       // ConnectionCard's review banner surfaces it the next time the side
       // panel is opened.
     }).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg?.type === 'pitchbox:capture-post-media') {
+    // #569: the post's attached media, captured as pixels from the tab the
+    // content script itself is running in - never a request toward
+    // linkedin.com/licdn. `sender.tab` is always populated here: this
+    // message only ever arrives from a content script running in a tab.
+    const tabId = sender.tab?.id;
+    const windowId = sender.tab?.windowId;
+    if (tabId == null || windowId == null) {
+      sendResponse({ ok: false });
+      return false;
+    }
+    captureAndCropTabRegion({
+      tabId,
+      windowId,
+      rect: msg.rect,
+      devicePixelRatio: msg.devicePixelRatio,
+      maxLongEdgePx: msg.maxLongEdgePx,
+    })
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
   if (msg?.type === 'pitchbox:log') {

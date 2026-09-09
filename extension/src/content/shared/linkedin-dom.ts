@@ -129,7 +129,8 @@ export type LinkedInSelectorId =
   | 'ownPostTimestamp'
   | 'postTimestamp'
   | 'postReactionCount'
-  | 'postCommentCount';
+  | 'postCommentCount'
+  | 'postMedia';
 
 export type SelectorHealthEntry = {
   selector: LinkedInSelectorId;
@@ -831,6 +832,98 @@ export function readPostCommentCount(post: Element, root: ParentNode = document)
   }
   if (pageKind !== 'unknown') record('postCommentCount', pageKind, text !== null);
   return text;
+}
+
+/** What kind of rendered media `findPostMedia` found (#569) - mirrors
+ * `ObservedImageKind` in shared/src/assist/suggest-prompt.ts by hand, same
+ * posture as every other type this module mirrors across the workspace
+ * boundary (see that file's own doc comment on why). */
+export type PostMediaKind = 'image' | 'video_frame' | 'carousel_page';
+
+/** A post's own attached media element, as `findPostMedia` found it -
+ * `alt` is LinkedIn's own alt text when the element carries one, `partial`
+ * is true when the post rendered more than one substantial media element
+ * (a carousel or a multi-page document, which LinkedIn only ever renders
+ * one page of at a time). Capturing the element's pixels is the caller's
+ * job (`extension/src/content/shared/media-capture.ts`); this module only
+ * ever reads DOM structure, never pixels or network state. */
+export type PostMedia = {
+  element: HTMLImageElement | HTMLVideoElement;
+  kind: PostMediaKind;
+  alt?: string;
+  partial: boolean;
+};
+
+/** Below this rendered size (css px, either dimension), a candidate is
+ * treated as chrome rather than the post's own media: a reaction emoji, a
+ * connection-degree badge, or the tiny avatar LinkedIn repeats next to a
+ * byline - none of them are what a human means by "the post has an image". */
+const MIN_POST_MEDIA_DIMENSION = 120;
+
+/**
+ * `post`'s own attached media - a photo, a video's poster frame, or one
+ * page of a carousel/document - honest about what it found rather than
+ * assuming a single `<img>` is the post's media just because it exists
+ * somewhere inside the article (a profile avatar is an `<img>` too).
+ *
+ * Unverified against a live capture (module header): neither fixture
+ * contains a post with attached media, only profile-avatar `<img>`s, which
+ * this correctly excludes via the profile-link check below. Verify against
+ * a real image post before relying on this in production (#569's own PR
+ * does).
+ *
+ * Every `<img>`/`<video>` under `post` that is not inside a profile link,
+ * not `aria-hidden`, and rendered at least `MIN_POST_MEDIA_DIMENSION` on
+ * both axes is a candidate. More than one candidate means a carousel or
+ * document post (`partial: true`); among those, whichever one currently
+ * intersects the visible viewport is what LinkedIn actually has on screen,
+ * which is what a caller should ask the background worker to capture -
+ * falling back to the first candidate (off-screen) only so a caller still
+ * has an element to read `alt` from. `null` when the post has no
+ * substantial media at all - the case that must skip a capture attempt (and
+ * a vision call) entirely, at no cost.
+ */
+export function findPostMedia(
+  post: Element,
+  root: ParentNode = post.ownerDocument ?? document,
+): PostMedia | null {
+  const pageKind = detectPageKind(root);
+  const candidates = queryDeepAll<HTMLImageElement | HTMLVideoElement>('img, video', post).filter(
+    (el) => {
+      // Both the author's avatar and the byline name anchor wrap in a link
+      // to the member's profile (see the real capture's own
+      // `aria-label="Link per visualizzare l'immagine..."` avatar wrapper) -
+      // neither is ever the post's own attached media, and this check is
+      // locale-independent unlike matching the aria-label's own text.
+      if (el.closest('a[href*="/in/"]')) return false;
+      if (el.getAttribute('aria-hidden') === 'true') return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width >= MIN_POST_MEDIA_DIMENSION && rect.height >= MIN_POST_MEDIA_DIMENSION;
+    },
+  );
+  if (candidates.length === 0) {
+    if (pageKind !== 'unknown') record('postMedia', pageKind, false);
+    return null;
+  }
+  if (pageKind !== 'unknown') record('postMedia', pageKind, true);
+
+  const vw =
+    root instanceof Document
+      ? window.innerWidth
+      : (post.ownerDocument?.defaultView?.innerWidth ?? 0);
+  const vh =
+    root instanceof Document
+      ? window.innerHeight
+      : (post.ownerDocument?.defaultView?.innerHeight ?? 0);
+  const onScreen = candidates.filter((el) => {
+    const r = el.getBoundingClientRect();
+    return r.right > 0 && r.bottom > 0 && r.left < vw && r.top < vh;
+  });
+  const element = onScreen[0] ?? candidates[0];
+  const kind: PostMediaKind =
+    element.tagName === 'VIDEO' ? 'video_frame' : candidates.length > 1 ? 'carousel_page' : 'image';
+  const alt = element instanceof HTMLImageElement ? element.alt || undefined : undefined;
+  return { element, kind, alt, partial: candidates.length > 1 };
 }
 
 /** A single message event read off LinkedIn's messaging surface (#307). */

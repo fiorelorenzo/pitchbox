@@ -225,6 +225,19 @@ export const it = {
   'home.access.denied': 'Chrome non ha concesso l’accesso. Puoi richiederlo quando vuoi.',
   'home.access.request-failed': 'Impossibile chiedere a Chrome l’accesso a LinkedIn. Riprova.',
 
+  // #569: vedi dict-en.ts - la cattura immagine è un consenso separato,
+  // mai unito ad home.access sopra.
+  'home.image-access.on': 'Suggerimenti con immagini: attivi',
+  'home.image-access.off': 'Suggerimenti con immagini: non attivi',
+  'home.image-access.on-detail':
+    'L’assistente può guardare l’immagine di un post prima di suggerire un commento.',
+  'home.image-access.off-detail':
+    'Chrome non può catturare solo LinkedIn: attivarlo significa rispondere al prompt di Chrome per "tutti i siti", non uno specifico per LinkedIn. Se lo salti, l’assistente dice semplicemente che non può vedere l’immagine.',
+  'home.image-access.turn-on': 'Attiva',
+  'home.image-access.turn-off': 'Disattiva',
+  'home.image-access.denied': 'Chrome non ha concesso l’accesso. Puoi richiederlo quando vuoi.',
+  'home.image-access.request-failed': 'Impossibile chiedere a Chrome l’accesso. Riprova.',
+
   // La riga di stato in cima a home, una per ogni stato che
   // lib/home-state.ts sa derivare: la riga nomina lo stato, il dettaglio
   // nomina chi lo ha causato (D21).
