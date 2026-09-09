@@ -347,7 +347,7 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
       source: 'linkedin-action',
       message: 'activity.linkedin-action.suggestion-refused',
       messageParams: { reason },
-      meta: { reason, script: 'linkedin-post-assist' },
+      meta: { reason, script: 'linkedin-post-assist', ...detail },
     });
     const { key, params } = refusalMessage(reason);
     let link: string | undefined;

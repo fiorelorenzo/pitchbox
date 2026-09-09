@@ -369,13 +369,13 @@ function resolveAnchor(composer: HTMLElement): Element {
   return composer.closest('form') ?? composer;
 }
 
-function logRefusal(reason: string): void {
+function logRefusal(reason: string, detail?: Record<string, unknown>): void {
   logFromContent({
     level: 'warn',
     source: 'linkedin-action',
     message: 'activity.linkedin-action.suggestion-refused',
     messageParams: { reason },
-    meta: { reason, script: 'linkedin-comment-assist' },
+    meta: { reason, script: 'linkedin-comment-assist', ...detail },
   });
 }
 
@@ -514,7 +514,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
   if (autoRequest) void requestSuggestion();
 
   async function setRefused(reason: string, detail?: Record<string, unknown>): Promise<void> {
-    logRefusal(reason);
+    logRefusal(reason, detail);
     const { key, params } = refusalMessage(reason);
     let link: string | undefined;
     if (billingLinkFor(reason)) {
