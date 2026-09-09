@@ -3,6 +3,7 @@ import { sql, eq } from 'drizzle-orm';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { createInvite, findOrgBySlug, listUserOrganizations } from '@pitchbox/shared/orgs';
+import { saveRegistrationPolicy } from '@pitchbox/shared/registration-policy';
 import { POST as register } from '../src/routes/api/auth/register/+server.js';
 import { load as inviteLoad } from '../src/routes/invite/[token]/+page.server.js';
 import { type CookieJar, makeCookies, runThroughHandle } from './helpers/handle-harness.js';
@@ -19,6 +20,12 @@ async function reset() {
   // Keep `default`: seed:core creates it once for the whole suite and other
   // test files running later in this sequential run rely on it existing.
   await db.execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
+  // This file's tests below predate #505 and exercise what a token-less
+  // registration does once it is allowed (own org, dedup, rate limiting),
+  // not the policy gate itself - that gate has its own tests in
+  // registration-policy.test.ts. Set 'open' explicitly so they keep
+  // covering that rather than tripping the invite-only default.
+  await saveRegistrationPolicy(db, 'open');
 }
 
 async function seedOrgAdmin(orgSlug: string) {

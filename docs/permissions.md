@@ -97,7 +97,10 @@ POST, `settings/webhooks` PUT, `settings/model-functions` POST,
 `webhooks/deliveries/[id]/retry` POST (also tenant-guarded: the delivery
 must belong to the caller's org before the instance-admin gate runs),
 `settings/retention` form action (saving only - viewing the page, and the
-GET routes above, stay `requireRole(event, 'admin')`).
+GET routes above, stay `requireRole(event, 'admin')`), `settings/admin/registration`
+GET + POST (#505's registration policy switch - open/invite/off - surfaced on
+`settings/admin` itself rather than a route of its own, since it is a single
+value with no per-data-set split to justify one).
 
 ### Instance-wide audit trail (#414)
 
@@ -113,13 +116,14 @@ each route recording it differently - and it redacts `before`/`after` itself
 (any JSON field whose name looks like a credential, and any `*url` field,
 which a webhook target can carry one inside), so a caller does not have to
 remember to. Wired into default-runner, runner-config, quota, webhooks,
-retention, model-functions, and the account-promotion action
-(`web/src/routes/api/settings/admin/promote/+server.ts`, #413) - every
-`requireInstanceAdmin`-gated write above records itself under key
+retention, model-functions, registration-policy, and the account-promotion
+action (`web/src/routes/api/settings/admin/promote/+server.ts`, #413) -
+every `requireInstanceAdmin`-gated write above records itself under key
 `default_runner`, `runner_config:<slug>`, `quota_defaults`,
-`notification_webhooks`, `retention`, `model_function:<fn>`, or
-`user_promotion`. Rendered at `settings/admin/audit` (gated the same way as
-every other page in the area below), most recent first.
+`notification_webhooks`, `retention`, `model_function:<fn>`,
+`registration_policy`, or `user_promotion`. Rendered at `settings/admin/audit`
+(gated the same way as every other page in the area below), most recent
+first.
 
 The redaction is a name-based heuristic, not a guarantee: it catches a
 field named `key`/`token`/`secret`/`password`/`credential` (any case, any

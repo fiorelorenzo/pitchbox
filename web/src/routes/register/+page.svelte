@@ -11,6 +11,8 @@
 		authOn: boolean;
 		next: string | null;
 		invite: { token: string; email: string | null; orgName: string | null } | null;
+		policy: 'open' | 'invite' | 'off';
+		canRegister: boolean;
 	};
 	let { data }: { data: PageData } = $props();
 
@@ -39,7 +41,10 @@
 				}),
 			});
 			if (!res.ok) {
-				const body = (await res.json().catch(() => ({}))) as { error?: string };
+				const body = (await res.json().catch(() => ({}))) as {
+					error?: string;
+					message?: string;
+				};
 				const message =
 					body.error === 'username_taken'
 						? 'That username is already taken'
@@ -49,7 +54,10 @@
 								? 'This invite is no longer valid'
 								: body.error === 'rate_limited'
 									? 'Too many attempts, try again shortly'
-									: 'Could not create account';
+									: (body.error === 'registration_closed' || body.error === 'invite_required') &&
+										  body.message
+										? body.message
+										: 'Could not create account';
 				toast.error(message);
 				return;
 			}
@@ -77,6 +85,20 @@
 			</Card.Header>
 			<Card.Content>
 				<Button href="/" variant="outline" class="w-full">Go to Pitchbox</Button>
+			</Card.Content>
+		{:else if !data.canRegister}
+			<Card.Header>
+				<Card.Title>
+					{data.policy === 'off' ? 'Registration is disabled' : 'This deployment is invite-only'}
+				</Card.Title>
+				<p class="text-xs {TONE_TEXT_CLASS.amber}">
+					{data.policy === 'off'
+						? 'Registration is disabled on this deployment. Ask its operator for an account.'
+						: 'This deployment is invite-only. Ask an organization owner for an invite link to create an account.'}
+				</p>
+			</Card.Header>
+			<Card.Content>
+				<Button href={signInHref()} variant="outline" class="w-full">Sign in instead</Button>
 			</Card.Content>
 		{:else}
 			<Card.Header>
