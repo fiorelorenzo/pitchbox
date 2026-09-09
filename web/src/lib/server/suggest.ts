@@ -6,7 +6,12 @@ import { createAgentRunner } from '@pitchbox/shared/agents/registry';
 import type { AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { loadRunnerConfig, type RunnerConfig } from '@pitchbox/shared/agents/config';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
-import { resolveFunctionModel, runnerTakesGatewayModel } from '@pitchbox/shared/ai/model-functions';
+import {
+  resolveFunctionModel,
+  runnerTakesGatewayModel,
+  gateModelForPlan,
+} from '@pitchbox/shared/ai/model-functions';
+import { resolveEntitlements } from '@pitchbox/shared/plans';
 import {
   buildSuggestionPrompt,
   type CurrentProject,
@@ -270,7 +275,21 @@ export function runSuggestion(args: {
       ? await resolveFunctionModel(db, 'assist_suggest')
       : undefined;
     if (cancelled) throw new Cancelled();
-    const resolvedConfig = resolveAssistRunnerConfig(config, functionModel);
+    let resolvedConfig = resolveAssistRunnerConfig(config, functionModel);
+    // The premium-model gate (#547), next to resolveAssistRunnerConfig
+    // rather than inside it: an org whose plan does not allow premium
+    // models answers in the panel on the function's coded fast default
+    // regardless of what an operator pinned here or in `model_functions`.
+    if (runnerTakesGatewayModel(args.runnerSlug) && resolvedConfig.model && args.orgId != null) {
+      const entitlements = await resolveEntitlements(db, args.orgId);
+      const gated = await gateModelForPlan(
+        'assist_suggest',
+        resolvedConfig.model,
+        entitlements.premiumModels,
+      );
+      if (gated !== resolvedConfig.model) resolvedConfig = { ...resolvedConfig, model: gated };
+    }
+    if (cancelled) throw new Cancelled();
     const runner = createAgentRunner(args.runnerSlug, resolvedConfig);
 
     // The agent still gets a working directory, and it must not be the repo:
