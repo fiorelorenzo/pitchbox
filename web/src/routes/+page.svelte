@@ -48,7 +48,12 @@
 		data,
 	}: {
 		data: {
-			onboarding: { status: string; currentStep: OnboardingStepId | null } | null;
+			onboarding: {
+				status: string;
+				currentStep: OnboardingStepId | null;
+				done: number;
+				total: number;
+			} | null;
 			stats: {
 				pending: number;
 				approved: number;
@@ -95,7 +100,11 @@
 />
 
 {#if data.onboarding}
-	<OnboardingBanner currentStep={data.onboarding.currentStep} />
+	<OnboardingBanner
+		currentStep={data.onboarding.currentStep}
+		done={data.onboarding.done}
+		total={data.onboarding.total}
+	/>
 {/if}
 
 <!-- Primary stats -->

@@ -169,6 +169,37 @@
   box-sizing: border-box;
 }
 
+/* The host's accent, and the only place LinkedIn's palette is allowed in.
+ *
+ * Supersedes D10's "never as LinkedIn" in one axis only (Lorenzo, 2026-09-10):
+ * the panel keeps our card, our hairline, our type and our density, so it
+ * still reads as a tool the human installed, and takes LinkedIn's blue as its
+ * accent so the one control it exists for does not read as a foreign button
+ * dropped on the page. Surfaces stay ours; the accent is theirs.
+ *
+ * Declared here rather than in `../lib/tokens.css` on purpose:
+ * `shared/tests/token-drift.test.ts` holds that file to a verbatim copy of
+ * `web/src/app.css` (D2), and these values belong to one surface rather than
+ * to the product's palette. Values are LinkedIn's own, converted to the
+ * repo's oklch convention: `#0a66c2` and its `#004182` hover in light,
+ * `#71b7fb` (what LinkedIn itself switches to on a dark ground) in dark.
+ * Both directions were measured rather than assumed:
+ * white on the light accent 5.69:1, the dark accent on our dark card 5.94:1,
+ * so the button clears AA on either theme. */
+.pitchbox-panel {
+  --li-accent: oklch(0.5156 0.1632 254.73);
+  --li-accent-hover: oklch(0.3803 0.124 254.73);
+  --li-accent-foreground: oklch(1 0 0);
+  --li-accent-soft: oklch(0.5156 0.1632 254.73 / 8%);
+}
+
+.pitchbox-panel.dark {
+  --li-accent: oklch(0.7606 0.1213 249.03);
+  --li-accent-hover: oklch(0.8306 0.1 249.03);
+  --li-accent-foreground: oklch(0.205 0 0);
+  --li-accent-soft: oklch(0.7606 0.1213 249.03 / 16%);
+}
+
 /* The frame's chrome.
  *
  * These live here rather than in a `<style>` block inside
@@ -210,6 +241,20 @@
   color: var(--foreground);
 }
 
+/* The wordmark's accent dot: the panel says whose tool it is, in the colour of
+ * the page it is standing on. A square with a radius rather than a circle, so
+ * it belongs to the same drawn geometry as everything else here. */
+.frame .mark::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-inline-end: 6px;
+  border-radius: 2px;
+  background: var(--li-accent);
+  vertical-align: baseline;
+}
+
 .frame .subject {
   flex: 1 1 auto;
   min-width: 0;
@@ -242,7 +287,7 @@
 }
 
 .frame .close:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--li-accent);
   outline-offset: 1px;
 }
 
@@ -372,7 +417,7 @@
 }
 
 .assist-textarea:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--li-accent);
   outline-offset: 1px;
 }
 
@@ -394,19 +439,21 @@
   padding: 0 14px;
   border: 0;
   border-radius: var(--radius-sm);
-  background: var(--primary);
-  color: var(--primary-foreground);
+  background: var(--li-accent);
+  color: var(--li-accent-foreground);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
 
+/* Hover moves to LinkedIn's own darker blue rather than dropping opacity: a
+ * translucent brand colour over our card reads as a disabled control. */
 .assist-button:hover {
-  opacity: 0.9;
+  background: var(--li-accent-hover);
 }
 
 .assist-button:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--li-accent);
   outline-offset: 1px;
 }
 
@@ -416,6 +463,12 @@
   border: 1px solid var(--border);
 }
 
+.assist-button--ghost:hover {
+  background: var(--li-accent-soft);
+  border-color: var(--li-accent);
+  color: var(--foreground);
+}
+
 .assist-refusal {
   font-size: var(--panel-text-hint);
   line-height: 1.6;
@@ -423,11 +476,12 @@
 }
 
 /* #556: the plan-refusal link, opening /settings/billing in a new tab
- * alongside `.assist-refusal` above. `--link` exists precisely because
- * `--primary` resolves to near-white in this dark palette (D3) - the
- * dashboard's own Markdown links use the same token for the same reason. */
+ * alongside `.assist-refusal` above. It takes the panel's accent rather than
+ * the dashboard's `--link`: inside this surface the accent is what a
+ * clickable blue means, and `--primary` cannot serve (it resolves to
+ * near-white on the dark theme, D3). */
 .assist-link {
-  color: var(--link);
+  color: var(--li-accent);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -510,6 +564,8 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .assist-button {
-    transition: opacity 120ms ease;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
   }
 }
