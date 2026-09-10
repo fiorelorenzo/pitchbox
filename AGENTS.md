@@ -391,6 +391,30 @@ Two things worth stating here so nobody re-derives them mid-task. First, the ext
 
 **An in-page LinkedIn panel cannot be verified against a local backend, and the reason is Chrome, not the code.** Point the built extension at `http://127.0.0.1:<port>` and the panel mounts, reads the post and then sits in "Reading the post..." forever, with no error anywhere: the content script's own `fetch` to the loopback backend fails with a bare `Failed to fetch`, while the same call from the background worker returns 200. That asymmetry is Chrome's Private Network Access rule. A public HTTPS document (`https://www.linkedin.com`) reaching a loopback address needs a preflight carrying `Access-Control-Request-Private-Network: true`, answered with `Access-Control-Allow-Private-Network: true`; `web/src/lib/server/extension-cors.ts` answers the ordinary CORS preflight and not that header, so the request never leaves the page. Measured 2026-09-08 on Chrome 149 while verifying #409. Do not add the header to make a test pass: it would tell every public site on the internet that this deployment's loopback API exists. Verify the panel against `preview.pitchbox.app` after the change deploys, and use a local backend only for the pieces that run in the worker or in a test.
 
+**Two more of that class, found on 2026-09-10 the first time anyone drove the
+built extension on the real feed since #569, and both had been live for weeks.**
+`chrome.permissions` is **not** part of the API surface a content script gets,
+so `hasImageCapturePermission()` threw
+`Cannot read properties of undefined (reading 'contains')` inside
+`captureObservedImage`, only on a post that actually has media. Nothing else
+writes the panel's state, so the rejection left it on "Reading the post..."
+forever with no request sent and no error shown, and `media-capture.test.ts`
+could not see it because every case stubbed `chrome.permissions`. A permission
+check belongs on the worker side of the message boundary, and both assist
+controllers now turn a throw into a named refusal so that failure cannot be
+silent again. Second, the panel never rendered in Inter on LinkedIn: the panel
+content scripts are a single-file IIFE build, so Vite **inlines** the woff2 as
+`data:font/woff2;base64,...`, and a scheme test written as `/^[a-z-]+:\/\//`
+fails a `data:` URL for lack of an authority - it fell through to
+`chrome.runtime.getURL()` and asked for
+`chrome-extension://<id>/data:font/woff2;base64,...`, a 404 on every mount.
+While there: a `<button>` does not inherit `font-family`, so `.assist-button`
+was rendering in Arial next to Inter text. The lesson that generalises is that
+a stubbed `chrome.*` API in a test is a world the content script never runs in,
+so the only check that covers this class is the built extension on the real
+page - and the page's own `Runtime.exceptionThrown` is where the answer was,
+in both cases, within seconds of looking.
+
 ## Linear is the source of truth
 
 Current state and future roadmap live in Linear (`linear.app/fiorelorenzo`), not in this file and not in a chat transcript. Keeping it current is part of doing the work, not paperwork at the end: it is how Lorenzo sees where the project stands without reading session logs.
