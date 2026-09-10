@@ -38,7 +38,9 @@ Type         Inter only, one weight for labels and one for values. The suggestio
 
 Density      Middle, a deliberate deviation from the airy default: the panel sits inside a
              layout it does not own, and every pixel it takes is one LinkedIn wanted for its
-             own content. Suggestion text 15px, control row 32px, no airy 68px rows.
+             own content. Suggestion text 14px, the host page's own body size and the ceiling
+             for everything on the panel (D42, was 15 then 16); 36px primary control, no airy
+             68px rows.
 
 Signature    The panel is unmistakably Pitchbox and never imitates LinkedIn: its own mark and
              accent dot, 1px hairline, its own radius, density and type, visibly a tool the
@@ -107,9 +109,11 @@ The job      Unchanged. Request, read, edit, insert. What changes is that the pa
 Palette      Unchanged, tokens only. Reasoning uses --muted-foreground, the draft
              --foreground: the hierarchy is weight and size, not a new colour.
 
-Type         Inter only. Reasoning 13px, draft 15-16px in the editable box. Round one said
-             "the suggestion body is the only long-form text on the surface"; there are now
-             two bodies, and the smaller one must lose.
+Type         Inter only. Reasoning one step under the draft, draft in the editable box.
+             Round one said "the suggestion body is the only long-form text on the
+             surface"; there are now two bodies, and the smaller one must lose. The sizes
+             themselves are 14/13/12 since D42; this brief names the relationship, and
+             `panel.css` holds the values.
 
 Density      Middle still, but the panel no longer borrows LinkedIn's column: it is ~440px
              with a 60vh ceiling and its own scroll, so density is now a choice rather than

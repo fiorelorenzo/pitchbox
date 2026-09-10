@@ -162,13 +162,14 @@ const OVERLAY_MARGIN = 12;
  * in the first place. Mirrored in panel.css's `:host { width }` rule; kept
  * here too because the placement math below needs it before layout runs.
  *
- * 520px, not the 440px D13 shipped (D16, 2026-09-08): Inter at the draft's
- * 16px lands at about 66 characters per line here, which is the middle of
- * the classical band, and 520 is the narrowest width that gets there. 440
- * was fine for 14px body text and was carrying 15px over 13px instead, so
- * it read as cramped.
+ * 460px (LOR-208, D42), and the number moves with the draft's own size
+ * rather than on its own: D16 derived 520px as the narrowest width where
+ * Inter at 16px lands near 66 characters per line, and dropping the draft
+ * to the host page's 14px runs the same 520 to about 75 characters. 520 x
+ * 14/16 is 455, rounded up to 460. D13 shipped 440 for text that was 15px
+ * over 13px, which is why that one read as cramped.
  */
-const OVERLAY_WIDTH = 520;
+const OVERLAY_WIDTH = 460;
 
 /**
  * The panel's shortest useful size, and the assumed height before it has
