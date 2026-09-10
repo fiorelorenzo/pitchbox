@@ -27,24 +27,35 @@
 			<Card.Header class="flex flex-row flex-nowrap items-center gap-2 space-y-0">
 				<Activity class="size-4 shrink-0 text-muted-foreground" />
 				<Card.Title class="text-base min-w-0 flex-1 truncate">Daemon</Card.Title>
-				<StatusBadge
-					class="shrink-0"
-					domain="daemon-status"
-					value={$daemonStatus.loading
-						? 'checking'
-						: !$daemonStatus.reachable
-							? 'unknown'
-							: $daemonStatus.alive
-								? 'online'
-								: 'offline'}
-				/>
+				{#if $daemonStatus.permitted}
+					<StatusBadge
+						class="shrink-0"
+						domain="daemon-status"
+						value={$daemonStatus.loading
+							? 'checking'
+							: !$daemonStatus.reachable
+								? 'unknown'
+								: $daemonStatus.alive
+									? 'online'
+									: 'offline'}
+					/>
+				{/if}
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-3">
 				<p class="text-xs text-muted-foreground">
 					The daemon wakes up on schedule, triggers campaigns that have a cron expression, and
 					polls sent DMs for replies.
 				</p>
-				{#if !$daemonStatus.reachable && !$daemonStatus.loading}
+				{#if !$daemonStatus.permitted}
+					<Alert.Root>
+						<Info class="size-4" />
+						<Alert.Title>Instance admin access required</Alert.Title>
+						<Alert.Description>
+							Daemon health describes the whole deployment, not any one organization, so it's
+							visible to the instance admin only.
+						</Alert.Description>
+					</Alert.Root>
+				{:else if !$daemonStatus.reachable && !$daemonStatus.loading}
 					<Alert.Root>
 						<Info class="size-4" />
 						<Alert.Title>Status unavailable</Alert.Title>

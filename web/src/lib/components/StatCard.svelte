@@ -29,7 +29,7 @@
 		</div>
 		<div class="text-2xl font-semibold tabular-nums text-foreground">{value}</div>
 		{#if hint}
-			<div class="text-[11px] text-muted-foreground/80 mt-auto">{hint}</div>
+			<div class="text-[11px] text-muted-foreground mt-auto">{hint}</div>
 		{/if}
 	</div>
 {/snippet}

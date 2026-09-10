@@ -48,13 +48,15 @@
 </script>
 
 <div class="rounded-md border border-border bg-card/40 px-3 py-2 text-xs">
-  <div class="flex items-center justify-between gap-2 py-0.5">
-    <span class="flex items-center gap-2 text-muted-foreground">
-      <span class="size-1.5 rounded-full shrink-0 {dotClass(daemonRow.tone)}"></span>
-      Daemon
-    </span>
-    <span class="font-medium {valueClass(daemonRow.tone)}">{daemonRow.label}</span>
-  </div>
+  {#if $daemonStatus.permitted}
+    <div class="flex items-center justify-between gap-2 py-0.5">
+      <span class="flex items-center gap-2 text-muted-foreground">
+        <span class="size-1.5 rounded-full shrink-0 {dotClass(daemonRow.tone)}"></span>
+        Daemon
+      </span>
+      <span class="font-medium {valueClass(daemonRow.tone)}">{daemonRow.label}</span>
+    </div>
+  {/if}
   <div class="flex items-center justify-between gap-2 py-0.5">
     <span class="flex items-center gap-2 text-muted-foreground">
       <span class="size-1.5 rounded-full shrink-0 {dotClass(sseRow.tone)}"></span>
@@ -62,7 +64,9 @@
     </span>
     <span class="font-medium {valueClass(sseRow.tone)}">{sseRow.label}</span>
   </div>
-  <div class="mt-1 pt-1 border-t border-border/60 text-[10px] text-muted-foreground/70 font-mono">
-    pitchbox {VERSION}
-  </div>
+  {#if $daemonStatus.permitted}
+    <div class="mt-1 pt-1 border-t border-border/60 text-[10px] text-muted-foreground font-mono">
+      pitchbox {VERSION}
+    </div>
+  {/if}
 </div>
