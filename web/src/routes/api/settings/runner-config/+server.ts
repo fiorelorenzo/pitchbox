@@ -9,6 +9,7 @@ import {
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { z } from 'zod';
 import { recordInstanceAudit } from '@pitchbox/shared/instance-audit';
+import { isCloud } from '@pitchbox/shared/edition';
 import { requireInstanceAdmin, requireRole } from '$lib/server/auth.js';
 
 const ConfigSchema = z.object({
@@ -27,10 +28,17 @@ function isRunnerSlug(slug: string): slug is AgentRunnerSlug {
 }
 
 // Same view/mutate split as settings/+page.server.ts: viewing per-runner
-// config is gated to the per-org 'admin' role, changing it is instance-wide
-// config so it needs the stricter requireInstanceAdmin (#137).
+// config is gated to the per-org 'admin' role on self-host; on cloud that
+// role is not the right axis (#183, any user can self-create an org and
+// become its admin/owner), so the read narrows to `requireInstanceAdmin`
+// there too. Changing it is instance-wide config either way, so it always
+// needed the stricter requireInstanceAdmin (#137).
 export async function GET(event: RequestEvent) {
-  requireRole(event, 'admin');
+  if (isCloud()) {
+    await requireInstanceAdmin(event);
+  } else {
+    requireRole(event, 'admin');
+  }
   const db = getDb();
   const configs = await loadRunnerConfigs(db);
   return json({ configs });
