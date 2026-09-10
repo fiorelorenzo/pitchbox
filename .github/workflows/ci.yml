@@ -75,6 +75,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Workspace versions in lockstep (#207)
         run: pnpm run version:check
+      # Metadata only, no database, so it belongs on the PR path: a forked
+      # snapshot chain from two migrations in one wave reached main once and
+      # was found by the next `migrate:generate` rather than by CI (#206).
+      - name: Migration metadata chain
+        run: pnpm run migrations:check
       - name: LinkedIn compliance boundary (#308)
         run: pnpm run test:linkedin-compliance
       - name: Lint (eslint + prettier)
