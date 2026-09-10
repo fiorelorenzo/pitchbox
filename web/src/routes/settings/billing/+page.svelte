@@ -249,25 +249,21 @@
 
 				<div class="grid gap-1.5 border-t pt-4">
 					<div class="flex items-baseline justify-between text-sm">
-						<span class="font-medium">Model spend this period</span>
-						{#if data.usage.costUsd.limit == null}
-							<span class="tabular-nums text-muted-foreground">{money(data.usage.costUsd.used)}</span>
-						{:else}
-							<span class="tabular-nums text-muted-foreground">
-								{money(data.usage.costUsd.used)} / {money(data.usage.costUsd.limit)}
-							</span>
-						{/if}
+						<span class="font-medium">Model allowance used</span>
+						<span class="tabular-nums text-muted-foreground">
+							{data.usage.modelAllowance.usedPercent == null
+								? 'Unlimited'
+								: `${data.usage.modelAllowance.usedPercent}%`}
+						</span>
 					</div>
 					<p class="text-xs text-muted-foreground">
-						What the deployment actually spent running this org's models. Not an invoice line -
-						the portal has those.
+						How much of this period's model-spend allowance the org has used. Not an invoice
+						line - the portal has those.
 					</p>
-					{#if data.usage.costUsd.limit != null}
+					{#if data.usage.modelAllowance.usedPercent != null}
 						<Progress
-							value={data.usage.costUsd.limit > 0
-								? Math.min(100, (data.usage.costUsd.used / data.usage.costUsd.limit) * 100)
-								: 100}
-							aria-label="Model spend this period"
+							value={Math.min(100, Math.max(0, data.usage.modelAllowance.usedPercent))}
+							aria-label="Model allowance used"
 						/>
 					{/if}
 				</div>
