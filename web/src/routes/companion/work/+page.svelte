@@ -207,87 +207,20 @@
 
 <PageContainer size="default">
 	<PageHeader
-		title="Companion"
-		description="Repositories the companion can mention. A public repo needs nothing but its URL; a private one needs the GitHub App below."
+		title="Work"
+		description="Repositories the companion can mention. A public repo needs nothing but its URL; a private one needs the GitHub App."
 	/>
 
-	<div class="max-w-2xl flex flex-col gap-4">
+	<div class="grid items-start gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
 		<Card.Root>
 			<Card.Header>
 				<Card.Title class="flex items-center gap-2"><FolderGit2 class="size-4" /> What you have shipped</Card.Title>
 				<Card.Description>
-					Repositories the companion can mention. A public repo needs nothing but its URL. A
-					private one is only readable once this organization connects the GitHub App below, and
-					only for the repositories the account selects.
+					Repositories the companion can mention. A public repo needs nothing but its URL; a
+					private one needs the App connected beside this.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
-				<!-- The GitHub App (#390). Above the add form on purpose: whether a
-				     private URL will work at all is decided here. -->
-				{#if !loadingInstallations}
-					<div class="rounded-md border border-border bg-muted/30 p-4">
-						{#if !appConfigured}
-							<p class="text-xs text-muted-foreground">
-								No GitHub App is configured on this deployment, so repositories are read
-								anonymously: public ones only, and GitHub allows 60 requests an hour per
-								address. That is the intended self-host setup and needs no credential.
-							</p>
-						{:else if installations.length === 0}
-							<div class="flex flex-wrap items-center justify-between gap-3">
-								<p class="text-xs text-muted-foreground">
-									Connect the GitHub App to read private repositories. You choose which
-									repositories it can see, it asks for read access to code and metadata and
-									nothing else, and you can disconnect it here at any time.
-								</p>
-								<Button href="/api/integrations/github/install" data-sveltekit-reload>
-									<KeyRound class="size-4" /> Connect GitHub
-								</Button>
-							</div>
-						{:else}
-							<div class="flex flex-col gap-3">
-								{#each installations as install (install.id)}
-									<div class="flex flex-wrap items-center justify-between gap-3">
-										<div class="min-w-0">
-											<p class="text-sm font-medium text-foreground">
-												{install.accountLogin}
-												<Badge variant="outline" class="ml-1 align-middle">
-													{install.repositorySelection === 'all'
-														? 'all repositories'
-														: 'selected repositories'}
-												</Badge>
-											</p>
-											<p class="mt-0.5 text-xs text-muted-foreground">
-												{Object.entries(install.permissions)
-													.map(([name, level]) => `${name}: ${level}`)
-													.join(', ') || 'no permissions reported'}
-											</p>
-										</div>
-										<div class="flex items-center gap-2">
-											<Button
-												href="/api/integrations/github/install"
-												variant="outline"
-												size="sm"
-												data-sveltekit-reload
-											>
-												Change repositories
-											</Button>
-											<Button
-												type="button"
-												variant="ghost"
-												size="sm"
-												disabled={disconnectingId === install.id}
-												onclick={() => disconnectInstallation(install.id)}
-											>
-												Disconnect
-											</Button>
-										</div>
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</div>
-				{/if}
-
 				<form onsubmit={addRepo} class="flex gap-2">
 					<Input
 						bind:value={newRepoUrl}
@@ -360,6 +293,83 @@
 							</div>
 						{/each}
 					</div>
+				{/if}
+			</Card.Content>
+		</Card.Root>
+
+		<!-- The GitHub App (#390). Its own card beside the list on purpose:
+		     whether a private URL will work at all is decided here. -->
+		<Card.Root>
+			<Card.Header>
+				<Card.Title class="flex items-center gap-2"
+					><KeyRound class="size-4" /> GitHub App</Card.Title
+				>
+				<Card.Description>
+					A public repository needs nothing but its URL. A private one is only readable once this
+					organization connects the App, and only for the repositories the account selects.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content>
+				{#if !loadingInstallations}
+					{#if !appConfigured}
+						<p class="text-xs text-muted-foreground">
+							No GitHub App is configured on this deployment, so repositories are read
+							anonymously: public ones only, and GitHub allows 60 requests an hour per address.
+							That is the intended self-host setup and needs no credential.
+						</p>
+					{:else if installations.length === 0}
+						<div class="flex flex-col items-start gap-3">
+							<p class="text-xs text-muted-foreground">
+								Connect the GitHub App to read private repositories. You choose which
+								repositories it can see, it asks for read access to code and metadata and
+								nothing else, and you can disconnect it here at any time.
+							</p>
+							<Button href="/api/integrations/github/install" data-sveltekit-reload>
+								<KeyRound class="size-4" /> Connect GitHub
+							</Button>
+						</div>
+					{:else}
+						<div class="flex flex-col gap-3">
+							{#each installations as install (install.id)}
+								<div class="flex flex-wrap items-center justify-between gap-3">
+									<div class="min-w-0">
+										<p class="text-sm font-medium text-foreground">
+											{install.accountLogin}
+											<Badge variant="outline" class="ml-1 align-middle">
+												{install.repositorySelection === 'all'
+													? 'all repositories'
+													: 'selected repositories'}
+											</Badge>
+										</p>
+										<p class="mt-0.5 text-xs text-muted-foreground">
+											{Object.entries(install.permissions)
+												.map(([name, level]) => `${name}: ${level}`)
+												.join(', ') || 'no permissions reported'}
+										</p>
+									</div>
+									<div class="flex items-center gap-2">
+										<Button
+											href="/api/integrations/github/install"
+											variant="outline"
+											size="sm"
+											data-sveltekit-reload
+										>
+											Change repositories
+										</Button>
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											disabled={disconnectingId === install.id}
+											onclick={() => disconnectInstallation(install.id)}
+										>
+											Disconnect
+										</Button>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				{/if}
 			</Card.Content>
 		</Card.Root>
