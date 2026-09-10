@@ -68,7 +68,7 @@
 			runStats7d: { total: number; success: number; failed: number; running: number };
 			recentRuns: Run[];
 			campaigns: Campaign[];
-			spend: { cost24h: number; cost7d: number; assistCost24h: number; assistCost7d: number };
+			spend: { cost24h: number; cost7d: number; assistCost24h: number; assistCost7d: number } | null;
 		};
 	} = $props();
 
@@ -161,18 +161,20 @@
 		icon={AlertTriangle}
 		hint="Last 7 days"
 	/>
-	<StatCard
-		label="Campaign spend (24h / 7d)"
-		value={`$${data.spend.cost24h.toFixed(2)}`}
-		icon={DollarSign}
-		hint={`$${data.spend.cost7d.toFixed(2)} over the last 7 days`}
-	/>
-	<StatCard
-		label="Assistant spend (24h / 7d)"
-		value={`$${data.spend.assistCost24h.toFixed(2)}`}
-		icon={Bot}
-		hint={`$${data.spend.assistCost7d.toFixed(2)} over the last 7 days - LinkedIn suggestions, separate from campaign spend`}
-	/>
+	{#if data.spend}
+		<StatCard
+			label="Campaign spend (24h / 7d)"
+			value={`$${data.spend.cost24h.toFixed(2)}`}
+			icon={DollarSign}
+			hint={`$${data.spend.cost7d.toFixed(2)} over the last 7 days`}
+		/>
+		<StatCard
+			label="Assistant spend (24h / 7d)"
+			value={`$${data.spend.assistCost24h.toFixed(2)}`}
+			icon={Bot}
+			hint={`$${data.spend.assistCost7d.toFixed(2)} over the last 7 days - LinkedIn suggestions, separate from campaign spend`}
+		/>
+	{/if}
 	<StatCard
 		label="Unique people contacted"
 		value={data.stats.uniqueContacts}

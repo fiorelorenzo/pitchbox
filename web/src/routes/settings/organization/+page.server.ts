@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '../../../lib/server/db.js';
 import { resolveOrgId } from '../../../lib/server/auth.js';
 import { listOrgMembers, listPendingInvites } from '@pitchbox/shared/orgs';
+import { currentEdition } from '@pitchbox/shared/edition';
 import {
   billingPeriodFor,
   getOrgPeriodSpend,
@@ -43,7 +44,15 @@ export const load: PageServerLoad = async (event) => {
 
   // The quota card is admin+ only (matches the org-quota API route's
   // requireRole('admin') gate), so skip the extra queries for a member whose
-  // UI hides the card anyway.
+  // UI hides the card anyway. LOR-182: also self-host only - the figures
+  // it shows (month-to-date spend, remaining budget, the raw USD ceiling
+  // itself) are the deployment's Gateway bill, not something a cloud
+  // tenant bought. `organizations.monthlyRunBudgetUsd`/`maxConcurrentRuns`
+  // mirror the plan's own ceiling on cloud (`setOrgPlan`,
+  // shared/src/orgs.ts), so this card would otherwise show a cloud tenant
+  // the exact dollar figure `/settings/billing` deliberately turns into a
+  // percentage. Self-host keeps this exactly as it always was: the
+  // operator pays the Gateway bill and sets this budget by hand.
   let quota: {
     monthlyRunBudgetUsd: number | null;
     maxConcurrentRuns: number | null;
@@ -52,7 +61,7 @@ export const load: PageServerLoad = async (event) => {
     assistantUsd: number;
     remainingUsd: number | null;
   } | null = null;
-  if (canManage && org) {
+  if (canManage && org && currentEdition() !== 'cloud') {
     const period = await billingPeriodFor(db, orgId);
     const [spend, snapshot] = await Promise.all([
       getOrgPeriodSpend(db, orgId, period),

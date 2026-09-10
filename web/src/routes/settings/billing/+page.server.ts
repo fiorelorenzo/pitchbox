@@ -24,7 +24,15 @@ export type BillingUsage = {
   accounts: UsageMetric;
   seats: UsageMetric;
   extensionDevices: UsageMetric;
-  costUsd: UsageMetric;
+  /** LOR-182: never the raw dollar figures behind the plan's model-spend
+   * ceiling (`entitlements.monthlyRunBudgetUsd`) - only the fraction of it
+   * this org has used this period. `usedPercent` is null when the plan
+   * carries no ceiling at all (unlimited), the same null-means-unlimited
+   * convention every other `UsageMetric.limit` uses. `getOrgUsage` itself
+   * keeps returning the USD number unchanged (`/settings/admin` and
+   * enforcement still need it); `modelAllowanceUsage` below is the one
+   * conversion point that turns it into what a tenant may see. */
+  modelAllowance: { usedPercent: number | null };
 };
 
 export type PickablePlan = {
@@ -67,6 +75,19 @@ export type BillingPageData =
 function intervalFromPeriod(start: Date, end: Date): 'month' | 'year' {
   const days = (end.getTime() - start.getTime()) / 86_400_000;
   return days > 60 ? 'year' : 'month';
+}
+
+// LOR-182: the one place a tenant's model spend turns from the dollar
+// figure `getOrgUsage` computes into the fraction of their plan's
+// allowance they may actually see. Rounded to one decimal place so a
+// nearly-exhausted allowance reads as "99.7%" rather than snapping to
+// "100%" a run early; deliberately not clamped at 100, since a tenant who
+// is already over their allowance needs to see that, not a bar frozen at
+// full.
+function modelAllowanceUsage(costUsd: UsageMetric): BillingUsage['modelAllowance'] {
+  if (costUsd.limit == null) return { usedPercent: null };
+  if (costUsd.limit <= 0) return { usedPercent: 100 };
+  return { usedPercent: Math.round((costUsd.used / costUsd.limit) * 1000) / 10 };
 }
 
 export const load: PageServerLoad = async (event) => {
@@ -147,7 +168,7 @@ export const load: PageServerLoad = async (event) => {
       accounts: usage.accounts,
       seats: usage.seats,
       extensionDevices: usage.extensionDevices,
-      costUsd: usage.costUsd,
+      modelAllowance: modelAllowanceUsage(usage.costUsd),
     },
   } satisfies BillingPageData;
 };

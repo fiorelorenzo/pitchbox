@@ -4,6 +4,7 @@ import { getDb, schema } from '$lib/server/db.js';
 import { and, desc, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { listProjects } from '@pitchbox/shared/projects';
 import { resolveOrgId } from '$lib/server/auth.js';
+import { currentEdition } from '@pitchbox/shared/edition';
 import {
   getOnboardingSnapshot,
   startOnboarding,
@@ -12,6 +13,15 @@ import {
 
 export async function load(event: RequestEvent) {
   const db = getDb();
+
+  // LOR-182: on cloud, a tenant's dashboard must never render what their
+  // runs cost the deployment - that is the Gateway bill, not something
+  // they bought. Gated once here, at the loader, rather than only in the
+  // markup: a number that reaches `data` is a number in the HTML payload
+  // (#358's lesson). Self-host keeps every figure below exactly as it
+  // always was, since the operator pays the Gateway bill there and it is
+  // their own number to see.
+  const showSpend = currentEdition() !== 'cloud';
 
   const orgId = await resolveOrgId(event);
 
@@ -57,29 +67,33 @@ export async function load(event: RequestEvent) {
   const projects = await listProjects(db, { organizationId: orgId });
   const projectIds = projects.map((p) => p.id);
 
-  const assistSince24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const assistSince7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  // Filtered by `organizationId` directly, not through this org's project
-  // ids: #523 made `assist_usage.project_id` nullable (a suggestion can be
-  // about no product at all), so an org with zero projects can still have
-  // assist spend to show - the `projectIds.length === 0` early return right
-  // below must not hardcode this to zero.
-  const [assistSpendRow] =
-    orgId == null
-      ? [{ cost24h: 0, cost7d: 0 }]
-      : await db
-          .select({
-            cost24h: sql<
-              string | null
-            >`COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= ${assistSince24h}), 0)`,
-            cost7d: sql<
-              string | null
-            >`COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= ${assistSince7d}), 0)`,
-          })
-          .from(schema.assistUsage)
-          .where(eq(schema.assistUsage.organizationId, orgId));
-  const assistCost24h = Number(assistSpendRow?.cost24h ?? 0);
-  const assistCost7d = Number(assistSpendRow?.cost7d ?? 0);
+  let assistCost24h = 0;
+  let assistCost7d = 0;
+  if (showSpend) {
+    const assistSince24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const assistSince7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    // Filtered by `organizationId` directly, not through this org's project
+    // ids: #523 made `assist_usage.project_id` nullable (a suggestion can be
+    // about no product at all), so an org with zero projects can still have
+    // assist spend to show - the `projectIds.length === 0` early return right
+    // below must not hardcode this to zero.
+    const [assistSpendRow] =
+      orgId == null
+        ? [{ cost24h: 0, cost7d: 0 }]
+        : await db
+            .select({
+              cost24h: sql<
+                string | null
+              >`COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= ${assistSince24h}), 0)`,
+              cost7d: sql<
+                string | null
+              >`COALESCE(SUM(cost_usd) FILTER (WHERE created_at >= ${assistSince7d}), 0)`,
+            })
+            .from(schema.assistUsage)
+            .where(eq(schema.assistUsage.organizationId, orgId));
+    assistCost24h = Number(assistSpendRow?.cost24h ?? 0);
+    assistCost7d = Number(assistSpendRow?.cost7d ?? 0);
+  }
 
   // No projects in this org - nothing to show, and `inArray(x, [])` is a SQL error.
   if (projectIds.length === 0) {
@@ -104,7 +118,7 @@ export async function load(event: RequestEvent) {
       },
       recentRuns: [],
       campaigns: [],
-      spend: { cost24h: 0, cost7d: 0, assistCost24h, assistCost7d },
+      spend: showSpend ? { cost24h: 0, cost7d: 0, assistCost24h, assistCost7d } : null,
     };
   }
 
@@ -197,31 +211,40 @@ export async function load(event: RequestEvent) {
     .orderBy(desc(schema.runs.startedAt))
     .limit(5);
 
-  // ----- Spend (last 24h / 7d) -----
-  // The assistant's spend lives entirely in `assist_usage`
+  // ----- Spend (last 24h / 7d) - LOR-182: skipped outright on cloud, not
+  // just hidden in the markup, matching the assist-spend gate above. The
+  // assistant's spend lives entirely in `assist_usage`
   // (`assistCost24h`/`assistCost7d`, computed above before the
   // zero-projects early return) - #521 retired the `assist`-kind `runs`
   // row entirely, so this query is campaign/other-run cost only, with
-  // nothing left to exclude.
-  const [spendRow] = await db
-    .select({
-      cost24h: sql<
-        string | null
-      >`COALESCE(SUM(cost_usd) FILTER (WHERE started_at >= ${since24h}), 0)`,
-      cost7d: sql<
-        string | null
-      >`COALESCE(SUM(cost_usd) FILTER (WHERE started_at >= ${since7d}), 0)`,
-    })
-    .from(schema.runs)
-    .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
-    .where(runOrgMatch);
+  // nothing left to exclude. -----
+  let spend: {
+    cost24h: number;
+    cost7d: number;
+    assistCost24h: number;
+    assistCost7d: number;
+  } | null = null;
+  if (showSpend) {
+    const [spendRow] = await db
+      .select({
+        cost24h: sql<
+          string | null
+        >`COALESCE(SUM(cost_usd) FILTER (WHERE started_at >= ${since24h}), 0)`,
+        cost7d: sql<
+          string | null
+        >`COALESCE(SUM(cost_usd) FILTER (WHERE started_at >= ${since7d}), 0)`,
+      })
+      .from(schema.runs)
+      .leftJoin(schema.campaigns, eq(schema.campaigns.id, schema.runs.campaignId))
+      .where(runOrgMatch);
 
-  const spend = {
-    cost24h: Number(spendRow?.cost24h ?? 0),
-    cost7d: Number(spendRow?.cost7d ?? 0),
-    assistCost24h,
-    assistCost7d,
-  };
+    spend = {
+      cost24h: Number(spendRow?.cost24h ?? 0),
+      cost7d: Number(spendRow?.cost7d ?? 0),
+      assistCost24h,
+      assistCost7d,
+    };
+  }
 
   // ----- Run stats (last 7 days, campaign runs only - the three cards on
   // the home page are labelled 'Campaign runs', 'Successful runs',

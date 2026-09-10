@@ -117,6 +117,44 @@ a feature flag rather than a metered limit, so it has no Stripe metadata
 counterpart and always comes from the catalogue, keyed by plan id, even for a
 mirrored subscription.
 
+## What a tenant sees of their own model spend
+
+`monthlyRunBudgetUsd` (`shared/src/plans.ts`) is a real dollar ceiling, mirrored
+onto `organizations.monthly_run_budget_usd` so `shared/src/org-quota.ts` can
+enforce it without re-resolving entitlements, and `getOrgUsage`
+(`shared/src/usage.ts`) reports what a period has spent against it in USD
+(`costUsd`). None of that changes (LOR-182): the enforced number and the
+number `getOrgUsage` computes stay in dollars, because re-denominating the
+enforcement itself would be a second, larger change and would leave the
+enforced limit and the number shown disagreeing.
+
+What changed is what a **tenant** may be shown of it on the cloud edition.
+Before LOR-182, the dashboard's "Campaign spend"/"Assistant spend" cards,
+`/settings/billing`'s "Model spend this period" and `/settings/organization`'s
+month-to-date figure all rendered `costUsd` as a currency amount - which is
+the deployment's own Gateway bill, not something the tenant bought, and it
+invites reasoning about margin that is none of a customer's business. On
+cloud, no page outside `/settings/admin` prints a dollar figure any more:
+
+- The dashboard's two spend cards are gone outright - there is no allowance
+  to express them as a percentage of, they were always our cost, not theirs.
+- `/settings/organization`'s "Quota & budget" card (month-to-date spend,
+  remaining budget, and the raw USD ceiling itself) is gone; it duplicated
+  the same plan-derived ceiling `/settings/billing` already shows, in the
+  one place that also let a tenant edit it directly.
+- `/settings/billing`'s "Model spend this period" becomes "Model allowance
+  used", a percentage of the plan's ceiling plus its existing bar - never a
+  currency amount, a per-run cost, or the ceiling itself in dollars. A
+  tenant who is approaching or over the ceiling still sees that coming
+  (the percentage keeps counting past 100), which a hidden internal-only
+  guard would not give them.
+
+Self-host (edition unset) is unaffected on every one of those surfaces: the
+operator pays the Gateway bill there, so it is their own number to see, same
+as it always was. `getOrgUsage` keeps returning `costUsd` unchanged for the
+surfaces that may still show it in dollars: `/settings/admin` (the instance
+figure) and self-host.
+
 ## Where the marketing site's pricing page gets its numbers
 
 `pitchbox-landing` (a separate repo, its own deploy, no database) cannot call
