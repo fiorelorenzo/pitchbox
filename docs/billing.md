@@ -142,13 +142,24 @@ metadata change.
   raises the price, and usage already spent in the period keeps counting
   against the new ceiling rather than resetting.
 - A downgrade is only ever mirrored once Stripe's live subscription actually
-  reports the new plan - never anticipated - so the org keeps its current
-  plan until whatever scheduling mechanism moved the change (a portal
-  cancellation uses `cancel_at_period_end` natively; a cross-tier price
-  switch needs its own Subscription Schedule, since Stripe's customer portal
-  can only auto-schedule a downgrade between two prices of the **same
-  product**, and Solo/Growth/Scale are three separate products) actually
-  applies it at period end.
+  reports the new plan - never anticipated. The customer portal defers it for
+  us: its configuration carries
+  `subscription_update[schedule_at_period_end][conditions]` =
+  `decreasing_item_amount` + `shortening_interval`, so a cheaper plan, or a
+  move from yearly to monthly, leaves the subscription on its current price and
+  creates a **Subscription Schedule** whose second phase starts at
+  `current_period_end` (`end_behavior: release`, so the schedule releases
+  itself once that phase begins and the subscription simply continues on the
+  new price). The org therefore keeps what it paid for until period end, and
+  the plan swap arrives here as an ordinary `customer.subscription.updated`.
+  This works **across products**, so Solo/Growth/Scale staying three separate
+  products costs nothing and this app owns no scheduling code: measured against
+  the real test account on 2026-09-10, driving the portal from Growth monthly
+  down to Solo monthly, which answered "Your subscription will be updated at
+  the end of your current billing period on October 10, 2026" and produced a
+  two-phase schedule (Growth until the 10th, Solo after). An **upgrade** is
+  unaffected and stays immediate with proration, since neither condition
+  matches it.
 - A failed payment (`invoice.payment_failed`) starts a **14-day grace period**,
   counted from the first failure rather than restarted by each Smart Retries
   reattempt. The org keeps working normally during grace; a banner and a
@@ -193,14 +204,28 @@ does. It talks to the real **test-mode** account (`~/.config/pitchbox-stripe-
 test.key`), so it cannot run on a CI runner and is deliberately a script, not
 a test in the suite: `shared/tests/billing-checkout-portal.test.ts` used to
 hold this check and turned `main` red on a runner that had no key while every
-PR stayed green, which is what moved it here. It proves three things no
+PR stayed green, which is what moved it here. It proves four things no
 fixture can: the Checkout payload this repo builds is one Stripe accepts
 under Managed Payments (including that the parameters Stripe rejects are
-absent), a portal session opens for a customer this repo created, and the
+absent), a portal session opens for a customer this repo created, the
 prices/metadata recorded in `shared/tests/fixtures/stripe/catalogue.json`
 still match the live account (`--refresh` rewrites that fixture after a
-deliberate catalogue change). Run it before a billing release and after any
-change to the price catalogue. It never writes to the app database.
+deliberate catalogue change), and the portal configuration still carries the
+two `schedule_at_period_end` conditions - a configuration that lost them
+applies a downgrade immediately, which is invisible from this repo and costs a
+customer money.
+
+It has one blind spot, deliberately not papered over.
+`subscription_update[products]`, the list that decides which prices a customer
+can switch between, is accepted on write and **not returned** on read: the
+object comes back with `enabled`, `default_allowed_updates`,
+`proration_behavior`, `schedule_at_period_end`, `billing_cycle_anchor` and
+`trial_update_behavior`, and nothing else. Reading it back therefore proves
+nothing about the price list, so the probe does not claim to check it; that
+half is verified by opening a portal session for a subscribed customer in test
+mode and looking at the page. Run the probe before a billing release and after
+any change to the price catalogue or the portal. It never writes to the app
+database.
 
 ## Environment
 
@@ -269,8 +294,16 @@ Two places, and both are real: Stripe gives every Managed Payments customer
 [link.com](https://link.com) for order history, cancellation, payment method and
 billing address, and the app offers the same through the **Stripe customer
 portal** (configuration created by the setup script, plan switching over the six
-prices, cancellation at period end with a reason, invoice history), returning to
+prices with a monthly/yearly toggle, a downgrade deferred to period end,
+cancellation at period end with a reason, invoice history), returning to
 `/settings/billing`.
+
+What the app does **not** show yet is a plan change the portal has scheduled: a
+customer who downgrades sees "Your service will be updated on <date>" in the
+portal, while `/settings/billing` keeps reporting the current plan with no hint
+that it changes at period end, because `org_subscriptions` mirrors the live
+subscription and the pending phase lives on a Subscription Schedule this app
+never reads.
 
 ## Tax
 

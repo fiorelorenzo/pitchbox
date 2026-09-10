@@ -358,6 +358,25 @@ async function ensurePortal(catalogue: { product: StripeProduct; prices: StripeP
         enabled: true,
         default_allowed_updates: ['price'],
         proration_behavior: 'create_prorations',
+        // What makes a downgrade keep what the customer already paid for. With
+        // these conditions the portal does not apply a cheaper price straight
+        // away: it builds a Subscription Schedule whose second phase starts at
+        // `current_period_end`, leaves the subscription on its current price
+        // until then, and releases itself once the new phase begins. An
+        // upgrade is unaffected and stays immediate with proration, since
+        // neither condition matches it.
+        //
+        // `decreasing_item_amount` covers a cheaper plan, `shortening_interval`
+        // a move from yearly to monthly. Measured against the real test account
+        // on 2026-09-10: it defers **across products** as well, which is what
+        // #613 assumed was impossible - the portal's own confirmation reads
+        // "Your subscription will be updated at the end of your current billing
+        // period", and the resulting schedule carries Growth until period end
+        // and Solo after it. So Solo/Growth/Scale stay three products, and this
+        // app owns no scheduling code.
+        schedule_at_period_end: {
+          conditions: [{ type: 'decreasing_item_amount' }, { type: 'shortening_interval' }],
+        },
         products: catalogue.map(({ product, prices }) => ({
           product: product.id,
           prices: prices.map((p) => p.id),
