@@ -110,6 +110,31 @@ describe('captureObservedImage (#569)', () => {
     expect(image).toEqual({ alt: 'a chart', kind: 'image', partial: false });
   });
 
+  // The real content-script world, which every test above quietly was not:
+  // `chrome.permissions` is not part of the API surface a content script
+  // gets, so the pre-check threw `Cannot read properties of undefined
+  // (reading 'contains')` and the rejection escaped into the assist
+  // controller, which left the in-page panel on "Reading the post..."
+  // forever on any post carrying an image (measured on the real feed,
+  // 2026-09-10). Stubbing `chrome.permissions` is what hid it.
+  it('still asks the background worker when chrome.permissions is absent, as it is in a content script', async () => {
+    globalWithChrome.chrome = {
+      runtime: { sendMessage: sendMessageMock, lastError: undefined },
+    } as unknown as typeof chrome;
+    document.body.innerHTML = '<div id="post"><img id="media" alt="a chart" /></div>';
+    const post = document.getElementById('post')!;
+    stubRect(document.getElementById('media')!, 400, 300, true);
+    respondWith({ ok: true, dataUrl: 'data:image/jpeg;base64,AAAA' });
+    const image = await captureObservedImage(post, document);
+    expect(sendMessageMock).toHaveBeenCalled();
+    expect(image).toEqual({
+      alt: 'a chart',
+      kind: 'image',
+      partial: false,
+      dataUrl: 'data:image/jpeg;base64,AAAA',
+    });
+  });
+
   // Hostile fixture (#569 acceptance): a background worker (or a crafted
   // response from an untrusted extension context) that hands back a
   // dataUrl past the extension's own cap must never have that cap silently

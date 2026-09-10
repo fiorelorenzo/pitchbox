@@ -526,7 +526,23 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
     }
   }
 
+  /**
+   * A throw anywhere below leaves the panel in `streaming` forever, since
+   * nothing else ever writes its state - which is exactly what a
+   * `chrome.permissions` call from a content script did on every LinkedIn post
+   * carrying an image (2026-09-10): "Reading the post..." with no error, no
+   * request, and no way back. The failure is named here rather than trusted
+   * not to happen.
+   */
   async function requestSuggestion(retune?: RetuneDirection): Promise<void> {
+    try {
+      await runSuggestion(retune);
+    } catch (e) {
+      void setRefused('generation_failed', { threw: (e as Error)?.message ?? String(e) });
+    }
+  }
+
+  async function runSuggestion(retune?: RetuneDirection): Promise<void> {
     if (!capturedPost) {
       void setRefused('selector_health_degraded');
       return;

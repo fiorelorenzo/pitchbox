@@ -441,6 +441,12 @@
   border-radius: var(--radius-sm);
   background: var(--li-accent);
   color: var(--li-accent-foreground);
+  /* A `<button>` does not inherit `font-family`: the UA stylesheet sets its
+   * own, so without this the one control the panel exists for rendered in
+   * Arial while every line around it was Inter. Measured on the real feed,
+   * 2026-09-10 (`getComputedStyle(button).fontFamily` came back `Arial`),
+   * which is also why `.assist-textarea` and `.assist-why` already carry it. */
+  font-family: inherit;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;

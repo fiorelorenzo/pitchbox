@@ -53,25 +53,36 @@ export function ensurePanelFont(): Promise<void> {
     for (const face of document.fonts) {
       if (unquote(face.family) === FAMILY) return;
     }
+
+    // Three shapes reach this line, and the difference is not cosmetic.
+    //
     // Under @crxjs the import above is already an absolute
-    // `chrome-extension://` URL. The fallbacks are for a path that came back
-    // root-relative: inside an extension it is resolved against the
-    // extension's own origin, and outside one (the smoke harness, a plain Vite
-    // build) against the page's, which is also what makes this path checkable
-    // in a browser at all.
+    // `chrome-extension://` URL. In the panel content scripts it is a
+    // `data:font/woff2;base64,...`, because those are built as a single-file
+    // IIFE (`build.lib`, see extension/vite-plugins/panel-content-scripts.ts)
+    // and Vite inlines a lib build's assets rather than emitting them. And in
+    // the smoke harness or a plain Vite build it can be root-relative, which
+    // is what makes this path checkable in a browser at all.
+    //
+    // The scheme test therefore has to be "has a scheme", not "has `://`":
+    // a `data:` URL has no authority, so an `://` test sent it down the
+    // `getURL` branch and produced
+    // `chrome-extension://<id>/data:font/woff2;base64,...`, a 404. Measured on
+    // the real LinkedIn feed on 2026-09-10, where the panel logged
+    // "panel font unavailable NetworkError" on every mount and rendered in the
+    // fallback stack instead of Inter.
     //
     // `typeof chrome`, not `chrome?.`: optional chaining does not protect
     // against an *undeclared* identifier, so `chrome?.runtime` throws a
     // ReferenceError outside an extension rather than yielding undefined. That
     // is not hypothetical - it is what made this branch unverifiable until it
     // was measured.
+    const absolute = /^[a-z][a-z0-9+.-]*:/i.test(interLatin);
     const extensionUrl =
-      typeof chrome !== 'undefined'
+      !absolute && typeof chrome !== 'undefined'
         ? chrome.runtime?.getURL?.(interLatin.replace(/^\/+/, ''))
         : undefined;
-    const url = /^[a-z-]+:\/\//i.test(interLatin)
-      ? interLatin
-      : (extensionUrl ?? new URL(interLatin, location.href).href);
+    const url = absolute ? interLatin : (extensionUrl ?? new URL(interLatin, location.href).href);
     const face = new FontFace(FAMILY, `url(${url})`, {
       weight: '100 900',
       style: 'normal',
