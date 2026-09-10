@@ -56,7 +56,8 @@ That choice is not just a fee, it constrains the integration:
 
 `scripts/stripe-setup.ts` is the source of truth for the catalogue and creates or
 reconciles every object the app needs: three products, six prices, the customer
-portal configuration, the two webhook endpoints, and the Stripe Tax defaults.
+portal configuration, this run's own webhook endpoint, and the Stripe Tax
+defaults.
 
 | Plan   | Monthly | Annual | Projects | Runs / month | Suggestions / month | Seats |
 | ------ | ------- | ------ | -------- | ------------ | ------------------- | ----- |
@@ -181,7 +182,7 @@ metadata change.
 # see what would change, against either mode
 STRIPE_SECRET_KEY=sk_test_... pnpm exec tsx scripts/stripe-setup.ts --dry-run
 
-# apply, capturing any webhook signing secret it has to create
+# apply, capturing the webhook signing secret if it has to create one
 STRIPE_SECRET_KEY=sk_live_... pnpm exec tsx scripts/stripe-setup.ts \
   --secrets-out ~/.config/pitchbox-stripe-live-webhooks.env
 ```
@@ -191,6 +192,14 @@ A price whose amount changed cannot be edited (Stripe prices are immutable), so
 the script creates the new price, moves the lookup key onto it, and deactivates
 the old one. Subscriptions already on the old price keep it until they are
 migrated on purpose.
+
+The mode of the key decides which webhook endpoint this run owns (see
+"Webhooks" below): a live key never creates or touches the preview endpoint,
+and a test key never creates or touches the production one. If the account
+still holds an _enabled_ endpoint for the other mode, this run reports it and
+disables it - never deletes it, so it stays visible in the dashboard - rather
+than leaving it to retry a signature it can never verify until Stripe disables
+it on its own.
 
 A webhook signing secret is returned only when the endpoint is created. Pass
 `--secrets-out` or copy it from the run output; Stripe never shows it again.
@@ -241,6 +250,13 @@ database.
 Production and preview have **separate webhook endpoints with separate signing
 secrets** on purpose: a preview deployment holding the production secret could
 write production billing state. Never copy one into the other.
+
+Which endpoint exists in which mode is derived, not chosen: `scripts/stripe-setup.ts`
+reads the mode off the `sk_live_`/`sk_test_` prefix of the key it is given and creates
+or reconciles only that mode's own endpoint, so there is exactly one enabled
+webhook endpoint per mode, never both origins in both modes (LOR-156, fixing an
+account that held all four - the wrong-mode pair could never verify a signature
+and got retried until Stripe disabled them).
 
 A Docker deployment needs each of those four in **both** compose files, not
 only in `.env`: `docker-compose.app.yml` enumerates the container's
