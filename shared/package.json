@@ -108,7 +108,8 @@
     "migrate": "tsx src/db/migrate.ts",
     "migrate:generate": "drizzle-kit generate",
     "seed:core": "tsx src/db/seed-core.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "migrations:check": "tsx src/db/check-migration-chain.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.1.0",
