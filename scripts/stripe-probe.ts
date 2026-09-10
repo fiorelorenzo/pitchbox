@@ -62,19 +62,44 @@ const LOOKUPS = [
   'pitchbox_scale_yearly',
 ];
 
+/**
+ * The key this run checks. `STRIPE_SECRET_KEY` wins when it is set, so the
+ * live account can be probed too: without it this script silently read the
+ * test key no matter what the caller passed, and reported the **test**
+ * account's portal and endpoints while appearing to answer for live (measured
+ * 2026-09-10, right after the live-mode reconciliation). The file remains the
+ * default, since that is the ordinary case.
+ */
 function readKey(): string {
+  const fromEnv = process.env.STRIPE_SECRET_KEY?.trim();
+  if (fromEnv) return fromEnv;
   try {
     return readFileSync(KEY_PATH, 'utf8').trim();
   } catch {
     console.error(
-      `no Stripe test key at ${KEY_PATH}. This script is for the machine that holds it; CI is not.`,
+      `no Stripe key: pass STRIPE_SECRET_KEY or put the test key at ${KEY_PATH}. This script is for the machine that holds it; CI is not.`,
     );
     process.exit(2);
   }
 }
 
 const refresh = process.argv.includes('--refresh');
-const stripe = createStripeClient(readKey());
+const key = readKey();
+const stripe = createStripeClient(key);
+/**
+ * The recording in `catalogue.json` is a **test-mode** recording: the two
+ * accounts hold different ids, and their product metadata is allowed to
+ * diverge (measured 2026-09-10: live carries no `tax_code_note`, which an
+ * older version of `stripe-setup.ts` had written into test). So the fixture
+ * diff only means something against a test key, and `--refresh` under a live
+ * key would overwrite the test recording with live ids. Both are refused
+ * rather than reported as six mysterious differences.
+ */
+const fixtureApplies = stripeModeFromKey(key) === 'test';
+if (refresh && !fixtureApplies) {
+  console.error('--refresh needs the test key: the recording is a test-mode catalogue');
+  process.exit(2);
+}
 
 const recorded: Record<string, unknown> = {};
 let drift = 0;
@@ -103,8 +128,10 @@ for (const lookup of LOOKUPS) {
     product: { id: product.id, name: product.name, metadata: product.metadata },
   };
 
-  const known = fixture[lookup];
-  if (!known) {
+  const known = fixtureApplies ? fixture[lookup] : undefined;
+  if (!fixtureApplies) {
+    console.log(`${lookup}: ok (${price.unit_amount} ${price.currency}, live, not compared)`);
+  } else if (!known) {
     console.log(`${lookup}: not in the recording`);
     drift += 1;
   } else if (known.price.unit_amount !== price.unit_amount) {
