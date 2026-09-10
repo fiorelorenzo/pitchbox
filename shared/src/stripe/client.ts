@@ -52,6 +52,16 @@ export type StripeSubscription = {
     | 'unpaid'
     | 'paused';
   cancel_at_period_end: boolean;
+  /** IDs of every discount currently applied. `2025-03-31.basil` deprecated
+   * the singular `discount` field in favor of this array (up to 20
+   * stackable discounts). Never expanded or read by this module: a 100%-off
+   * coupon (`shared/src/stripe/live-verification-coupon.ts`, LOR-188)
+   * changes what Stripe collects on the invoice, not the item's price or
+   * product this module reads limits and the plan id from, so a discounted
+   * subscription mirrors exactly like a full-price one. Declared here so a
+   * real event's shape (`shared/tests/billing-webhook.test.ts`) does not
+   * need an unsafe cast to include it. */
+  discounts?: string[];
   metadata: StripeMetadata;
   items: { data: StripeSubscriptionItem[] };
 };

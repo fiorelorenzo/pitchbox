@@ -804,3 +804,61 @@ describe('applyStripeEvent - grace window and read-only (#554)', () => {
     expect(isOrgReadOnly(entitlements)).toBe(false);
   });
 });
+
+describe('applyStripeEvent - a fully discounted (100% off) subscription (LOR-188)', () => {
+  it('mirrors the plan real limits, not a discounted or zeroed-out plan', async () => {
+    const org = await makeOrg();
+    const subscriptionId = `sub_${randomUUID()}`;
+    // Shaped the way Stripe actually answers once the LOR-188
+    // live-verification coupon is redeemed at Checkout: `discounts` carries
+    // the applied discount's id (2025-03-31.basil's replacement for the
+    // deprecated singular `discount` field), and the item's price/product
+    // are completely untouched by it - a 100% coupon changes what the
+    // invoice collects, never the price or product the webhook reads the
+    // plan and its limits from.
+    const sub: StripeSubscription = {
+      ...fakeSubscription({
+        id: subscriptionId,
+        customer: org.stripeCustomerId,
+        product: GROWTH_PRODUCT,
+      }),
+      discounts: [`di_${randomUUID()}`],
+    };
+
+    const result = await applyStripeEvent(getDb(), fakeStripeClient({ [subscriptionId]: sub }), {
+      id: `evt_${randomUUID()}`,
+      type: 'checkout.session.completed',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: { subscription: subscriptionId, customer: org.stripeCustomerId } },
+    });
+    expect(result.outcome).toBe('applied');
+
+    const [row] = await getDb()
+      .select()
+      .from(schema.orgSubscriptions)
+      .where(eq(schema.orgSubscriptions.organizationId, org.id));
+    expect(row.status).toBe('active');
+    expect(row.planId).toBe('growth');
+    expect(row.limitRuns).toBe(2000);
+    expect(row.limitProjects).toBe(10);
+    expect(row.limitSeats).toBe(3);
+
+    const [freshOrg] = await getDb()
+      .select({ plan: schema.organizations.plan, planSource: schema.organizations.planSource })
+      .from(schema.organizations)
+      .where(eq(schema.organizations.id, org.id));
+    expect(freshOrg.plan).toBe('growth');
+    expect(freshOrg.planSource).toBe('stripe');
+
+    process.env.PITCHBOX_EDITION = 'cloud';
+    try {
+      const entitlements = await resolveEntitlements(getDb(), org.id);
+      expect(entitlements.planId).toBe('growth');
+      expect(entitlements.projects).toBe(10);
+      expect(entitlements.seats).toBe(3);
+      expect(entitlements.source).toBe('subscription');
+    } finally {
+      delete process.env.PITCHBOX_EDITION;
+    }
+  });
+});
