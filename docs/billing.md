@@ -278,6 +278,36 @@ settings in the Dashboard do not affect those. What is still configurable is the
 upcoming-renewal reminder and the failed-payment (dunning) emails, in
 **Subscription and email settings** in the Stripe Dashboard.
 
+What is set on the live account, as of 2026-09-10 (Settings > Billing >
+Subscriptions and emails, dashboard only - no API key reaches it):
+
+| Setting                                         | State                             |
+| ----------------------------------------------- | --------------------------------- |
+| Emails about upcoming renewals                  | on                                |
+| Emails about expiring cards                     | on                                |
+| Emails when card payments fail                  | on                                |
+| Emails when bank debit payments fail            | on                                |
+| Link for customers to manage their subscription | on, to the Stripe customer portal |
+| Trial reminder                                  | off - there is no trial           |
+
+All five were **off** until then, which meant a customer whose card failed was
+told nothing by Stripe, while the app started a 14-day grace and showed a
+banner only to somebody who happened to open it. Prod also has no mail provider
+configured, so the app itself sent nothing either.
+
+How that lines up with the grace period: Stripe retries, emails the customer on
+each failure, and **cancels the subscription after 15 days incomplete** (or when
+all retries fail), leaving the invoice past-due. The app turns the org
+read-only at day 14, so the order is: failure and email, 14 days of grace,
+read-only, then the cancellation arrives as
+`customer.subscription.deleted` and drops the org to Free, a working plan.
+
+One knob is deliberately left alone. **Payment method updates** still points at
+`https://pitchbox.app` for every email (the legacy "mix of both" setup);
+switching it to the Stripe-hosted page is the right destination, but the
+dashboard warns the change "cannot be reversed", so it is Lorenzo's call rather
+than a settings edit.
+
 Two consequences worth knowing before support is promised anywhere:
 
 - Stripe answers payment and subscription support through Link support, and
