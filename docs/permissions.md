@@ -221,8 +221,16 @@ plan card). `/settings`
 itself now just redirects (307) to `/settings/status`. The four routes that
 used to be General's tabs each gate their own data set in their own loader,
 the same per-data-set split #237 landed on the old combined page: `status`
-(daemon health from a client store, plus the extension `backendUrl`, which is
-not privileged) needs no role gate at all; `runners` (agent runner
+(daemon health from a client store) still has no page-level role gate - the
+route itself is member-visible - but the endpoint the store polls,
+`GET /api/daemon/status`, gates itself (#184): every tenant on cloud shares
+one daemon, so a per-org role is never the right axis and the route calls
+`requireInstanceAdmin(event)` there instead, a no-op when auth is off so
+self-host is unaffected. A poll a member can't read is not rendered as
+"unavailable" (that copy is reserved for a real transient failure, see
+`web/src/lib/stores/daemon.ts`'s `reachable` vs. `permitted`): the sidebar
+card drops the daemon row and the version footer entirely, and `runners`
+(agent runner
 detection/config, `settings/default-runner` + `settings/runner-config`
 GET-equivalent data) and `quota` (posting quota defaults, `settings/quota`
 GET-equivalent data) only populate their payload when `isAdmin` (per-org role
