@@ -62,6 +62,14 @@ export type StripeSubscription = {
    * real event's shape (`shared/tests/billing-webhook.test.ts`) does not
    * need an unsafe cast to include it. */
   discounts?: string[];
+  /** The Subscription Schedule id when the portal has deferred a plan
+   * change to period end (docs/billing.md "Where a customer manages a
+   * subscription", LOR-157) - `null`/absent means no pending change. The
+   * subscription itself stays on its current price either way; the
+   * schedule's own phases (`StripeSubscriptionSchedule`, fetched
+   * separately via `getSubscriptionSchedule`) are what actually name the
+   * target plan and the date it takes effect. */
+  schedule?: string | null;
   metadata: StripeMetadata;
   items: { data: StripeSubscriptionItem[] };
 };
@@ -81,6 +89,28 @@ export type StripeInvoice = {
   id: string;
   customer: string;
   subscription: string | null;
+};
+
+export type StripeSubscriptionSchedulePhaseItem = {
+  price: string | StripePrice;
+};
+
+export type StripeSubscriptionSchedulePhase = {
+  start_date: number;
+  end_date: number;
+  items: StripeSubscriptionSchedulePhaseItem[];
+};
+
+/** `current_phase` is `null` once a schedule has finished (`completed`,
+ * `released`, `canceled`) - it names the currently active phase by its
+ * dates so `resolvePendingPlanChange` (`shared/src/billing/webhook.ts`)
+ * can find that phase in `phases` and read the one after it, rather than
+ * guessing "the last phase" is always the pending one. */
+export type StripeSubscriptionSchedule = {
+  id: string;
+  status: 'not_started' | 'active' | 'completed' | 'released' | 'canceled';
+  current_phase: { start_date: number; end_date: number } | null;
+  phases: StripeSubscriptionSchedulePhase[];
 };
 
 // The envelope Stripe posts to a webhook endpoint. `data.object` stays
@@ -154,6 +184,11 @@ export type StripeClient = {
   createCheckoutSession(params: Record<string, unknown>): Promise<StripeCheckoutSession>;
   createPortalSession(params: Record<string, unknown>): Promise<StripePortalSession>;
   getSubscription(id: string): Promise<StripeSubscription>;
+  /** Fetches the Subscription Schedule LOR-157's pending-plan-change mirror
+   * reads (`resolvePendingPlanChange`, `shared/src/billing/webhook.ts`) -
+   * a schedule id only ever comes from `StripeSubscription.schedule`, never
+   * looked up any other way. */
+  getSubscriptionSchedule(id: string): Promise<StripeSubscriptionSchedule>;
   getProduct(id: string): Promise<StripeProduct>;
   getPriceByLookupKey(lookupKey: string): Promise<StripePrice | null>;
 };
@@ -211,6 +246,13 @@ export function createStripeClient(secretKey: string): StripeClient {
     },
     getSubscription(id) {
       return request(`subscriptions/${id}?expand[]=items.data.price.product`, undefined, 'GET');
+    },
+    getSubscriptionSchedule(id) {
+      return request(
+        `subscription_schedules/${id}?expand[]=phases.items.price.product`,
+        undefined,
+        'GET',
+      );
     },
     getProduct(id) {
       return request(`products/${id}`, undefined, 'GET');

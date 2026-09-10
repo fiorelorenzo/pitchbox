@@ -20,7 +20,12 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '../src/db/client.js';
 import { applyStripeEvent, limitsFromProductMetadata } from '../src/billing/webhook.js';
 import { GRACE_PERIOD_DAYS } from '../src/billing/grace.js';
-import type { StripeClient, StripeProduct, StripeSubscription } from '../src/stripe/client.js';
+import type {
+  StripeClient,
+  StripeProduct,
+  StripeSubscription,
+  StripeSubscriptionSchedule,
+} from '../src/stripe/client.js';
 import { isOrgReadOnly, resolveEntitlements } from '../src/plans.js';
 import { billingPeriodFor } from '../src/org-quota.js';
 import { getOrgUsage } from '../src/usage.js';
@@ -102,6 +107,11 @@ function fakeSubscription(overrides: {
   currentPeriodStart?: number;
   currentPeriodEnd?: number;
   product?: StripeProduct;
+  /** LOR-157: the Subscription Schedule id when a plan change is deferred
+   * to period end - absent/undefined means no schedule, matching a real
+   * subscription that was never touched through the portal's downgrade
+   * path. */
+  schedule?: string;
 }): StripeSubscription {
   const now = Math.floor(Date.now() / 1000);
   return {
@@ -109,6 +119,7 @@ function fakeSubscription(overrides: {
     customer: overrides.customer,
     status: overrides.status ?? 'active',
     cancel_at_period_end: overrides.cancelAtPeriodEnd ?? false,
+    schedule: overrides.schedule ?? null,
     metadata: {},
     items: {
       data: [
@@ -127,10 +138,64 @@ function fakeSubscription(overrides: {
   };
 }
 
-/** A `StripeClient` whose `getSubscription` is fully controlled by the
- * test; every other method throws if a test reaches it, since none of the
- * webhook scenarios below call anything else. */
-function fakeStripeClient(subscriptions: Record<string, StripeSubscription>): StripeClient {
+/** A two-phase Subscription Schedule (LOR-157, docs/billing.md "Where a
+ * customer manages a subscription") - the shape the portal's
+ * downgrade-to-period-end path creates: the current phase on
+ * `currentProduct`'s price ending at `currentPhaseEnd`, the next phase
+ * starting there on `nextProduct`'s price. */
+function fakeSchedule(overrides: {
+  id: string;
+  status?: StripeSubscriptionSchedule['status'];
+  currentPhaseStart: number;
+  currentPhaseEnd: number;
+  currentProduct?: StripeProduct;
+  nextProduct?: StripeProduct;
+}): StripeSubscriptionSchedule {
+  return {
+    id: overrides.id,
+    status: overrides.status ?? 'active',
+    current_phase: { start_date: overrides.currentPhaseStart, end_date: overrides.currentPhaseEnd },
+    phases: [
+      {
+        start_date: overrides.currentPhaseStart,
+        end_date: overrides.currentPhaseEnd,
+        items: [
+          {
+            price: {
+              id: `price_current_${overrides.id}`,
+              lookup_key: null,
+              product: overrides.currentProduct ?? GROWTH_PRODUCT,
+            },
+          },
+        ],
+      },
+      {
+        start_date: overrides.currentPhaseEnd,
+        end_date: overrides.currentPhaseEnd + 30 * 24 * 60 * 60,
+        items: [
+          {
+            price: {
+              id: `price_next_${overrides.id}`,
+              lookup_key: null,
+              product: overrides.nextProduct ?? SOLO_PRODUCT,
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/** A `StripeClient` whose `getSubscription`/`getSubscriptionSchedule` are
+ * fully controlled by the test; every other method throws if a test
+ * reaches it, since none of the webhook scenarios below call anything
+ * else. `schedules[id]` an `Error` simulates a schedule this module
+ * cannot read (LOR-157's "unreadable schedule" case) without the test
+ * needing a real network failure. */
+function fakeStripeClient(
+  subscriptions: Record<string, StripeSubscription>,
+  schedules: Record<string, StripeSubscriptionSchedule | Error> = {},
+): StripeClient {
   const notImplemented = (method: string) => () => {
     throw new Error(`fakeStripeClient.${method} was not stubbed for this test`);
   };
@@ -145,6 +210,14 @@ function fakeStripeClient(subscriptions: Record<string, StripeSubscription>): St
       const sub = subscriptions[id];
       if (!sub) throw new Error(`fakeStripeClient has no subscription stubbed for ${id}`);
       return sub;
+    },
+    async getSubscriptionSchedule(id: string) {
+      const schedule = schedules[id];
+      if (!schedule) {
+        throw new Error(`fakeStripeClient has no subscription schedule stubbed for ${id}`);
+      }
+      if (schedule instanceof Error) throw schedule;
+      return schedule;
     },
   };
 }
@@ -600,6 +673,220 @@ describe('applyStripeEvent - upgrade now, downgrade at period end (#553)', () =>
 
     const entitlements = await resolveEntitlements(getDb(), org.id);
     expect(entitlements.projects).toBe(3); // the new, lower limit applies
+  });
+});
+
+describe('applyStripeEvent - a plan change deferred to period end via a Subscription Schedule (LOR-157)', () => {
+  const savedEdition = process.env.PITCHBOX_EDITION;
+
+  afterEach(async () => {
+    if (savedEdition === undefined) delete process.env.PITCHBOX_EDITION;
+    else process.env.PITCHBOX_EDITION = savedEdition;
+  });
+
+  it('a subscription arriving with a schedule whose next phase is a different price mirrors the pending plan and date', async () => {
+    process.env.PITCHBOX_EDITION = 'cloud';
+    const org = await makeOrg();
+    const subscriptionId = `sub_${randomUUID()}`;
+    const scheduleId = `sub_sched_${randomUUID()}`;
+    const periodStart = Math.floor(Date.now() / 1000) - 5 * 24 * 60 * 60;
+    const periodEnd = periodStart + 30 * 24 * 60 * 60;
+
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient(
+        {
+          [subscriptionId]: fakeSubscription({
+            id: subscriptionId,
+            customer: org.stripeCustomerId,
+            product: GROWTH_PRODUCT,
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            schedule: scheduleId,
+          }),
+        },
+        {
+          [scheduleId]: fakeSchedule({
+            id: scheduleId,
+            currentPhaseStart: periodStart,
+            currentPhaseEnd: periodEnd,
+            currentProduct: GROWTH_PRODUCT,
+            nextProduct: SOLO_PRODUCT,
+          }),
+        },
+      ),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodStart,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+
+    const [row] = await getDb()
+      .select()
+      .from(schema.orgSubscriptions)
+      .where(eq(schema.orgSubscriptions.organizationId, org.id));
+    expect(row.planId).toBe('growth'); // the subscription itself stays on its current price
+    expect(row.pendingPlanId).toBe('solo');
+    expect(row.pendingPlanEffectiveAt?.getTime()).toBe(periodEnd * 1000);
+  });
+
+  it('the same subscription arriving without a schedule clears the pending plan and date', async () => {
+    process.env.PITCHBOX_EDITION = 'cloud';
+    const org = await makeOrg();
+    const subscriptionId = `sub_${randomUUID()}`;
+    const scheduleId = `sub_sched_${randomUUID()}`;
+    const periodStart = Math.floor(Date.now() / 1000) - 5 * 24 * 60 * 60;
+    const periodEnd = periodStart + 30 * 24 * 60 * 60;
+
+    // First delivery: the schedule exists, so a pending change is mirrored -
+    // exactly the previous test's scenario, set up here so this test does
+    // not depend on ordering against it.
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient(
+        {
+          [subscriptionId]: fakeSubscription({
+            id: subscriptionId,
+            customer: org.stripeCustomerId,
+            product: GROWTH_PRODUCT,
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            schedule: scheduleId,
+          }),
+        },
+        {
+          [scheduleId]: fakeSchedule({
+            id: scheduleId,
+            currentPhaseStart: periodStart,
+            currentPhaseEnd: periodEnd,
+            currentProduct: GROWTH_PRODUCT,
+            nextProduct: SOLO_PRODUCT,
+          }),
+        },
+      ),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodStart,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+    let [row] = await getDb()
+      .select()
+      .from(schema.orgSubscriptions)
+      .where(eq(schema.orgSubscriptions.organizationId, org.id));
+    expect(row.pendingPlanId).toBe('solo');
+
+    // The schedule has released or been cancelled - the same subscription,
+    // still on Growth, now reports no schedule at all.
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient({
+        [subscriptionId]: fakeSubscription({
+          id: subscriptionId,
+          customer: org.stripeCustomerId,
+          product: GROWTH_PRODUCT,
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        }),
+      }),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodStart + 1,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+    [row] = await getDb()
+      .select()
+      .from(schema.orgSubscriptions)
+      .where(eq(schema.orgSubscriptions.organizationId, org.id));
+    expect(row.pendingPlanId).toBeNull();
+    expect(row.pendingPlanEffectiveAt).toBeNull();
+  });
+
+  it('a schedule that cannot be read leaves the pending plan and date unchanged, and does not throw', async () => {
+    process.env.PITCHBOX_EDITION = 'cloud';
+    const org = await makeOrg();
+    const subscriptionId = `sub_${randomUUID()}`;
+    const scheduleId = `sub_sched_${randomUUID()}`;
+    const periodStart = Math.floor(Date.now() / 1000) - 5 * 24 * 60 * 60;
+    const periodEnd = periodStart + 30 * 24 * 60 * 60;
+
+    await applyStripeEvent(
+      getDb(),
+      fakeStripeClient(
+        {
+          [subscriptionId]: fakeSubscription({
+            id: subscriptionId,
+            customer: org.stripeCustomerId,
+            product: GROWTH_PRODUCT,
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            schedule: scheduleId,
+          }),
+        },
+        {
+          [scheduleId]: fakeSchedule({
+            id: scheduleId,
+            currentPhaseStart: periodStart,
+            currentPhaseEnd: periodEnd,
+            currentProduct: GROWTH_PRODUCT,
+            nextProduct: SOLO_PRODUCT,
+          }),
+        },
+      ),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodStart,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+    let [row] = await getDb()
+      .select()
+      .from(schema.orgSubscriptions)
+      .where(eq(schema.orgSubscriptions.organizationId, org.id));
+    expect(row.pendingPlanId).toBe('solo');
+    const effectiveAtBefore = row.pendingPlanEffectiveAt?.getTime();
+
+    // A second delivery for the same subscription/schedule, but this time
+    // Stripe's schedule endpoint fails (rate limit, outage, whatever) -
+    // the webhook must not throw (a webhook that throws is a webhook
+    // Stripe retries, #551) and must not overwrite the pending fields
+    // with a guess.
+    const result = await applyStripeEvent(
+      getDb(),
+      fakeStripeClient(
+        {
+          [subscriptionId]: fakeSubscription({
+            id: subscriptionId,
+            customer: org.stripeCustomerId,
+            product: GROWTH_PRODUCT,
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            schedule: scheduleId,
+          }),
+        },
+        { [scheduleId]: new Error('stripe subscription_schedules endpoint unavailable') },
+      ),
+      {
+        id: `evt_${randomUUID()}`,
+        type: 'customer.subscription.updated',
+        created: periodStart + 1,
+        data: { object: { id: subscriptionId, customer: org.stripeCustomerId } },
+      },
+    );
+    expect(result.outcome).toBe('applied');
+
+    [row] = await getDb()
+      .select()
+      .from(schema.orgSubscriptions)
+      .where(eq(schema.orgSubscriptions.organizationId, org.id));
+    expect(row.pendingPlanId).toBe('solo');
+    expect(row.pendingPlanEffectiveAt?.getTime()).toBe(effectiveAtBefore);
   });
 });
 

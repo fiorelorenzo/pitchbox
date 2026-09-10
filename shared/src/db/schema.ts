@@ -155,6 +155,18 @@ export const orgSubscriptions = pgTable(
     currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull(),
     currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
     cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+    // LOR-157: mirrors a downgrade the customer portal deferred to period
+    // end (docs/billing.md "Where a customer manages a subscription"). The
+    // portal's `subscription_update[schedule_at_period_end]` leaves the
+    // subscription on its current price and creates a two-phase
+    // Subscription Schedule instead - a schedule this table's own columns
+    // never described until now. Both null means no pending change; the
+    // webhook (`shared/src/billing/webhook.ts`) is the only writer, reading
+    // `subscription.schedule` off the events it already handles rather than
+    // polling, and clears both the moment the schedule releases or is
+    // cancelled.
+    pendingPlanId: text('pending_plan_id'),
+    pendingPlanEffectiveAt: timestamp('pending_plan_effective_at', { withTimezone: true }),
     limitRuns: integer('limit_runs'),
     limitSuggestions: integer('limit_suggestions'),
     limitProjects: integer('limit_projects'),

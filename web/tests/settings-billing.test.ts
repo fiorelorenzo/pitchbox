@@ -64,6 +64,8 @@ async function makeSubscriptionOrg(
     currentPeriodEnd: Date;
     cancelAtPeriodEnd?: boolean;
     planId?: string;
+    pendingPlanId?: string;
+    pendingPlanEffectiveAt?: Date;
   },
 ): Promise<{ orgId: number; subscriptionId: string; customerId: string }> {
   const db = getDb();
@@ -87,6 +89,8 @@ async function makeSubscriptionOrg(
     currentPeriodStart: opts.currentPeriodStart,
     currentPeriodEnd: opts.currentPeriodEnd,
     cancelAtPeriodEnd: opts.cancelAtPeriodEnd ?? false,
+    pendingPlanId: opts.pendingPlanId ?? null,
+    pendingPlanEffectiveAt: opts.pendingPlanEffectiveAt ?? null,
     limitRuns: 2000,
     limitSuggestions: 2000,
     limitProjects: 10,
@@ -179,7 +183,28 @@ describe('settings/billing loader (#555)', () => {
     expect(data.cancelAtPeriodEnd).toBe(false);
     expect(data.readOnly).toBe(false);
     expect(data.graceEndsAt).toBeNull();
+    expect(data.pendingPlanName).toBeNull();
+    expect(data.pendingPlanEffectiveAt).toBeNull();
     expect(data.usage.runs.limit).toBe(2000); // the subscription's own mirrored limit
+  });
+
+  it('a scheduled downgrade (LOR-157): the pending plan and date are surfaced next to the current plan', async () => {
+    const now = new Date();
+    const periodEnd = new Date(now.getTime() + 20 * DAY_MS);
+    const { orgId } = await makeSubscriptionOrg('billing-pending-downgrade', {
+      status: 'active',
+      currentPeriodStart: new Date(now.getTime() - 10 * DAY_MS),
+      currentPeriodEnd: periodEnd,
+      pendingPlanId: 'solo',
+      pendingPlanEffectiveAt: periodEnd,
+    });
+    const data = await billingLoad(loaderEvent(orgId, 'admin'));
+    if (data.selfHost) throw new Error('expected cloud data');
+    // Still Growth until the schedule actually applies - only the pending
+    // fields, not `planId` itself, name the future change.
+    expect(data.planId).toBe('growth');
+    expect(data.pendingPlanName).toBe('Pitchbox Solo');
+    expect(data.pendingPlanEffectiveAt).toBe(periodEnd.toISOString());
   });
 
   it('a yearly period resolves interval "year"', async () => {

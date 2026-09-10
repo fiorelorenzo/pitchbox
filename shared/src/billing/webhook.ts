@@ -18,6 +18,7 @@ import type {
   StripeEvent,
   StripeMetadata,
   StripeSubscription,
+  StripeSubscriptionSchedule,
 } from '../stripe/client.js';
 
 /** The system actor recorded on every audit row this module writes -
@@ -82,6 +83,57 @@ async function markProcessed(db: PgDatabase<any, any, any>, eventId: string): Pr
 }
 
 /**
+ * Reads the plan change a Stripe Subscription Schedule has deferred to a
+ * future date (LOR-157) - the downgrade-to-period-end path docs/billing.md
+ * describes under "Where a customer manages a subscription": the portal
+ * leaves the subscription on its current price and creates a two-phase
+ * schedule instead, so the events `syncSubscriptionFromStripe` already
+ * handles never see the change on the subscription object itself. No
+ * webhook event this module subscribes to names a schedule as its own
+ * type; `scheduleId` comes off `StripeSubscription.schedule` on whatever
+ * event triggered the sync.
+ *
+ * Returns `'unknown'` when the schedule cannot be read - a Stripe API
+ * error, or a shape this function does not recognise (a next phase whose
+ * price/product was not expanded). The caller leaves
+ * `org_subscriptions.pending_plan_id`/`pending_plan_effective_at` exactly
+ * as they were rather than overwrite a real pending change with a guess:
+ * a webhook that throws is a webhook Stripe retries (#551), and this
+ * lookup must never be why one does. Returns `'none'` when the schedule
+ * genuinely names no pending change - absent, finished, only one phase,
+ * or its next phase resolves to the plan already mirrored - and the
+ * caller clears both columns for that.
+ */
+export async function resolvePendingPlanChange(
+  stripe: StripeClient,
+  scheduleId: string | null | undefined,
+  currentPlanId: PlanId,
+): Promise<'unknown' | 'none' | { planId: PlanId; effectiveAt: Date }> {
+  if (!scheduleId) return 'none';
+  let schedule: StripeSubscriptionSchedule;
+  try {
+    schedule = await stripe.getSubscriptionSchedule(scheduleId);
+  } catch {
+    return 'unknown';
+  }
+  const currentPhase = schedule.current_phase;
+  if (schedule.status !== 'active' || schedule.phases.length < 2 || !currentPhase) {
+    return 'none';
+  }
+  const currentIndex = schedule.phases.findIndex((p) => p.start_date === currentPhase.start_date);
+  const next = currentIndex === -1 ? undefined : schedule.phases[currentIndex + 1];
+  if (!next) return 'none';
+  const item = next.items[0];
+  if (!item || typeof item.price === 'string' || typeof item.price.product === 'string') {
+    return 'unknown';
+  }
+  const planId = normalizePlanId(item.price.product.metadata.plan);
+  return planId === currentPlanId
+    ? 'none'
+    : { planId, effectiveAt: new Date(next.start_date * 1000) };
+}
+
+/**
  * Refetches `subscriptionId` live from Stripe - never trusts the possibly
  * stale object embedded in the webhook event, Stripe's own recommendation
  * for handling delivery order it does not guarantee - and mirrors it onto
@@ -116,6 +168,12 @@ export async function syncSubscriptionFromStripe(
   if (typeof product === 'string') {
     throw new Error(`subscription ${subscriptionId}'s product was not expanded`);
   }
+  const limits = limitsFromProductMetadata(product.metadata);
+  // A schedule lookup is a second Stripe API call, made here rather than
+  // inside the transaction below for the same reason `getSubscription`
+  // above already is: a DB transaction has no business sitting open
+  // across a network call.
+  const pendingChange = await resolvePendingPlanChange(stripe, sub.schedule, limits.planId);
 
   return db.transaction(async (tx) => {
     const [org] = await tx
@@ -146,7 +204,6 @@ export async function syncSubscriptionFromStripe(
       return { outcome: 'stale' as const };
     }
 
-    const limits = limitsFromProductMetadata(product.metadata);
     const row = {
       organizationId: org.id,
       stripeCustomerId: sub.customer,
@@ -171,6 +228,19 @@ export async function syncSubscriptionFromStripe(
       .insert(orgSubscriptions)
       .values(row)
       .onConflictDoUpdate({ target: orgSubscriptions.organizationId, set: row });
+
+    // `pendingChange` is `'unknown'` only when the schedule lookup above
+    // could not tell what is pending (LOR-157) - the two columns are left
+    // exactly as they were rather than overwritten with a guess.
+    if (pendingChange !== 'unknown') {
+      await tx
+        .update(orgSubscriptions)
+        .set({
+          pendingPlanId: pendingChange === 'none' ? null : pendingChange.planId,
+          pendingPlanEffectiveAt: pendingChange === 'none' ? null : pendingChange.effectiveAt,
+        })
+        .where(eq(orgSubscriptions.organizationId, org.id));
+    }
 
     // A grant survives whatever Stripe says about the same org (docs/billing.md,
     // shared/src/plans.ts's resolveEntitlements) - the row above still mirrors

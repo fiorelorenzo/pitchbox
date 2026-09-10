@@ -424,12 +424,20 @@ prices with a monthly/yearly toggle, a downgrade deferred to period end,
 cancellation at period end with a reason, invoice history), returning to
 `/settings/billing`.
 
-What the app does **not** show yet is a plan change the portal has scheduled: a
-customer who downgrades sees "Your service will be updated on `<date>`" in the
-portal, while `/settings/billing` keeps reporting the current plan with no hint
-that it changes at period end, because `org_subscriptions` mirrors the live
-subscription and the pending phase lives on a Subscription Schedule this app
-never reads.
+Since LOR-157 the app shows this too. The webhook (#551) is still the only
+writer, and it needs no new webhook subscription and no polling: on every
+`customer.subscription.created`/`.updated` event it already handles, it reads
+the subscription's own `schedule` field, and when one is set, fetches that
+Subscription Schedule and mirrors its next phase's plan and start date onto
+`org_subscriptions.pending_plan_id`/`pending_plan_effective_at`.
+`/settings/billing` shows the result next to the current plan ("renews on
+\<date\> · switches to \<plan\> on \<date\>"). Both columns clear themselves the
+moment a later event reports no schedule at all, whether because the
+schedule released into the new price or because it was cancelled. A schedule
+the webhook cannot read (a Stripe API error) leaves the two columns exactly
+as they were rather than guessing, following the same rule the downgrade
+itself already follows: never anticipate, only mirror what Stripe reports
+live.
 
 ## Tax
 

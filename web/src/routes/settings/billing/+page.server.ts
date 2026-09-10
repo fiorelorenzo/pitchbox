@@ -14,7 +14,13 @@ import { getDb, schema } from '../../../lib/server/db.js';
 import { requireOrgId, requireRole } from '../../../lib/server/auth.js';
 import { currentEdition } from '@pitchbox/shared/edition';
 import { getOrgUsage, type UsageMetric } from '@pitchbox/shared/usage';
-import { PLAN_CATALOGUE, PLAN_IDS, isOrgReadOnly, type Entitlements } from '@pitchbox/shared/plans';
+import {
+  PLAN_CATALOGUE,
+  PLAN_IDS,
+  isOrgReadOnly,
+  normalizePlanId,
+  type Entitlements,
+} from '@pitchbox/shared/plans';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 
 export type BillingUsage = {
@@ -53,6 +59,15 @@ export type BillingPageData =
       interval: 'month' | 'year' | null;
       currentPeriodEnd: string | null;
       cancelAtPeriodEnd: boolean;
+      /** LOR-157: a downgrade the customer portal deferred to period end
+       * via a two-phase Subscription Schedule - the webhook mirrors it
+       * onto `org_subscriptions.pending_plan_id`/`pending_plan_effective_at`
+       * (docs/billing.md "Where a customer manages a subscription"). Both
+       * null means no pending change; resolved to a plan name here rather
+       * than a bare id for the same reason `planName` is, and for the same
+       * client-bundle reason `pickablePlans` is plain data. */
+      pendingPlanName: string | null;
+      pendingPlanEffectiveAt: string | null;
       status: string | null;
       readOnly: boolean;
       graceEndsAt: string | null;
@@ -125,6 +140,8 @@ export const load: PageServerLoad = async (event) => {
       currentPeriodStart: schema.orgSubscriptions.currentPeriodStart,
       currentPeriodEnd: schema.orgSubscriptions.currentPeriodEnd,
       cancelAtPeriodEnd: schema.orgSubscriptions.cancelAtPeriodEnd,
+      pendingPlanId: schema.orgSubscriptions.pendingPlanId,
+      pendingPlanEffectiveAt: schema.orgSubscriptions.pendingPlanEffectiveAt,
     })
     .from(schema.orgSubscriptions)
     .where(eq(schema.orgSubscriptions.organizationId, orgId))
@@ -145,6 +162,11 @@ export const load: PageServerLoad = async (event) => {
     interval,
     currentPeriodEnd: sub ? sub.currentPeriodEnd.toISOString() : null,
     cancelAtPeriodEnd: sub?.cancelAtPeriodEnd ?? false,
+    pendingPlanName:
+      sub?.pendingPlanId != null ? PLAN_CATALOGUE[normalizePlanId(sub.pendingPlanId)].name : null,
+    pendingPlanEffectiveAt: sub?.pendingPlanEffectiveAt
+      ? sub.pendingPlanEffectiveAt.toISOString()
+      : null,
     status: sub?.status ?? null,
     readOnly: isOrgReadOnly(entitlements),
     graceEndsAt: entitlements.graceEndsAt ? entitlements.graceEndsAt.toISOString() : null,
