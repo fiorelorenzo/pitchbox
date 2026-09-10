@@ -75,6 +75,14 @@ export interface ObservedPost {
   /** The visible comment thread (#568), when the page had one to read - the
    * SDUI feed never does (see linkedin-dom.ts's module header). */
   thread?: ObservedThread;
+  /** The id of the comment this suggestion replies to, when the human
+   * opened a reply box under one specific comment rather than the post's
+   * own top-level composer (LOR-198). `buildSuggestionPrompt`'s `taskFor`
+   * is what turns this into an instruction - present only for a
+   * `post_comment` suggestion whose thread actually rendered the comment
+   * named here; a `post` suggestion has no reply target and this is
+   * ignored for that kind. */
+  replyToCommentId?: string;
   /** The post's own attached media, captured as pixels from the human's
    * rendered tab (#569) - never fetched from a licdn URL, by either side;
    * see docs/design/in-page-agent.md's "capture the rendered tab, never
@@ -250,6 +258,23 @@ const TASK: Record<SuggestionKind, string> = {
     'Write one comment to leave on the post below. One paragraph, two at most. It has to add something the author or another reader would not already know: a specific experience, a number, a disagreement worth having. If you have nothing to add, say so in one sentence instead of padding.',
   post: 'Write one short post for this account, taking the post below as the starting point rather than something to summarise. Say one thing and stop.',
 };
+
+/**
+ * `post_comment`'s own task, sharpened into a reply when the human opened
+ * a reply box under one specific comment rather than the post's own
+ * composer (LOR-198). A reply addresses that commenter, not the post's
+ * author, and reads as either ignoring them or repeating what they
+ * already said if the model cannot tell a reply from a comment on the
+ * post - the two `post_comment` requests used to be identical past this
+ * point. Names the id rather than the words: the thread's own text is
+ * `read_thread`'s job, not this prompt's.
+ */
+function taskFor(kind: SuggestionKind, replyToCommentId?: string): string {
+  if (kind === 'post_comment' && replyToCommentId) {
+    return `Write one reply to the comment with id "${replyToCommentId}" in the thread below (call read_thread to see who wrote it and what it says) - not a comment on the post itself. One paragraph, two at most. It has to add something that commenter or another reader would not already know: a specific experience, a number, a disagreement worth having. If you have nothing to add, say so in one sentence instead of padding.`;
+  }
+  return TASK[kind];
+}
 
 /**
  * How each named tone (#405) is asked for. Written as one sentence each,
@@ -480,7 +505,7 @@ export function buildSuggestionPrompt(args: {
     ].join('\n'),
   );
 
-  parts.push(`Your task: ${TASK[kind]}`);
+  parts.push(`Your task: ${taskFor(kind, post.replyToCommentId)}`);
 
   // The tone, after the task and before the operator's steer, because that is
   // the precedence: house style outranks the tone, the operator's typed steer

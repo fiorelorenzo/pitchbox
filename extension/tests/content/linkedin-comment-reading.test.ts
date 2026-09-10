@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  detectPageKind,
   findFeedPosts,
   findPostComments,
   findParentCommentId,
+  findReplyTargetCommentId,
   readCommentAuthor,
   readCommentBody,
   readCommentRelativeTime,
@@ -95,6 +97,37 @@ describe('post-detail.html: comment/reply reading (#307, real capture)', () => {
     // the reason a caller must never treat this string as parseable in
     // general (see LinkedInComment.relativeTime's doc comment).
     expect(Number.isNaN(Date.parse(relativeTime!))).toBe(true);
+  });
+});
+
+describe('findReplyTargetCommentId (LOR-197/LOR-198): which comment a reply box belongs to', () => {
+  it('returns null for the post\u2019s own composer, which is not inside any comment', () => {
+    render(POST_DETAIL_HTML);
+    const composer = document.querySelector('[contenteditable="true"][role="textbox"]')!;
+    expect(findReplyTargetCommentId(composer)).toBeNull();
+  });
+
+  it('resolves the id of the comment article a reply composer is nested inside', () => {
+    render(POST_DETAIL_HTML);
+    const [topLevel] = findPostComments(document);
+    const reply = document.createElement('div');
+    reply.setAttribute('contenteditable', 'true');
+    reply.setAttribute('role', 'textbox');
+    topLevel.appendChild(reply);
+    expect(findReplyTargetCommentId(reply)).toBe(topLevel.getAttribute('data-id'));
+  });
+
+  it('resolves a reply composer even on a page whose kind cannot be classified - unlike findPostComments, which finds nothing there (LOR-197)', () => {
+    document.body.innerHTML = `
+      <article data-id="urn:li:comment:(activity:7000000000000000001,9)">
+        <div contenteditable="true" role="textbox"></div>
+      </article>`;
+    expect(detectPageKind(document)).toBe('unknown');
+    expect(findPostComments(document)).toEqual([]);
+    const composer = document.querySelector('[contenteditable="true"][role="textbox"]')!;
+    expect(findReplyTargetCommentId(composer)).toBe(
+      'urn:li:comment:(activity:7000000000000000001,9)',
+    );
   });
 });
 

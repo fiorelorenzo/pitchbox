@@ -686,6 +686,25 @@ export function findParentCommentId(comment: Element, root: ParentNode = documen
 }
 
 /**
+ * The id of the comment article `composer` is nested inside, when
+ * `composer` is a reply box under one specific comment rather than the
+ * post's own top-level composer (LOR-198's own field on the suggestion
+ * request, and the signal `resolveCardFor` in `linkedin-comment-assist.ts`
+ * was missing - LOR-197).
+ *
+ * Uses `COMMENT_ARTICLE_SELECTOR` directly rather than going through
+ * `findPostComments`, which gates on `detectPageKind`: knowing a composer
+ * sits inside a comment does not require knowing which LinkedIn frontend
+ * rendered the page, only the comment article's own shape, and gating
+ * this the same way would report `null` on exactly the page kind
+ * `resolveCardFor`'s own structural fallback exists for - an
+ * unclassified page is not the same thing as a page with no comments.
+ */
+export function findReplyTargetCommentId(composer: Element): string | null {
+  return composer.closest(COMMENT_ARTICLE_SELECTOR)?.getAttribute('data-id') ?? null;
+}
+
+/**
  * `queryDeepAll` scoped to `comment` itself, excluding anything that
  * actually belongs to a reply nested inside it - a reply's own header/body
  * must never leak into its parent's reading, and `querySelectorAll` cannot

@@ -131,6 +131,12 @@ export type SuggestPost = {
   commentCount?: string;
   thread?: SuggestThread;
   image?: SuggestImage;
+  /** The id of the comment this suggestion replies to, when the human
+   * opened a reply box under one specific comment rather than the post's
+   * own composer (LOR-198) - mirrors
+   * shared/src/assist/suggest-prompt.ts's `ObservedPost.replyToCommentId`
+   * by hand. Absent for the post's own composer. */
+  replyToCommentId?: string;
 };
 
 /** What /suggest/accept sends back: the same post context, minus `text` -
