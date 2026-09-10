@@ -32,7 +32,10 @@ import { getSettings, type Pairing } from '../lib/storage.js';
  * different from `linkedin-observe.ts`'s collector is that its safety net
  * lives entirely server-side: `POST /api/extension/operator-profile`
  * refuses a capture whose `handle` does not match the operator already on
- * file (`refused: 'not_your_profile'`), rather than this script guessing.
+ * file (`refused: 'not_your_profile'`), and separately refuses a
+ * `displayName` that is not name-shaped (`refused: 'implausible_name'`,
+ * LOR-180 - this script's own selector scoping in `linkedin-dom.ts` is a
+ * defense the server cannot see past), rather than this script guessing.
  *
  * ## One post per page view, per pairing
  *

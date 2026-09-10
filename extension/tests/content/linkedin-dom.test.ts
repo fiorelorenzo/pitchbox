@@ -581,6 +581,64 @@ describe('readOwnProfile: own-profile.html (SDUI profile frontend, real capture)
   });
 });
 
+describe("LOR-180: the display name never comes from LinkedIn's own chrome", () => {
+  it('excludes the global-nav/notification chrome from the heading scan when the topcard is missing', () => {
+    // Reproduces the bug report exactly: own-profile.html's own doc comment
+    // above already records the topcard selector missing five times in a
+    // row on a real profile visit, which is what makes step two (the
+    // page-wide h1/h2 scan) reachable at all. Before the fix, that scan had
+    // no chrome exclusion, so the first heading in document order won even
+    // when it was LinkedIn's own Italian notification-count badge - "0
+    // notifiche in totale" is 21 characters with no sentence punctuation,
+    // so it passed the same length/punctuation filter a real name does.
+    const brokenTopcard = OWN_PROFILE_HTML.replace(
+      'com.linkedin.sdui.profile.card.refEXAMPLEMEMBERTopcard',
+      'com.linkedin.sdui.profile.card.refEXAMPLEMEMBERTopcardBroken',
+    );
+    expect(brokenTopcard).not.toBe(OWN_PROFILE_HTML);
+    setUrl('/in/example-person/');
+    render(`<header role="banner"><h2>0 notifiche in totale</h2></header>${brokenTopcard}`);
+
+    const capture = readOwnProfile(document);
+    expect(capture?.displayName).toBe('Giulia Bianchi');
+
+    const heading = getSelectorHealthReport().find(
+      (e) => e.selector === 'ownProfileNameHeading' && e.pageKind === 'profile',
+    );
+    expect(heading?.lastResult).toBe('match');
+  });
+
+  it('strips a leading unread-notification count from the document-title fallback', () => {
+    // LinkedIn writes the tab title as "(3) <name> | LinkedIn" once there is
+    // an unread count - split('|')[0] alone keeps the "(3) " prefix.
+    setUrl('/in/example-person/');
+    document.title = '(3) Giulia Bianchi | LinkedIn';
+    render('<main><section><p>no headings anywhere in this render</p></section></main>');
+
+    const capture = readOwnProfile(document);
+    expect(capture?.displayName).toBe('Giulia Bianchi');
+
+    const title = getSelectorHealthReport().find(
+      (e) => e.selector === 'ownProfileNameTitle' && e.pageKind === 'profile',
+    );
+    expect(title?.lastResult).toBe('match');
+  });
+
+  it('answers from the topcard alone on the intact capture, and never touches the heading/title sources', () => {
+    setUrl('/in/example-person/');
+    render(OWN_PROFILE_HTML);
+    readOwnProfile(document);
+
+    const report = getSelectorHealthReport();
+    const topcard = report.find(
+      (e) => e.selector === 'ownProfileNameTopcard' && e.pageKind === 'profile',
+    );
+    expect(topcard?.lastResult).toBe('match');
+    expect(report.find((e) => e.selector === 'ownProfileNameHeading')).toBeUndefined();
+    expect(report.find((e) => e.selector === 'ownProfileNameTitle')).toBeUndefined();
+  });
+});
+
 describe('selector health: red on a broken profile selector, green on the intact capture', () => {
   it('reports the topcard as the miss, and still captures what does not need it (#448)', () => {
     // Lorenzo's own profile rendered a shape where this selector found

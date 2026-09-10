@@ -354,6 +354,15 @@
 								<Badge variant="destructive">Stale, over 90 days old</Badge>
 							{/if}
 						</div>
+						{#if data.profile.source === 'manual'}
+							<!-- LOR-180: saveOperatorProfile refuses to overwrite a manual row, so a
+							     recapture after this point changes nothing on the LinkedIn side either -
+							     without this line that reads as a broken recapture rather than the
+							     protection working as designed. -->
+							<p class="mb-4 text-xs text-muted-foreground">
+								A LinkedIn recapture will not change this: it stays as you last edited it.
+							</p>
+						{/if}
 					{/if}
 					<form
 						method="POST"

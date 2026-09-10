@@ -123,6 +123,9 @@ export type LinkedInSelectorId =
   | 'commentTimestamp'
   | 'ownProfileTopcard'
   | 'ownProfileName'
+  | 'ownProfileNameTopcard'
+  | 'ownProfileNameHeading'
+  | 'ownProfileNameTitle'
   | 'ownProfileHeadline'
   | 'ownProfileAbout'
   | 'ownProfileExperience'
@@ -1114,7 +1117,12 @@ function ownTextLines(scope: ParentNode): string[] {
 
 /**
  * The profile owner's display name, from whichever of three sources this
- * render actually has (#448).
+ * render actually has (#448), each tracked under its own selector id
+ * (`ownProfileNameTopcard`/`ownProfileNameHeading`/`ownProfileNameTitle`) so
+ * a render change that swaps which source actually answers shows up as a
+ * failing selector instead of silently changing whose name this is
+ * (LOR-180: a render whose topcard went missing let LinkedIn's own Italian
+ * "0 notifiche in totale" notification-count badge answer step two).
  *
  * The topcard `<h2>` alone is what shipped, and Lorenzo's activity export
  * on 2026-09-08 showed it missing five times in a row on his own profile
@@ -1124,27 +1132,51 @@ function ownTextLines(scope: ParentNode): string[] {
  * the document title, which LinkedIn writes as "<name> | LinkedIn" and
  * which no A/B variant has yet been seen without.
  *
+ * Step two only considers headings outside `header`, `[role="banner"]` and
+ * `nav`: LinkedIn's own chrome (a notification-count badge, the global
+ * identity nav) renders inside one of those three landmarks, and a heading
+ * short enough and unpunctuated enough to pass the length/punctuation
+ * filter is not proof it came from the profile itself.
+ *
  * The title is a legitimate source rather than a hack: the server-side
  * guard is what decides whose profile this is (it compares the handle from
  * the URL path against the persona it already holds), so this only ever
- * names the page the human opened.
+ * names the page the human opened. LinkedIn prefixes it with an unread
+ * count when there is one (`"(3) Lorenzo Fiore | LinkedIn"`) - stripped
+ * before the `|` split, so an unread badge cannot land in the name here
+ * either.
  */
 function readOwnProfileName(topCard: Element | null, root: Document): string | null {
   const heading = topCard ? queryDeep<Element>('h2', topCard) : null;
   const fromTopCard = heading ? ownText(heading) || heading.textContent?.trim() || null : null;
+  record('ownProfileNameTopcard', 'profile', fromTopCard !== null);
   if (fromTopCard) return fromTopCard;
 
+  let fromHeading: string | null = null;
   for (const el of queryDeepAll<Element>('h1, h2', root)) {
+    // Chrome, not profile content - see this function's own doc comment.
+    if (el.closest('header, [role="banner"], nav')) continue;
     const text = (ownText(el) || el.textContent?.trim() || '').trim();
     // A heading long enough to be a headline or a section title is not a
     // name; LinkedIn's own section headings ("Informazioni", "Attività")
     // are short, so length alone is not the filter - a name has no
     // sentence punctuation.
-    if (text.length > 0 && text.length <= 60 && !/[.:!?|]/.test(text)) return text;
+    if (text.length > 0 && text.length <= 60 && !/[.:!?|]/.test(text)) {
+      fromHeading = text;
+      break;
+    }
   }
+  record('ownProfileNameHeading', 'profile', fromHeading !== null);
+  if (fromHeading) return fromHeading;
 
-  const title = (root.title ?? '').split('|')[0]?.trim() ?? '';
-  return title.length > 0 && title.length <= 60 ? title : null;
+  const title =
+    (root.title ?? '')
+      .replace(/^\(\d+\)\s*/, '')
+      .split('|')[0]
+      ?.trim() ?? '';
+  const fromTitle = title.length > 0 && title.length <= 60 ? title : null;
+  record('ownProfileNameTitle', 'profile', fromTitle !== null);
+  return fromTitle;
 }
 
 export function readOwnProfile(root: Document = document): OwnProfileCapture | null {
