@@ -41,22 +41,23 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/node": "^26.1.0",
     "@typescript-eslint/eslint-plugin": "^8.62.1",
     "@typescript-eslint/parser": "^8.62.1",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "concurrently": "^10.0.5",
     "eslint": "^10.9.1",
     "globals": "^17.12.0",
     "prettier": "^3.9.4",
     "sharp": "0.35.4",
+    "svelte": "^5.57.0",
     "tsx": "^4.23.13",
-    "@typescript/native": "npm:typescript@^7.0.2",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vite": "^8.2.2",
     "vitepress": "^1.6.4",
-    "vitest": "4.1.11",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "svelte": "^5.57.0"
+    "vitest": "4.1.11"
   },
   "pnpm": {
     "overrides": {
