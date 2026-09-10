@@ -1,0 +1,11 @@
+/* LOR-199: the default theme's light-mode `--vp-button-brand-bg`
+ * (`--vp-c-indigo-3`, #5672cd) puts the button's white text at 4.48:1
+ * against it - just under WCAG AA's 4.5:1 for normal-size text (axe:
+ * color-contrast, serious), on the home hero's "Get started" action. Dark
+ * mode's own indigo-3 (#3e63dd) already clears 5.2:1, so only light needs
+ * the nudge: #526fcc is one HSL lightness step darker than the stock color
+ * and clears 4.66:1.
+ */
+:root:not(.dark) {
+  --vp-button-brand-bg: #526fcc;
+}
