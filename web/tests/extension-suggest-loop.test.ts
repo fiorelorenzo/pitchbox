@@ -389,7 +389,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
 
   it('crossing the cost ceiling forces the model to answer with what it has, yielding a usable draft', async () => {
     const { org, project } = await seedOrgProject('org-loop-cost');
-    const { callCount } = useModel(
+    useModel(
       (_step, options) => {
         if (options.toolChoice?.type === 'none') {
           return textStep(
@@ -413,8 +413,17 @@ describe('runSuggestion: the agent loop (#566)', () => {
     );
     const result = await handle.result;
 
-    expect(callCount()).toBe(2);
     expect(result.draft).toBe('Here is my answer given what it already cost.');
+    // The mock's raw `doStream` invocation count (`callCount()`) is a proxy
+    // for "the ceiling stopped the loop after one tool-call step", and it
+    // only holds if that accounting arrives before the next step is taken -
+    // under load (LOR-204) a retried/delayed invocation can inflate it
+    // without an extra step actually having run. The loop's own published
+    // usage total is the real record: exactly one 30k/1k tool-call step
+    // plus the forced 10/10 text turn, never a second tool-call step's
+    // worth on top.
+    expect(result.usage?.inputTokens).toBe(30_010);
+    expect(result.usage?.outputTokens).toBe(1_010);
   });
 
   it('a normal multi-step suggestion completes on its own - real pricing wired keeps the cost ceiling from forcing an early answer', async () => {
@@ -475,7 +484,17 @@ describe('runSuggestion: the agent loop (#566)', () => {
     // the early, generic "Forced/Cut short" answer above.
     expect(callCount()).toBe(3);
     expect(result.draft).toBe('Good to see this land, especially the p99 improvement.');
-    expect(result.usage?.costUsd).toBeLessThan(ASSIST_COST_CEILING_USD / 10);
+    // `costUsd` is `number | null` by design (`RunUsageResult` in
+    // shared/src/agents/sdk/event-normalizer.ts) - null only when the run's
+    // model has no catalogue pricing, which real pricing for
+    // `google/gemini-3.1-flash-lite` is wired above to rule out. Asserted
+    // separately from the bound below on purpose: `.toBeLessThan(null)`
+    // throws "received object" (`typeof null === 'object'` in JS, verified
+    // against this exact vitest matcher - LOR-204), which reads as a shape
+    // mismatch rather than the real, more diagnosable failure - pricing not
+    // found for the wired model.
+    expect(result.usage?.costUsd).not.toBeNull();
+    expect(result.usage?.costUsd as number).toBeLessThan(ASSIST_COST_CEILING_USD / 10);
   });
 
   it('usage is the sum across steps, not just the last one', async () => {
