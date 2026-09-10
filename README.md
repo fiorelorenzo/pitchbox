@@ -3,12 +3,12 @@
 Self-hosted, human-in-the-loop outreach agent. The agent does the research and drafting; you approve before anything is sent.
 
 [![CI](https://github.com/fiorelorenzo/pitchbox/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fiorelorenzo/pitchbox/actions/workflows/ci.yml)
-[![Docs](https://github.com/fiorelorenzo/pitchbox/actions/workflows/docs.yml/badge.svg?branch=main)](https://fiorelorenzo.github.io/pitchbox/)
+[![Docs](https://github.com/fiorelorenzo/pitchbox/actions/workflows/docs.yml/badge.svg?branch=main)](https://docs.pitchbox.app)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](./LICENSE)
 [![Version](https://img.shields.io/github/package-json/v/fiorelorenzo/pitchbox?label=version)](./package.json)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-3c873a?logo=node.js&logoColor=white)](https://nodejs.org)
 
-**📖 Full documentation:** **<https://fiorelorenzo.github.io/pitchbox/>**
+**📖 Full documentation:** **<https://docs.pitchbox.app>**
 
 ## Quick start
 
@@ -24,7 +24,7 @@ pnpm -F @pitchbox/shared seed:core
 pnpm run dev:web        # dashboard at http://127.0.0.1:5180
 ```
 
-Embedded daemon mode runs the scheduler, reply poller, retention, keyword-watcher and webhook-sender loops inside the web process - set `PITCHBOX_EMBED_DAEMON=1` in `.env` and skip `pnpm -F daemon dev`. See [the daemon docs](https://fiorelorenzo.github.io/pitchbox/daemon) for when to run it as a separate process instead.
+Embedded daemon mode runs the scheduler, reply poller, retention, keyword-watcher and webhook-sender loops inside the web process - set `PITCHBOX_EMBED_DAEMON=1` in `.env` and skip `pnpm -F daemon dev`. See [the daemon docs](https://docs.pitchbox.app/daemon) for when to run it as a separate process instead.
 
 Prerequisites: Node >= 22, pnpm 9.15 (via corepack), Docker, and one of the supported ACP-compatible agent CLIs on PATH (Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, opencode, or Qwen Code - details in [docs/runners.md](./docs/runners.md)).
 
@@ -36,7 +36,7 @@ The companion Chrome extension auto-marks drafts as sent when you submit on Redd
 pnpm run build:extension   # then load extension/dist/ unpacked in chrome://extensions
 ```
 
-Click the toolbar icon to open the side panel. Pair with your dashboard in one click, kick off a manual sync, follow every operation in real time (pairings, DM/chat sync runs, Matrix token captures, Reddit actions), and tune theme (light/dark/system), language (en/it), density and poller interval from Settings. You can pair multiple backends (cloud + self-hosted) at the same time. Details: <https://fiorelorenzo.github.io/pitchbox/extension>
+Click the toolbar icon to open the side panel. Pair with your dashboard in one click, kick off a manual sync, follow every operation in real time (pairings, DM/chat sync runs, Matrix token captures, Reddit actions), and tune theme (light/dark/system), language (en/it), density and poller interval from Settings. You can pair multiple backends (cloud + self-hosted) at the same time. Details: <https://docs.pitchbox.app/extension>
 
 ## License
 

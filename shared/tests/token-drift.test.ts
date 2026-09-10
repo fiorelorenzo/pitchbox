@@ -117,3 +117,48 @@ describe('the shared token file is the extension\u2019s only copy', () => {
     expect(panel).not.toMatch(/--background\s*:/);
   });
 });
+
+/**
+ * The docs site is the third surface carrying a copy (D38/D39,
+ * docs/design/DECISIONS.md). Unlike the extension's, this one is verbatim:
+ * VitePress reads the values through `--vp-*` in `custom.css`, so there is
+ * nothing for the docs to omit and nothing it needs to add.
+ */
+const docsCss = readFileSync(`${repoRoot}/docs/.vitepress/theme/tokens.css`, 'utf8');
+
+describe.each([
+  ['light', ':root'],
+  ['dark', '.dark'],
+])('docs %s token block', (_name, selector) => {
+  const web = declarations(webCss, selector);
+  const docs = declarations(docsCss, selector);
+
+  it('declares a non-trivial number of tokens on both sides', () => {
+    expect(web.size).toBeGreaterThan(15);
+    expect(docs.size).toBeGreaterThan(15);
+  });
+
+  it('is a verbatim copy of the dashboard block', () => {
+    expect([...docs.entries()]).toEqual([...web.entries()]);
+  });
+});
+
+describe('the docs theme decides nothing about values', () => {
+  const custom = readFileSync(`${repoRoot}/docs/.vitepress/theme/custom.css`, 'utf8');
+  const withoutComments = custom.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  it('declares no token of its own, so tokens.css stays the only copy', () => {
+    // `--vp-*` mappings are the point of the file; a `--background`-style
+    // declaration here would be a fourth palette nobody would find.
+    const own = [...withoutComments.matchAll(/(--[\w-]+)\s*:/g)]
+      .map((m) => m[1])
+      .filter((n) => !n.startsWith('--vp-'));
+    expect(own).toEqual([]);
+  });
+
+  it('carries no raw colour or radius literal', () => {
+    expect(withoutComments).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(withoutComments).not.toMatch(/\boklch\(/);
+    expect(withoutComments).not.toMatch(/border-radius:\s*[0-9]/);
+  });
+});

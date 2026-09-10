@@ -3,18 +3,33 @@ import { defineConfig } from 'vitepress';
 export default defineConfig({
   // Bind the dev server to localhost (IPv4) so it is not exposed on the network.
   vite: { server: { host: '127.0.0.1' } },
-  // Served from https://fiorelorenzo.github.io/pitchbox/ - without this prefix
-  // the built site requests assets from the apex domain and renders unstyled.
-  // Staying on GitHub Pages rather than moving to a docs.pitchbox.app vhost is a
-  // deliberate decision (D25, docs/design/DECISIONS.md, #429), not an oversight -
-  // this base path already matches where the site is actually served.
-  base: '/pitchbox/',
+  // Served from https://docs.pitchbox.app, so no path prefix: the site is at
+  // the root of its own host. This replaces the `base: '/pitchbox/'` that
+  // GitHub Pages' project-site path needed (D25, docs/design/DECISIONS.md);
+  // D38 supersedes it. Still GitHub Pages underneath - a Pages custom domain
+  // plus `public/CNAME`, not a prodbox vhost - so the TLS and CDN argument
+  // behind D25 still holds and nothing moved to Caddy.
   title: 'Pitchbox',
   description: 'Self-hosted, human-in-the-loop outreach agent for Reddit (and beyond).',
   cleanUrls: true,
   lastUpdated: true,
   srcExclude: ['superpowers/**'],
+  sitemap: { hostname: 'https://docs.pitchbox.app' },
+  // Syntax colours are the one set of values that cannot come from our token
+  // layer, so they are picked for contrast against it and measured. VitePress
+  // defaults to `github-dark`, whose comment token (#6a737d) is 3.72:1 on our
+  // dark code surface; `github-dark-dimmed`'s is 4.63:1 and clears AA. The
+  // light pair already passes on ours.
+  markdown: { theme: { light: 'github-light', dark: 'github-dark-dimmed' } },
+  head: [
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+    ['link', { rel: 'alternate icon', type: 'image/png', href: '/favicon-32.png' }],
+    ['meta', { name: 'theme-color', content: '#0a0a0a' }],
+  ],
   themeConfig: {
+    // Decorative: the site title next to it already says "Pitchbox", and a
+    // repeated alt is an axe `image-redundant-alt` finding.
+    logo: { src: '/favicon.svg', alt: '' },
     nav: [
       { text: 'Guide', link: '/getting-started' },
       { text: 'Concepts', link: '/concepts' },

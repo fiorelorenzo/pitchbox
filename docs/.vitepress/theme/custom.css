@@ -1,11 +1,142 @@
-/* LOR-199: the default theme's light-mode `--vp-button-brand-bg`
- * (`--vp-c-indigo-3`, #5672cd) puts the button's white text at 4.48:1
- * against it - just under WCAG AA's 4.5:1 for normal-size text (axe:
- * color-contrast, serious), on the home hero's "Get started" action. Dark
- * mode's own indigo-3 (#3e63dd) already clears 5.2:1, so only light needs
- * the nudge: #526fcc is one HSL lightness step darker than the stock color
- * and clears 4.66:1.
+/*
+ * The only place a docs-specific visual decision lives: it maps VitePress's
+ * own `--vp-*` variables onto the dashboard's tokens (`./tokens.css`), so the
+ * docs read as the same product as the app and the landing rather than as the
+ * VitePress default theme with our words in it.
+ *
+ * Rule: every value here references a token. No raw hex, px radius or shadow -
+ * a colour the docs need and the product does not have is a missing token in
+ * `web/src/app.css`, not a literal in this file (docs/design/DECISIONS.md D1).
+ * `color-mix()` against a token is fine: it derives from the palette instead of
+ * introducing a value beside it.
  */
-:root:not(.dark) {
-  --vp-button-brand-bg: #526fcc;
+
+:root {
+  --vp-font-family-base: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+
+  /* Surfaces. VitePress paints the sidebar, the nav and the code blocks with
+   * `bg-alt`/`bg-soft`, which is what the dashboard's sidebar and muted tokens
+   * already mean. */
+  --vp-c-bg: var(--background);
+  --vp-c-bg-alt: var(--sidebar);
+  --vp-c-bg-elv: var(--card);
+  --vp-c-bg-soft: var(--muted);
+
+  --vp-c-text-1: var(--foreground);
+  --vp-c-text-2: var(--muted-foreground);
+  --vp-c-text-3: color-mix(in oklab, var(--muted-foreground) 70%, var(--background));
+
+  --vp-c-border: var(--border);
+  --vp-c-divider: var(--border);
+  --vp-c-gutter: var(--border);
+
+  /* Prose links and anything VitePress calls "brand" take the dashboard's link
+   * colour. The product's `--primary` is near-black by design, which is right
+   * for a button and unreadable as a link. */
+  --vp-c-brand-1: var(--link);
+  --vp-c-brand-2: color-mix(in oklab, var(--link) 80%, var(--foreground));
+  --vp-c-brand-3: var(--link);
+  --vp-c-brand-soft: color-mix(in oklab, var(--link) 14%, transparent);
+
+  /* Buttons follow the dashboard's, not the link colour: primary is the filled
+   * one, secondary is the outline. */
+  --vp-button-brand-bg: var(--primary);
+  --vp-button-brand-text: var(--primary-foreground);
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-hover-bg: color-mix(in oklab, var(--primary) 88%, var(--background));
+  --vp-button-brand-hover-text: var(--primary-foreground);
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-active-bg: color-mix(in oklab, var(--primary) 78%, var(--background));
+  --vp-button-brand-active-text: var(--primary-foreground);
+  --vp-button-brand-active-border: transparent;
+
+  --vp-button-alt-bg: var(--secondary);
+  --vp-button-alt-text: var(--secondary-foreground);
+  --vp-button-alt-border: var(--border);
+  --vp-button-alt-hover-bg: var(--accent);
+  --vp-button-alt-hover-text: var(--accent-foreground);
+  --vp-button-alt-hover-border: var(--border);
+  --vp-button-alt-active-bg: var(--accent);
+  --vp-button-alt-active-text: var(--accent-foreground);
+  --vp-button-alt-active-border: var(--border);
+
+  --vp-code-color: var(--foreground);
+  --vp-code-bg: var(--muted);
+  --vp-code-link-color: var(--vp-c-brand-1);
+  --vp-code-block-bg: var(--sidebar);
+  --vp-code-block-divider-color: var(--border);
+
+  /* The hero name is typographic here. The default theme paints it with a
+   * brand gradient, which the product has nowhere else. */
+  --vp-home-hero-name-color: var(--foreground);
+  --vp-home-hero-name-background: transparent;
+}
+
+.dark {
+  /* Both blocks read the same token names; `tokens.css` is what makes them
+   * resolve to the dark set, so nothing is restated here except the surfaces
+   * whose roles swap: a raised surface in dark is lighter than the page. */
+  --vp-c-bg: var(--background);
+  --vp-c-bg-alt: var(--card);
+  --vp-c-bg-elv: var(--card);
+  --vp-c-bg-soft: var(--muted);
+  --vp-code-block-bg: var(--card);
+}
+
+/* Radius: the dashboard's, applied to the shapes VitePress draws with its own
+ * hardcoded values. */
+.VPButton,
+.custom-block,
+.VPFeature,
+.vp-doc div[class*='language-'],
+.vp-doc table,
+.VPTeamMembersItem {
+  border-radius: var(--radius);
+}
+
+.vp-doc :not(pre) > code {
+  border-radius: calc(var(--radius) * 0.6);
+}
+
+/* The language label in a code block's corner ships at 2.87:1 in light and
+ * 3.36:1 in dark (measured with `uishot --axe` on `/billing`, 2026-09-10): it
+ * reads its own `--vp-c-text-dark-3`, which is tuned for a dark code surface
+ * VitePress no longer paints here. The muted text token clears AA on both. */
+.vp-doc [class*='language-'] > span.lang,
+.vp-doc [class*='language-'] > button.copy + span.lang {
+  color: var(--muted-foreground);
+}
+
+/* Same themed scrollbars as the dashboard, for the same reason: a default
+ * scrollbar in a dark page is the loudest thing on it. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  /* The dashboard writes 8px here; `--radius` is 0.625rem, so this is the
+   * same pixel at the same density and follows the token if it ever moves. */
+  border-radius: calc(var(--radius) * 0.8);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
