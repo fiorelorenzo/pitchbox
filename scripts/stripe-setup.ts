@@ -1,11 +1,22 @@
 // Create or reconcile the Stripe objects Pitchbox billing depends on: the plan
-// catalogue (products + prices), the customer portal configuration, the two
-// webhook endpoints, and the Stripe Tax defaults.
+// catalogue (products + prices), the customer portal configuration, this run's
+// own webhook endpoint, and the Stripe Tax defaults.
 //
 // This file is the source of truth for the catalogue. The app never hardcodes a
 // price id: it resolves prices by `lookup_key` and reads entitlements from the
 // product metadata this script writes, so test mode and live mode can be brought
 // to the same shape by running it twice with different keys.
+//
+// The mode of the key decides which webhook endpoint is "own": a live key
+// (production, app.pitchbox.app) never creates the preview endpoint, and a
+// test key (preview.pitchbox.app) never creates the production one - each
+// deployment holds only its own mode's signing secret, so the other
+// endpoint's deliveries could never verify a signature anyway (docs/billing.md
+// "Production and preview have separate webhook endpoints"). If the account
+// already holds the other mode's endpoint from before this was mode-aware,
+// this run reports it and disables it (never deletes, so it stays visible in
+// the dashboard) rather than leaving it to retry and eventually get disabled
+// by Stripe itself.
 //
 //   STRIPE_SECRET_KEY=sk_test_... pnpm exec tsx scripts/stripe-setup.ts --dry-run
 //   STRIPE_SECRET_KEY=sk_live_... pnpm exec tsx scripts/stripe-setup.ts \
@@ -21,6 +32,11 @@
 // dashboard, and are deliberately not repo-facing. `--head-office` reads the
 // address from the environment when it has to be set from a script.
 import { writeFile } from 'node:fs/promises';
+import {
+  stripeModeFromKey,
+  webhookEndpointTargets,
+  type StripeMode,
+} from '../shared/src/stripe/webhook-endpoints.js';
 
 type Money = { eur: number; usd: number };
 
@@ -165,7 +181,14 @@ if (!KEY) {
   console.error('STRIPE_SECRET_KEY is required (sk_test_... or sk_live_...)');
   process.exit(1);
 }
-const LIVE = KEY.startsWith('sk_live_');
+let MODE: StripeMode;
+try {
+  MODE = stripeModeFromKey(KEY);
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+}
+const LIVE = MODE === 'live';
 
 function form(value: unknown, prefix = '', out = new URLSearchParams()): URLSearchParams {
   if (value === null || value === undefined) return out;
@@ -406,8 +429,7 @@ async function ensurePortal(catalogue: { product: StripeProduct; prices: StripeP
   return saved;
 }
 
-async function ensureWebhook(url: string, label: string) {
-  const list = await stripe<StripeList<StripeWebhookEndpoint>>('webhook_endpoints?limit=100');
+async function ensureWebhook(list: StripeList<StripeWebhookEndpoint>, url: string, label: string) {
   const existing = list.data.find((w) => w.url === url);
   if (existing) {
     const sameEvents =
@@ -450,6 +472,29 @@ async function ensureWebhook(url: string, label: string) {
   log('created', `webhook ${label} ${created.id}`);
   // The signing secret comes back only on creation, never again.
   return { endpoint: created, secret: created.secret ?? null };
+}
+
+// The other mode's endpoint is never created here, only reported and (on a
+// real run) disabled - never deleted, so it stays visible in the dashboard.
+// A fresh `--dry-run` after a real run should report nothing left to do.
+async function disableMismatchedWebhook(
+  list: StripeList<StripeWebhookEndpoint>,
+  target: { url: string; label: string },
+) {
+  const existing = list.data.find((w) => w.url === target.url);
+  if (!existing || existing.status !== 'enabled') {
+    log('ok', `no enabled ${target.label} webhook at ${target.url} (wrong mode for this run)`);
+    return;
+  }
+  if (DRY_RUN) {
+    log(
+      'disable',
+      `webhook ${target.label} ${existing.id} ${target.url} (wrong mode for this run)`,
+    );
+    return;
+  }
+  await stripe<StripeWebhookEndpoint>(`webhook_endpoints/${existing.id}`, { disabled: true });
+  log('disabled', `webhook ${target.label} ${existing.id} ${target.url} (wrong mode for this run)`);
 }
 
 async function ensureTax() {
@@ -509,13 +554,19 @@ async function main() {
   console.log('');
 
   const portal = await ensurePortal(catalogue);
-  const production = await ensureWebhook(`${APP_ORIGIN}/api/stripe/webhook`, 'production');
-  const preview = await ensureWebhook(`${PREVIEW_ORIGIN}/api/stripe/webhook`, 'preview');
+
+  const targets = webhookEndpointTargets({ app: APP_ORIGIN, preview: PREVIEW_ORIGIN });
+  const ownTarget = targets.find((t) => t.mode === MODE)!;
+  const mismatchedTarget = targets.find((t) => t.mode !== MODE)!;
+  const webhookList = await stripe<StripeList<StripeWebhookEndpoint>>(
+    'webhook_endpoints?limit=100',
+  );
+  const webhook = await ensureWebhook(webhookList, ownTarget.url, ownTarget.label);
+  await disableMismatchedWebhook(webhookList, mismatchedTarget);
   await ensureTax();
 
   const secrets: string[] = [];
-  if (production.secret) secrets.push(`STRIPE_WEBHOOK_SECRET=${production.secret}`);
-  if (preview.secret) secrets.push(`STRIPE_WEBHOOK_SECRET_PREVIEW=${preview.secret}`);
+  if (webhook.secret) secrets.push(`STRIPE_WEBHOOK_SECRET=${webhook.secret}`);
 
   console.log('');
   console.log('catalogue');
@@ -524,8 +575,9 @@ async function main() {
     for (const p of prices) console.log(`    ${(p.lookup_key ?? '-').padEnd(24)} ${p.id}`);
   }
   console.log(`  portal   ${portal.id}`);
-  console.log(`  webhook  ${production.endpoint.id} -> ${production.endpoint.url}`);
-  console.log(`  webhook  ${preview.endpoint.id} -> ${preview.endpoint.url}`);
+  console.log(
+    `  webhook  ${webhook.endpoint.id} -> ${webhook.endpoint.url} (${ownTarget.label}, ${MODE} mode)`,
+  );
 
   if (secrets.length && SECRETS_OUT) {
     await writeFile(SECRETS_OUT, `${secrets.join('\n')}\n`, { mode: 0o600 });

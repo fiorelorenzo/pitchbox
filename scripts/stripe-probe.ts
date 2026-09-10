@@ -16,7 +16,11 @@
  *     any other way (#613);
  *   - the recorded catalogue in shared/tests/fixtures/stripe/catalogue.json
  *     still matches the account, which is what keeps the hermetic mapping test
- *     honest.
+ *     honest;
+ *   - the account holds no *enabled* webhook endpoint for the other mode's
+ *     deployment (LOR-156) - that endpoint can never verify a signature here,
+ *     and `scripts/stripe-setup.ts` only disables it on the run that notices,
+ *     never automatically.
  *
  * Run it before a billing release, and after any change to the price
  * catalogue: `pnpm run stripe:probe`. Nothing here writes to the app database.
@@ -25,6 +29,14 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createStripeClient } from '../shared/src/stripe/client.js';
+import {
+  endpointBelongsToMode,
+  stripeModeFromKey,
+  webhookEndpointTargets,
+} from '../shared/src/stripe/webhook-endpoints.js';
+
+const APP_ORIGIN = process.env.PITCHBOX_APP_ORIGIN ?? 'https://app.pitchbox.app';
+const PREVIEW_ORIGIN = process.env.PITCHBOX_PREVIEW_ORIGIN ?? 'https://preview.pitchbox.app';
 
 const KEY_PATH = join(homedir(), '.config/pitchbox-stripe-test.key');
 const FIXTURE = join(import.meta.dirname, '../shared/tests/fixtures/stripe/catalogue.json');
@@ -154,6 +166,35 @@ if (!portal) {
   } else {
     console.log(`portal ${portal.id}: ok (defers on ${conditions.join(', ')})`);
   }
+}
+
+// LOR-156: this key's mode should hold exactly its own webhook endpoint,
+// never the other deployment's - a real event posted to the wrong-mode
+// endpoint gets a 400 invalid_signature and retries until Stripe disables
+// it, and nothing in this repo would notice until that happens.
+const mode = stripeModeFromKey(readKey());
+const origins = { app: APP_ORIGIN, preview: PREVIEW_ORIGIN };
+const knownTargets = webhookEndpointTargets(origins);
+const webhookResponse = await fetch('https://api.stripe.com/v1/webhook_endpoints?limit=100', {
+  headers: { Authorization: `Bearer ${readKey()}`, 'Stripe-Version': '2025-03-31.basil' },
+});
+const webhookList = (await webhookResponse.json()) as {
+  data: { id: string; url: string; status: string }[];
+};
+const mismatched = webhookList.data.find(
+  (w) =>
+    w.status === 'enabled' &&
+    knownTargets.some((t) => t.url === w.url) &&
+    !endpointBelongsToMode(w.url, mode, origins),
+);
+if (mismatched) {
+  const wrongTarget = knownTargets.find((t) => t.url === mismatched.url)!;
+  console.log(
+    `webhook ${mismatched.id}: ${mismatched.url} is the ${wrongTarget.label} endpoint (${wrongTarget.mode} mode), but this key is ${mode} mode - disable it (a stripe-setup.ts run in ${mode} mode does this)`,
+  );
+  drift += 1;
+} else {
+  console.log(`webhook: no enabled endpoint for the other mode visible to this ${mode}-mode key`);
 }
 
 if (refresh) {
