@@ -63,27 +63,35 @@ export interface SdkRunnerOptions {
 const DEFAULT_STEP_CEILING = 12;
 
 // Gateway model catalogue (for per-token pricing) is fetched once per
-// process and reused - it changes on the Gateway's own release cadence, not
+// gateway and reused - it changes on the Gateway's own release cadence, not
 // per run, and fetching it per run would add a network round trip to every
 // dispatch for a number a five-minute-old cache answers just as well.
+//
+// Keyed by the gateway that answered it rather than held in one process-wide
+// slot: an entry belongs to the credential and endpoint it came from, so two
+// gateways can never read each other's catalogue. In production there is one
+// gateway per API key and the behaviour is identical; what the old single
+// slot did instead was let whichever run resolved first decide the pricing
+// every later run would see, which is how a cancelled run's empty catalogue
+// could still be in the slot when the next run asked (LOR-216). A WeakMap
+// also means an abandoned gateway's entry goes with it instead of holding a
+// catalogue alive for five minutes.
 const MODEL_CATALOGUE_TTL_MS = 5 * 60 * 1000;
-let modelCatalogueCache: { value: GatewayLanguageModelEntry[]; expiresAt: number } | null = null;
-
-// Test-only escape hatch: the cache above is intentionally process-lifetime
-// in production (see the comment on it), but that means every SdkRunner
-// test in the same file/process shares one cache - a plain-catalogue test
-// that runs first would otherwise poison a later test's custom pricing for
-// up to five minutes. Not used by any production code path.
-export function __resetModelCatalogueCacheForTests(): void {
-  modelCatalogueCache = null;
-}
+const modelCatalogueCache = new WeakMap<
+  GatewayProvider,
+  { value: GatewayLanguageModelEntry[]; expiresAt: number }
+>();
 
 async function loadModelCatalogue(gateway: GatewayProvider): Promise<GatewayLanguageModelEntry[]> {
   const now = Date.now();
-  if (modelCatalogueCache && modelCatalogueCache.expiresAt > now) return modelCatalogueCache.value;
+  const cached = modelCatalogueCache.get(gateway);
+  if (cached && cached.expiresAt > now) return cached.value;
   try {
     const response = await gateway.getAvailableModels();
-    modelCatalogueCache = { value: response.models, expiresAt: now + MODEL_CATALOGUE_TTL_MS };
+    modelCatalogueCache.set(gateway, {
+      value: response.models,
+      expiresAt: now + MODEL_CATALOGUE_TTL_MS,
+    });
     return response.models;
   } catch {
     // Pricing is best-effort: a catalogue hiccup should not fail the run,
@@ -249,8 +257,8 @@ export class SdkRunner implements AgentRunner {
 
       // Resolved before the stream starts, not just at the end as before
       // #419: the mid-stream budget check below needs to price each step's
-      // usage as it accumulates, and `loadModelCatalogue` is cached process-
-      // wide anyway so moving it earlier costs nothing on a warm cache.
+      // usage as it accumulates, and `loadModelCatalogue` is cached per
+      // gateway anyway so moving it earlier costs nothing on a warm cache.
       const catalogueEntries = await loadModelCatalogue(gateway);
       const pricing: SdkModelPricing | undefined = pricingFromCatalogueEntry(
         catalogueEntries.find((m) => m.id === modelId),
