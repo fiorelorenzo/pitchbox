@@ -185,6 +185,17 @@ loudly instead of sliding to the next port) needs to differ if two worktrees run
 `pnpm run dev` at once. `ENCRYPTION_KEY` can be shared as-is; it only needs to be
 _a_ valid 32-byte hex, not one per worktree.
 
+**A worktree brought forward onto `main` needs `pnpm install` before anything
+else, and the failure it produces looks nothing like a stale install.** Nothing
+re-links dependencies on a `git reset`/`checkout`, so a worktree that sat on an
+older branch keeps that branch's `node_modules`. On 2026-09-10 a worktree reset
+from 0.12.3 to 0.14.1 ran `pnpm test` with 2925 tests passing and 8 files
+failing, each on `Cannot find package 'resend'` or `'ai/test'` - packages that
+are declared in `shared/package.json` and `web/package.json` on `main` and were
+simply not on disk. That reads as a broken import in the code, and the `pnpm add`
+I had run in between reported "Already up to date", which reads as a healthy
+install. `pnpm install` fixed all 8 and touched no lockfile line.
+
 **The two `cloud/*` submodules are optional for a fresh worktree, and after
 #420 nothing needs them at all.** `git worktree add` doesn't populate them -
 that needs its own `git submodule update --init`, against two private repos
