@@ -199,8 +199,10 @@
             </a>
           </p>
         {/if}
+        <!-- Primary, not ghost: see the same block in
+             linkedin-comment-assist-panel.svelte (LOR-208, D42). -->
         <div class="assist-row">
-          <button type="button" class="assist-button assist-button--ghost" onclick={onRequest}>
+          <button type="button" class="assist-button" onclick={onRequest}>
             {$t('assist.action.retry')}
           </button>
         </div>

@@ -70,10 +70,13 @@
    * here too so the host is never unpositioned if that runs late. */
   top: 0;
   left: 0;
-  /* 520px (D16): the narrowest width where the draft's 16px Inter lands
-   * at ~66 characters per line. Mirrored by `OVERLAY_WIDTH` in
+  /* 460px (LOR-208, D42), down from D16's 520px, because the two were
+   * derived together and cannot move apart: 520 was the narrowest width
+   * where Inter at 16px lands near 66 characters per line, and the same
+   * 520 at 14px runs to about 75, at the loose end of the 45-90 band.
+   * 520 x 14/16 is 455, rounded up to 460. Mirrored by `OVERLAY_WIDTH` in
    * panel-host.ts, which needs it before layout runs. */
-  width: min(520px, calc(100vw - 24px));
+  width: min(460px, calc(100vw - 24px));
   max-height: 60vh;
   /* LinkedIn's own sticky header sits around z-index 500, and its own
    * modals and toasts go higher still. Rather than chase a number that can
@@ -91,16 +94,22 @@
     'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
   /* The panel's type steps, in px because of the rule at the top of this
    * file, and anchored to the page they are read on: linkedin.com's own post
-   * body computes to 14px/20px on the feed (measured 2026-09-09), so the
-   * draft sits one step above the text it will become and the panel's
-   * secondary voice one step below it. The values are D16's and D17's, which
-   * until now only existed as intentions:
+   * body computes to 14px/20px on the feed (measured 2026-09-09).
    *   --panel-text      the draft, streaming or editable, and a state's title
    *   --panel-text-hint the secondary voice: hints, reasoning, refusals
-   *   --panel-text-xs   the frame's own chrome and the status line */
-  --panel-text: 16px;
-  --panel-text-hint: 13.5px;
-  --panel-text-xs: 13px;
+   *   --panel-text-xs   the frame's own chrome and the status line
+   *
+   * The top of the scale is the host's body size, not a step above it
+   * (LOR-208, D42, re-deriving D16's 16px). D16 put the draft one step
+   * above the text it will become, which is right about the draft and wrong
+   * about the surface: an overlay whose text is larger than the page under
+   * it reads as shouting, and it was the first thing visible once D23's rem
+   * bug stopped making everything small. Parity is the ceiling, so the two
+   * steps below it are 13 and 12 rather than D16/D17's 13.5 and 13, which
+   * would have collapsed the whole ladder into one size. */
+  --panel-text: 14px;
+  --panel-text-hint: 13px;
+  --panel-text-xs: 12px;
   /* The three radius steps the panel's own rules use. They used to be
    * `calc()` off tokens.css's `--radius`, which is `0.625rem` and therefore
    * collapsed to 6.25px in here; tokens.css stays a verbatim copy of
@@ -172,8 +181,12 @@
   font-family: var(--panel-font-stack);
   /* Middle density, one step down from the dashboard's airy default, because
    * the panel sits in a layout it does not own. See
-   * docs/design/linkedin-assistant-brief.md. */
-  font-size: 15px;
+   * docs/design/linkedin-assistant-brief.md. The inherited size is the
+   * scale's own top rather than a fourth value (LOR-208): nothing in the
+   * panel is allowed to render larger than the page it floats over, and a
+   * bare 15px here was exactly that for anything without a token of its
+   * own. */
+  font-size: var(--panel-text);
   line-height: 1.5;
   text-align: start;
 }
@@ -489,8 +502,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* 36px, up from 32px, with 14px label: the row holds the one action the
-   * whole panel exists for, and it was the smallest thing on screen. */
+  /* 36px, up from 32px: the row holds the one action the whole panel exists
+   * for, and it was the smallest thing on screen. Its label rides the
+   * scale's top step rather than a written 14px (LOR-208), which is the
+   * same size it has always been and now moves with the ladder. */
   height: 36px;
   padding: 0 14px;
   border: 0;
@@ -503,7 +518,7 @@
    * 2026-09-10 (`getComputedStyle(button).fontFamily` came back `Arial`),
    * which is also why `.assist-textarea` and `.assist-why` already carry it. */
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--panel-text);
   font-weight: 600;
   cursor: pointer;
 }

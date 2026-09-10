@@ -178,17 +178,17 @@ describe('computeOverlayPlacement', () => {
 
   it('flips to below the anchor, pulled left of a naive alignment, when the anchor is near the right edge', () => {
     // 1180 of a 1200-wide viewport: 8px to the right, nowhere near the
-    // panel's ~520px width.
+    // panel's ~460px width.
     const anchor = { top: 100, left: 1000, right: 1180, bottom: 140 };
     const placement = computeOverlayPlacement(anchor, 1200, 800, 160);
 
     expect(placement.top).toBe(anchor.bottom + 12);
     expect(placement.bottom).toBeNull();
     // Aligned to the anchor's left edge in principle, but clamped inside the
-    // viewport - a 520px-wide panel at left:1000 in a 1200-wide viewport
-    // would run 252px past the right edge.
+    // viewport - a 460px-wide panel at left:1000 in a 1200-wide viewport
+    // would run 272px past the right edge.
     expect(placement.left).toBeLessThan(anchor.left);
-    expect(placement.left + 520).toBeLessThanOrEqual(1200);
+    expect(placement.left + 460).toBeLessThanOrEqual(1200);
   });
 
   it('flips above the anchor when there is not enough room to the side or below', () => {
@@ -209,25 +209,25 @@ describe('computeOverlayPlacement', () => {
     expect(placement.left).toBeLessThanOrEqual(300 - 12);
   });
 
-  it('narrows the width on a narrow window, mirroring panel.css\u2019s min(520px, 100vw - 24px)', () => {
+  it('narrows the width on a narrow window, mirroring panel.css\u2019s min(460px, 100vw - 24px)', () => {
     // Far enough right that it never fits beside the anchor in either
     // viewport, so `left` always clamps to `viewportWidth - width - margin`
     // and reads back the width the placement actually used.
     const anchor = { top: 0, left: 5000, right: 5050, bottom: 40 };
 
     const wide = computeOverlayPlacement(anchor, 1200, 800, 160);
-    // width is the unclamped 520px default: left = 1200 - 520 - 12.
-    expect(wide.left).toBe(1200 - 520 - 12);
+    // width is the unclamped 460px default: left = 1200 - 460 - 12.
+    expect(wide.left).toBe(1200 - 460 - 12);
 
     const narrow = computeOverlayPlacement(anchor, 380, 800, 160);
-    // width is min(520, 380 - 24) = 356, which puts the panel flush against
+    // width is min(460, 380 - 24) = 356, which puts the panel flush against
     // the viewport's own margin: left = 380 - 356 - 12 = 12.
     expect(narrow.left).toBe(12);
   });
 
   it('picks below at a short height but flips above once the current height would not fit below (#387)', () => {
     // Not enough room to the right (900 of a 1000-wide viewport is 88px,
-    // short of the panel's ~520px), and 800 - 640 - 12 = 148px below - real
+    // short of the panel's ~460px), and 800 - 640 - 12 = 148px below - real
     // room for a short panel, not for a tall one.
     const anchor = { top: 600, left: 200, right: 900, bottom: 640 };
 

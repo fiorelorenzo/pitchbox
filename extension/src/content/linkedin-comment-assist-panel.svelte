@@ -237,8 +237,12 @@
             </a>
           </p>
         {/if}
+        <!-- Primary, not ghost (LOR-208, D42): a refusal is the state with
+             one action in it, and rendering that action as secondary left
+             the whole card with no accent anywhere until the pointer
+             happened to land on it. -->
         <div class="assist-row">
-          <button type="button" class="assist-button assist-button--ghost" onclick={onRequest}>
+          <button type="button" class="assist-button" onclick={onRequest}>
             {$t('assist.action.retry')}
           </button>
         </div>
