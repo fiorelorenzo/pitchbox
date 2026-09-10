@@ -299,7 +299,7 @@ cancellation at period end with a reason, invoice history), returning to
 `/settings/billing`.
 
 What the app does **not** show yet is a plan change the portal has scheduled: a
-customer who downgrades sees "Your service will be updated on <date>" in the
+customer who downgrades sees "Your service will be updated on `<date>`" in the
 portal, while `/settings/billing` keeps reporting the current plan with no hint
 that it changes at period end, because `org_subscriptions` mirrors the live
 subscription and the pending phase lives on a Subscription Schedule this app
