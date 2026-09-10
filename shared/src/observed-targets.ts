@@ -127,22 +127,31 @@ export async function ingestObservedTargets(
 }
 
 /**
- * The single most recently observed post with readable text, for `projectId`
- * on `platformId`. What `POST /api/extension/suggest` grounds a `kind: 'post'`
- * suggestion in (#315): the post composer itself has nothing to riff off - it
- * is a blank box, not a post the human is reading - so a `post` suggestion is
- * grounded server-side in what the observation buffer (#301/#302) already
- * collected while the human scrolled, rather than the panel handing over
- * whatever it could scrape live off the page it happens to be on. Ignores
- * `consumedByRunId`: a scout-candidate drain (#304) consuming a row for a
- * campaign has nothing to do with whether that sighting is still recent
- * enough to ground a suggestion. Text-less sightings (a real, documented gap
- * - see `linkedin-dom.ts`'s "What is checked against a real capture") are
- * excluded, since there is nothing in them to draft from.
+ * The single most recently observed post with readable text, for the whole
+ * organization on `platformId`. What `POST /api/extension/suggest` grounds a
+ * `kind: 'post'` suggestion in (#315): the post composer itself has nothing
+ * to riff off - it is a blank box, not a post the human is reading - so a
+ * `post` suggestion is grounded server-side in what the observation buffer
+ * (#301/#302) already collected while the human scrolled, rather than the
+ * panel handing over whatever it could scrape live off the page it happens
+ * to be on. Ignores `consumedByRunId`: a scout-candidate drain (#304)
+ * consuming a row for a campaign has nothing to do with whether that
+ * sighting is still recent enough to ground a suggestion. Text-less
+ * sightings (a real, documented gap - see `linkedin-dom.ts`'s "What is
+ * checked against a real capture") are excluded, since there is nothing in
+ * them to draft from.
+ *
+ * LOR-181 (2026-09-10): dropped the `projectId` filter this used to carry.
+ * A `post` suggestion is grounded exactly the same way a `post_comment` one
+ * is now - in a single post, org-wide, with no project known ahead of the
+ * model's own choice (`assist/envelope.ts`'s `PROJECT_MARKER`) - so which
+ * project the collector happened to attribute a given sighting to (still a
+ * real, required column - #304's candidate drain still needs it) no longer
+ * narrows what this reads.
  */
 export async function loadRecentObservedTarget(
   db: Db,
-  input: { organizationId: number; projectId: number; platformId: number },
+  input: { organizationId: number; platformId: number },
 ): Promise<{
   authorHandle: string | null;
   authorName: string | null;
@@ -159,13 +168,7 @@ export async function loadRecentObservedTarget(
     .from(observedTargets)
     .where(
       and(
-        // Organization as well as project, even though a project belongs to
-        // exactly one organization and the caller has already checked it:
-        // `organization_id` is carried on this row directly for precisely
-        // this reason (#263), and a read that has to be reasoned about to be
-        // safe is one somebody will get wrong later.
         eq(observedTargets.organizationId, input.organizationId),
-        eq(observedTargets.projectId, input.projectId),
         eq(observedTargets.platformId, input.platformId),
         isNotNull(observedTargets.text),
       ),

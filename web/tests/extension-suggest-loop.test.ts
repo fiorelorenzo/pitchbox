@@ -193,16 +193,14 @@ async function seedOrgProject(slug: string) {
   return { org, project };
 }
 
-function suggestionArgs(post: ObservedPost, projectId: number, orgId: number) {
+function suggestionArgs(post: ObservedPost, orgId: number) {
   return {
     kind: 'post_comment' as const,
     post,
-    currentProject: { name: 'p', description: null },
     persona: null,
     voiceProfile: null,
     projects: [],
     repos: [],
-    projectId,
     orgId,
     runnerSlug: 'cloud',
   };
@@ -217,7 +215,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
   });
 
   it('a suggestion needing the thread and the image takes multiple steps, dispatching independent tool calls together', async () => {
-    const { org, project } = await seedOrgProject('org-loop-multistep');
+    const { org } = await seedOrgProject('org-loop-multistep');
     // Captured at the write step (the one whose prompt already carries every
     // earlier tool result) so the assertions below can check the *results*
     // actually reached the model - a step count alone cannot tell "the
@@ -248,7 +246,6 @@ describe('runSuggestion: the agent loop (#566)', () => {
           },
           image: { alt: 'A latency chart trending down', kind: 'image' },
         },
-        project.id,
         org.id,
       ),
     );
@@ -271,7 +268,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
   });
 
   it('a plain text post still takes exactly one model turn when the model asks for no tools', async () => {
-    const { org, project } = await seedOrgProject('org-loop-singleturn');
+    const { org } = await seedOrgProject('org-loop-singleturn');
     const { callCount } = useModel(() =>
       textStep(`Straightforward.\n${DRAFT_MARKER}\nCongrats on shipping this.`),
     );
@@ -279,7 +276,6 @@ describe('runSuggestion: the agent loop (#566)', () => {
     const handle = runSuggestion(
       suggestionArgs(
         { urn: 'urn:li:activity:3', authorName: 'A', text: 'Shipped a small thing today.' },
-        project.id,
         org.id,
       ),
     );
@@ -290,7 +286,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
   });
 
   it('cancelling from the panel stops the loop mid-step: no further tool handler starts and no further model turn is requested', async () => {
-    const { org, project } = await seedOrgProject('org-loop-cancel');
+    const { org } = await seedOrgProject('org-loop-cancel');
     let resolveStarted: () => void = () => {};
     const started = new Promise<void>((resolve) => {
       resolveStarted = resolve;
@@ -309,7 +305,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
     });
 
     const handle = runSuggestion(
-      suggestionArgs({ urn: 'urn:li:activity:4', authorName: 'A', text: 'hi' }, project.id, org.id),
+      suggestionArgs({ urn: 'urn:li:activity:4', authorName: 'A', text: 'hi' }, org.id),
     );
     await started;
     handle.cancel();
@@ -319,7 +315,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
   });
 
   it('hitting the step budget forces the model to answer with what it has, yielding a usable draft', async () => {
-    const { org, project } = await seedOrgProject('org-loop-steps');
+    const { org } = await seedOrgProject('org-loop-steps');
     const { callCount } = useModel((_step, options) => {
       if (options.toolChoice?.type === 'none') {
         return textStep(`Wrapping up.\n${DRAFT_MARKER}\nHere is what I found in time.`);
@@ -328,7 +324,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
     });
 
     const handle = runSuggestion(
-      suggestionArgs({ urn: 'urn:li:activity:5', authorName: 'A', text: 'hi' }, project.id, org.id),
+      suggestionArgs({ urn: 'urn:li:activity:5', authorName: 'A', text: 'hi' }, org.id),
     );
     const result = await handle.result;
 
@@ -341,7 +337,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
 
   it('crossing the soft wall-clock budget forces the model to answer with what it has, yielding a usable draft', async () => {
     vi.useFakeTimers();
-    const { org, project } = await seedOrgProject('org-loop-soft');
+    const { org } = await seedOrgProject('org-loop-soft');
     const { callCount } = useModel(async (_step, options) => {
       if (options.toolChoice?.type === 'none') {
         return textStep(`Time is up.\n${DRAFT_MARKER}\nHere is my answer given the time I had.`);
@@ -354,7 +350,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
     });
 
     const handle = runSuggestion(
-      suggestionArgs({ urn: 'urn:li:activity:6', authorName: 'A', text: 'hi' }, project.id, org.id),
+      suggestionArgs({ urn: 'urn:li:activity:6', authorName: 'A', text: 'hi' }, org.id),
     );
     const result = await handle.result;
 
@@ -363,7 +359,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
   });
 
   it('crossing the token budget forces the model to answer with what it has, yielding a usable draft', async () => {
-    const { org, project } = await seedOrgProject('org-loop-tokens');
+    const { org } = await seedOrgProject('org-loop-tokens');
     const { callCount } = useModel((_step, options) => {
       if (options.toolChoice?.type === 'none') {
         return textStep(
@@ -379,7 +375,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
     });
 
     const handle = runSuggestion(
-      suggestionArgs({ urn: 'urn:li:activity:7', authorName: 'A', text: 'hi' }, project.id, org.id),
+      suggestionArgs({ urn: 'urn:li:activity:7', authorName: 'A', text: 'hi' }, org.id),
     );
     const result = await handle.result;
 
@@ -388,7 +384,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
   });
 
   it('crossing the cost ceiling forces the model to answer with what it has, yielding a usable draft', async () => {
-    const { org, project } = await seedOrgProject('org-loop-cost');
+    const { org } = await seedOrgProject('org-loop-cost');
     useModel(
       (_step, options) => {
         if (options.toolChoice?.type === 'none') {
@@ -409,7 +405,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
     );
 
     const handle = runSuggestion(
-      suggestionArgs({ urn: 'urn:li:activity:9', authorName: 'A', text: 'hi' }, project.id, org.id),
+      suggestionArgs({ urn: 'urn:li:activity:9', authorName: 'A', text: 'hi' }, org.id),
     );
     const result = await handle.result;
 
@@ -427,7 +423,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
   });
 
   it('a normal multi-step suggestion completes on its own - real pricing wired keeps the cost ceiling from forcing an early answer', async () => {
-    const { org, project } = await seedOrgProject('org-loop-cost-cheap');
+    const { org } = await seedOrgProject('org-loop-cost-cheap');
     const { callCount } = useModel(
       (step, options) => {
         if (options.toolChoice?.type === 'none') {
@@ -472,7 +468,6 @@ describe('runSuggestion: the agent loop (#566)', () => {
           text: 'hi',
           thread: { comments: [{ body: 'nice' }], renderedCount: 1, truncated: false },
         },
-        project.id,
         org.id,
       ),
     );
@@ -498,7 +493,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
   });
 
   it('usage is the sum across steps, not just the last one', async () => {
-    const { org, project } = await seedOrgProject('org-loop-usage');
+    const { org } = await seedOrgProject('org-loop-usage');
     useModel((step) => {
       if (step === 0) {
         return toolCallStep([{ name: 'check_style', args: { text: 'draft' } }], {
@@ -510,7 +505,7 @@ describe('runSuggestion: the agent loop (#566)', () => {
     });
 
     const handle = runSuggestion(
-      suggestionArgs({ urn: 'urn:li:activity:8', authorName: 'A', text: 'hi' }, project.id, org.id),
+      suggestionArgs({ urn: 'urn:li:activity:8', authorName: 'A', text: 'hi' }, org.id),
     );
     const result = await handle.result;
 

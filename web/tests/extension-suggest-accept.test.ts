@@ -137,23 +137,6 @@ describe('POST /api/extension/suggest/accept', () => {
     expect(await res.json()).toMatchObject({ refused: 'kill_switch' });
   });
 
-  it('refuses to write as a project of the same org that is not the bound one', async () => {
-    const { org, project } = await seedOrgProject('acc-bound');
-    const [other] = await getDb()
-      .insert(schema.projects)
-      .values({ organizationId: org.id, slug: 'p-other', name: 'other', description: 'other' })
-      .returning();
-    await mintDevice(org.id, 'tokBound');
-
-    const res = await accept({
-      request: request('tokBound', { ...POST_BODY, projectId: other.id }),
-    } as never);
-    expect(await res.json()).toMatchObject({
-      refused: 'project_not_bound',
-      boundProjectId: project.id,
-    });
-  });
-
   // #523: naming no project at all makes no binding claim, so it is never a
   // bypass of the binding the way naming a *different* project of the same
   // org is (the previous test) - it is always allowed, filed under no

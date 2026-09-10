@@ -13,8 +13,10 @@ import {
 } from '@pitchbox/shared/linkedin-assist';
 
 // GET + POST the caller's own org's LinkedIn assist settings (LI-19, #316):
-// on/off, the bound project, the observation collector on/off, daily caps and
-// the kill switch. Org-scoped via requireOrgId (never from the request body)
+// on/off, the observation collector's own project attribution (LOR-181: no
+// longer a suggestion's bound project - see shared/src/linkedin-assist.ts's
+// header comment), the observation collector on/off, daily caps and the
+// kill switch. Org-scoped via requireOrgId (never from the request body)
 // and role-gated to admin, same level as Retention/Security
 // (docs/permissions.md) - this is org structural config, not something a
 // member should even view, unlike the platform-wide Quota page.

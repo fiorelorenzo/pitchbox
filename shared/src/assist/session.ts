@@ -12,11 +12,14 @@
 // short lifetime rather than persisted anywhere.
 //
 // A session id is not a capability by itself: `getAssistSession` also checks
-// the org, the project the suggestion is filed under and the suggestion kind
-// against the caller's own request, so a foreign or stale id (or a stolen
-// device token replaying somebody else's id) never gets to lean on a
-// different tenant's gathered context - it falls back to a full re-gather,
-// exactly as an expired session does.
+// the org and the suggestion kind against the caller's own request, so a
+// foreign or stale id (or a stolen device token replaying somebody else's
+// id) never gets to lean on a different tenant's gathered context - it
+// falls back to a full re-gather, exactly as an expired session does.
+// LOR-181 (2026-09-10) dropped the project from this scope along with it:
+// nothing external asserts a project before the turn runs any more (the
+// model states one as part of the very conversation a session persists), so
+// there is nothing left for a project check here to validate against.
 
 import type { ModelMessage } from 'ai';
 import type { SuggestionKind } from './suggest-prompt.js';
@@ -33,17 +36,12 @@ export const ASSIST_SESSION_TTL_MS = 10 * 60 * 1000;
 interface AssistSessionEntry {
   messages: ModelMessage[];
   orgId: number | null;
-  /** #523: a suggestion with no project bound continues one just as well - a
-   * session scoped to `null` matches only another `null`-scoped request,
-   * never a real project id or the other way around. */
-  projectId: number | null;
   kind: SuggestionKind;
   createdAt: number;
 }
 
 interface AssistSessionScope {
   orgId: number | null;
-  projectId: number | null;
   kind: SuggestionKind;
 }
 
@@ -71,20 +69,16 @@ export function createAssistSession(scope: AssistSessionScope, messages: ModelMe
 
 /**
  * Reads back a session for continuation, or `null` when it never existed,
- * expired, or was scoped to a different org/project/kind than this request -
- * every one of those is treated the same way by the caller: fall back to a
- * full re-gather rather than answer from stale or foreign context.
+ * expired, or was scoped to a different org/kind than this request - every
+ * one of those is treated the same way by the caller: fall back to a full
+ * re-gather rather than answer from stale or foreign context.
  */
 export function getAssistSession(id: string, scope: AssistSessionScope): ModelMessage[] | null {
   const now = Date.now();
   purgeExpired(now);
   const entry = sessions.get(id);
   if (!entry) return null;
-  if (
-    entry.orgId !== scope.orgId ||
-    entry.projectId !== scope.projectId ||
-    entry.kind !== scope.kind
-  ) {
+  if (entry.orgId !== scope.orgId || entry.kind !== scope.kind) {
     return null;
   }
   return entry.messages;

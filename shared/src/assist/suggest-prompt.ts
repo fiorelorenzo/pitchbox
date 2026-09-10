@@ -163,15 +163,6 @@ export interface ObservedThread {
   truncated: boolean;
 }
 
-/** The project the suggestion is filed under, described the way the old
- * single-project prompt described it. Kept separate from `projects` (every
- * project in the org) because this is the one whose description is worth
- * quoting in full; the others get a one-line mention. */
-export interface CurrentProject {
-  name: string;
-  description?: string | null;
-}
-
 /** Hard ceiling on the post text we forward. A LinkedIn post is short; anything
  * past this is either a pasted article or a hostile payload, and neither
  * improves the suggestion. */
@@ -233,15 +224,23 @@ const COMMIT_SUBJECT_MAX = 120;
  * project in the org went in regardless of count. Measured 2026-09-08 (#443):
  * twelve projects, a plausible count after a few years of side projects, cost
  * ~1.6KB on a realistic fixture even with each description already capped
- * below, and that grows without bound as an account ages. The current
- * project and the personal project are ranked ahead of the cut in
- * buildSuggestionPrompt below, because those are the two a suggestion can
- * actually depend on; the rest is honest context, not a requirement, so
- * losing one to the cap costs nothing the suggestion needs. */
+ * below, and that grows without bound as an account ages. LOR-181
+ * (2026-09-10) retired the old ranking that put the bound project ahead of
+ * the cut - there is no bound project any more, so the list is just the
+ * org's first MAX_PROJECTS by id; losing a project past the cap to a large
+ * org is honest context lost, never a suggestion that can no longer name
+ * itself, since the model reads the whole list before it picks.
+ */
 export const MAX_PROJECTS = 6;
-/** A project mention in the "what they are building" list is a one-liner, not
- * a second copy of `CurrentProject`'s full description. */
+/** A project mention in the "what they are building" list is a one-liner,
+ * not the project's whole description. */
 const PROJECT_DESCRIPTION_MAX = 300;
+/** Ceiling on a project's own latest insight summary as it reaches this
+ * list (LOR-181) - same spirit as PROJECT_DESCRIPTION_MAX, generous enough
+ * to carry a real judgement about what the project's outreach history shows
+ * without letting an org with several well-instrumented projects bloat the
+ * prompt past what the choice actually needs. */
+const PROJECT_INSIGHT_MAX = 400;
 /** Same reasoning, for a repo's own description line. */
 const REPO_DESCRIPTION_MAX = 300;
 /** How many of a repo's recent commits are worth naming. Past this it reads
@@ -327,10 +326,6 @@ const RETUNE_INSTRUCTION: Record<RetuneDirection, string> = {
 export function buildSuggestionPrompt(args: {
   kind: SuggestionKind;
   post: ObservedPost;
-  /** Null when the suggestion names no project (#523: a project is
-   * optional context, never a requirement) - the operator's own voice on
-   * no particular subject. */
-  currentProject: CurrentProject | null;
   /** Null when the operator has never captured a profile or typed one in by
    * hand - a smaller prompt, not a guessed one. */
   persona: OperatorPersona | null;
@@ -338,7 +333,10 @@ export function buildSuggestionPrompt(args: {
    * honest about how the operator writes - a smaller prompt, not a guessed
    * one. */
   voiceProfile: VoiceProfileSummary | null;
-  /** Every project in the organization, including the current one. */
+  /** Every project in the organization (LOR-181: none marked as "the one" -
+   * the model picks, from this list and the post below, which project (if
+   * any) the suggestion is actually about, and states its choice per
+   * `envelopeInstruction()`). */
   projects: ProjectBrief[];
   repos: CodeRepo[];
   /** Active few-shot templates for this project, already filtered by kind -
@@ -368,22 +366,13 @@ export function buildSuggestionPrompt(args: {
    */
   retune?: RetuneDirection;
 }): string {
-  const { kind, post, currentProject, persona, voiceProfile, projects, repos } = args;
+  const { kind, post, persona, voiceProfile, projects, repos } = args;
   const tone: AssistTone = args.tone ?? DEFAULT_ASSIST_TONE;
   const parts: string[] = [];
 
-  if (currentProject) {
-    parts.push(
-      `You are drafting for ${currentProject.name}, whose operator will read what you write, edit it if they want, and post it themselves under their own name. Nothing you write is sent by anyone but them.`,
-    );
-    if (currentProject.description?.trim()) {
-      parts.push(`What ${currentProject.name} is:\n${clamp(currentProject.description, 1200)}`);
-    }
-  } else {
-    parts.push(
-      "You are drafting in the operator's own voice, on their own subject, not about any particular product they build. The operator will read what you write, edit it if they want, and post it themselves under their own name. Nothing you write is sent by anyone but them.",
-    );
-  }
+  parts.push(
+    "You are drafting for the operator, who will read what you write, edit it if they want, and post it themselves under their own name. Nothing you write is sent by anyone but them. They may work on more than one thing - decide, from the post below and the list of their projects further down, which project (if any) this suggestion is actually about. It may be none of them: writing in the operator's own voice, on their own subject, is a real answer too, not a fallback. State that choice in the exact shape given at the end of these instructions, before anything else.",
+  );
 
   // Who the operator is: headline, about, experience and their own notes on
   // how they want to sound. Nothing here is guessed - it is either captured
@@ -427,27 +416,24 @@ export function buildSuggestionPrompt(args: {
     );
   }
 
-  // What they are building: every project in the organization, so the
-  // assistant can speak honestly about the operator's other work instead of
-  // acting as if this product is the only thing they do. Ranked before the
-  // MAX_PROJECTS cut so the current project always survives it regardless of
-  // how many other projects the organization has - everything else is
-  // honest context that is fine to lose past the ceiling.
+  // What they are building: every project in the organization, with its own
+  // id (so the model has something exact to cite when it states its choice)
+  // and its latest insight, when one is on file (LOR-181) - the cheapest
+  // real material for judging whether a post is actually about it, beyond a
+  // name and a description. No ranking and no "(this one)" marker any more:
+  // nothing is known to be current before the model decides.
   if (projects.length > 0) {
-    const rankedProjects = [...projects].sort((a, b) => {
-      const aRank = a.isCurrent ? 0 : 1;
-      const bRank = b.isCurrent ? 0 : 1;
-      return aRank - bRank;
-    });
     parts.push(
       [
-        'What the operator is building, across the whole organization. This suggestion is filed under the project marked "(this one)":',
-        ...rankedProjects.slice(0, MAX_PROJECTS).map((p) => {
-          const marker = p.isCurrent ? ' (this one)' : '';
+        'What the operator is building, across the whole organization. Pick the id of whichever one this suggestion is actually about, or personal if it is about none of them:',
+        ...projects.slice(0, MAX_PROJECTS).map((p) => {
           const desc = p.description?.trim()
             ? `: ${clamp(p.description, PROJECT_DESCRIPTION_MAX)}`
             : '';
-          return `- ${p.name}${marker}${desc}`;
+          const insight = p.insightSummary?.trim()
+            ? `\n  What its own outreach history shows: ${clamp(p.insightSummary, PROJECT_INSIGHT_MAX)}`
+            : '';
+          return `- [id ${p.id}] ${p.name}${desc}${insight}`;
         }),
       ].join('\n'),
     );

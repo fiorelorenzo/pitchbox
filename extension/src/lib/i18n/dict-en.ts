@@ -373,7 +373,6 @@ export const en = {
   // with its own remedy, never a generic failure.
   'assist.refusal.assist_disabled': 'The Pitchbox assistant is turned off for this workspace.',
   'assist.refusal.kill_switch': 'An admin stopped the assistant.',
-  'assist.refusal.project_not_bound': 'No project is bound to the assistant yet.',
   'assist.refusal.blocked': 'This person is on the blocklist.',
   'assist.refusal.uncontactable': 'This person was marked uncontactable.',
   'assist.refusal.recently_contacted': 'Already contacted recently, so this is being skipped.',
@@ -397,10 +396,6 @@ export const en = {
   'assist.refusal.extension_reloaded':
     'Pitchbox was reloaded or updated - reload this page to reconnect.',
   'assist.refusal.unknown': 'The assistant refused this request ({reason}).',
-  // Post-only (#523): a post suggestion has no post of its own to ground
-  // in, so unlike every other kind it still needs a real project even
-  // though a project is optional for the plane overall.
-  'assist.refusal.project_required': 'Bind a project to the assistant to suggest a post.',
   // Post-only: the observation buffer this suggestion grounds in (#315) had
   // nothing recent enough to draft from.
   'assist.refusal.no_recent_activity':

@@ -14,14 +14,23 @@ import { buildSuggestionPrompt } from '@pitchbox/shared/assist/suggest-prompt';
 import { DRAFT_MARKER } from '@pitchbox/shared/assist/envelope';
 
 /**
- * #408: a per-project voice override, resolved against the project a
- * suggestion is actually being filed under, or the org's own default when
- * none is named at all (#523 made naming a project optional). Kept in
- * its own file rather than folded into extension-suggest.test.ts because
- * that file's `perDevice` rate limiter (20/60s) is a module-level singleton
- * shared by every test in the process that imports it, and its own tests
- * already run it close to the cap (see the comment on its last describe
- * block) - a fresh file gets a fresh import and a fresh limiter.
+ * #408 introduced a per-project voice override, resolved against the
+ * project a suggestion was filed under. LOR-181 retired that resolution at
+ * this route: which project (if any) a suggestion is about is now the
+ * model's own judgement, made *during* the turn (`assist/envelope.ts`'s
+ * `PROJECT_MARKER`), never known ahead of building the prompt - so a
+ * project's own voice override (`resolveEffectiveVoice`'s project branch,
+ * still real and still covered directly by
+ * `shared/tests/linkedin-assist-voice.test.ts`) can no longer be reached
+ * from here. What this file defends now is the opposite of what it used
+ * to: the org's own tone is what every suggestion gets, regardless of any
+ * project-level override and regardless of a stale `projectId` an old
+ * extension build still sends. Kept in its own file rather than folded
+ * into extension-suggest.test.ts because that file's `perDevice` rate
+ * limiter (20/60s) is a module-level singleton shared by every test in the
+ * process that imports it, and its own tests already run it close to the
+ * cap (see the comment on its last describe block) - a fresh file gets a
+ * fresh import and a fresh limiter.
  */
 
 const REASONING = 'Noticed the cache change and the specific number.';
@@ -117,12 +126,12 @@ const POST_BODY = {
 describe('per-project voice (#408)', () => {
   beforeEach(reset);
 
-  it('the same post answered under the product project and with no project produces different registers', async () => {
+  it('a project-level voice override no longer reaches the prompt, since no project is resolved before the turn runs', async () => {
     const { org, project: product } = await seedOrgProject('voice-product');
-    // Org default is 'warm'; the product project overrides to 'technical'.
-    // A request naming no project at all gets no override, so it inherits
-    // the org's 'warm' (#523: naming none is never a bypass of the binding,
-    // and resolves voice the same way an unset project override would).
+    // Org default is 'warm'; the product project's own override to
+    // 'technical' is real (`shared/tests/linkedin-assist-voice.test.ts`
+    // still exercises `resolveEffectiveVoice`'s project branch directly)
+    // but this route no longer has a project to resolve it against.
     await saveLinkedInAssistSettings(getDb(), org.id, {
       ...defaultLinkedInAssistSettings(),
       enabled: true,
@@ -132,13 +141,14 @@ describe('per-project voice (#408)', () => {
     await setProjectVoice(product.id, 'technical');
     await mintDevice(org.id, 'tok-product-vs-personal');
 
-    const productRes = await suggest({
+    // A stale extension build that still names the project in the request
+    // body produces the exact same prompt as one that names none at all -
+    // the field is inert either way (LOR-181).
+    const withProjectRes = await suggest({
       request: request('tok-product-vs-personal', { ...POST_BODY, projectId: product.id }),
     } as never);
-    // Drains the SSE body so the fake runner's synchronous write to
-    // `lastOptions` is guaranteed to have happened before this reads it.
-    await productRes.text();
-    const productPrompt = lastOptions?.prompt ?? '';
+    await withProjectRes.text();
+    const withProjectPrompt = lastOptions?.prompt ?? '';
 
     const noProjectRes = await suggest({
       request: request('tok-product-vs-personal', POST_BODY),
@@ -146,13 +156,12 @@ describe('per-project voice (#408)', () => {
     await noProjectRes.text();
     const noProjectPrompt = lastOptions?.prompt ?? '';
 
-    expect(productPrompt).toContain('mechanisms, numbers and tradeoffs');
-    expect(productPrompt).not.toContain('address the author as a person');
-
+    // The org's own 'warm' tone, never the product project's 'technical'
+    // override - both requests land on it identically.
+    expect(withProjectPrompt).toContain('address the author as a person');
+    expect(withProjectPrompt).not.toContain('mechanisms, numbers and tradeoffs');
     expect(noProjectPrompt).toContain('address the author as a person');
     expect(noProjectPrompt).not.toContain('mechanisms, numbers and tradeoffs');
-
-    expect(productPrompt).not.toBe(noProjectPrompt);
   });
 
   it('a project with no override produces the exact prompt as before this change, byte for byte', async () => {
@@ -179,7 +188,6 @@ describe('per-project voice (#408)', () => {
     const db = getDb();
     const context = await loadCompanionContext(db, {
       organizationId: project.organizationId,
-      currentProjectId: project.id,
     });
     const examples = (
       await loadActiveTemplates(db, { projectId: project.id, kind: 'comment' })
@@ -187,7 +195,6 @@ describe('per-project voice (#408)', () => {
     const expected = buildSuggestionPrompt({
       kind: 'post_comment',
       post: POST_BODY.post,
-      currentProject: { name: project.name, description: project.description },
       persona: context.persona,
       // #407: the prompt carries the derived profile instead of the raw
       // sample list, and this test only cares about the tone half.
@@ -204,11 +211,12 @@ describe('per-project voice (#408)', () => {
   });
 
   // Same enforcement rule as #405 (`enabled`, `killSwitch`, the org tone): a
-  // project-level voice is resolved server-side too, and the extension does
-  // not get a say. Distinct from the #405 test in extension-suggest.test.ts
-  // because here a project override is actually in play - proving the body
-  // can't override *that* either, not just the org-level fallback.
-  it('ignores a tone injected into the request body even when a project override is set', async () => {
+  // tone in the request body is inert. LOR-181: so is a project-level
+  // voice override reached through this route - there is no project known
+  // yet to resolve one against, so the org's own default tone
+  // (`match-room`, unset here) is what a suggestion gets regardless of
+  // either.
+  it('ignores both a tone injected into the request body and a project-level override', async () => {
     const { org, project } = await seedOrgProject('voice-inject');
     await setProjectVoice(project.id, 'plain');
     await mintDevice(org.id, 'tok-voice-inject');
@@ -224,7 +232,8 @@ describe('per-project voice (#408)', () => {
     await res.text();
     const prompt = lastOptions?.prompt ?? '';
 
-    expect(prompt).toContain('Write plainly');
+    expect(prompt).toContain('Match the room');
+    expect(prompt).not.toContain('Write plainly');
     expect(prompt).not.toContain('mechanisms, numbers and tradeoffs');
     expect(prompt).not.toContain('pirate');
   });

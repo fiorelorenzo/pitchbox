@@ -1,5 +1,6 @@
-// Splits a suggestion into the model's reasoning and the draft the human may
-// actually insert (#382, decided 2026-09-07).
+// Splits a suggestion into the project it is actually about, the model's
+// reasoning, and the draft the human may actually insert (#382, decided
+// 2026-09-07; the project field joined it for LOR-181, 2026-09-10).
 //
 // The problem this exists for: the assistant used to stream one blob of text
 // straight into an editable box with an Insert button under it. When the model
@@ -10,18 +11,32 @@
 // The design constraint is that a model asked to emit an exact format gets it
 // wrong some of the time, so the separation cannot rest on it complying
 // (~/.config/agents/skills/moving-work-out-of-the-model). Everything here is
-// therefore written so that the WORST case is no draft at all:
+// therefore written so that the WORST case is no draft at all, and - since
+// LOR-181 - no project claim at all either:
 //
 //   - the draft is whatever follows `DRAFT_MARKER`, and nothing else ever is;
 //   - no marker in the response means `draft: null`, so the panel has nothing
 //     to insert and says so, rather than falling back to "insert it all";
 //   - `SKIP_MARKER` is the model declining, which is a state and not text;
-//   - a marker that leaks into the draft body is stripped, because a marker is
-//     never something the human wants to post.
+//   - a marker that leaked into the draft body is stripped, because a marker is
+//     never something the human wants to post;
+//   - `PROJECT_MARKER`, when present, is the very first thing in the response -
+//     ahead of the reasoning, so a wrong or missing project never delays or
+//     corrupts what the panel shows. `projectChoice` is the model's raw,
+//     unvalidated claim (a bare id or the literal `personal`) - this module
+//     knows nothing about which projects exist, so it never resolves the claim
+//     against anything real. `web/src/lib/server/suggest.ts` does that: an id
+//     that is not one of the organization's own projects falls back to
+//     personal and is logged, exactly like a missing marker falls back to no
+//     draft rather than guessing one.
 //
 // Pure and synchronous, so the property "reasoning can never reach the
 // composer" is testable without a model, a database or a browser.
 
+/** The line the model puts, alone on the very first line of its reply,
+ * ahead of everything else - see `extractProjectChoice` for the shape that
+ * follows it. */
+export const PROJECT_MARKER = '---PITCHBOX-PROJECT---';
 /** The line the model puts between its reasoning and the draft. */
 export const DRAFT_MARKER = '---PITCHBOX-DRAFT---';
 /** The line the model puts instead of a draft when it declines to write one. */
@@ -31,6 +46,12 @@ export const SKIP_MARKER = '---PITCHBOX-SKIP---';
  * back before it can be sure a marker is not being cut in half. */
 const MAX_MARKER_LEN = Math.max(DRAFT_MARKER.length, SKIP_MARKER.length);
 
+/** Longest a stated project value (a bare id, or `personal`) is ever allowed
+ * to be before parsing gives up on it - generous for either, and short
+ * enough that a model that never emits the closing newline cannot hold back
+ * an unbounded amount of text from the panel. */
+const MAX_PROJECT_VALUE_LEN = 40;
+
 export type SuggestionEnvelope = {
   /** Why the model wrote what it wrote. Shown, never insertable. */
   reasoning: string;
@@ -38,6 +59,12 @@ export type SuggestionEnvelope = {
   draft: string | null;
   /** True when the model explicitly declined to write a draft. */
   skipped: boolean;
+  /** The model's raw, unvalidated claim about which project this suggestion
+   * is about - a bare project id, the literal `personal`, or null when
+   * `PROJECT_MARKER` never appeared at the very start of the response, or
+   * nothing usable followed it. Never resolved against real data here -
+   * see the module header. */
+  projectChoice: string | null;
 };
 
 /** Strips both markers wherever they appear, so no marker can ever be posted. */
@@ -50,12 +77,35 @@ function clean(text: string): string {
 }
 
 /**
+ * Reads a project claim off the very start of `text`, if one is there -
+ * `PROJECT_MARKER` alone, immediately followed by a newline and the claimed
+ * value on the next line. Anything else (no marker, an empty or overlong
+ * value) is `projectChoice: null` - the module's own worst-case-safe
+ * posture applied to this field too. `rest` is `text` with the marker and
+ * its value line removed, ready for the ordinary reasoning/draft split.
+ */
+function extractProjectChoice(text: string): { projectChoice: string | null; rest: string } {
+  if (!text.startsWith(PROJECT_MARKER)) return { projectChoice: null, rest: text };
+  // The marker is alone on its own line, so the first newline after it (if
+  // any) closes the marker's line rather than the value's - skip past it
+  // before looking for the newline that actually ends the value.
+  let after = text.slice(PROJECT_MARKER.length);
+  if (after.startsWith('\n')) after = after.slice(1);
+  const nl = after.indexOf('\n');
+  const valueSource = nl === -1 ? after : after.slice(0, nl);
+  const rest = nl === -1 ? '' : after.slice(nl + 1);
+  const value = valueSource.trim();
+  return { projectChoice: value && value.length <= MAX_PROJECT_VALUE_LEN ? value : null, rest };
+}
+
+/**
  * Splits a complete response. `draft` is non-null only when the draft marker
  * was present AND what followed it has content.
  */
 export function splitSuggestion(text: string): SuggestionEnvelope {
-  const skipAt = text.indexOf(SKIP_MARKER);
-  const draftAt = text.indexOf(DRAFT_MARKER);
+  const { projectChoice, rest } = extractProjectChoice(text);
+  const skipAt = rest.indexOf(SKIP_MARKER);
+  const draftAt = rest.indexOf(DRAFT_MARKER);
 
   // Whichever marker comes first is the one the model meant; a response
   // carrying both is a model that changed its mind mid-answer, and the
@@ -64,9 +114,10 @@ export function splitSuggestion(text: string): SuggestionEnvelope {
     return {
       // Text after a skip marker is more of the explanation, not a draft, so
       // it stays in the reasoning where it cannot be inserted.
-      reasoning: clean(text),
+      reasoning: clean(rest),
       draft: null,
       skipped: true,
+      projectChoice,
     };
   }
 
@@ -74,14 +125,15 @@ export function splitSuggestion(text: string): SuggestionEnvelope {
     // No structure at all. Everything is reasoning: this is the fail-safe the
     // module exists for, and it is deliberately not a heuristic guess at where
     // a draft might begin.
-    return { reasoning: clean(text), draft: null, skipped: false };
+    return { reasoning: clean(rest), draft: null, skipped: false, projectChoice };
   }
 
-  const draft = clean(text.slice(draftAt + DRAFT_MARKER.length));
+  const draft = clean(rest.slice(draftAt + DRAFT_MARKER.length));
   return {
-    reasoning: clean(text.slice(0, draftAt)),
+    reasoning: clean(rest.slice(0, draftAt)),
     draft: draft.length > 0 ? draft : null,
     skipped: false,
+    projectChoice,
   };
 }
 
@@ -112,6 +164,51 @@ export class EnvelopeSplitter {
   private draft = '';
   private inDraft = false;
   private didSkip = false;
+  private projectResolved = false;
+  private projectChoice: string | null = null;
+
+  /**
+   * Consumes a leading `PROJECT_MARKER` and its value line from `pending`,
+   * once the bytes seen so far can already decide one way or the other -
+   * mirrors `extractProjectChoice` but incrementally, since the whole point
+   * is to never hold back more than `PROJECT_MARKER.length - 1` characters
+   * from a response that is not using the field at all. Returns `true` once
+   * resolved (the caller's loop should `continue`), `false` when there is
+   * not yet enough to tell (the caller's loop should `break` and wait for
+   * more input).
+   */
+  private resolveProjectPrefix(): boolean {
+    if (this.pending.length < PROJECT_MARKER.length) {
+      if (PROJECT_MARKER.startsWith(this.pending)) return false;
+      this.projectResolved = true;
+      return true;
+    }
+    if (!this.pending.startsWith(PROJECT_MARKER)) {
+      this.projectResolved = true;
+      return true;
+    }
+    let after = this.pending.slice(PROJECT_MARKER.length);
+    // The marker is alone on its own line, so its first character - once it
+    // has arrived - is the newline that closes the marker's own line, not
+    // the value's. Not yet arrived is not yet resolvable either way.
+    if (after.length === 0) return false;
+    if (after[0] === '\n') after = after.slice(1);
+    const nl = after.indexOf('\n');
+    if (nl === -1) {
+      // No closing newline yet - keep waiting, unless the value has already
+      // run well past anything a real id or `personal` could be.
+      if (after.length <= MAX_PROJECT_VALUE_LEN) return false;
+      this.projectChoice = null;
+      this.pending = '';
+      this.projectResolved = true;
+      return true;
+    }
+    const value = after.slice(0, nl).trim();
+    this.projectChoice = value && value.length <= MAX_PROJECT_VALUE_LEN ? value : null;
+    this.pending = after.slice(nl + 1);
+    this.projectResolved = true;
+    return true;
+  }
 
   push(chunk: string): EnvelopeChunk {
     this.pending += chunk;
@@ -121,6 +218,10 @@ export class EnvelopeSplitter {
     // Loop rather than one pass: a single chunk can carry the marker plus the
     // start of the draft, and both halves have to be routed in this call.
     for (;;) {
+      if (!this.projectResolved) {
+        if (!this.resolveProjectPrefix()) break;
+        continue;
+      }
       if (this.didSkip) {
         // Everything after a skip is explanation. Route it to reasoning.
         outReasoning += this.pending;
@@ -182,6 +283,16 @@ export class EnvelopeSplitter {
 
   /** Flushes the held-back tail and returns the final envelope. */
   finish(): SuggestionEnvelope {
+    if (!this.projectResolved) {
+      // A response short enough that `push()` never saw `PROJECT_MARKER.length`
+      // bytes at once (or was never called at all) still gets a real answer
+      // here, the same way `splitSuggestion` would give one to the whole text.
+      const { projectChoice, rest } = extractProjectChoice(this.pending);
+      this.projectChoice = projectChoice;
+      this.pending = rest;
+      this.projectResolved = true;
+    }
+
     if (this.pending.length > 0) {
       // The tail can still complete a marker, so it goes back through the
       // whole-response splitter rather than being appended blindly.
@@ -192,6 +303,9 @@ export class EnvelopeSplitter {
       } else if (this.inDraft) {
         this.draft += stripMarkers(rest);
       } else {
+        // Already past the project prefix above, so this only ever splits
+        // reasoning from a draft/skip marker - `tail.projectChoice` is
+        // never anything but the `null` a mid-reasoning tail resolves to.
         const tail = splitSuggestion(rest);
         this.reasoning += tail.reasoning;
         if (tail.skipped) this.didSkip = true;
@@ -203,12 +317,14 @@ export class EnvelopeSplitter {
     }
 
     const reasoning = clean(this.reasoning);
-    if (this.didSkip) return { reasoning, draft: null, skipped: true };
+    const projectChoice = this.projectChoice;
+    if (this.didSkip) return { reasoning, draft: null, skipped: true, projectChoice };
     const draft = clean(this.draft);
     return {
       reasoning,
       draft: this.inDraft && draft.length > 0 ? draft : null,
       skipped: false,
+      projectChoice,
     };
   }
 }
@@ -220,9 +336,13 @@ export class EnvelopeSplitter {
  */
 export function envelopeInstruction(): string {
   return [
-    'Answer in two parts, in this exact shape:',
+    'Answer in this exact shape.',
     '',
-    'First, at most three sentences on what you noticed in the post and the angle you picked. Write it for the operator, not for the reader of the comment, and write it in the language the operator writes in - the same language as your draft below.',
+    `First, alone on the very first line of your reply, ${PROJECT_MARKER}`,
+    '',
+    "Then, alone on the next line, the id of the project this suggestion is actually about - copy it exactly from the list above, digits only - or the word personal if none of them are what this is about and you are writing in the operator's own voice instead. Pick exactly one, even when more than one could arguably apply: the project the post is actually about.",
+    '',
+    'Then, at most three sentences on what you noticed in the post and the angle you picked. Write it for the operator, not for the reader of the comment, and write it in the language the operator writes in - the same language as your draft below.',
     '',
     `Then, alone on its own line, ${DRAFT_MARKER}`,
     '',

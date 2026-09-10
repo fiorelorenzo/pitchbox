@@ -24,7 +24,6 @@ function fakeCtx(): AssistToolContext {
   return {
     db: {} as AssistToolContext['db'],
     orgId: 1,
-    boundProjectId: 1,
     observedTarget: null,
     operator: null,
   };

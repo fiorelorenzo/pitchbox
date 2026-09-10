@@ -99,14 +99,15 @@ async function settle(times = 6): Promise<void> {
 }
 
 /** A suggestion delivered as the route delivers it (#382): reasoning chunks,
- * then draft chunks, then done. */
-function streamingSuggest(reasoning: string, draft: string) {
+ * then draft chunks, then done. `projectId` mirrors `done.projectId` - the
+ * server's own resolved choice (LOR-181), undefined when it named none. */
+function streamingSuggest(reasoning: string, draft: string, projectId?: number) {
   return async (_body: unknown, onEvent: (event: Record<string, unknown>) => void) => {
     onEvent({ kind: 'status', phase: 'writing' });
     if (reasoning) onEvent({ kind: 'chunk', text: reasoning, section: 'reasoning' });
     onEvent({ kind: 'chunk', text: draft.slice(0, 20), section: 'draft' });
     onEvent({ kind: 'chunk', text: draft.slice(20), section: 'draft' });
-    onEvent({ kind: 'done', reasoning, draft, skipped: false, ms: 900 });
+    onEvent({ kind: 'done', reasoning, draft, skipped: false, ms: 900, projectId });
     return { ok: true as const, data: { ok: true } };
   };
 }
@@ -235,7 +236,7 @@ describe('accept, insert, and the button the human presses', () => {
   it('writes the text into LinkedIn own composer and dispatches no click or submit', async () => {
     const { editor, modal } = renderModal();
     const text = 'Shipped the post composer assist tonight.';
-    suggest.mockImplementation(streamingSuggest('', text));
+    suggest.mockImplementation(streamingSuggest('', text, 2));
     acceptSuggestion.mockResolvedValue({
       ok: true,
       data: { accepted: true, id: 5150, dedupWarning: null },
@@ -268,10 +269,10 @@ describe('accept, insert, and the button the human presses', () => {
     expect(editor.textContent).toContain('post composer assist');
     expect(acceptSuggestion).toHaveBeenCalledTimes(1);
     // No urn/authorHandle/authorName in the accept body: a post has none of
-    // those until it publishes, and it is the operator's own voice. It
-    // lands under `boundProjectId` (#521/#523: the same value used to
-    // request the suggestion, projectId 2 above - there is no separate
-    // personal project to fall back to).
+    // those until it publishes, and it is the operator's own voice. It lands
+    // under `done.projectId` (LOR-181: the server's own resolved choice,
+    // echoed straight back - there is no bound project of this client's own
+    // to send instead).
     expect(acceptSuggestion.mock.calls[0][0]).toMatchObject({
       kind: 'post',
       post: {},
@@ -434,16 +435,10 @@ describe('no draft: #382, the fail-safe is "no marker means no draft"', () => {
 });
 
 describe('every refusal says which one it is', () => {
-  it("gives project_required its own key, distinct from the comment assist's refusals", () => {
-    expect(refusalMessage('project_required').key).toBe('assist.refusal.project_required');
-  });
-
-  it('maps every other known reason to its own distinct message key', () => {
+  it('maps every known reason to its own distinct message key', () => {
     const keys = [
       'assist_disabled',
       'kill_switch',
-      'project_not_bound',
-      'project_required',
       'no_recent_activity',
       'blocked',
       'backend_unreachable',
@@ -460,24 +455,6 @@ describe('every refusal says which one it is', () => {
 });
 
 describe('refusal rendering: post-specific, not the comment assist copy', () => {
-  it('renders a distinct message when this kind needs a project the comment assist never requires (#523)', async () => {
-    const { editor, modal } = renderModal();
-    suggest.mockImplementation(
-      async (_body: unknown, onEvent: (e: Record<string, unknown>) => void) => {
-        onEvent({ kind: 'refused', reason: 'project_required', detail: {} });
-        return { ok: true, data: {} };
-      },
-    );
-
-    wirePostAssist(editor, modal);
-    editor.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await settle();
-    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
-    await settle();
-
-    expect(panelText()).toMatch(/bind a project/i);
-  });
-
   it('renders a distinct message when the observation buffer has nothing recent to ground a post in', async () => {
     const { editor, modal } = renderModal();
     suggest.mockImplementation(

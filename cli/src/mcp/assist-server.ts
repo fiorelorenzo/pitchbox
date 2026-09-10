@@ -6,12 +6,12 @@
 // `cli/src/mcp/server.ts`, the campaign MCP server - deliberately not built
 // on top of it or importing any of its tool registrations, because the two
 // planes carry different privileges (26 tools, most of them writers, bound
-// to a `runs` row, vs seven read-only tools bound to an org and a project).
+// to a `runs` row, vs seven read-only tools bound to an org).
 // Handing the assistant `drafts_create` or `run_finish` because they happen
 // to share a process would undo the isolation #520 exists for.
 //
-// This server's session binds to an organization and a bound project rather
-// than a run, campaign or `PITCHBOX_RUN_ID`/`PITCHBOX_CAMPAIGN_ID` - there is
+// This server's session binds to an organization rather than a run,
+// campaign or `PITCHBOX_RUN_ID`/`PITCHBOX_CAMPAIGN_ID` - there is
 // no run row on this plane (`web/src/lib/server/suggest.ts` spawns no `runs`
 // row for a suggestion). The observed target (the post, its thread, its
 // image crop) and the operator persona are both too large and too
@@ -35,21 +35,17 @@ import type { OperatorPersona } from '@pitchbox/shared/assist/context';
  * Session binding for the assist MCP tools. An explicit context (the SDK
  * side, if it ever reused this server in-process) wins over the session env
  * a spawned subprocess reads, the same precedence `PitchboxMcpContext`
- * (./server.ts) follows. `boundProjectId` is optional (#523): a suggestion
- * about no particular product still runs, with `project_knowledge` simply
- * refusing every call since it has nothing to validate a project id
- * against.
+ * (./server.ts) follows.
  */
 export interface AssistMcpContext {
   organizationId?: number;
-  boundProjectId?: number;
   /** Path to the JSON context file, shaped `AssistRequestPayload` below. */
   contextFile?: string;
 }
 
 /** What the context file carries: everything server-resolved before the
  * loop starts, that a tool handler needs but cannot re-derive from
- * `organizationId`/`boundProjectId` alone. */
+ * `organizationId` alone. */
 export interface AssistRequestPayload {
   observedTarget: AssistObservedTarget | null;
   operator: OperatorPersona | null;
@@ -67,10 +63,6 @@ export function createAssistMcpServer(ctx: AssistMcpContext = {}): McpServer {
   const rawOrgId = Number(process.env.PITCHBOX_ASSIST_ORG_ID);
   const organizationId =
     ctx.organizationId ?? (Number.isInteger(rawOrgId) && rawOrgId > 0 ? rawOrgId : undefined);
-  const rawProjectId = Number(process.env.PITCHBOX_ASSIST_PROJECT_ID);
-  const boundProjectId =
-    ctx.boundProjectId ??
-    (Number.isInteger(rawProjectId) && rawProjectId > 0 ? rawProjectId : undefined);
   const contextFile = ctx.contextFile ?? process.env.PITCHBOX_ASSIST_CONTEXT_FILE;
 
   // Read once per server instance (a fresh process per suggestion, same
@@ -122,7 +114,6 @@ export function createAssistMcpServer(ctx: AssistMcpContext = {}): McpServer {
         const toolCtx: AssistToolContext = {
           db: getDb(),
           orgId: organizationId,
-          boundProjectId: boundProjectId ?? null,
           observedTarget,
           operator,
         };

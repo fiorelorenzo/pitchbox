@@ -12,9 +12,9 @@ import { createPitchboxMcpServer } from '../../src/mcp/server.js';
 // #567: the assist MCP entry point. What matters here, beyond `shared/tests/
 // assist-tools.test.ts`'s coverage of the handlers themselves, is the
 // transport contract: exactly the seven assist tools are advertised, none of
-// the campaign server's, and the session-bound org/project plus the context
-// file actually reach a handler through this server rather than only
-// through a direct function call.
+// the campaign server's, and the session-bound org plus the context file
+// actually reach a handler through this server rather than only through a
+// direct function call.
 
 type CallResult = { content: { type: string; text?: string }[]; isError?: boolean };
 
@@ -60,7 +60,7 @@ describe('cli/src/mcp/assist-server', () => {
 
   it('advertises exactly the seven assist tools and none of the campaign server\u2019s', async () => {
     const orgId = await defaultOrgId();
-    const assistClient = await connectAssistClient({ organizationId: orgId, boundProjectId: 1 });
+    const assistClient = await connectAssistClient({ organizationId: orgId });
     const { tools } = await assistClient.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toEqual([
@@ -84,15 +84,15 @@ describe('cli/src/mcp/assist-server', () => {
     for (const name of names) expect(campaignNames.has(name)).toBe(false);
   });
 
-  it('refuses every tool call when the session has no bound organization/project', async () => {
+  it('refuses every tool call when the session has no bound organization', async () => {
     const client = await connectAssistClient({});
     const res = await call(client, 'check_style', { text: 'A clean sentence.' });
     expect(res.isError).toBe(true);
   });
 
-  it('runs check_style end to end with no session binding required beyond org/project', async () => {
+  it('runs check_style end to end with no session binding required beyond org', async () => {
     const orgId = await defaultOrgId();
-    const client = await connectAssistClient({ organizationId: orgId, boundProjectId: 1 });
+    const client = await connectAssistClient({ organizationId: orgId });
     const res = await call(client, 'check_style', { text: 'This is great \u2014 really great.' });
     expect(res.isError).toBeFalsy();
     const answer = parse(res) as { ok: boolean; data?: { findings: unknown[] } };
@@ -114,7 +114,6 @@ describe('cli/src/mcp/assist-server', () => {
       );
       const client = await connectAssistClient({
         organizationId: orgId,
-        boundProjectId: 1,
         contextFile,
       });
       const res = await call(client, 'read_thread', {});
@@ -129,7 +128,7 @@ describe('cli/src/mcp/assist-server', () => {
 
   it('answers read_thread with an explicit refusal when no context file was given', async () => {
     const orgId = await defaultOrgId();
-    const client = await connectAssistClient({ organizationId: orgId, boundProjectId: 1 });
+    const client = await connectAssistClient({ organizationId: orgId });
     const res = await call(client, 'read_thread', {});
     expect(res.isError).toBeFalsy();
     const answer = parse(res) as { ok: boolean; reason?: string };

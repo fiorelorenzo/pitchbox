@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireExtensionAuth, resolveDeviceOrgId } from '$lib/server/extension-auth.js';
 import { RateLimiter } from '$lib/server/rate-limit.js';
@@ -87,7 +87,12 @@ const ImageSchema = z.object({
 
 const BodySchema = z
   .object({
-    projectId: z.number().int().positive().optional(),
+    // LOR-181: no longer read - the server picks the project from the post
+    // itself, inside the same turn (`buildSuggestionPrompt`,
+    // `assist/envelope.ts`'s `PROJECT_MARKER`). Not `.strict()`'d, so an
+    // older extension build that still sends this is silently dropped by
+    // zod rather than trusted - exactly the "ignored, not honoured" the
+    // issue asks for.
     kind: z.enum(['post_comment', 'post']),
     post: z.object({
       urn: z.string().max(200).optional(),
@@ -182,31 +187,12 @@ export async function POST(event: RequestEvent) {
 
   const db = getDb();
 
-  // Org scoping: a device bound to an org may only write as one of its own
-  // projects, and an unknown project is a 404 rather than a 403 so it leaks
-  // nothing about other tenants' ids. A null-org device (self-host, auth
-  // off) is unrestricted, mirroring requireRole. #523: `projectId` is
-  // optional context now, not a requirement - a request naming none
-  // resolves the org directly rather than through a project row.
+  // Org scoping only now (LOR-181): a device bound to an org may draft about
+  // any of its own projects, or none - which one, if any, is the model's own
+  // decision inside this turn, never a client-asserted id. A null-org
+  // device (self-host, auth off) is unrestricted, mirroring requireRole.
   const orgId = await resolveDeviceOrgId(db, auth.organizationId);
   if (orgId == null) throw error(404, 'organization not found');
-
-  const project =
-    body.projectId != null
-      ? (
-          await db
-            .select()
-            .from(schema.projects)
-            .where(
-              and(
-                eq(schema.projects.id, body.projectId),
-                eq(schema.projects.organizationId, orgId),
-              ),
-            )
-            .limit(1)
-        )[0]
-      : undefined;
-  if (body.projectId != null && !project) throw error(404, 'project not found');
 
   const period = await billingPeriodFor(db, orgId);
   const usage = await getOrgUsage(db, orgId, period);
@@ -273,41 +259,24 @@ export async function POST(event: RequestEvent) {
         platform: platform.slug,
       });
     }
-    // A suggestion naming a project is written as that project's voice, so
-    // naming a different project of the same org than the one bound is not
-    // a narrower case of the binding, it bypasses it (#523: naming none at
-    // all is not a bypass - it makes no binding claim, and is always
-    // allowed).
-    if (body.projectId != null && assist.projectId !== body.projectId) {
-      return json({
-        refused: 'project_not_bound',
-        platform: platform.slug,
-        boundProjectId: assist.projectId,
-      });
-    }
   }
 
   // A `post` suggestion has no post to riff off the way a `post_comment`
   // does - the composer is a blank box - so it is grounded in the most
-  // recent thing the observation buffer (#301/#302) actually saw this
-  // project's account scroll past, read through the server rather than
-  // trusting the panel to have scraped and forwarded a pile of observed
-  // posts itself. That buffer is project-scoped (`observed_targets`), so
-  // unlike `post_comment`, a `post` suggestion still needs a real project
-  // to draft from (#523 makes the project optional for the plane overall,
-  // not for this one kind that has nothing else to ground itself in). An
-  // empty buffer (a fresh binding, or nothing sighted since the collector
-  // was last on) is a real, distinct refusal: there is nothing honest to
-  // write a "starting point" prompt from, so this refuses the same way an
+  // recent thing the observation buffer (#301/#302) actually saw anywhere
+  // in the org, read through the server rather than trusting the panel to
+  // have scraped and forwarded a pile of observed posts itself. LOR-181:
+  // org-wide, not project-scoped, the same shift as everything else on this
+  // route - which project (if any) the grounded post is about is the
+  // model's own judgement, made from the post exactly like a `post_comment`
+  // already is. An empty buffer (nothing sighted since the collector was
+  // last on) is a real, distinct refusal: there is nothing honest to write
+  // a "starting point" prompt from, so this refuses the same way an
   // exhausted quota does rather than asking the model to invent a subject.
   let groundedPost: ObservedPost;
   if (body.kind === 'post') {
-    if (!project) {
-      return json({ refused: 'project_required', platform: platform.slug });
-    }
     const recent = await loadRecentObservedTarget(db, {
       organizationId: orgId,
-      projectId: project.id,
       platformId: platform.id,
     });
     if (!recent) {
@@ -324,46 +293,49 @@ export async function POST(event: RequestEvent) {
     groundedPost = { ...body.post, text: body.post.text as string };
   }
 
+  // Everything the companion is allowed to know beyond this one post: the
+  // operator's own persona and voice, every project in the org (each with
+  // its own latest insight, LOR-181), and the public repos GitHub read
+  // cached (shared/src/assist/context.ts). Loaded once, right before the
+  // spawn, so a refusal above never pays for it - and before `examples`
+  // below, which needs the org's own project list.
+  const context = await loadCompanionContext(db, { organizationId: orgId });
+
   // #578: id and createdAt travel too, not just title/body -
   // `buildSuggestionPrompt` (`shared/src/assist/example-selection.ts`) picks
   // which of these actually reach the prompt, by topical closeness to
-  // `groundedPost` rather than by this array's order. No project, no
-  // templates to draw from.
-  const examples = project
-    ? (
-        await loadActiveTemplates(db, {
-          projectId: project.id,
-          kind: body.kind === 'post' ? 'post' : 'comment',
-        })
-      ).map((t) => ({ id: t.id, title: t.title, body: t.body, createdAt: t.createdAt }))
-    : [];
+  // `groundedPost` rather than by this array's order. LOR-181: templates
+  // from every project in the org, not one bound project - nothing is bound
+  // before the model decides, so the only honest candidate pool left is
+  // "every example this organization has", exactly as `selectExamples`
+  // already narrows a pool larger than MAX_EXAMPLES down to the ones that
+  // actually match this post.
+  const templateKind = body.kind === 'post' ? 'post' : 'comment';
+  const templateRows = (
+    await Promise.all(
+      context.projects.map((p) => loadActiveTemplates(db, { projectId: p.id, kind: templateKind })),
+    )
+  ).flat();
+  const examples = templateRows.map((t) => ({
+    id: t.id,
+    title: t.title,
+    body: t.body,
+    createdAt: t.createdAt,
+  }));
 
-  // Everything the companion is allowed to know beyond this one post:
-  // the operator's own persona and voice, every project in the org, and the
-  // public repos GitHub read cached (shared/src/assist/context.ts). Loaded
-  // once, right before the spawn, so a refusal above never pays for it.
-  const context = await loadCompanionContext(db, {
-    organizationId: orgId,
-    currentProjectId: project?.id ?? null,
-  });
-
-  // The tone (#405) is read here, resolved against the project this
-  // suggestion is actually being filed under (#408) - never from `body`: the
-  // panel is not an enforcement boundary for it, exactly as it is not for
-  // `enabled`, `killSwitch` or the reasoning/draft split. That is also what
-  // keeps a panel-level retune (#409) an explicit feature rather than
-  // something a crafted request already gets for free. `project` here is
-  // the filed-under project, which need not be the org's bound project the
-  // device state names, and may be absent entirely (#523) - the org's own
-  // `linkedin_assist` tone is what an unset project falls back to.
-  const voice = await resolveEffectiveVoice(
-    db,
-    orgId,
-    project ?? { voiceTone: null, voiceToneNotes: null },
-  );
-  // No project bound, no `defaultAgentRunner` column to read - the instance
-  // (or edition) default is what a fresh project would have gotten anyway.
-  const runnerSlug = project?.defaultAgentRunner ?? (await resolveDefaultRunnerSlug(db));
+  // The tone (#405) is read here, never from `body`: the panel is not an
+  // enforcement boundary for it, exactly as it is not for `enabled`,
+  // `killSwitch` or the reasoning/draft split. LOR-181: always the org's own
+  // `linkedin_assist` tone now - a project's own voice override
+  // (`resolveEffectiveVoice`'s project branch, #408) can no longer be
+  // resolved ahead of a turn that has not yet decided which project, if
+  // any, this is; nothing else changes about how the org level resolves.
+  const voice = await resolveEffectiveVoice(db, orgId, { voiceTone: null, voiceToneNotes: null });
+  // LOR-181: no project bound before the turn runs, so no `defaultAgentRunner`
+  // column to read either - the instance (or edition) default is what every
+  // suggestion gets now, the same fallback a project-less suggestion already
+  // used before this issue.
+  const runnerSlug = await resolveDefaultRunnerSlug(db);
 
   let cancel: () => void = () => {};
   let settled = false;
@@ -388,7 +360,6 @@ export async function POST(event: RequestEvent) {
       const handle = runSuggestion({
         kind: body.kind as SuggestionKind,
         post: groundedPost,
-        currentProject: project ? { name: project.name, description: project.description } : null,
         persona: context.persona,
         voiceProfile: context.voiceProfile,
         projects: context.projects,
@@ -398,7 +369,6 @@ export async function POST(event: RequestEvent) {
         retune: body.retune,
         tone: voice.tone,
         toneNotes: voice.toneNotes,
-        projectId: project?.id ?? null,
         orgId: auth.organizationId ?? undefined,
         runnerSlug,
         continueSessionId: body.sessionId,
@@ -441,7 +411,10 @@ export async function POST(event: RequestEvent) {
             .insert(schema.assistUsage)
             .values({
               organizationId: auth.organizationId,
-              projectId: project?.id ?? null,
+              // LOR-181: the project the server resolved from the model's
+              // own turn, not a client-asserted id - see
+              // `resolveSuggestionProject` in `web/src/lib/server/suggest.ts`.
+              projectId: res.projectId,
               deviceId: auth.deviceId,
               platformId: platform.id,
               kind: body.kind,
@@ -464,6 +437,11 @@ export async function POST(event: RequestEvent) {
               skipped: res.skipped,
               usage: res.usage,
               ms: res.ms,
+              // LOR-181: the project the server resolved this suggestion
+              // under, so the accept call can file it under the same one -
+              // the extension no longer has a bound project of its own to
+              // send instead.
+              projectId: res.projectId,
               // #576: the panel hands this back on the next retune/hint so
               // the loop continues instead of starting over. Absent when no
               // tool set was attached or the run never settled into one.

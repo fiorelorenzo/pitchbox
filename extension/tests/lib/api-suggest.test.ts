@@ -73,6 +73,7 @@ describe('parseSuggestSseFrame', () => {
       skipped: false,
       usage: { outputTokens: 12 },
       ms: 2200,
+      projectId: null,
     });
   });
 
@@ -88,6 +89,7 @@ describe('parseSuggestSseFrame', () => {
       skipped: true,
       usage: undefined,
       ms: 900,
+      projectId: null,
     });
   });
 
@@ -151,9 +153,8 @@ describe('api.suggest', () => {
     );
 
     const events: SuggestEvent[] = [];
-    const res = await api.suggest(
-      { projectId: 1, kind: 'post_comment', post: { text: 'a post' } },
-      (e) => events.push(e),
+    const res = await api.suggest({ kind: 'post_comment', post: { text: 'a post' } }, (e) =>
+      events.push(e),
     );
 
     expect(res.ok).toBe(true);
@@ -169,6 +170,7 @@ describe('api.suggest', () => {
         skipped: false,
         usage: undefined,
         ms: 2200,
+        projectId: null,
       },
     ]);
   });
@@ -190,9 +192,7 @@ describe('api.suggest', () => {
     );
 
     const events: SuggestEvent[] = [];
-    await api.suggest({ projectId: 1, kind: 'post_comment', post: { text: 'a post' } }, (e) =>
-      events.push(e),
-    );
+    await api.suggest({ kind: 'post_comment', post: { text: 'a post' } }, (e) => events.push(e));
 
     expect(events).toEqual([
       { kind: 'chunk', text: 'a fairly long chunk of streamed text here', section: 'draft' },
@@ -220,9 +220,8 @@ describe('api.suggest', () => {
     );
 
     const events: SuggestEvent[] = [];
-    const res = await api.suggest(
-      { projectId: 1, kind: 'post_comment', post: { text: 'a post' } },
-      (e) => events.push(e),
+    const res = await api.suggest({ kind: 'post_comment', post: { text: 'a post' } }, (e) =>
+      events.push(e),
     );
 
     expect(res.ok).toBe(true);
@@ -244,10 +243,7 @@ describe('api.suggest', () => {
     );
 
     const onEvent = vi.fn();
-    const res = await api.suggest(
-      { projectId: 1, kind: 'post_comment', post: { text: 'a post' } },
-      onEvent,
-    );
+    const res = await api.suggest({ kind: 'post_comment', post: { text: 'a post' } }, onEvent);
 
     expect(res.ok).toBe(false);
     expect(onEvent).not.toHaveBeenCalled();
