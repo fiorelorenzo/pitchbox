@@ -184,8 +184,8 @@
 						No subscription. Free covers a single project on the house.
 					{:else if data.priceCents != null && data.interval}
 						{moneyCents(data.priceCents)} / {data.interval} · {data.cancelAtPeriodEnd
-							? `cancels on ${formatDate(data.currentPeriodEnd ?? '')}`
-							: `renews on ${formatDate(data.currentPeriodEnd ?? '')}`}
+						? `cancels on ${formatDate(data.currentPeriodEnd ?? '')}`
+						: `renews on ${formatDate(data.currentPeriodEnd ?? '')}`}{#if data.pendingPlanName && data.pendingPlanEffectiveAt}{` · switches to ${data.pendingPlanName} on ${formatDate(data.pendingPlanEffectiveAt)}`}{/if}
 					{/if}
 				</Card.Description>
 			</Card.Header>

@@ -56,6 +56,7 @@ function notImplementedStripeClient(): StripeClient {
     getProduct: fail('getProduct'),
     getPriceByLookupKey: fail('getPriceByLookupKey'),
     getSubscription: fail('getSubscription'),
+    getSubscriptionSchedule: fail('getSubscriptionSchedule'),
   };
 }
 
