@@ -43,6 +43,49 @@ function probeComponent(anchor: unknown, props: { label: string }): Record<strin
 }
 const Probe = probeComponent as unknown as Component<{ label: string }>;
 
+/**
+ * A probe shaped like `panel-frame.svelte`: the one thing `panel-host.ts`
+ * looks for by name is the frame's `.body` scroll region, since that is
+ * where the height a clamp hides can be read back from (LOR-210).
+ *
+ * jsdom lays nothing out, so the region's `scrollHeight`/`clientHeight` are
+ * defined here as plain values a test can set. That is not a stand-in for
+ * layout: the numbers a real page produced are what they are set to, and
+ * what is being proved is the arithmetic on top of them and the branch it
+ * picks.
+ */
+type FramedBody = HTMLElement & { hiddenOverflow: number };
+function framedProbe(anchor: unknown): Record<string, never> {
+  const node = anchor as Node | null;
+  const target = node?.parentNode as HTMLElement | null;
+  if (!target) return {};
+  const frame = document.createElement('section');
+  frame.className = 'frame';
+  const body = Object.assign(document.createElement('div'), { hiddenOverflow: 0 });
+  body.className = 'body';
+  Object.defineProperty(body, 'clientHeight', { get: () => 0 });
+  Object.defineProperty(body, 'scrollHeight', { get: () => body.hiddenOverflow });
+  frame.append(body);
+  target.append(frame);
+  return {};
+}
+const Framed = framedProbe as unknown as Component<Record<string, never>>;
+
+/** Stubs `host`'s own rendered height - what a clamp has already limited. */
+function stubHostHeight(host: HTMLElement, height: number): void {
+  vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
+    top: 0,
+    left: 0,
+    right: 520,
+    bottom: height,
+    width: 520,
+    height,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  } as DOMRect);
+}
+
 beforeEach(() => {
   document.body.innerHTML = '';
   vi.restoreAllMocks();
@@ -375,5 +418,59 @@ describe('mountPanel, overlay wiring', () => {
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
 
     expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('measures the height the panel wants, not the height its own clamp left it at (LOR-210)', async () => {
+    const anchor = anchorEl();
+    // The real page: an anchor near the right edge, so the panel stacks
+    // rather than floating beside it, with 188px of room below it and 476px
+    // above.
+    const viewport = { width: 1200, height: 800 };
+    stubViewport(anchor, { top: 500, left: 900, right: 1160, bottom: 600 }, viewport);
+
+    const handle = mountPanel({ anchor, component: Framed, props: {} });
+    const host = handle.shadow.host as HTMLElement;
+    const body = handle.shadow.querySelector('.frame .body') as FramedBody;
+
+    // What a browser reports once the panel has been clamped into the room
+    // below: 180px of rendered box, with the other 240px of the card
+    // scrolling inside it. Reading only the first number is what wedged the
+    // panel in the sliver and kept it there.
+    stubHostHeight(host, 180);
+    body.hiddenOverflow = 240;
+    window.dispatchEvent(new Event('scroll'));
+
+    await vi.waitFor(() => expect(host.style.bottom).toBe(`${800 - 500 + 12}px`));
+    expect(host.style.top).toBe('auto');
+    // And the room it flipped into is the room above the anchor, not the
+    // 176px it was clamped to below it.
+    expect(host.style.maxHeight).toBe('476px');
+
+    handle.destroy();
+  });
+
+  it('repositions after a state change, which is the only thing that sees content grow inside a clamped box (LOR-210)', async () => {
+    const anchor = anchorEl();
+    const viewport = { width: 1200, height: 800 };
+    stubViewport(anchor, { top: 500, left: 900, right: 1160, bottom: 600 }, viewport);
+
+    const handle = mountPanel({ anchor, component: Framed, props: {} });
+    const host = handle.shadow.host as HTMLElement;
+    const body = handle.shadow.querySelector('.frame .body') as FramedBody;
+
+    // A skeleton that fits below the anchor, and stays there.
+    stubHostHeight(host, 120);
+    window.dispatchEvent(new Event('scroll'));
+    await vi.waitFor(() => expect(host.style.top).toBe(`${600 + 12}px`));
+
+    // The draft arrives. The host's own box does not change size - it is
+    // already clamped - so no `ResizeObserver` fires and no scroll happens:
+    // the state change itself is the only signal there is.
+    body.hiddenOverflow = 300;
+    handle.update({});
+
+    await vi.waitFor(() => expect(host.style.bottom).toBe(`${800 - 500 + 12}px`));
+
+    handle.destroy();
   });
 });

@@ -328,6 +328,13 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* A column, so what it holds can be told how to use the height rather
+   * than only stacking at its natural one (LOR-210). The editable draft
+   * box is the one thing in here that has a size of its own and can afford
+   * to give it up; without this it cannot be reached, because a block
+   * child's height is its content's. */
+  display: flex;
+  flex-direction: column;
 }
 
 /* LI-17 (#314): the comment-assist body rendered inside `.frame .body`
@@ -342,6 +349,26 @@
   /* 12px between sections (D16). The old 8px is what made a two-section
    * card read as one crowded one. */
   gap: 12px;
+  /* Fills the body and gives its own height back when the body is short
+   * (LOR-210): grow so the draft box can use a tall panel, shrink so the
+   * draft box is what gives way in a short one. `min-height: 0` is what
+   * makes the shrink legal at all - a flex item's automatic minimum is its
+   * content, which is the whole reason a 144px box in a 130px body used to
+   * put a second scrollbar inside the panel's own.
+   *
+   * Shrinking past what the draft box can absorb overflows this element
+   * rather than clipping anything: `.frame .body` above is a scroll
+   * container, and a scroll container's scrollable region includes what
+   * its descendants overflow. */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Everything in that column except the editable draft box keeps its natural
+ * height (LOR-210). The shrink has to land somewhere, and a squeezed hint,
+ * status line or control row clips text instead of giving anything back. */
+.assist > *:not(.assist-textarea) {
+  flex: 0 0 auto;
 }
 
 /* The panel's secondary voice: the product's own hints, and the model's
@@ -422,8 +449,18 @@
   width: 100%;
   /* 144px, not 72px (D16): a comment is 60-150 words, and the old box
    * showed about three lines of one, so the thing the human came for
-   * arrived pre-scrolled. */
-  min-height: 144px;
+   * arrived pre-scrolled.
+   *
+   * A preferred height rather than a floor, since LOR-210: as a floor it
+   * was the thing that made the panel scroll twice, a 144px box asking for
+   * more room than the body it sits in and the body growing a second
+   * scrollbar around the one the box already has. It takes whatever height
+   * the panel can spare (it is the only item in the column that grows) and
+   * gives it back down to 72px, the size this box shipped at before D16,
+   * before anything else in the panel is asked to move. */
+  height: 144px;
+  min-height: 72px;
+  flex: 1 1 auto;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

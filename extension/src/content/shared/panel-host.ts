@@ -182,6 +182,14 @@ const OVERLAY_MIN_HEIGHT = 160;
 /** Mirrors panel.css's `:host { max-height: 60vh }` default. */
 const OVERLAY_MAX_HEIGHT_RATIO = 0.6;
 
+/**
+ * The frame's one scroll region, as `panel.css` names it. Read by
+ * `naturalPanelHeight` below, which is the only thing in here that needs to
+ * know the frame's markup at all; `panel-frame.svelte` and this constant
+ * are the two ends of that one contract.
+ */
+const SCROLL_REGION_SELECTOR = '.frame .body';
+
 /** A structural subset of `DOMRect`, so placement can be tested without one. */
 type AnchorRect = { top: number; left: number; right: number; bottom: number };
 
@@ -271,6 +279,22 @@ export function computeOverlayPlacement(
   const maxLeft = Math.max(viewportWidth - width - OVERLAY_MARGIN, minLeft);
   left = Math.min(Math.max(left, minLeft), maxLeft);
 
+  // The panel's own bottom edge, kept inside the viewport the way `left` is
+  // (LOR-210). An anchor scrolled past the bottom of the window - a comment
+  // box in a card the human has scrolled off, still this panel's anchor
+  // until it is dismissed - puts `viewportHeight - anchor.top` below zero,
+  // and a negative `bottom` hangs the card off the screen. `top` is
+  // deliberately not clamped the same way: pulling it up is what would slide
+  // the panel over the anchor it is anchored to, and #404 already decided
+  // that a short panel below is better than that.
+  if (bottom !== null) {
+    const maxBottom = Math.max(
+      OVERLAY_MARGIN,
+      viewportHeight - OVERLAY_MARGIN - OVERLAY_MIN_HEIGHT,
+    );
+    bottom = Math.min(Math.max(bottom, OVERLAY_MARGIN), maxBottom);
+  }
+
   // The hard ceiling `panel.css`'s `max-height` is set to. No floor at
   // `OVERLAY_MIN_HEIGHT` here on purpose - it is what caused the overflow
   // above (`top`/`bottom` are already chosen so the *current* height fits,
@@ -282,20 +306,53 @@ export function computeOverlayPlacement(
   // default instead, at whichever `top`/`bottom` was picked for a height
   // that was never going to fit there. Flooring at zero keeps the box
   // honestly tiny rather than invisible off-screen at full size.
-  const available =
-    top !== null ? viewportHeight - top - OVERLAY_MARGIN : anchor.top - OVERLAY_MARGIN * 2;
+  //
+  // Derived from whichever edge was chosen, after the clamp above rather
+  // than from the anchor it started as: the two have to agree, or the panel
+  // is allowed to grow taller than the room the placement was moved into.
+  const available = viewportHeight - (top !== null ? top : bottom!) - OVERLAY_MARGIN;
   const maxHeight = Math.max(0, Math.min(viewportHeight * OVERLAY_MAX_HEIGHT_RATIO, available));
 
   return { left, top, bottom, maxHeight };
 }
 
+/**
+ * The height the panel wants, which is not the height it currently renders
+ * at (LOR-210).
+ *
+ * `positionOverlay` below writes `max-height` onto the host, so the very
+ * next `getBoundingClientRect()` on it reports the height *this function's
+ * own previous pass allowed*, never the height the content asked for. Read
+ * on its own that is a fixed point: `spaceBelow >= height` in
+ * `computeOverlayPlacement` compares the room below the anchor against a
+ * number already clamped to that same room, so it can never come back
+ * false, the flip to "above" never fires, and a panel that once landed in a
+ * sliver under the composer stays wedged there while its content scrolls
+ * inside it. Measured on a real feed on 2026-09-10: ~180px of room below,
+ * ~510px above, a panel that wanted ~420px, and it stayed in the 180.
+ *
+ * The part the clamp hides is exactly the scroll region's own hidden
+ * overflow, so it can be added back by reading rather than by lifting the
+ * clamp and re-measuring, which would mean a style write plus a forced
+ * reflow on every scroll event on linkedin.com. `.frame .body` is the one
+ * scroll region in this shadow tree: everything above it in `panel.css` is
+ * `overflow: hidden` at a fixed height, and a component mounted without the
+ * frame (a test probe) simply has no hidden overflow to add.
+ */
+function naturalPanelHeight(host: HTMLElement, shadow: ShadowRoot): number {
+  const rendered = host.getBoundingClientRect().height;
+  const scroller = shadow.querySelector(SCROLL_REGION_SELECTOR);
+  if (!scroller) return rendered;
+  return rendered + Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+}
+
 /** Applies `computeOverlayPlacement` to `host`'s inline style. */
-function positionOverlay(host: HTMLElement, anchor: Element): void {
+function positionOverlay(host: HTMLElement, anchor: Element, shadow: ShadowRoot): void {
   const placement = computeOverlayPlacement(
     anchor.getBoundingClientRect(),
     window.innerWidth,
     window.innerHeight,
-    host.getBoundingClientRect().height,
+    naturalPanelHeight(host, shadow),
   );
   host.style.left = `${placement.left}px`;
   if (placement.top !== null) {
@@ -375,7 +432,7 @@ export function mountPanel<Props extends Record<string, unknown>>(
   // Mounted before the first `reposition()` call, not after: placement reads
   // the panel's own rendered height (`computeOverlayPlacement`'s `panelHeight`),
   // and a host with no content yet would measure zero.
-  const reposition = () => positionOverlay(host, anchor);
+  const reposition = () => positionOverlay(host, anchor, shadow);
   reposition();
 
   let alive = true;
@@ -400,6 +457,11 @@ export function mountPanel<Props extends Record<string, unknown>>(
     // measured on a real page, a panel placed for a 116px skeleton grew to
     // 160px and ran 66px past the bottom of the viewport because nothing
     // ever recomputed `top` for the new height.
+    //
+    // This observer alone is not enough, and cannot be: once the panel is
+    // clamped, its content grows *inside* a box whose size never changes,
+    // so nothing here fires (LOR-210). `update()` below repositions on the
+    // frame after every state change for exactly that case.
     panelResize = new ResizeObserver(reposition);
     panelResize.observe(host);
   }
@@ -434,6 +496,17 @@ export function mountPanel<Props extends Record<string, unknown>>(
     update(next) {
       if (!alive) return;
       Object.assign(live, next);
+      // Every state change this panel has arrives here, which makes it the
+      // one hook that sees content grow while the box around it is clamped
+      // - the case the `ResizeObserver` on the host cannot see (LOR-210).
+      // On the next frame, because Svelte 5 renders the assignment above in
+      // a microtask and a measurement taken before that paint would be of
+      // the previous state.
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          if (alive) reposition();
+        });
+      }
     },
     destroy() {
       if (!alive) return;
