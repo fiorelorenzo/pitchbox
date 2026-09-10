@@ -82,11 +82,11 @@
 
 <PageContainer size="default">
 	<PageHeader
-		title="Companion"
+		title="Persona"
 		description="What the in-page LinkedIn assistant knows about you, so a suggestion sounds like something you'd actually say. Nothing here is sent anywhere until a suggestion is requested."
 	/>
 
-	<div class="max-w-2xl flex flex-col gap-4">
+	{#if !data.profile}
 		<Card.Root>
 			<Card.Header>
 				<Card.Title class="flex items-center gap-2"><UserRound class="size-4" /> Who you are</Card.Title>
@@ -97,15 +97,41 @@
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
-				{#if !data.profile}
-					<EmptyState
-						icon={UserRound}
-						title="No persona captured yet"
-						description="Open your own LinkedIn profile once with the extension installed - that's what fills this in."
-					/>
-				{:else}
+				<EmptyState
+					icon={UserRound}
+					title="No persona captured yet"
+					description="Open your own LinkedIn profile once with the extension installed - that's what fills this in."
+				/>
+			</Card.Content>
+		</Card.Root>
+	{:else}
+		<form
+			method="POST"
+			action="?/saveProfile"
+			use:enhance={({ formData }) => {
+				formData.set('experiences', JSON.stringify(experiences));
+				savingProfile = true;
+				return async ({ update }) => {
+					await update();
+					savingProfile = false;
+				};
+			}}
+			class="grid items-start gap-4 xl:grid-cols-2"
+		>
+			<Card.Root>
+				<Card.Header>
+					<Card.Title class="flex items-center gap-2"
+						><UserRound class="size-4" /> Who you are</Card.Title
+					>
+					<Card.Description>
+						Captured once when you open your own LinkedIn profile with the extension installed, and
+						editable here afterward. A saved edit is kept as-is: the next capture will not overwrite
+						it.
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="flex flex-col gap-4">
 					{#if data.profile.capturedAt}
-						<div class="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+						<div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
 							<Badge variant={data.profile.source === 'manual' ? 'secondary' : 'outline'}>
 								{data.profile.source === 'manual' ? 'Manually edited' : 'From LinkedIn capture'}
 							</Badge>
@@ -119,102 +145,90 @@
 							     recapture after this point changes nothing on the LinkedIn side either -
 							     without this line that reads as a broken recapture rather than the
 							     protection working as designed. -->
-							<p class="mb-4 text-xs text-muted-foreground">
+							<p class="text-xs text-muted-foreground">
 								A LinkedIn recapture will not change this: it stays as you last edited it.
 							</p>
 						{/if}
 					{/if}
-					<form
-						method="POST"
-						action="?/saveProfile"
-						use:enhance={({ formData }) => {
-							formData.set('experiences', JSON.stringify(experiences));
-							savingProfile = true;
-							return async ({ update }) => {
-								await update();
-								savingProfile = false;
-							};
-						}}
-						class="flex flex-col gap-4"
-					>
-						<div class="grid gap-4 sm:grid-cols-2">
-							<div class="grid gap-1.5">
-								<label class="text-sm font-medium" for="handle">LinkedIn handle</label>
-								<Input id="handle" name="handle" bind:value={handle} placeholder="jane-doe" />
-							</div>
-							<div class="grid gap-1.5">
-								<label class="text-sm font-medium" for="displayName">Display name</label>
-								<Input id="displayName" name="displayName" bind:value={displayName} />
-							</div>
+					<div class="grid gap-4 sm:grid-cols-2">
+						<div class="grid gap-1.5">
+							<label class="text-sm font-medium" for="handle">LinkedIn handle</label>
+							<Input id="handle" name="handle" bind:value={handle} placeholder="jane-doe" />
 						</div>
 						<div class="grid gap-1.5">
-							<label class="text-sm font-medium" for="headline">Headline</label>
-							<Input id="headline" name="headline" bind:value={headline} />
+							<label class="text-sm font-medium" for="displayName">Display name</label>
+							<Input id="displayName" name="displayName" bind:value={displayName} />
 						</div>
-						<div class="grid gap-1.5">
-							<label class="text-sm font-medium" for="about">About</label>
-							<Textarea id="about" name="about" bind:value={about} rows={4} />
-						</div>
+					</div>
+					<div class="grid gap-1.5">
+						<label class="text-sm font-medium" for="headline">Headline</label>
+						<Input id="headline" name="headline" bind:value={headline} />
+					</div>
+					<div class="grid gap-1.5">
+						<label class="text-sm font-medium" for="about">About</label>
+						<Textarea id="about" name="about" bind:value={about} rows={4} />
+					</div>
+					<div class="grid gap-1.5">
+						<label class="text-sm font-medium" for="notes">How you want to sound</label>
+						<Textarea
+							id="notes"
+							name="notes"
+							bind:value={notes}
+							rows={3}
+							placeholder="Direct, no corporate hedging, short sentences..."
+						/>
+						<p class="text-xs text-muted-foreground">
+							Free text, never captured from LinkedIn - this is only what you type here.
+						</p>
+					</div>
+					<div>
+						<Button type="submit" disabled={savingProfile}>Save persona</Button>
+					</div>
+				</Card.Content>
+			</Card.Root>
 
-						<div class="grid gap-2">
-							<span class="text-sm font-medium">Experience</span>
-							{#each experiences as experience, i (i)}
-								<div class="flex flex-col gap-2 rounded-md border border-border p-3">
-									<div class="flex items-start justify-between gap-2">
-										<div class="grid flex-1 gap-2 sm:grid-cols-3">
-											<Input bind:value={experience.title} placeholder="Title" aria-label="Title" />
-											<Input
-												bind:value={experience.company}
-												placeholder="Company"
-												aria-label="Company"
-											/>
-											<Input bind:value={experience.period} placeholder="Period" aria-label="Period" />
-										</div>
-										<Button
-											type="button"
-											variant="ghost"
-											size="icon-sm"
-											onclick={() => removeExperience(i)}
-											aria-label="Remove experience"
-										>
-											<Trash2 class="size-4" />
-										</Button>
-									</div>
-									<Textarea
-										bind:value={experience.summary}
-										placeholder="Summary"
-										aria-label="Summary"
-										rows={2}
-									/>
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>Experience</Card.Title>
+					<Card.Description>
+						What you have done, in the order the assistant should reach for it. Captured with the
+						rest of the profile and editable here.
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="flex flex-col gap-2">
+					{#each experiences as experience, i (i)}
+						<div class="flex flex-col gap-2 rounded-md border border-border p-3">
+							<div class="flex items-start justify-between gap-2">
+								<div class="grid flex-1 gap-2 sm:grid-cols-3">
+									<Input bind:value={experience.title} placeholder="Title" aria-label="Title" />
+									<Input bind:value={experience.company} placeholder="Company" aria-label="Company" />
+									<Input bind:value={experience.period} placeholder="Period" aria-label="Period" />
 								</div>
-							{/each}
-							<div>
-								<Button type="button" variant="outline" size="sm" onclick={addExperience}>
-									<Plus class="size-4" /> Add experience
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon-sm"
+									onclick={() => removeExperience(i)}
+									aria-label="Remove experience"
+								>
+									<Trash2 class="size-4" />
 								</Button>
 							</div>
-						</div>
-
-						<div class="grid gap-1.5">
-							<label class="text-sm font-medium" for="notes">How you want to sound</label>
 							<Textarea
-								id="notes"
-								name="notes"
-								bind:value={notes}
-								rows={3}
-								placeholder="Direct, no corporate hedging, short sentences..."
+								bind:value={experience.summary}
+								placeholder="Summary"
+								aria-label="Summary"
+								rows={2}
 							/>
-							<p class="text-xs text-muted-foreground">
-								Free text, never captured from LinkedIn - this is only what you type here.
-							</p>
 						</div>
-
-						<div>
-							<Button type="submit" disabled={savingProfile}>Save persona</Button>
-						</div>
-					</form>
-				{/if}
-			</Card.Content>
-		</Card.Root>
-	</div>
+					{/each}
+					<div>
+						<Button type="button" variant="outline" size="sm" onclick={addExperience}>
+							<Plus class="size-4" /> Add experience
+						</Button>
+					</div>
+				</Card.Content>
+			</Card.Root>
+		</form>
+	{/if}
 </PageContainer>

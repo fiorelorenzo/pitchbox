@@ -75,11 +75,11 @@
 
 <PageContainer size="default">
 	<PageHeader
-		title="Companion"
+		title="Voice"
 		description="How you write, derived from what you have actually written - your voice samples, outbound messages, sent drafts and project templates - rather than a raw list of posts."
 	/>
 
-	<div class="max-w-2xl flex flex-col gap-4">
+	<div class="grid items-start gap-4 xl:grid-cols-2">
 		<Card.Root>
 			<Card.Header>
 				<Card.Title class="flex items-center gap-2"><Mic class="size-4" /> How you write</Card.Title>
@@ -187,15 +187,19 @@
 						</p>
 					{/if}
 				</div>
+			</Card.Content>
+		</Card.Root>
 
-				<div class="flex flex-col gap-1">
-					<span class="text-sm font-medium">Voice samples</span>
-					<p class="text-xs text-muted-foreground">
-						Your own recent posts, captured passively. {includedSampleCount} of {data.voiceSamples
-							.length} feed the derived voice above. Excluding a sample keeps it here - it just stops
-						contributing - because a delete would come back on the next capture.
-					</p>
-				</div>
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>Voice samples</Card.Title>
+				<Card.Description>
+					Your own recent posts, captured passively. {includedSampleCount} of {data.voiceSamples
+						.length} feed the derived voice beside this - excluding a sample keeps it here, it just
+					stops contributing, because a delete would come back on the next capture.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content class="flex flex-col gap-4">
 				{#if data.voiceSamples.length === 0}
 					<EmptyState
 						icon={Mic}
