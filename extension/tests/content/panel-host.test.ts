@@ -88,18 +88,33 @@ describe('mountPanel', () => {
     expect(handle.shadow.querySelector('.probe')).not.toBeNull();
   });
 
-  it('puts the dark panel root inside the shadow root, not on the host page', () => {
+  it('puts the panel root inside the shadow root and follows the host page (LOR-211)', async () => {
     const anchor = anchorEl();
     const handle = mountPanel({ anchor, component: Probe, props: { label: 'a' } });
 
-    // D10: the panel is always the dark palette regardless of LinkedIn's
-    // theme, and `.dark` sits inside the shadow root so Tailwind's `dark:`
-    // variant can match it (a shadow descendant cannot match `.dark *` when
-    // the `.dark` element is the host).
+    // The root sits inside the shadow root so `.dark` can select the dark
+    // token values for its descendants (a shadow descendant cannot match
+    // `.dark *` when the `.dark` element is the host). Which values it
+    // selects is the host page's call now, not a constant: this document
+    // paints nothing, so it reads as light.
     const root = handle.shadow.querySelector('.pitchbox-panel');
     expect(root).not.toBeNull();
-    expect(root!.classList.contains('dark')).toBe(true);
+    expect(root!.classList.contains('dark')).toBe(false);
     expect(document.documentElement.classList.contains('dark')).toBe(false);
+
+    // And it tracks a flip that happens with the panel already open, which
+    // is what LinkedIn's own dark-mode switch does: no reload.
+    document.body.setAttribute('style', 'background-color: rgb(27, 31, 35)');
+    await vi.waitFor(() => expect(root!.classList.contains('dark')).toBe(true));
+  });
+
+  it('takes the dark palette when the page it mounts on is already dark', () => {
+    document.body.setAttribute('style', 'background-color: rgb(27, 31, 35)');
+    const anchor = anchorEl();
+    const handle = mountPanel({ anchor, component: Probe, props: { label: 'a' } });
+
+    const root = handle.shadow.querySelector('.pitchbox-panel');
+    expect(root!.classList.contains('dark')).toBe(true);
   });
 
   it('adds its stylesheet to the shadow root and nothing to the document head', () => {
