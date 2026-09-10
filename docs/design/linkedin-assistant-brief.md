@@ -28,6 +28,9 @@ Palette      Repo tokens only, the .dark block, no new values (D1, D2, D5): --ba
              --destructive oklch(0.704 0.191 22.216) for a refusal. No brand hue: that is
              still under Unresolved in DECISIONS.md and this surface is not the place to
              settle it.
+             Superseded in one axis by D30 (2026-09-10): the panel's accent is now LinkedIn's
+             own blue, per theme, through the --li-accent* tokens in panel.css. The grounds
+             and the hairline above are unchanged.
 
 Type         Inter only, one weight for labels and one for values. The suggestion body is the
              only long-form text on the surface; everything else is a label or a control.

@@ -8,9 +8,11 @@
    * lets the host be verified on its own, and stops this file from
    * pre-deciding controls that belong to a later issue.
    *
-   * Per `docs/design/DECISIONS.md` D10 the frame reads as Pitchbox and never
-   * as LinkedIn: dark card, one hairline, its own wordmark, no borrowed
-   * LinkedIn typography, spacing or control shapes.
+   * Per `docs/design/DECISIONS.md` D10 the frame reads as Pitchbox and not as
+   * LinkedIn: our card, one hairline, our own wordmark, no borrowed LinkedIn
+   * typography, spacing or control shapes. D30 (2026-09-10) hands back one
+   * axis only - the accent, including the dot this wordmark carries - so the
+   * panel sits in the host's colour while staying our surface.
    */
   import type { Snippet } from 'svelte';
   import { t } from '../lib/i18n/index.js';

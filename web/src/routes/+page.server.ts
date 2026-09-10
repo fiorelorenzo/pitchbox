@@ -21,7 +21,12 @@ export async function load(event: RequestEvent) {
   // at most once per (user, org). A pre-populated org (nothing left to walk
   // through) reads straight through to `completed` instead and this page
   // renders normally with no redirect at all.
-  let onboarding: { status: string; currentStep: OnboardingStepId | null } | null = null;
+  let onboarding: {
+    status: string;
+    currentStep: OnboardingStepId | null;
+    done: number;
+    total: number;
+  } | null = null;
   if (orgId != null) {
     const identity = { organizationId: orgId, userId: event.locals.user?.id ?? null };
     const ctx = {
@@ -36,7 +41,16 @@ export async function load(event: RequestEvent) {
       }
     }
     if (snapshot.status === 'in_progress') {
-      onboarding = { status: snapshot.status, currentStep: snapshot.currentStep };
+      // The banner shows the same progress read the wizard does, so it counts
+      // applicable steps only - `organization` and `verify_email` do not apply
+      // with auth off or to a non-owner member.
+      const applicable = snapshot.steps.filter((s) => s.applicable);
+      onboarding = {
+        status: snapshot.status,
+        currentStep: snapshot.currentStep,
+        done: applicable.filter((s) => s.complete).length,
+        total: applicable.length,
+      };
     }
   }
 
