@@ -14,9 +14,12 @@
 # Env knobs:
 #   DEPLOY_KEEP_N   how many immutable image tags / restore points to retain per
 #                    env after a successful deploy (default 5)
-#   DEPLOY_CACHE_KEEP_H  how many hours of docker build cache to keep after a
-#                    successful deploy (default 168 = one week); 0 disables the
-#                    cache prune entirely
+#   DEPLOY_CACHE_MAX_GB  size cap, in GB, for the shared buildkit cache,
+#                    enforced after every successful deploy (default 40); 0
+#                    disables the cache prune entirely. The cap is
+#                    daemon-wide - every app building on this host's docker
+#                    daemon shares one cache store - not per app; see
+#                    prune_build_cache below.
 #   ALLOW_NO_AUTH   set to 1 to override the PITCHBOX_AUTH guard below (not
 #                    recommended - see step 0b)
 set -euo pipefail
@@ -123,14 +126,44 @@ prune_images() {
 
 prune_build_cache() {
   # The image prune above only drops old *tags*; the buildx cache behind them
-  # keeps growing forever and dwarfs everything else (154 GB reclaimable against
-  # 42 GB free when this was added, #217), which would eventually wedge the disk
-  # mid-build - i.e. exactly during a deploy. Keep a week by default so the next
-  # incremental build still hits cache. Best-effort like the other prunes.
-  local keep_h="${DEPLOY_CACHE_KEEP_H:-168}"
-  [ "$keep_h" = 0 ] && return 0
-  log "pruning docker build cache older than ${keep_h}h..."
-  docker builder prune -f --filter "until=${keep_h}h" >/dev/null 2>&1 ||
+  # keeps growing forever and dwarfs everything else - 150.6 GB of build cache
+  # measured on prodbox against a 251 GB disk at 83% used, 0 B of that cache
+  # active, versus 38 GB of images and 2.5 GB of volumes combined. That is
+  # what killed the original age-based default here (a week: DEPLOY_KEEP_N's
+  # sibling used to be DEPLOY_CACHE_KEEP_H=168). Seven days of cache from an
+  # app rebuilt several times a day across prod and preview is tens of
+  # gigabytes by construction, and age has no relationship to the fixed size
+  # of the disk it fills - a one-off `until=72h` prune freed 12 GB and left
+  # 138 GB still inside that window. Prune by size instead: cap the cache at
+  # roughly the working set an incremental build actually reuses, and it can
+  # never grow past that cap no matter how many deploys land in a day. Not
+  # re-adding an age filter as a second bound - that is exactly the "prune by
+  # time on a fixed disk" control being replaced here, and it cannot tighten
+  # anything the size cap doesn't already guarantee.
+  #
+  # The cap is daemon-wide, not per app: prodbox's docker daemon builds
+  # canonry, embertold, mastro and two landing sites off the same buildkit
+  # cache store as pitchbox, so this prune trims whichever cache records are
+  # least recently used across every one of them, not just this app's
+  # layers - a low cap here shrinks headroom for every other app's builds
+  # too.
+  #
+  # The flag is spelled --max-used-space on current buildkit and
+  # --keep-storage on older releases (deprecated there but still the only
+  # spelling some docker installs understand); detect which one this host's
+  # docker supports rather than hardcoding a spelling we can't verify from
+  # here (this script runs on prodbox, not wherever it's being edited).
+  # Best-effort like the other prunes: a failure here must never fail a
+  # deploy.
+  local max_gb="${DEPLOY_CACHE_MAX_GB:-40}" flag
+  [ "$max_gb" = 0 ] && return 0
+  if docker builder prune --help 2>/dev/null | grep -q -- '--max-used-space'; then
+    flag=--max-used-space
+  else
+    flag=--keep-storage
+  fi
+  log "pruning docker build cache to ${max_gb}GB (${flag})..."
+  docker builder prune -f "${flag}=${max_gb}GB" >/dev/null 2>&1 ||
     log "WARNING: build cache prune failed (ignored)"
   return 0
 }

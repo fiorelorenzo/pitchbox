@@ -113,6 +113,10 @@ The daemon prunes ageing event logs and terminal drafts on a configurable schedu
 
 `git pull && pnpm install && pnpm run migrate && pnpm -F @pitchbox/shared seed:core`. The seed step refreshes built-in playbooks but leaves user-created rows alone.
 
+## Disk usage: build cache
+
+`scripts/deploy.sh`'s blue-green cutover prunes docker's build cache after every successful deploy, capped by `DEPLOY_CACHE_MAX_GB` (default 40; `0` disables the prune). The cap targets the _shared_ buildkit cache store on whichever docker daemon builds this app's image - on a host running other containers off that same daemon, it bounds every app's cache together, not just this one's. Lower it if disk is tight, but not so low that a same-day incremental build stops hitting cache. `DEPLOY_KEEP_N` (default 5) is the separate knob for how many old immutable image tags and pre-migrate restore points the script keeps; see the script's own header comment for the full env-knob list.
+
 ## Dependency pinning policy
 
 A few dependencies are pinned to **exact** versions (no caret) in `package.json` because semver-range upgrades have historically broken self-hosted installs:
