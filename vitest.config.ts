@@ -98,6 +98,12 @@ export default defineConfig({
     // it through the plugin like any workspace source file instead.
     server: { deps: { inline: [/@lucide\/svelte/] } },
     globalSetup: ['./tests/global-setup.ts'],
+    // Runs inside every test file: snapshots `process.env` before the file
+    // and restores it after, so a variable one file sets (and fails to
+    // restore, which a hand-rolled restore does whenever something throws
+    // first) cannot change what a later file sees. See tests/setup-env.ts
+    // for what that failure actually looked like (LOR-217).
+    setupFiles: ['./tests/setup-env.ts'],
     // Point all tests at a dedicated test database so they never truncate the
     // user's real data. AI_GATEWAY_API_KEY is blanked the same way and for the
     // same reason: dotenv (shared/src/db/client.ts) loads the developer's real
