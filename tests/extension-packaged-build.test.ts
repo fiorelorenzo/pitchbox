@@ -36,6 +36,9 @@ function walk(dir: string): string[] {
 let files: string[] = [];
 
 const OVERRIDE_BACKEND = 'https://preview-invariant.pitchbox.app';
+// Pinned rather than left to the checkout's own commit, so the assertion
+// below is about the stamping and not about what HEAD happens to be.
+const BUILD_ID = 'test-build-id';
 
 beforeAll(() => {
   // Built with the override set, so the same run proves both that the
@@ -45,7 +48,11 @@ beforeAll(() => {
   execFileSync('pnpm', ['exec', 'vite', 'build'], {
     cwd: EXT_ROOT,
     stdio: 'pipe',
-    env: { ...process.env, VITE_DEFAULT_BACKEND_URL: OVERRIDE_BACKEND },
+    env: {
+      ...process.env,
+      VITE_DEFAULT_BACKEND_URL: OVERRIDE_BACKEND,
+      PITCHBOX_BUILD_ID: BUILD_ID,
+    },
   });
   files = walk(DIST);
 }, 300_000);
@@ -180,5 +187,25 @@ describe('the packaged extension', () => {
       (f) => f.endsWith('.js') && readFileSync(f, 'utf8').includes(OVERRIDE_BACKEND),
     );
     expect(carriers.map((f) => path.relative(DIST, f)).length).toBeGreaterThan(0);
+  });
+
+  it('stamps the build it was made from, so two bundles of one version differ', () => {
+    // The manifest version only moves on a release commit, so every bundle
+    // between two releases reported the same `0.17.0` in chrome://extensions
+    // with nothing else to go on. On 2026-09-10 a bundle built before a fix
+    // merged was judged as if it contained it, twice.
+    const manifest = JSON.parse(readFileSync(path.join(DIST, 'manifest.json'), 'utf8')) as {
+      version: string;
+      version_name?: string;
+    };
+    expect(manifest.version_name).toBe(`${manifest.version} (${BUILD_ID})`);
+
+    // And the side panel says the same thing, so the answer is reachable
+    // without opening chrome://extensions.
+    const carriers = files.filter(
+      (f) =>
+        f.endsWith('.js') && readFileSync(f, 'utf8').includes(`${manifest.version} (${BUILD_ID})`),
+    );
+    expect(carriers.length).toBeGreaterThan(0);
   });
 });

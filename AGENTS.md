@@ -426,6 +426,18 @@ Two things worth stating here so nobody re-derives them mid-task. First, the ext
 
 **This is not optional polish. Six defects shipped because nothing had ever loaded the built extension** (#379, fixed by #380 and #381): a `.ts` script path that only resolves while Vite serves the source, an inline `<script>` the MV3 CSP refuses outright, LinkedIn missing from the server's extension CORS allowlist, the in-page assistant not registered for `/posts/<slug>-<id>/`, Svelte's runtime dying on LinkedIn's Trusted Types allowlist, and a post reader that returned a screen-reader-only line instead of the post. `tests/extension-packaged-build.test.ts` now builds the extension and asserts on the artifact, which covers the first two classes; the rest only show up on a real page. So drive the built extension in a real profile against preview before calling an extension change done.
 
+**Which bundle is actually installed is a question the manifest could not answer
+until #661, and it cost two round trips on 2026-09-10 alone.** `version` only
+moves on a release commit, so a bundle built at 18:52 and one built after three
+more merges both said `0.17.0`, and a fix merged in between looked broken when
+it simply was not there. Every build now stamps `version_name` with the commit
+(`0.17.0 (a1910bc)`, plus `-dirty` when the tree differed from HEAD), shown in
+`chrome://extensions` and on the side panel's About card;
+`PITCHBOX_BUILD_ID` overrides it for a build with no checkout. Before
+diagnosing a "the fix is not in the build" report, read that string, and when
+it is unavailable grep the emitted content script for a literal the change
+touched, since `dist/` carries the answer and a version number does not.
+
 **Three traps in the side panel's own code, all paid for on 2026-09-08 while building home (#457).** A Svelte file must never declare a variable called `state`: `let state = $derived(...)` turns every `$state` rune in that file into a store subscription (`$` + `state`), and the file stops compiling with errors that name the rune rather than your variable. Second, a component that reads `chrome.storage` for itself is a second reader of the same key and will drift from the first: home said "Not paired" while `PairingList` still rendered the old rows with their Test connection and Disconnect buttons, because that copy refreshed only on mount. One owner reads, the children take props, and a child that mutates calls back up. Third, the panel applies the theme at mount only, so a `extensionSettings.theme` write from another context (a worker, a test, another tab) does not repaint an open panel: reload the page to see dark mode, and do not read that as a bug in what you just changed.
 
 **Mounting a side-panel component in a test needs the root `vitest.config.ts`, not the extension's.** CI runs the root config, and until #457 it had no `$ext`/`$ui` aliases, so a component test that passes under `pnpm -F @pitchbox/extension exec vitest run` fails in CI on an unresolved import - the same split that cost a bisect in #339. Both configs resolve them now. `$lib` is deliberately NOT remapped in the root config: the extension's `ui` primitives resolve `$lib/utils.js` to the web app's own `cn`, which is the same helper, and remapping it would break every web route test.

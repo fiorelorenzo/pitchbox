@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite';
 import manifest from './manifest.config';
 import { panelContentScripts } from './vite-plugins/panel-content-scripts';
 import pkg from './package.json' with { type: 'json' };
+import { resolveBuildId, versionLabel } from './vite-plugins/build-id';
 
 export default defineConfig({
   plugins: [
@@ -49,7 +50,12 @@ export default defineConfig({
     panelContentScripts(),
   ],
   define: {
-    'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
+    // The About card's version line. `versionLabel` rather than the bare
+    // version so the side panel answers "which build is this" on its own,
+    // matching the manifest's `version_name`.
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(
+      versionLabel(pkg.version, resolveBuildId(__dirname)),
+    ),
     // The backend the extension defaults to on a fresh install. Overridable at
     // build time for a self-hosted or preview build; the user can also add
     // other backends at runtime from the side panel. See docs/extension-connection-design.md.
