@@ -8,7 +8,7 @@ import {
   defaultLinkedInAssistSettings,
   saveLinkedInAssistSettings,
 } from '@pitchbox/shared/linkedin-assist';
-import { DRAFT_MARKER } from '@pitchbox/shared/assist/envelope';
+import { DRAFT_MARKER, PROJECT_MARKER } from '@pitchbox/shared/assist/envelope';
 
 /**
  * #522: `POST /api/extension/suggest` writes no `runs` row and, before this
@@ -30,6 +30,21 @@ import { DRAFT_MARKER } from '@pitchbox/shared/assist/envelope';
 const REASONING = 'Noticed the cache change and the specific number.';
 const DRAFT = 'A specific thing that happened.';
 const ENVELOPE_CHUNKS = [`${REASONING}\n`, DRAFT_MARKER, '\n', DRAFT];
+/**
+ * The same answer, with the model stating which project it wrote for. Since
+ * LOR-181 the project on a ledger row is the one the **server resolved** from
+ * that claim, not one the client sent, so a test that wants a project on the
+ * row has to make the model claim it. Without the marker the resolution falls
+ * through to personal and the row's `project_id` is null, which is a real
+ * outcome (#523 made the column nullable) and is what the last case here
+ * asserts.
+ */
+const envelopeClaiming = (projectId: number) => [
+  PROJECT_MARKER,
+  '\n',
+  `${projectId}\n`,
+  ...ENVELOPE_CHUNKS,
+];
 let responseChunks: string[] = ENVELOPE_CHUNKS;
 /** Set by a test to make the fake agent report no usage at all - the panel
  * still gets its answer, but there is nothing to ledger a cost from. */
@@ -82,6 +97,13 @@ async function reset() {
   );
   await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
   await getDb().execute(sql`DELETE FROM app_config WHERE key = 'linkedin_assist'`);
+  // The model assertion below reads `ASSIST_DEFAULT_MODEL`, which only applies
+  // when no operator pinned a model for the runner. `runner_configs` is
+  // instance-wide and survives every truncate above, so a settings test (or a
+  // hand poke at a shared local database) that pinned one made this suite fail
+  // with the pinned id while CI, on a fresh database, passed. Measured on the
+  // devbox 2026-09-10: a leftover `claude-code.model = claude-sonnet-4-6`.
+  await getDb().execute(sql`DELETE FROM app_config WHERE key = 'runner_configs'`);
   responseChunks = ENVELOPE_CHUNKS;
   usage = {
     inputTokens: 2,
@@ -156,8 +178,10 @@ describe('assist_usage ledger (#522)', () => {
     const { org, project, platform } = await seedOrgProject('org-ledger');
     const device = await mintDevice(org.id, 'tok-ledger');
 
+    responseChunks = envelopeClaiming(project.id);
+
     const res = await suggest({
-      request: request('tok-ledger', { ...POST_BODY, projectId: project.id }),
+      request: request('tok-ledger', POST_BODY),
     } as never);
     await readEvents(res);
 
@@ -186,9 +210,10 @@ describe('assist_usage ledger (#522)', () => {
     const { org, project } = await seedOrgProject('org-ledger-many');
     await mintDevice(org.id, 'tok-ledger-many');
 
+    responseChunks = envelopeClaiming(project.id);
     for (let i = 0; i < 4; i += 1) {
       const res = await suggest({
-        request: request('tok-ledger-many', { ...POST_BODY, projectId: project.id }),
+        request: request('tok-ledger-many', POST_BODY),
       } as never);
       await readEvents(res);
     }
@@ -208,8 +233,9 @@ describe('assist_usage ledger (#522)', () => {
     const { org, project } = await seedOrgProject('org-ledger-model');
     await mintDevice(org.id, 'tok-ledger-model');
 
+    responseChunks = envelopeClaiming(project.id);
     const res = await suggest({
-      request: request('tok-ledger-model', { ...POST_BODY, projectId: project.id }),
+      request: request('tok-ledger-model', POST_BODY),
     } as never);
     await readEvents(res);
 
@@ -227,8 +253,9 @@ describe('assist_usage ledger (#522)', () => {
     await mintDevice(org.id, 'tok-ledger-nousage');
     usage = null;
 
+    responseChunks = envelopeClaiming(project.id);
     const res = await suggest({
-      request: request('tok-ledger-nousage', { ...POST_BODY, projectId: project.id }),
+      request: request('tok-ledger-nousage', POST_BODY),
     } as never);
     await readEvents(res);
 
