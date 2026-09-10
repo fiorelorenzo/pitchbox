@@ -7,13 +7,14 @@ import {
   memberships,
   organizations,
   orgInvites,
+  orgSubscriptions,
   projects,
   runs,
   users,
 } from './db/schema.js';
 import { loadOrgQuotaDefaults, loadSelfRegistrationQuotaDefaults } from './org-quota.js';
 import { isCloud } from './edition.js';
-import { PLAN_CATALOGUE, type PlanId } from './plans.js';
+import { PLAN_CATALOGUE, normalizePlanId, type PlanId } from './plans.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = PgDatabase<any, any, any>;
@@ -472,6 +473,99 @@ export async function setOrgPlan(
     .where(eq(organizations.id, orgId))
     .returning({ id: organizations.id });
   return rows.length > 0;
+}
+
+/**
+ * The plan/source pair for one org, or null if it does not exist. Reads the
+ * same two columns `setOrgPlan` writes - the grant route's own "before" for
+ * `recordInstanceAudit`, and the not-found check the route turns into a 404.
+ */
+export async function getOrgPlanState(
+  db: Db,
+  orgId: number,
+): Promise<{ plan: PlanId; planSource: string } | null> {
+  const [row] = await db
+    .select({ plan: organizations.plan, planSource: organizations.planSource })
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+    .limit(1);
+  return row ? { plan: normalizePlanId(row.plan), planSource: row.planSource } : null;
+}
+
+/**
+ * Every organization's plan, where it came from, its Stripe customer if any,
+ * and the plan its mirrored `org_subscriptions` row names (#187's
+ * instance-admin plan-grant page). `mirroredSubscriptionPlanId` is also what
+ * `revokeOrgPlanGrant` below falls back to, surfaced here so the page can
+ * show what a revoke will actually do before an admin clicks it, rather
+ * than a guess.
+ */
+export type OrgPlanRow = {
+  id: number;
+  slug: string;
+  name: string;
+  plan: PlanId;
+  planSource: string;
+  stripeCustomerId: string | null;
+  mirroredSubscriptionPlanId: PlanId | null;
+};
+
+export async function listOrgPlans(db: Db): Promise<OrgPlanRow[]> {
+  const rows = await db
+    .select({
+      id: organizations.id,
+      slug: organizations.slug,
+      name: organizations.name,
+      plan: organizations.plan,
+      planSource: organizations.planSource,
+      stripeCustomerId: organizations.stripeCustomerId,
+      mirroredSubscriptionPlanId: orgSubscriptions.planId,
+    })
+    .from(organizations)
+    .leftJoin(orgSubscriptions, eq(orgSubscriptions.organizationId, organizations.id))
+    .orderBy(organizations.slug);
+  return rows.map((row) => ({
+    ...row,
+    plan: normalizePlanId(row.plan),
+    mirroredSubscriptionPlanId:
+      row.mirroredSubscriptionPlanId == null
+        ? null
+        : normalizePlanId(row.mirroredSubscriptionPlanId),
+  }));
+}
+
+export type RevokeOrgPlanGrantResult =
+  | {
+      ok: true;
+      before: { plan: PlanId; planSource: string };
+      after: { plan: PlanId; planSource: string };
+    }
+  | { ok: false; reason: 'not_found' | 'not_a_grant' };
+
+/**
+ * Revokes a plan grant (#187): moves the org off `plan_source = 'grant'`
+ * onto whatever Stripe actually says about it - the plan its mirrored
+ * `org_subscriptions` row names if one exists, `free` if it does not. Never
+ * a guess: the same fallback `clearSubscription`
+ * (`shared/src/billing/webhook.ts`) uses when a subscription disappears out
+ * from under a non-granted org, and written through the same `setOrgPlan`
+ * every other plan write goes through, with `source: 'stripe'` since the
+ * result is what Stripe's own state says, not a second grant. Refuses to
+ * touch an org that is not currently on a grant, so this can never silently
+ * overwrite a plan the Stripe webhook itself is responsible for.
+ */
+export async function revokeOrgPlanGrant(db: Db, orgId: number): Promise<RevokeOrgPlanGrantResult> {
+  const before = await getOrgPlanState(db, orgId);
+  if (!before) return { ok: false, reason: 'not_found' };
+  if (before.planSource !== 'grant') return { ok: false, reason: 'not_a_grant' };
+  const [sub] = await db
+    .select({ planId: orgSubscriptions.planId })
+    .from(orgSubscriptions)
+    .where(eq(orgSubscriptions.organizationId, orgId))
+    .limit(1);
+  const nextPlan = sub ? normalizePlanId(sub.planId) : 'free';
+  await setOrgPlan(db, orgId, nextPlan, 'stripe');
+  return { ok: true, before, after: { plan: nextPlan, planSource: 'stripe' } };
 }
 
 /**
