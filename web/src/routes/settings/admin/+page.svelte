@@ -5,12 +5,13 @@
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import { SelectField } from '$lib/components/ui/select-field';
-  import { Info, Bot, Gauge, Archive, Webhook, ScrollText, CircleDollarSign } from '@lucide/svelte';
+  import { Info } from '@lucide/svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import PageContainer from '$lib/components/PageContainer.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
+  import { ADMIN_LINKS } from './admin-links.js';
 
   type AdminUser = { id: number; username: string; isInstanceAdmin: boolean };
   type RegistrationPolicy = 'open' | 'invite' | 'off';
@@ -72,45 +73,6 @@
       savingRegistrationPolicy = false;
     }
   }
-
-  const links = [
-    {
-      href: '/settings/runners',
-      icon: Bot,
-      label: 'Agent runners',
-      description: 'Default runner and per-runner config for every organization.',
-    },
-    {
-      href: '/settings/quota',
-      icon: Gauge,
-      label: 'Quota',
-      description: 'Per-platform posting quota defaults shared by every organization.',
-    },
-    {
-      href: '/settings/admin/spend-ceiling',
-      icon: CircleDollarSign,
-      label: 'Spend ceiling',
-      description: 'Instance-wide Gateway ceiling and the caps a self-registered organization starts with.',
-    },
-    {
-      href: '/settings/retention',
-      icon: Archive,
-      label: 'Retention',
-      description: 'How long drafts, run events and webhook deliveries are kept.',
-    },
-    {
-      href: '/notifications',
-      icon: Webhook,
-      label: 'Outgoing webhook',
-      description: 'The dashboard-wide notification webhook URL and its delivery log.',
-    },
-    {
-      href: '/settings/admin/audit',
-      icon: ScrollText,
-      label: 'Audit log',
-      description: 'Who changed instance-wide configuration, when, and from what to what.',
-    },
-  ];
 </script>
 
 <Seo title="Settings - Instance admin" description="Instance-wide configuration for the operator of this deployment." />
@@ -141,7 +103,7 @@
   </p>
 
   <div class="grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
-    {#each links as link (link.href)}
+    {#each ADMIN_LINKS as link (link.href)}
       {@const Icon = link.icon}
       <a href={link.href} class="block">
         <Card.Root size="sm" class="h-full transition-colors hover:bg-accent/50">
