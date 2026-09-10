@@ -2,29 +2,38 @@ import { describe, expect, it, beforeEach, afterAll } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
 import {
-  load,
-  actions,
+  load as loadPersona,
+  actions as personaActions,
   type CompanionPersona,
+} from '../src/routes/companion/+page.server.js';
+import {
+  load as loadVoice,
+  actions as voiceActions,
   type CompanionVoiceSample,
   type CompanionVoiceProfile,
-} from '../src/routes/settings/companion/+page.server.js';
+} from '../src/routes/companion/voice/+page.server.js';
+import { load as loadWork } from '../src/routes/companion/work/+page.server.js';
 
-// Settings -> Companion (2026-09-07 companion decisions): the loader and its
-// two form actions are org-structural config in the same class as LinkedIn
-// assist (docs/permissions.md), so this defends the same two things
-// linkedin-assist-settings.test.ts defends for that page: the admin role
-// gate, and that one organization's persona/voice never crosses into
-// another's.
+// Companion (LOR-178/LOR-179, docs/design/DECISIONS.md D35): the old
+// three-card settings/companion page split into three routes -
+// companion (persona), companion/voice, companion/work - each gating
+// itself in its own +page.server.ts rather than inheriting one from a
+// layout. This defends the same two things linkedin-assist-settings.test.ts
+// defends for its page, now once per route: the admin role gate, and that
+// one organization's persona/voice never crosses into another's. The
+// retired settings/companion redirect and the GitHub install round trip's
+// new destination are covered by settings-general-redirect.test.ts and
+// github-install-flow.test.ts respectively - both routes this file used to
+// own before the split.
 
-// `load` is typed against the generated `PageServerLoad` (see $types) and
-// each action against the generated `Actions` - mirrors layout-orgs.test.ts's
-// `Parameters<typeof load>[0]` approach so a mock event only needs to satisfy
-// what the route actually reads (`locals`, `request`) rather than the full
-// SvelteKit event shape.
-type LoadEvent = Parameters<typeof load>[0];
-type ActionEvent = Parameters<typeof actions.saveProfile>[0];
-type LoadResult = {
-  profile: CompanionPersona | null;
+type PersonaLoadEvent = Parameters<typeof loadPersona>[0];
+type PersonaActionEvent = Parameters<typeof personaActions.saveProfile>[0];
+type VoiceLoadEvent = Parameters<typeof loadVoice>[0];
+type VoiceActionEvent = Parameters<typeof voiceActions.toggleVoiceSample>[0];
+type WorkLoadEvent = Parameters<typeof loadWork>[0];
+
+type PersonaLoadResult = { profile: CompanionPersona | null };
+type VoiceLoadResult = {
   voiceSamples: CompanionVoiceSample[];
   voiceProfile: CompanionVoiceProfile | null;
 };
@@ -51,19 +60,24 @@ async function linkedinPlatformId(): Promise<number> {
   return row.id;
 }
 
-function loadEv(orgId: number, role: string): LoadEvent {
+// `load` is typed against each route's generated `PageServerLoad` (see
+// $types) and each action against its generated `Actions` - mirrors
+// layout-orgs.test.ts's `Parameters<typeof load>[0]` approach so a mock
+// event only needs to satisfy what the route actually reads (`locals`,
+// `request`) rather than the full SvelteKit event shape.
+function loadEvent<T>(orgId: number, role: string, path: string): T {
   return {
     locals: { org: { id: orgId, slug: 'x', role } },
-    url: new URL('http://x/settings/companion'),
-    request: new Request('http://x/settings/companion'),
-  } as unknown as LoadEvent;
+    url: new URL(`http://x${path}`),
+    request: new Request(`http://x${path}`),
+  } as unknown as T;
 }
 
-function actionEv(orgId: number, role: string, form: FormData): ActionEvent {
+function actionEvent<T>(orgId: number, role: string, path: string, form: FormData): T {
   return {
     locals: { org: { id: orgId, slug: 'x', role } },
-    request: new Request('http://x/settings/companion', { method: 'POST', body: form }),
-  } as unknown as ActionEvent;
+    request: new Request(`http://x${path}`, { method: 'POST', body: form }),
+  } as unknown as T;
 }
 
 async function statusOf(fn: () => unknown): Promise<number | null> {
@@ -75,56 +89,57 @@ async function statusOf(fn: () => unknown): Promise<number | null> {
   }
 }
 
-describe('settings/companion load', () => {
+describe('companion (persona) load', () => {
   beforeEach(reset);
 
   it('a member is forbidden (403)', async () => {
     const orgId = await seedOrg('comp-member');
-    expect(await statusOf(() => load(loadEv(orgId, 'member')))).toBe(403);
+    expect(
+      await statusOf(() => loadPersona(loadEvent<PersonaLoadEvent>(orgId, 'member', '/companion'))),
+    ).toBe(403);
   });
 
-  it('an admin with nothing captured yet gets a null profile, no samples and no voice profile', async () => {
+  it('an admin with nothing captured yet gets a null profile', async () => {
     const orgId = await seedOrg('comp-admin-empty');
-    const result = (await load(loadEv(orgId, 'admin'))) as LoadResult;
+    const result = (await loadPersona(
+      loadEvent<PersonaLoadEvent>(orgId, 'admin', '/companion'),
+    )) as PersonaLoadResult;
     expect(result.profile).toBeNull();
-    expect(result.voiceSamples).toEqual([]);
-    expect(result.voiceProfile).toBeNull();
   });
 
   it('never crosses an organization boundary', async () => {
     const orgA = await seedOrg('comp-a');
     const orgB = await seedOrg('comp-b');
-    const platformId = await linkedinPlatformId();
     await getDb()
       .insert(schema.operatorProfiles)
       .values({ organizationId: orgA, handle: 'a-handle', displayName: 'Org A' });
-    await getDb()
-      .insert(schema.operatorVoiceSamples)
-      .values({ organizationId: orgA, externalId: 'post-a', platformId, text: 'org a voice' });
-    await getDb()
-      .insert(schema.operatorVoiceProfiles)
-      .values({ organizationId: orgA, summary: 'Org A derived voice.' });
 
-    const resultB = (await load(loadEv(orgB, 'admin'))) as LoadResult;
+    const resultB = (await loadPersona(
+      loadEvent<PersonaLoadEvent>(orgB, 'admin', '/companion'),
+    )) as PersonaLoadResult;
     expect(resultB.profile).toBeNull();
-    expect(resultB.voiceSamples).toEqual([]);
-    expect(resultB.voiceProfile).toBeNull();
 
-    const resultA = (await load(loadEv(orgA, 'admin'))) as LoadResult;
+    const resultA = (await loadPersona(
+      loadEvent<PersonaLoadEvent>(orgA, 'admin', '/companion'),
+    )) as PersonaLoadResult;
     expect(resultA.profile?.handle).toBe('a-handle');
-    expect(resultA.voiceSamples).toHaveLength(1);
-    expect(resultA.voiceProfile?.summary).toBe('Org A derived voice.');
   });
 });
 
-describe('settings/companion actions', () => {
+describe('companion (persona) actions', () => {
   beforeEach(reset);
 
   it('saveProfile: a member is forbidden (403)', async () => {
     const orgId = await seedOrg('comp-save-member');
     const form = new FormData();
     form.set('displayName', 'Jane');
-    expect(await statusOf(() => actions.saveProfile(actionEv(orgId, 'member', form)))).toBe(403);
+    expect(
+      await statusOf(() =>
+        personaActions.saveProfile(
+          actionEvent<PersonaActionEvent>(orgId, 'member', '/companion', form),
+        ),
+      ),
+    ).toBe(403);
   });
 
   it('saveProfile: a manual edit is saved with source manual and readable back through load', async () => {
@@ -133,17 +148,69 @@ describe('settings/companion actions', () => {
     form.set('displayName', 'Jane Doe');
     form.set('headline', 'Building things');
     form.set('experiences', JSON.stringify([{ title: 'Engineer', company: 'Acme' }]));
-    const saved = (await actions.saveProfile(actionEv(orgId, 'admin', form))) as {
-      profile: CompanionPersona;
-    };
+    const saved = (await personaActions.saveProfile(
+      actionEvent<PersonaActionEvent>(orgId, 'admin', '/companion', form),
+    )) as { profile: CompanionPersona };
     expect(saved.profile.displayName).toBe('Jane Doe');
     expect(saved.profile.source).toBe('manual');
     expect(saved.profile.experiences).toEqual([{ title: 'Engineer', company: 'Acme' }]);
 
-    const reloaded = (await load(loadEv(orgId, 'admin'))) as LoadResult;
+    const reloaded = (await loadPersona(
+      loadEvent<PersonaLoadEvent>(orgId, 'admin', '/companion'),
+    )) as PersonaLoadResult;
     expect(reloaded.profile?.displayName).toBe('Jane Doe');
     expect(reloaded.profile?.source).toBe('manual');
   });
+});
+
+describe('companion/voice load', () => {
+  beforeEach(reset);
+
+  it('a member is forbidden (403)', async () => {
+    const orgId = await seedOrg('comp-voice-member');
+    expect(
+      await statusOf(() =>
+        loadVoice(loadEvent<VoiceLoadEvent>(orgId, 'member', '/companion/voice')),
+      ),
+    ).toBe(403);
+  });
+
+  it('an admin with nothing captured yet gets no samples and no voice profile', async () => {
+    const orgId = await seedOrg('comp-voice-empty');
+    const result = (await loadVoice(
+      loadEvent<VoiceLoadEvent>(orgId, 'admin', '/companion/voice'),
+    )) as VoiceLoadResult;
+    expect(result.voiceSamples).toEqual([]);
+    expect(result.voiceProfile).toBeNull();
+  });
+
+  it('never crosses an organization boundary', async () => {
+    const orgA = await seedOrg('comp-voice-a');
+    const orgB = await seedOrg('comp-voice-b');
+    const platformId = await linkedinPlatformId();
+    await getDb()
+      .insert(schema.operatorVoiceSamples)
+      .values({ organizationId: orgA, externalId: 'post-a', platformId, text: 'org a voice' });
+    await getDb()
+      .insert(schema.operatorVoiceProfiles)
+      .values({ organizationId: orgA, summary: 'Org A derived voice.' });
+
+    const resultB = (await loadVoice(
+      loadEvent<VoiceLoadEvent>(orgB, 'admin', '/companion/voice'),
+    )) as VoiceLoadResult;
+    expect(resultB.voiceSamples).toEqual([]);
+    expect(resultB.voiceProfile).toBeNull();
+
+    const resultA = (await loadVoice(
+      loadEvent<VoiceLoadEvent>(orgA, 'admin', '/companion/voice'),
+    )) as VoiceLoadResult;
+    expect(resultA.voiceSamples).toHaveLength(1);
+    expect(resultA.voiceProfile?.summary).toBe('Org A derived voice.');
+  });
+});
+
+describe('companion/voice actions', () => {
+  beforeEach(reset);
 
   it('toggleVoiceSample: a member is forbidden (403)', async () => {
     const orgId = await seedOrg('comp-toggle-member');
@@ -155,9 +222,13 @@ describe('settings/companion actions', () => {
     const form = new FormData();
     form.set('sampleId', String(sample.id));
     form.set('excluded', 'true');
-    expect(await statusOf(() => actions.toggleVoiceSample(actionEv(orgId, 'member', form)))).toBe(
-      403,
-    );
+    expect(
+      await statusOf(() =>
+        voiceActions.toggleVoiceSample(
+          actionEvent<VoiceActionEvent>(orgId, 'member', '/companion/voice', form),
+        ),
+      ),
+    ).toBe(403);
   });
 
   it('toggleVoiceSample: cannot exclude a sample belonging to a different organization', async () => {
@@ -172,7 +243,9 @@ describe('settings/companion actions', () => {
     const form = new FormData();
     form.set('sampleId', String(sample.id));
     form.set('excluded', 'true');
-    await actions.toggleVoiceSample(actionEv(orgB, 'admin', form));
+    await voiceActions.toggleVoiceSample(
+      actionEvent<VoiceActionEvent>(orgB, 'admin', '/companion/voice', form),
+    );
 
     const [untouched] = await getDb()
       .select()
@@ -181,7 +254,9 @@ describe('settings/companion actions', () => {
     expect(untouched.excluded).toBe(false);
 
     // The rightful org can toggle it.
-    await actions.toggleVoiceSample(actionEv(orgA, 'admin', form));
+    await voiceActions.toggleVoiceSample(
+      actionEvent<VoiceActionEvent>(orgA, 'admin', '/companion/voice', form),
+    );
     const [toggled] = await getDb()
       .select()
       .from(schema.operatorVoiceSamples)
@@ -192,7 +267,11 @@ describe('settings/companion actions', () => {
   it('refreshVoiceProfile: a member is forbidden (403)', async () => {
     const orgId = await seedOrg('comp-refresh-member');
     expect(
-      await statusOf(() => actions.refreshVoiceProfile(actionEv(orgId, 'member', new FormData()))),
+      await statusOf(() =>
+        voiceActions.refreshVoiceProfile(
+          actionEvent<VoiceActionEvent>(orgId, 'member', '/companion/voice', new FormData()),
+        ),
+      ),
     ).toBe(403);
   });
 
@@ -223,15 +302,15 @@ describe('settings/companion actions', () => {
       ])
       .returning();
 
-    const before = (await actions.refreshVoiceProfile(
-      actionEv(orgId, 'admin', new FormData()),
-    )) as {
-      voiceProfile: CompanionVoiceProfile;
-    };
+    const before = (await voiceActions.refreshVoiceProfile(
+      actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', new FormData()),
+    )) as { voiceProfile: CompanionVoiceProfile };
     expect(before.voiceProfile.source).toBe('derived');
     expect(before.voiceProfile.summary).toContain('Just launched');
 
-    const reloaded = (await load(loadEv(orgId, 'admin'))) as LoadResult;
+    const reloaded = (await loadVoice(
+      loadEvent<VoiceLoadEvent>(orgId, 'admin', '/companion/voice'),
+    )) as VoiceLoadResult;
     expect(reloaded.voiceProfile?.summary).toBe(before.voiceProfile.summary);
 
     // Exclude both samples that carried "Just launched" - the acceptance
@@ -239,13 +318,15 @@ describe('settings/companion actions', () => {
     const toggleForm1 = new FormData();
     toggleForm1.set('sampleId', String(samples[0].id));
     toggleForm1.set('excluded', 'true');
-    await actions.toggleVoiceSample(actionEv(orgId, 'admin', toggleForm1));
+    await voiceActions.toggleVoiceSample(
+      actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', toggleForm1),
+    );
     const toggleForm2 = new FormData();
     toggleForm2.set('sampleId', String(samples[1].id));
     toggleForm2.set('excluded', 'true');
-    const after = (await actions.toggleVoiceSample(actionEv(orgId, 'admin', toggleForm2))) as {
-      voiceProfile: CompanionVoiceProfile;
-    };
+    const after = (await voiceActions.toggleVoiceSample(
+      actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', toggleForm2),
+    )) as { voiceProfile: CompanionVoiceProfile };
     expect(after.voiceProfile.summary).not.toContain('Just launched');
   });
 
@@ -253,38 +334,67 @@ describe('settings/companion actions', () => {
     const orgId = await seedOrg('comp-save-vp-member');
     const form = new FormData();
     form.set('summary', 'Dry and direct.');
-    expect(await statusOf(() => actions.saveVoiceProfile(actionEv(orgId, 'member', form)))).toBe(
-      403,
-    );
+    expect(
+      await statusOf(() =>
+        voiceActions.saveVoiceProfile(
+          actionEvent<VoiceActionEvent>(orgId, 'member', '/companion/voice', form),
+        ),
+      ),
+    ).toBe(403);
   });
 
   it('saveVoiceProfile marks the row manual, and a later refresh leaves it untouched until resetVoiceProfile is called', async () => {
     const orgId = await seedOrg('comp-save-vp-admin');
     const form = new FormData();
     form.set('summary', 'Dry, first person, one idea per post.');
-    const saved = (await actions.saveVoiceProfile(actionEv(orgId, 'admin', form))) as {
-      voiceProfile: CompanionVoiceProfile;
-    };
+    const saved = (await voiceActions.saveVoiceProfile(
+      actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', form),
+    )) as { voiceProfile: CompanionVoiceProfile };
     expect(saved.voiceProfile.source).toBe('manual');
     expect(saved.voiceProfile.summary).toBe('Dry, first person, one idea per post.');
 
-    const refreshed = (await actions.refreshVoiceProfile(
-      actionEv(orgId, 'admin', new FormData()),
+    const refreshed = (await voiceActions.refreshVoiceProfile(
+      actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', new FormData()),
     )) as { voiceProfile: CompanionVoiceProfile };
     expect(refreshed.voiceProfile.source).toBe('manual');
     expect(refreshed.voiceProfile.summary).toBe('Dry, first person, one idea per post.');
 
-    const reset = (await actions.resetVoiceProfile(actionEv(orgId, 'admin', new FormData()))) as {
-      voiceProfile: CompanionVoiceProfile;
-    };
-    expect(reset.voiceProfile.source).toBe('derived');
+    const wasReset = (await voiceActions.resetVoiceProfile(
+      actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', new FormData()),
+    )) as { voiceProfile: CompanionVoiceProfile };
+    expect(wasReset.voiceProfile.source).toBe('derived');
   });
 
   it('resetVoiceProfile: a member is forbidden (403)', async () => {
     const orgId = await seedOrg('comp-reset-vp-member');
     expect(
-      await statusOf(() => actions.resetVoiceProfile(actionEv(orgId, 'member', new FormData()))),
+      await statusOf(() =>
+        voiceActions.resetVoiceProfile(
+          actionEvent<VoiceActionEvent>(orgId, 'member', '/companion/voice', new FormData()),
+        ),
+      ),
     ).toBe(403);
+  });
+});
+
+describe('companion/work load', () => {
+  beforeEach(reset);
+
+  // No data to gate here (the repo list and the GitHub App panel are both
+  // client-fetched from their own already-gated endpoints), but the route
+  // still repeats the admin gate on its own - this is what proves it does.
+  it('a member is forbidden (403)', async () => {
+    const orgId = await seedOrg('comp-work-member');
+    expect(
+      await statusOf(() => loadWork(loadEvent<WorkLoadEvent>(orgId, 'member', '/companion/work'))),
+    ).toBe(403);
+  });
+
+  it('an admin is served', async () => {
+    const orgId = await seedOrg('comp-work-admin');
+    await expect(
+      loadWork(loadEvent<WorkLoadEvent>(orgId, 'admin', '/companion/work')),
+    ).resolves.toEqual({});
   });
 });
 

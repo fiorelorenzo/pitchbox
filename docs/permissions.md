@@ -64,10 +64,14 @@ already limits them to the active org). Listed here for completeness.
 itself narrows to instance admin too, see the #183 note below),
 `settings/linkedin-assist` GET + POST (org-scoped, unlike the instance-wide
 settings above - the page's own loader also throws here, see the #254 note
-below), `settings/companion` GET + the `saveProfile`/`toggleVoiceSample` form
-actions (2026-09-07 companion decisions: the operator's persona and voice
-samples that feed every suggestion's prompt are at least as sensitive as the
-LinkedIn assist switch, so this page's loader throws the same way),
+below), `companion` GET + the `saveProfile` form action, `companion/voice`
+GET + the `toggleVoiceSample`/`refreshVoiceProfile`/`saveVoiceProfile`/
+`resetVoiceProfile` form actions, and `companion/work` GET (LOR-178/
+LOR-179, docs/design/DECISIONS.md D35: split out of the old three-card
+`settings/companion` page into its own top-level route, one gate per
+sub-route rather than one inherited from a layout - the operator's persona
+and voice feed every suggestion's prompt, at least as sensitive as the
+LinkedIn assist switch, so each throws the same way),
 `settings/billing` GET (#555: the plan, its usage this period and the two
 real ways to change it - org-scoped like Retention/Security, not instance-
 wide, since a plan is per-organization; additionally cloud-only, see the
@@ -220,9 +224,12 @@ seven top-level routes, one flat rail with no tabs (#254): `settings/status`
 LinkedIn assistant's on/off switch, bound project, daily caps and kill
 switch - org-scoped, so it throws `requireRole(event, 'admin')` like
 Retention/Security rather than narrowing like Quota below); the 2026-09-07
-companion decisions added a ninth, `settings/companion` (the operator's
-persona, voice samples and GitHub sources that feed the assistant's prompt -
-same org-scoped `requireRole(event, 'admin')` gate). #506 added a tenth,
+companion decisions added a ninth, `settings/companion` (org-scoped
+`requireRole(event, 'admin')` gate, the operator's persona, voice samples
+and GitHub sources that feed the assistant's prompt) - later moved out to
+its own top-level `/companion` route by LOR-178/LOR-179 (docs/design/
+DECISIONS.md D35, see the note below), leaving `settings/companion` as a
+redirect. #506 added a tenth,
 `settings/password` (self-service password change for the signed-in caller -
 gated on `locals.user` existing at all rather than an org role, since a
 password change needs nothing beyond being the account holder; 404s when
@@ -267,7 +274,7 @@ paired-devices list (`settings/extension-devices` GET) stays member-visible
 pairing code (POST `settings/extension-pairing`) are admin-gated. The
 settings rail (`web/src/routes/settings/+layout.svelte`) hides the
 `organization` link when auth is off (no org context to show), hides the
-`retention`/`security`/`linkedin-assist`/`companion`/`billing` links from a
+`retention`/`security`/`linkedin-assist`/`billing` links from a
 non-admin since those routes' loaders call `requireRole(event, 'admin')`
 and would 403, additionally hides `billing` from self-host regardless of
 role (`data.isCloud`, root `+layout.server.ts`), and, the other direction
@@ -278,6 +285,16 @@ there, not any tenant, and stay reachable to the instance admin from
 shown to a signed-in caller because none of their loaders throw a role
 error (`password` still 404s with no `locals.user`, i.e. auth off); they
 only narrow the payload or, for `password`, gate on being signed in at all.
+
+**LOR-178/LOR-179: the companion moved out of Settings (docs/design/
+DECISIONS.md D35).** `settings/companion` is now a redirect (307) to
+`/companion`, split into three routes that each gate themselves the same
+way `settings/companion` used to (see the admin bullet above). None of them
+live under `settings/`, so the settings rail's hiding logic above no longer
+applies to them; the equivalent hide-on-403 convention now lives in the
+sidebar itself (`web/src/lib/components/Sidebar.svelte`'s Assistant group,
+gated on `isAdmin` from the root `+layout.server.ts` loader) rather than
+the settings rail.
 
 **Exempt** (no org role): `auth/*`, `extension/*` (token-auth companion),
 `orgs` POST + `orgs/switch` POST (self-service), `orgs/[slug]/invites/[token]/accept`
