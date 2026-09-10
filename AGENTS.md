@@ -217,6 +217,35 @@ land, then regenerates rather than hand-renumbering.
 this drifts unrecovered: `generate` was unusable repo-wide for months until the
 schema was squashed into today's `0000_baseline.sql`.)
 
+**`docs/design/DECISIONS.md` is the other conflict magnet, and it is worse than
+the migrations one because every UI change appends to it.** Rows are numbered
+`D<n>` and land at the end of one table, so two branches always collide there
+and `git rerere` cannot help: the resolution is to keep whatever `main` now has,
+re-add your rows with the next free numbers, and renumber every reference to
+them (a `D<n>` is cited from `AGENTS.md`, from theme and config comments, and
+from `shared/tests/token-drift.test.ts`, so grep before assuming it is only the
+table). On 2026-09-10 a docs PR was renumbered three times in 90 minutes,
+D32/D33 to D37/D38, because parallel sessions were merging every ten minutes.
+
+That is also why a re-push after such a rebase should not re-run `preflight`
+from scratch: the hook takes about nine minutes, `main` moves inside that
+window, and the tree it validated differs from the previous green run by a
+table row and a comment. Run `preflight` once on the real change, then for a
+renumber-only rebase push with `--no-verify` and arm `gh pr merge --squash
+--auto` immediately, which lands the PR the moment `ci` reports rather than
+when you next look. Every push in that loop still gets the full `ci` on GitHub,
+so nothing reaches `main` unchecked.
+
+**A parallel session may be implementing the issue you just filed.** The same
+day, an issue filed mid-run about the docs site's axe failures came back as a
+merged PR that had independently created `docs/.vitepress/theme/`, while an open
+PR of mine was adding the same directory: an add/add conflict on two files, plus
+a raw-hex contrast fix that my token mapping had made unnecessary (it corrected
+`--vp-button-brand-bg`, which the mapping overwrites with `--primary`). Before
+resolving that kind of conflict by taking one side, read the other side's
+commit message for what it was fixing, and re-measure rather than assuming the
+fix is still needed - `uishot --axe` said the hero was clean without it.
+
 **CI's `quality` job checks more than lint/typecheck/build; the two deploy
 workflows aren't reproducible here.** It also runs `pnpm run version:check`
 (workspace versions in lockstep, #207) - easy to miss since "Local verification"
