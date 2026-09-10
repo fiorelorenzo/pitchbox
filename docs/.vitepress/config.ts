@@ -6,9 +6,12 @@ export default defineConfig({
   // Served from https://docs.pitchbox.app, so no path prefix: the site is at
   // the root of its own host. This replaces the `base: '/pitchbox/'` that
   // GitHub Pages' project-site path needed (D25, docs/design/DECISIONS.md);
-  // D38 supersedes it. Still GitHub Pages underneath - a Pages custom domain
-  // plus `public/CNAME`, not a prodbox vhost - so the TLS and CDN argument
-  // behind D25 still holds and nothing moved to Caddy.
+  // D38 supersedes it. Still GitHub Pages underneath - a Pages custom
+  // domain, not a prodbox vhost - so the TLS and CDN argument behind D25
+  // still holds and nothing moved to Caddy. The domain itself lives in the
+  // repo's Pages settings, not in this file and not in `public/CNAME`:
+  // measured 2026-09-10, a workflow-built deploy carrying that file left
+  // `cname` null until `PUT /repos/{owner}/{repo}/pages` set it.
   title: 'Pitchbox',
   description: 'Self-hosted, human-in-the-loop outreach agent for Reddit (and beyond).',
   cleanUrls: true,
