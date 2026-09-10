@@ -139,6 +139,65 @@ describe('POST /api/extension/operator-profile', () => {
     expect(row.displayName).toBe('Ada Lovelace');
   });
 
+  // LOR-180: the client-side capture stored LinkedIn's own Italian
+  // notification-count badge ("0 notifiche in totale") as the display
+  // name. `readOwnProfile`'s own selector scoping is a defense the server
+  // cannot see past, so this is the check that actually stops it.
+  it('refuses a first capture whose display name is not name-shaped, and creates no row', async () => {
+    const org = await seedOrg('op-profile-implausible-name');
+    await mintDevice(org.id, 'tokImplausible');
+
+    const res = await operatorProfilePost({
+      request: bearer('tokImplausible', capture({ displayName: '0 notifiche in totale' })),
+    } as never);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; refused?: string };
+    expect(body).toEqual({ ok: false, refused: 'implausible_name' });
+
+    const rows = await getDb()
+      .select()
+      .from(schema.operatorProfiles)
+      .where(eq(schema.operatorProfiles.organizationId, org.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('refuses a re-capture whose display name is not name-shaped, and does not touch the existing row', async () => {
+    const org = await seedOrg('op-profile-implausible-recapture');
+    await mintDevice(org.id, 'tokImplausibleRecapture');
+    await operatorProfilePost({
+      request: bearer('tokImplausibleRecapture', capture()),
+    } as never);
+
+    const res = await operatorProfilePost({
+      request: bearer(
+        'tokImplausibleRecapture',
+        capture({ displayName: '(3) 0 notifiche in totale' }),
+      ),
+    } as never);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; refused?: string };
+    expect(body).toEqual({ ok: false, refused: 'implausible_name' });
+
+    const [row] = await getDb()
+      .select()
+      .from(schema.operatorProfiles)
+      .where(eq(schema.operatorProfiles.organizationId, org.id));
+    expect(row.displayName).toBe('Ada Lovelace');
+  });
+
+  it('accepts real multi-word, hyphenated and accented names', async () => {
+    const org = await seedOrg('op-profile-name-shapes');
+    await mintDevice(org.id, 'tokNameShapes');
+
+    for (const name of ['Jean-Luc Picard', 'María José García', 'Ada']) {
+      const res = await operatorProfilePost({
+        request: bearer('tokNameShapes', capture({ handle: 'ada-lovelace', displayName: name })),
+      } as never);
+      const body = (await res.json()) as { ok: boolean };
+      expect(body.ok).toBe(true);
+    }
+  });
+
   it('does not clobber a manual row without overwrite: true, and voice samples still dedupe on re-capture', async () => {
     const org = await seedOrg('op-profile-manual');
     await mintDevice(org.id, 'tokManual');
@@ -156,7 +215,7 @@ describe('POST /api/extension/operator-profile', () => {
       request: bearer(
         'tokManual',
         capture({
-          displayName: 'Ada, from a capture',
+          displayName: 'Ada Recaptured',
           posts: [{ externalId: 'urn:li:activity:1', text: 'First post' }],
         }),
       ),
@@ -204,17 +263,14 @@ describe('POST /api/extension/operator-profile', () => {
     });
 
     await operatorProfilePost({
-      request: bearer(
-        'tokOverwrite',
-        capture({ displayName: 'Ada, from a capture', overwrite: true }),
-      ),
+      request: bearer('tokOverwrite', capture({ displayName: 'Ada Recaptured', overwrite: true })),
     } as never);
 
     const [row] = await getDb()
       .select()
       .from(schema.operatorProfiles)
       .where(eq(schema.operatorProfiles.organizationId, org.id));
-    expect(row.displayName).toBe('Ada, from a capture');
+    expect(row.displayName).toBe('Ada Recaptured');
     expect(row.source).toBe('linkedin_capture');
   });
 

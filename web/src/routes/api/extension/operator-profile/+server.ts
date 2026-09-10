@@ -28,10 +28,19 @@ import { refreshVoiceProfile } from '@pitchbox/shared/operator-voice-profile';
 // an expected, frequent outcome (any research visit to someone else's
 // profile triggers it), not a client error.
 //
-// **Text is clamped, not rejected.** Every free-text field comes straight
-// off a real page's DOM, which has no length contract with us - clamping
-// keeps a long About section or post from blowing up the companion prompt
-// without failing the whole capture over it.
+// **Text is clamped, not rejected - except the display name, which is also
+// checked for shape.** Every free-text field comes straight off a real
+// page's DOM, which has no length contract with us - clamping keeps a long
+// About section or post from blowing up the companion prompt without
+// failing the whole capture over it. `displayName` gets one more check on
+// top of that: `readOwnProfile`'s client-side selector scoping
+// (extension/src/content/shared/linkedin-dom.ts) is a defense the server
+// cannot see past, so a bad extension build or a changed LinkedIn render
+// that slips LinkedIn's own UI chrome (a notification-count badge, an
+// unread-count title prefix) into this field is caught here instead
+// (`refused: 'implausible_name'`, LOR-180) - the same `200`, not `4xx`,
+// posture as the persona guard below, since a stale build retrying the
+// same bad capture is an expected outcome, not a client error.
 
 const perDevice = new RateLimiter(20, 60_000);
 
@@ -52,6 +61,15 @@ const MAX_POSTS = 20;
 function clamp(text: string, max: number): string {
   return text.trim().slice(0, max);
 }
+
+// A plausible human display name is one to six space-separated words, each
+// starting with a letter and built only from letters, marks, apostrophes,
+// hyphens and periods - no digits, no LinkedIn's own punctuation. This is
+// deliberately structural, not a denylist of known chrome strings: the
+// reported failure ("0 notifiche in totale", LinkedIn's own Italian
+// notification-count badge) has a leading digit, which is the one thing a
+// denylist could never generalise past the next render or locale.
+const NAME_SHAPE = /^\p{L}[\p{L}\p{M}'’.-]*(?: \p{L}[\p{L}\p{M}'’.-]*){0,5}$/u;
 
 const ExperienceSchema = z.object({
   title: z.string().optional(),
@@ -92,6 +110,11 @@ export async function POST({ request }: { request: Request }) {
   const handle = clamp(body.handle, MAX_HANDLE_LEN);
   if (!handle) throw error(400, 'invalid body');
 
+  const displayName = body.displayName?.trim() ? clamp(body.displayName, MAX_NAME_LEN) : undefined;
+  if (displayName !== undefined && !NAME_SHAPE.test(displayName)) {
+    return json({ ok: false, refused: 'implausible_name' });
+  }
+
   const db = getDb();
   const orgId = await resolveDeviceOrgId(db, auth.organizationId);
   if (orgId == null) throw error(404, 'not_found');
@@ -115,7 +138,7 @@ export async function POST({ request }: { request: Request }) {
     orgId,
     {
       handle,
-      displayName: body.displayName?.trim() ? clamp(body.displayName, MAX_NAME_LEN) : undefined,
+      displayName,
       headline: body.headline?.trim() ? clamp(body.headline, MAX_HEADLINE_LEN) : undefined,
       about: body.about?.trim() ? clamp(body.about, MAX_ABOUT_LEN) : undefined,
       experiences: experiences?.length ? experiences : undefined,

@@ -172,8 +172,10 @@ export const en = {
   // handle/headline/experience read off a profile page the human opened, and
   // recent posts read the same way as voice samples.
   'activity.linkedin-collector.profile-captured': 'Captured your LinkedIn profile.',
-  'activity.linkedin-collector.profile-refused':
-    'LinkedIn profile capture skipped: this page is not the operator on file.',
+  // LOR-180: a second refusal reason (implausible_name) joined
+  // not_your_profile, so this interpolates {reason} rather than naming one
+  // outcome - same posture as suggestion-refused above.
+  'activity.linkedin-collector.profile-refused': 'LinkedIn profile capture skipped: {reason}',
   'activity.linkedin-collector.profile-failed': 'LinkedIn profile capture failed: {reason}',
   'activity.linkedin-collector.voice-samples-captured':
     'Captured {count} new post(s) as voice samples.',

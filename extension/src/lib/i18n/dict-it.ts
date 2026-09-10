@@ -162,8 +162,8 @@ export const it = {
   'activity.linkedin-collector.source-fill-failed':
     'Compilazione della fonte progetto LinkedIn fallita: {reason}',
   'activity.linkedin-collector.profile-captured': 'Profilo LinkedIn acquisito.',
-  'activity.linkedin-collector.profile-refused':
-    "Acquisizione profilo LinkedIn saltata: questa pagina non corrisponde all'operatore registrato.",
+  // LOR-180: vedi la nota in dict-en.ts.
+  'activity.linkedin-collector.profile-refused': 'Acquisizione profilo LinkedIn saltata: {reason}',
   'activity.linkedin-collector.profile-failed':
     'Acquisizione profilo LinkedIn non riuscita: {reason}',
   'activity.linkedin-collector.voice-samples-captured':
