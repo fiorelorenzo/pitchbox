@@ -425,7 +425,7 @@ export function buildSuggestionPrompt(args: {
   if (projects.length > 0) {
     parts.push(
       [
-        "What the operator is building, across the whole organization. Pick the id of whichever one this suggestion is actually about, or personal if it is about none of them:",
+        'What the operator is building, across the whole organization. Pick the id of whichever one this suggestion is actually about, or personal if it is about none of them:',
         ...projects.slice(0, MAX_PROJECTS).map((p) => {
           const desc = p.description?.trim()
             ? `: ${clamp(p.description, PROJECT_DESCRIPTION_MAX)}`

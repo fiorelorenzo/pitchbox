@@ -113,14 +113,15 @@ async function settle(times = 6): Promise<void> {
 }
 
 /** A suggestion delivered as the route delivers it (#382): reasoning chunks,
- * then draft chunks, then done. */
-function streamingSuggest(reasoning: string, draft: string) {
+ * then draft chunks, then done. `projectId` mirrors `done.projectId` - the
+ * server's own resolved choice (LOR-181), undefined when it named none. */
+function streamingSuggest(reasoning: string, draft: string, projectId?: number) {
   return async (_body: unknown, onEvent: (event: Record<string, unknown>) => void) => {
     onEvent({ kind: 'status', phase: 'writing' });
     if (reasoning) onEvent({ kind: 'chunk', text: reasoning, section: 'reasoning' });
     onEvent({ kind: 'chunk', text: draft.slice(0, 20), section: 'draft' });
     onEvent({ kind: 'chunk', text: draft.slice(20), section: 'draft' });
-    onEvent({ kind: 'done', reasoning, draft, skipped: false, ms: 900 });
+    onEvent({ kind: 'done', reasoning, draft, skipped: false, ms: 900, projectId });
     return { ok: true as const, data: { ok: true } };
   };
 }
@@ -466,7 +467,7 @@ describe('accept, insert, and the button the human presses', () => {
   it('writes the text into LinkedIn own composer and dispatches no click or submit', async () => {
     const composer = renderPost();
     const text = 'We saw the same thing, but the cause was PR size.';
-    suggest.mockImplementation(streamingSuggest('', text));
+    suggest.mockImplementation(streamingSuggest('', text, 2));
     acceptSuggestion.mockResolvedValue({
       ok: true,
       data: { accepted: true, id: 4242, dedupWarning: null },
@@ -496,9 +497,9 @@ describe('accept, insert, and the button the human presses', () => {
 
     expect(composer.textContent).toContain('PR size');
     expect(acceptSuggestion).toHaveBeenCalledTimes(1);
-    // #521/#523: an accepted suggestion lands under `boundProjectId` (the
-    // same value used to request it, projectId 2 above) - there is no
-    // separate personal project to fall back to.
+    // #521/#523: an accepted suggestion lands under `done.projectId` (LOR-181:
+    // the server's own resolved choice, echoed straight back) - there is no
+    // bound project of this client's own to send instead.
     expect(acceptSuggestion.mock.calls[0][0]).toMatchObject({ projectId: 2 });
     expect(clicks).toEqual([]);
     expect(submits).toEqual([]);
@@ -746,7 +747,6 @@ describe('every refusal says which one it is', () => {
     const keys = [
       'assist_disabled',
       'kill_switch',
-      'project_not_bound',
       'blocked',
       'backend_unreachable',
       'selector_health_degraded',

@@ -93,7 +93,9 @@ describe('splitSuggestion: project choice', () => {
 
   it('is null when the value is absurdly long, and never blocks the rest of the response', () => {
     const overlong = '1'.repeat(200);
-    const env = splitSuggestion(`${PROJECT_MARKER}\n${overlong}\nreasoning\n${DRAFT_MARKER}\ndraft`);
+    const env = splitSuggestion(
+      `${PROJECT_MARKER}\n${overlong}\nreasoning\n${DRAFT_MARKER}\ndraft`,
+    );
     expect(env.projectChoice).toBeNull();
     expect(env.draft).toBe('draft');
   });
@@ -205,4 +207,3 @@ describe('envelopeInstruction', () => {
     expect(text).toContain(SKIP_MARKER);
   });
 });
-

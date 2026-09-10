@@ -48,9 +48,7 @@ async function makeProject(orgId: number, slug: string, description?: string): P
   return p!.id;
 }
 
-function baseCtx(
-  overrides: Partial<AssistToolContext> & { orgId: number },
-): AssistToolContext {
+function baseCtx(overrides: Partial<AssistToolContext> & { orgId: number }): AssistToolContext {
   return { db: getDb(), observedTarget: null, operator: null, ...overrides };
 }
 
@@ -186,7 +184,7 @@ describe('shared/src/assist/tools', () => {
           uncontactable: true,
           uncontactableReason: "org B's own private fact",
         });
-      const projA = await makeProject(orgA, 'at-proj-a');
+      await makeProject(orgA, 'at-proj-a');
       const ctx = baseCtx({
         orgId: orgA,
         observedTarget: { authorHandle: 'shared-handle', text: 'x' },
@@ -201,7 +199,7 @@ describe('shared/src/assist/tools', () => {
 
     it('refuses with an explicit nothing when there is no prior contact', async () => {
       const orgA = await ensureOrg('at-org-empty');
-      const projA = await makeProject(orgA, 'at-proj-empty');
+      await makeProject(orgA, 'at-proj-empty');
       const ctx = baseCtx({
         orgId: orgA,
         observedTarget: { authorHandle: 'nobody-seen-before', text: 'x' },
@@ -212,7 +210,7 @@ describe('shared/src/assist/tools', () => {
 
     it('surfaces a blocklisted handle even with no contact history on file', async () => {
       const orgA = await ensureOrg('at-org-blocked');
-      const projA = await makeProject(orgA, 'at-proj-blocked');
+      await makeProject(orgA, 'at-proj-blocked');
       const linkedin = await platformId('linkedin');
       await getDb().insert(schema.blocklist).values({
         platformId: linkedin,
@@ -246,7 +244,7 @@ describe('shared/src/assist/tools', () => {
   describe('operator_voice', () => {
     it('reports an honest default, never an invented voice, when the corpus is thin', async () => {
       const orgA = await ensureOrg('ov-org-thin');
-      const ctx = baseCtx({ orgId: orgA});
+      const ctx = baseCtx({ orgId: orgA });
       const result = await ASSIST_TOOLS_BY_NAME.operator_voice.handler(ctx, {});
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -257,7 +255,7 @@ describe('shared/src/assist/tools', () => {
 
     it('always answers - never refuses, even with nothing on file', async () => {
       const orgA = await ensureOrg('ov-org-never-refuses');
-      const ctx = baseCtx({ orgId: orgA});
+      const ctx = baseCtx({ orgId: orgA });
       const result = await ASSIST_TOOLS_BY_NAME.operator_voice.handler(ctx, {});
       expect(result.ok).toBe(true);
     });
@@ -316,11 +314,7 @@ describe('shared/src/assist/tools', () => {
         active: true,
         fetchedAt: new Date(),
       });
-      const proj = await makeProject(
-        orgA,
-        'pk-repo',
-        'A product with no repos of its own',
-      );
+      const proj = await makeProject(orgA, 'pk-repo', 'A product with no repos of its own');
       const ctx = baseCtx({ orgId: orgA });
       const result = await ASSIST_TOOLS_BY_NAME.project_knowledge.handler(ctx, {
         projectId: proj,
@@ -345,7 +339,7 @@ describe('shared/src/assist/tools', () => {
           text: "Org B's own database migration story, never seen by org A.",
         },
       ]);
-      const ctx = baseCtx({ orgId: orgA});
+      const ctx = baseCtx({ orgId: orgA });
       const result = await ASSIST_TOOLS_BY_NAME.my_prior_takes.handler(ctx, {
         query: 'database migration',
       });
@@ -357,7 +351,7 @@ describe('shared/src/assist/tools', () => {
 
     it('refuses with an explicit nothing when nothing matches', async () => {
       const orgA = await ensureOrg('pt-org-empty');
-      const ctx = baseCtx({ orgId: orgA});
+      const ctx = baseCtx({ orgId: orgA });
       const result = await ASSIST_TOOLS_BY_NAME.my_prior_takes.handler(ctx, {
         query: 'quantum photosynthesis',
       });
@@ -366,7 +360,7 @@ describe('shared/src/assist/tools', () => {
 
     it('refuses with an explicit nothing when the query has no searchable words', async () => {
       const orgA = await ensureOrg('pt-org-nowords');
-      const ctx = baseCtx({ orgId: orgA});
+      const ctx = baseCtx({ orgId: orgA });
       const result = await ASSIST_TOOLS_BY_NAME.my_prior_takes.handler(ctx, { query: 'a an it' });
       expect(result.ok).toBe(false);
     });
@@ -374,7 +368,7 @@ describe('shared/src/assist/tools', () => {
 
   describe('check_style', () => {
     it('never refuses - a clean draft gets an empty findings list', async () => {
-      const ctx = baseCtx({ orgId: 1});
+      const ctx = baseCtx({ orgId: 1 });
       const result = await ASSIST_TOOLS_BY_NAME.check_style.handler(ctx, {
         text: 'A clean, direct sentence.',
       });
@@ -384,7 +378,7 @@ describe('shared/src/assist/tools', () => {
     });
 
     it('surfaces a real house-style finding', async () => {
-      const ctx = baseCtx({ orgId: 1});
+      const ctx = baseCtx({ orgId: 1 });
       const result = await ASSIST_TOOLS_BY_NAME.check_style.handler(ctx, {
         text: 'This is great \u2014 really great.',
       });

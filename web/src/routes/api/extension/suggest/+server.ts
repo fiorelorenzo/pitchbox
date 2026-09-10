@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import { z } from 'zod';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireExtensionAuth, resolveDeviceOrgId } from '$lib/server/extension-auth.js';
 import { RateLimiter } from '$lib/server/rate-limit.js';
@@ -194,7 +194,6 @@ export async function POST(event: RequestEvent) {
   const orgId = await resolveDeviceOrgId(db, auth.organizationId);
   if (orgId == null) throw error(404, 'organization not found');
 
-
   const period = await billingPeriodFor(db, orgId);
   const usage = await getOrgUsage(db, orgId, period);
   // #557: a courtesy notification never blocks a suggestion, admitted or
@@ -262,7 +261,6 @@ export async function POST(event: RequestEvent) {
     }
   }
 
-
   // A `post` suggestion has no post to riff off the way a `post_comment`
   // does - the composer is a blank box - so it is grounded in the most
   // recent thing the observation buffer (#301/#302) actually saw anywhere
@@ -277,7 +275,10 @@ export async function POST(event: RequestEvent) {
   // exhausted quota does rather than asking the model to invent a subject.
   let groundedPost: ObservedPost;
   if (body.kind === 'post') {
-    const recent = await loadRecentObservedTarget(db, { organizationId: orgId, platformId: platform.id });
+    const recent = await loadRecentObservedTarget(db, {
+      organizationId: orgId,
+      platformId: platform.id,
+    });
     if (!recent) {
       return json({ refused: 'no_recent_activity', platform: platform.slug });
     }

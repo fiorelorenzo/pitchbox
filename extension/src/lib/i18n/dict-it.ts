@@ -334,7 +334,6 @@ export const it = {
   // stati ritirati insieme alla quota per account.
   'assist.refusal.assist_disabled': "L'assistente Pitchbox è disattivato per questo workspace.",
   'assist.refusal.kill_switch': "Un amministratore ha fermato l'assistente.",
-  'assist.refusal.project_not_bound': "Nessun progetto è collegato all'assistente.",
   'assist.refusal.blocked': 'Questa persona è nella blocklist.',
   'assist.refusal.uncontactable': 'Questa persona è stata segnata come non contattabile.',
   'assist.refusal.recently_contacted': 'Contattata di recente, quindi viene saltata.',
@@ -353,8 +352,6 @@ export const it = {
   'assist.refusal.extension_reloaded':
     'Pitchbox è stato ricaricato o aggiornato - ricarica questa pagina per riconnetterti.',
   'assist.refusal.unknown': "L'assistente ha rifiutato questa richiesta ({reason}).",
-  // Post-only (#523): vedi il commento su `project_required` in dict-en.ts.
-  'assist.refusal.project_required': "Collega un progetto all'assistente per suggerire un post.",
   'assist.refusal.no_recent_activity':
     'Ancora nulla di recente da cui scrivere un post. Esplora la tua rete per un po’, poi riprova.',
   // #438: see the comment in dict-en.ts.

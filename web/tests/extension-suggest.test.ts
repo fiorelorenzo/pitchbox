@@ -203,30 +203,43 @@ describe('POST /api/extension/suggest', () => {
   beforeEach(reset);
 
   it('refuses a request with no bearer token', async () => {
-    await expect(
-      suggest({ request: request(null, { ...POST_BODY, projectId: 1 }) } as never),
-    ).rejects.toMatchObject({ status: 401 });
+    await expect(suggest({ request: request(null, POST_BODY) } as never)).rejects.toMatchObject({
+      status: 401,
+    });
   });
 
-  it('404s a project outside the device org, so it leaks no other tenant ids', async () => {
+  // LOR-181: the client no longer sends a project at all, and an older
+  // extension build that still does is ignored rather than trusted or
+  // rejected - the schema silently drops the field (see BodySchema's own
+  // comment) and the server resolves the project itself from the model's
+  // own PROJECT_MARKER choice. A stale/foreign id in the payload must never
+  // 404, and must never leak into the resolved project either.
+  it('ignores a projectId an old extension build still sends, even one from another org', async () => {
     const { project: bProject } = await seedOrgProject('org-b');
     const { org: orgA } = await seedOrgProject('org-a');
     await mintDevice(orgA.id, 'tokA');
 
-    await expect(
-      suggest({ request: request('tokA', { ...POST_BODY, projectId: bProject.id }) } as never),
-    ).rejects.toMatchObject({ status: 404 });
+    const res = await suggest({
+      request: request('tokA', { ...POST_BODY, projectId: bProject.id }),
+    } as never);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const events = await readEvents(res);
+    const done = events.at(-1)!.data as { projectId: number | null };
+    // The fake model's response never emits PROJECT_MARKER, so the server's
+    // own resolution is "unstated" (null) - never `bProject.id`, the
+    // client-sent value from an org this device cannot even see.
+    expect(done.projectId).toBeNull();
   });
 
   it('streams the suggestion in chunks and closes with a terminal event', async () => {
-    const { org, project } = await seedOrgProject('org-a');
+    const { org } = await seedOrgProject('org-a');
     await mintDevice(org.id, 'tok');
     // #576: a tool set was attached and produced something to persist -
     // the route's `done` payload should carry the session id back.
     responseMessagesToReturn = [{ role: 'assistant', content: 'gathered context' }];
 
     const res = await suggest({
-      request: request('tok', { ...POST_BODY, projectId: project.id }),
+      request: request('tok', POST_BODY),
     } as never);
     expect(res.headers.get('content-type')).toContain('text/event-stream');
 
@@ -266,14 +279,14 @@ describe('POST /api/extension/suggest', () => {
   // once actual draft text starts - never for reasoning, which must never
   // read as something the human could insert.
   it('tags each chunk with its section and flips to writing only when the draft begins', async () => {
-    const { org, project } = await seedOrgProject('org-section');
+    const { org } = await seedOrgProject('org-section');
     await mintDevice(org.id, 'tok-section');
     // #573: a tool step the route must translate into its own status event,
     // before the draft ever starts.
     toolStepsToEmit = [['read_thread', 'look_at_image']];
 
     const res = await suggest({
-      request: request('tok-section', { ...POST_BODY, projectId: project.id }),
+      request: request('tok-section', POST_BODY),
     } as never);
     const events = await readEvents(res);
 
@@ -322,12 +335,12 @@ describe('POST /api/extension/suggest', () => {
   // instruction, or was never asked - see the "prove it bites" note below)
   // must never hand the panel something to insert.
   it('arrives as done with draft: null when the model never emits the marker', async () => {
-    const { org, project } = await seedOrgProject('org-unstructured');
+    const { org } = await seedOrgProject('org-unstructured');
     await mintDevice(org.id, 'tok-unstructured');
     responseChunks = ['Just some prose with no marker at all.'];
 
     const res = await suggest({
-      request: request('tok-unstructured', { ...POST_BODY, projectId: project.id }),
+      request: request('tok-unstructured', POST_BODY),
     } as never);
     const events = await readEvents(res);
 
@@ -356,12 +369,12 @@ describe('POST /api/extension/suggest', () => {
   // A model that explicitly declines: SKIP_MARKER, not silence. Also arrives
   // with draft: null, distinguished only by `skipped`.
   it('arrives as done with draft: null and skipped: true when the model declines', async () => {
-    const { org, project } = await seedOrgProject('org-skipped');
+    const { org } = await seedOrgProject('org-skipped');
     await mintDevice(org.id, 'tok-skipped');
     responseChunks = ['Nothing worth adding here.\n', SKIP_MARKER, '\nExplained above.'];
 
     const res = await suggest({
-      request: request('tok-skipped', { ...POST_BODY, projectId: project.id }),
+      request: request('tok-skipped', POST_BODY),
     } as never);
     const events = await readEvents(res);
     const done = events.at(-1)!.data as {
@@ -374,11 +387,9 @@ describe('POST /api/extension/suggest', () => {
   });
 
   it('attaches no MCP server and passes a prompt rather than a playbook', async () => {
-    const { org, project } = await seedOrgProject('org-a');
+    const { org } = await seedOrgProject('org-a');
     await mintDevice(org.id, 'tok');
-    await readEvents(
-      await suggest({ request: request('tok', { ...POST_BODY, projectId: project.id }) } as never),
-    );
+    await readEvents(await suggest({ request: request('tok', POST_BODY) } as never));
 
     expect(lastOptions?.attachMcp).toBe(false);
     expect(lastOptions?.playbookPath).toBeUndefined();
@@ -391,11 +402,9 @@ describe('POST /api/extension/suggest', () => {
   });
 
   it('writes no runs row and no draft', async () => {
-    const { org, project } = await seedOrgProject('org-a');
+    const { org } = await seedOrgProject('org-a');
     await mintDevice(org.id, 'tok');
-    await readEvents(
-      await suggest({ request: request('tok', { ...POST_BODY, projectId: project.id }) } as never),
-    );
+    await readEvents(await suggest({ request: request('tok', POST_BODY) } as never));
 
     const runs = await getDb().select().from(schema.runs);
     const drafts = await getDb().select().from(schema.drafts);
@@ -430,12 +439,10 @@ describe('POST /api/extension/suggest', () => {
     const handle = runSuggestion({
       kind: 'post_comment',
       post: POST_BODY.post,
-      currentProject: { name: project.name, description: project.description },
       persona: null,
       voiceProfile: null,
       projects: [],
       repos: [],
-      projectId: project.id,
       runnerSlug: project.defaultAgentRunner,
     });
     handle.cancel();
@@ -446,12 +453,12 @@ describe('POST /api/extension/suggest', () => {
   });
 
   it('cancels a running agent when the client disconnects after it spawned', async () => {
-    const { org, project } = await seedOrgProject('org-a');
+    const { org } = await seedOrgProject('org-a');
     await mintDevice(org.id, 'tok');
     hangForever = true;
 
     const res = await suggest({
-      request: request('tok', { ...POST_BODY, projectId: project.id }),
+      request: request('tok', POST_BODY),
     } as never);
     const reader = res.body!.getReader();
     await reader.read(); // the padding
@@ -466,11 +473,11 @@ describe('POST /api/extension/suggest', () => {
   // it. All three of these returned a full streamed suggestion on the code as
   // #357 left it, with the org's assistant off.
   it('refuses to suggest for an org that never turned the assistant on', async () => {
-    const { org, project } = await seedOrgProject('org-off', { assist: false });
+    const { org } = await seedOrgProject('org-off', { assist: false });
     await mintDevice(org.id, 'tokOff');
 
     const res = await suggest({
-      request: request('tokOff', { ...POST_BODY, projectId: project.id }),
+      request: request('tokOff', POST_BODY),
     } as never);
     expect(await res.json()).toMatchObject({ refused: 'assist_disabled' });
     // No model call at all, which is the point: a refusal that still spawns an
@@ -489,14 +496,14 @@ describe('POST /api/extension/suggest', () => {
     await mintDevice(org.id, 'tokKilled');
 
     const res = await suggest({
-      request: request('tokKilled', { ...POST_BODY, projectId: project.id }),
+      request: request('tokKilled', POST_BODY),
     } as never);
     expect(await res.json()).toMatchObject({ refused: 'kill_switch' });
     expect(lastOptions).toBeNull();
   });
 
-  it('refuses to write as a project of the same org that is not the bound one', async () => {
-    const { org, project } = await seedOrgProject('org-bound');
+  it("serves a request naming a different project of the same org, since the choice is the model's alone (#523)", async () => {
+    const { org } = await seedOrgProject('org-bound');
     const [other] = await getDb()
       .insert(schema.projects)
       .values({ organizationId: org.id, slug: 'p-other', name: 'other', description: 'other' })
@@ -506,18 +513,8 @@ describe('POST /api/extension/suggest', () => {
     const res = await suggest({
       request: request('tokBound', { ...POST_BODY, projectId: other.id }),
     } as never);
-    expect(await res.json()).toMatchObject({
-      refused: 'project_not_bound',
-      boundProjectId: project.id,
-    });
-    expect(lastOptions).toBeNull();
-
-    // The bound project still streams from the same device.
-    const ok = await suggest({
-      request: request('tokBound', { ...POST_BODY, projectId: project.id }),
-    } as never);
-    expect(ok.headers.get('content-type')).toContain('text/event-stream');
-    await ok.text();
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    await res.text();
   });
 
   // #523: naming no project at all makes no binding claim, so it is never a
@@ -544,34 +541,34 @@ describe('POST /api/extension/suggest', () => {
   // the registry, not against the resolver in isolation: the resolver being
   // correct and never called is the failure mode worth catching.
   it('asks for the fast assist model when no operator pinned one', async () => {
-    const { org, project } = await seedOrgProject('org-model-default');
+    const { org } = await seedOrgProject('org-model-default');
     await mintDevice(org.id, 'tokModel');
 
     const res = await suggest({
-      request: request('tokModel', { ...POST_BODY, projectId: project.id }),
+      request: request('tokModel', POST_BODY),
     } as never);
     await res.text();
     expect(lastConfig).toMatchObject({ model: ASSIST_DEFAULT_MODEL });
   });
 
   it('leaves an operator-pinned model alone, including for suggestions', async () => {
-    const { org, project } = await seedOrgProject('org-model-pinned');
+    const { org } = await seedOrgProject('org-model-pinned');
     await mintDevice(org.id, 'tokPinned');
     await saveRunnerConfig(getDb(), 'claude-code', { model: 'opus', maxTurns: 3 });
 
     const res = await suggest({
-      request: request('tokPinned', { ...POST_BODY, projectId: project.id }),
+      request: request('tokPinned', POST_BODY),
     } as never);
     await res.text();
     expect(lastConfig).toMatchObject({ model: 'opus', maxTurns: 3 });
   });
   describe('kind: "post" - grounded server-side in the observation buffer, #315', () => {
     it('refuses with a renderable body, not a 500, when the buffer has nothing recent', async () => {
-      const { org, project } = await seedOrgProject('org-post-empty');
+      const { org } = await seedOrgProject('org-post-empty');
       await mintDevice(org.id, 'tokPostEmpty');
 
       const res = await suggest({
-        request: request('tokPostEmpty', { kind: 'post', projectId: project.id, post: {} }),
+        request: request('tokPostEmpty', { kind: 'post', post: {} }),
       } as never);
       expect(res.headers.get('content-type')).toContain('application/json');
       expect(await res.json()).toMatchObject({ refused: 'no_recent_activity' });
@@ -605,7 +602,6 @@ describe('POST /api/extension/suggest', () => {
       const res = await suggest({
         request: request('tokPostGrounded', {
           kind: 'post',
-          projectId: project.id,
           // A pile of client-supplied text - the route must ignore this
           // entirely for kind "post" and use the observation buffer instead.
           post: { text: 'whatever the panel scraped off the current page' },
@@ -641,12 +637,10 @@ describe('runSuggestion narrates its own steps and budget (#573)', () => {
     const cutShort = await runSuggestion({
       kind: 'post_comment',
       post: POST_BODY.post,
-      currentProject: { name: project.name, description: project.description },
       persona: null,
       voiceProfile: null,
       projects: [],
       repos: [],
-      projectId: project.id,
       orgId: project.organizationId,
       runnerSlug: project.defaultAgentRunner,
     }).result;
@@ -657,12 +651,10 @@ describe('runSuggestion narrates its own steps and budget (#573)', () => {
     const clean = await runSuggestion({
       kind: 'post_comment',
       post: POST_BODY.post,
-      currentProject: { name: project.name, description: project.description },
       persona: null,
       voiceProfile: null,
       projects: [],
       repos: [],
-      projectId: project.id,
       orgId: project.organizationId,
       runnerSlug: project.defaultAgentRunner,
     }).result;
@@ -677,12 +669,10 @@ describe('runSuggestion narrates its own steps and budget (#573)', () => {
     await runSuggestion({
       kind: 'post_comment',
       post: POST_BODY.post,
-      currentProject: { name: project.name, description: project.description },
       persona: null,
       voiceProfile: null,
       projects: [],
       repos: [],
-      projectId: project.id,
       orgId: project.organizationId,
       runnerSlug: project.defaultAgentRunner,
       onToolStep: (toolNames) => seen.push(toolNames),
@@ -709,12 +699,10 @@ describe('runSuggestion session continuation (#576)', () => {
     return {
       kind: 'post_comment' as const,
       post: POST_BODY.post,
-      currentProject: { name: project.name, description: project.description },
       persona: null,
       voiceProfile: null,
       projects: [],
       repos: [],
-      projectId: project.id,
       orgId: project.organizationId,
       runnerSlug: project.defaultAgentRunner,
     };
@@ -840,12 +828,10 @@ describe('runSuggestion refuses a local runner in the cloud edition (#410)', () 
     const handle = runSuggestion({
       kind: 'post_comment',
       post: { urn: 'urn:li:activity:1', authorName: 'A', text: 'hi' },
-      currentProject: { name: 'p', description: null },
       persona: null,
       voiceProfile: null,
       projects: [],
       repos: [],
-      projectId: 1,
       runnerSlug: 'claude-code',
     });
 
@@ -897,7 +883,7 @@ describe('tone comes from the org settings, not the request (#405)', () => {
     await mintDevice(org.id, 'tokT');
 
     const res = await suggest({
-      request: request('tokT', { ...POST_BODY, projectId: project.id }),
+      request: request('tokT', POST_BODY),
     } as never);
     await readEvents(res);
     expect(lastOptions?.prompt).toContain('mechanisms, numbers and tradeoffs');
