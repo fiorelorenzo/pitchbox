@@ -1,11 +1,20 @@
 import { defineManifest } from '@crxjs/vite-plugin';
 import pkg from './package.json' with { type: 'json' };
+import { resolveBuildId, versionLabel } from './vite-plugins/build-id';
+
+// `version` is what Chrome compares between installs, so it stays the plain
+// release number. `version_name` is the human-facing string next to it in
+// `chrome://extensions`, and it carries the commit: without it two bundles
+// built hours and several merges apart are indistinguishable in the only
+// place a person looks (2026-09-10, twice).
+const BUILD_ID = resolveBuildId();
 
 export default defineManifest({
   manifest_version: 3,
   name: 'Pitchbox',
   description: 'Companion extension for the Pitchbox outreach dashboard.',
   version: pkg.version,
+  version_name: versionLabel(pkg.version, BUILD_ID),
   // The side panel (side_panel + chrome.sidePanel) is a Chrome 114+ API. Set a
   // floor so Chrome refuses/warns on install for older builds instead of
   // shipping a toolbar icon that silently does nothing (#208).
