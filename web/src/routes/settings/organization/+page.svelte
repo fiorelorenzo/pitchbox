@@ -10,7 +10,7 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { UserPlus, Copy, Trash2, MoreHorizontal, Pencil } from '@lucide/svelte';
   import { untrack } from 'svelte';
-  import { dev } from '$app/environment';
+  import { DOCS_URL } from '$lib/config/docs';
   import PageContainer from '$lib/components/PageContainer.svelte';
   import RemoveMemberDialog from '$lib/components/settings/RemoveMemberDialog.svelte';
   import LeaveOrgDialog from '$lib/components/settings/LeaveOrgDialog.svelte';
@@ -50,10 +50,6 @@
     quota: OrgQuota | null;
   };
   let { data }: { data: PageData } = $props();
-
-  // VitePress dev server runs on :5181 with base /pitchbox/. In production
-  // the published Pages site is the source of truth.
-  const DOCS_URL = dev ? 'http://localhost:5181/pitchbox/' : 'https://fiorelorenzo.github.io/pitchbox/';
 
   const ROLE_CAPS = [
     {
