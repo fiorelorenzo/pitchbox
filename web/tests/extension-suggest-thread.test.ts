@@ -31,11 +31,13 @@ const REASONING = 'Noticed the cache change and the specific number.';
 const DRAFT = 'A specific thing that happened.';
 const ENVELOPE_CHUNKS = [`${REASONING}\n`, DRAFT_MARKER, '\n', DRAFT];
 let responseChunks: string[] = ENVELOPE_CHUNKS;
+let lastOptions: AgentRunOptions | null = null;
 
 vi.mock('@pitchbox/shared/agents/registry', () => ({
   createAgentRunner: (_slug: string, _config: RunnerConfig): AgentRunner => ({
     slug: 'fake',
     run(opts: AgentRunOptions): AgentRunHandle {
+      lastOptions = opts;
       for (const c of responseChunks) opts.onTextChunk?.(c);
       return {
         result: Promise.resolve({ exitCode: 0, logPath: '/dev/null' }),
@@ -186,5 +188,54 @@ describe('the visible thread (#568): the schema rejects what the caps forbid', (
         }),
       } as never),
     ).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+// LOR-198: a reply box under a comment sends `post.replyToCommentId`
+// alongside the thread it is a part of - the schema accepts it additively
+// (still `kind: 'post_comment'`, no new kind), and the prompt names the
+// comment it answers rather than treating every post_comment request the
+// same way.
+describe('a reply names its parent comment on the request (LOR-198)', () => {
+  beforeEach(reset);
+
+  it('accepts replyToCommentId and sharpens the prompt around it', async () => {
+    const { org, project } = await seedOrgProject('org-reply-target');
+    await mintDevice(org.id, 'tok-reply-target');
+
+    const res = await suggest({
+      request: request('tok-reply-target', {
+        ...POST_BODY,
+        projectId: project.id,
+        post: {
+          ...POST_BODY.post,
+          thread: threadOf(2, 80),
+          replyToCommentId: 'urn:li:comment:(activity:1,0)',
+        },
+      }),
+    } as never);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    await res.text();
+
+    expect(lastOptions?.prompt ?? '').toContain(
+      'Write one reply to the comment with id "urn:li:comment:(activity:1,0)"',
+    );
+  });
+
+  it('keeps the plain post_comment task when no reply target is named', async () => {
+    const { org, project } = await seedOrgProject('org-no-reply-target');
+    await mintDevice(org.id, 'tok-no-reply-target');
+
+    const res = await suggest({
+      request: request('tok-no-reply-target', {
+        ...POST_BODY,
+        projectId: project.id,
+        post: { ...POST_BODY.post, thread: threadOf(2, 80) },
+      }),
+    } as never);
+    await res.text();
+
+    expect(lastOptions?.prompt ?? '').toContain('Write one comment to leave on the post below');
+    expect(lastOptions?.prompt ?? '').not.toContain('Write one reply to the comment with id');
   });
 });

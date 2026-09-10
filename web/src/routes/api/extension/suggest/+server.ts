@@ -105,6 +105,12 @@ const BodySchema = z
       reactionCount: z.string().max(100).optional(),
       commentCount: z.string().max(100).optional(),
       thread: ThreadSchema.optional(),
+      // LOR-198: names which comment (by id) this suggestion replies to,
+      // when the human opened a reply box under one specific comment -
+      // `buildSuggestionPrompt`'s `taskFor` sharpens the task around it.
+      // Absent for the post's own composer, exactly as before this field
+      // existed.
+      replyToCommentId: z.string().max(200).optional(),
       // #569: the post's attached media - see ImageSchema's own doc comment
       // for what each combination of present/absent sub-fields means.
       image: ImageSchema.optional(),

@@ -395,6 +395,47 @@ describe('buildSuggestionPrompt', () => {
   });
 });
 
+// LOR-198: a reply box under a comment is still a `post_comment` request,
+// named additively - `replyToCommentId` sharpens the task into answering
+// that one commenter rather than inventing a second `SuggestionKind`.
+describe('a reply names its parent comment (LOR-198)', () => {
+  it('sharpens the task around the named comment id, and drops the plain post_comment task', () => {
+    const prompt = buildSuggestionPrompt({
+      kind: 'post_comment',
+      post: { ...post, replyToCommentId: 'urn:li:comment:(activity:1,2)' },
+      currentProject,
+      ...noContext,
+    });
+    expect(prompt).toContain(
+      'Write one reply to the comment with id "urn:li:comment:(activity:1,2)"',
+    );
+    expect(prompt).toContain('read_thread');
+    expect(prompt).not.toContain('Write one comment to leave on the post below');
+  });
+
+  it('leaves the ordinary post_comment task alone when nothing names a reply target', () => {
+    const prompt = buildSuggestionPrompt({
+      kind: 'post_comment',
+      post,
+      currentProject,
+      ...noContext,
+    });
+    expect(prompt).toContain('Write one comment to leave on the post below');
+    expect(prompt).not.toContain('Write one reply to the comment with id');
+  });
+
+  it('is ignored for a "post" suggestion, which has no comment thread to reply into', () => {
+    const prompt = buildSuggestionPrompt({
+      kind: 'post',
+      post: { ...post, replyToCommentId: 'urn:li:comment:(activity:1,2)' },
+      currentProject,
+      ...noContext,
+    });
+    expect(prompt).toContain('Write one short post for this account');
+    expect(prompt).not.toContain('Write one reply to the comment with id');
+  });
+});
+
 // #405: the tone the operator picked in Settings, and #406's register reading
 // behind its default option. The property worth pinning is that the option
 // changes the instruction, that "match the room" says something specific about

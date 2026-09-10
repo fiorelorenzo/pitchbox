@@ -23,6 +23,7 @@ import {
   findParentCommentId,
   findPostComments,
   findPostComposerModal,
+  findReplyTargetCommentId,
   readCommentAuthor,
   readCommentBody,
   readCommentRelativeTime,
@@ -451,13 +452,30 @@ export function composerHasOwnText(composer: HTMLElement): boolean {
  */
 function mountAssistPanel(composer: HTMLElement, post?: Element): void {
   const anchor = resolveAnchor(composer);
-  // #569: the same element `readAssistPostFromCard`/`readAssistPost` above
-  // resolved from, kept around so a suggestion request can also capture its
-  // attached media - image capture is async (a round trip through the
-  // background worker) so it happens at request time, not folded into
-  // `capturedPost`'s own synchronous read.
-  const postElement = post ?? findFeedPosts(document)[0];
-  const capturedPost = post ? readAssistPostFromCard(post, document) : readAssistPost(document);
+  // LOR-198: which comment this composer replies to, when it is a reply
+  // box - a fixed property of where LinkedIn rendered the composer, not
+  // something that changes across a retry the way the post's own text can
+  // (see `captureCurrentPost` below). `undefined` for the post's own
+  // composer, exactly as the request carried before this field existed.
+  const replyToCommentId = findReplyTargetCommentId(composer) ?? undefined;
+  // LOR-197: read fresh on every call that grounds a request, never once
+  // here and reused for the panel's whole lifetime. `capturedPost` used to
+  // be a `const` computed exactly once at mount time, so a page whose
+  // content was still arriving when the human clicked stayed refused
+  // forever: `runSuggestion`'s `!capturedPost` check and `Try again`'s
+  // `onRequest` both read the same closed-over `null`, and nothing ever
+  // re-read the page to find out it was no longer true (measured
+  // 2026-09-10: a comment permalink page whose post text was on screen,
+  // refusing every retry with `selector_health_degraded`). `postElement`
+  // (#569, used only for the image capture below) is read fresh alongside
+  // it for the same reason.
+  function captureCurrentPost(): AssistPost | null {
+    return post ? readAssistPostFromCard(post, document) : readAssistPost(document);
+  }
+  function currentPostElement(): Element | undefined {
+    return post ?? findFeedPosts(document)[0];
+  }
+  const initialPost = captureCurrentPost();
   for (const event of selectorHealthActivityEvents()) logFromContent(event);
 
   let currentReasoning = '';
@@ -484,7 +502,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
   const autoRequest = !cached && !composerHasOwnText(composer);
 
   const props: CommentAssistPanelProps = {
-    subject: capturedPost?.authorName ?? undefined,
+    subject: initialPost?.authorName ?? undefined,
     state: initial,
     onRequest: () => void requestSuggestion(),
     onEditChange: (text) => {
@@ -543,6 +561,11 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
   }
 
   async function runSuggestion(retune?: RetuneDirection): Promise<void> {
+    // LOR-197: re-read here, not the mount-time snapshot above - see the
+    // doc comment on `captureCurrentPost`. This is what makes `Try again`
+    // (and a retune, and the auto-request on mount) each a real attempt
+    // rather than a replay of whatever the first read found.
+    const capturedPost = captureCurrentPost();
     if (!capturedPost) {
       void setRefused('selector_health_degraded');
       return;
@@ -580,6 +603,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
     // the one field on this request that costs a round trip through the
     // background worker - see media-capture.ts's own doc comment for the
     // three outcomes this can resolve to.
+    const postElement = currentPostElement();
     const image = postElement ? await captureObservedImage(postElement, document) : undefined;
     if (!handle.alive) return;
 
@@ -600,6 +624,10 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
           commentCount: capturedPost.commentCount,
           thread: capturedPost.thread,
           image,
+          // LOR-198: names which comment this suggestion answers, so the
+          // server writes a reply to that commenter rather than a second
+          // comment on the post itself (`buildSuggestionPrompt`'s `taskFor`).
+          replyToCommentId,
         },
         retune,
         sessionId: lastSessionId,
@@ -653,6 +681,9 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
   }
 
   async function acceptAndInsert(): Promise<void> {
+    // LOR-197: same re-read as `runSuggestion` - see `captureCurrentPost`'s
+    // own doc comment.
+    const capturedPost = captureCurrentPost();
     if (!capturedPost) {
       void setRefused('selector_health_degraded');
       return;
@@ -839,12 +870,26 @@ const CARD_MAX_DEPTH = 14;
  *
  * First `findFeedPosts`, which is the recognised shape and the one that
  * scopes the readers best. Then the known post-container roles. Then, and
- * this is the part that matters on an unfamiliar feed variant (#447), a
- * structural walk: the largest ancestor that still contains exactly one
- * comment composer, which is precisely the boundary between "this post" and
- * "the feed". Two composers means the walk has left the card, so the last
- * single-composer ancestor is as wide as it can honestly go - grounding a
- * suggestion in somebody else's post would be worse than not grounding it.
+ * this is the part that matters on an unfamiliar feed variant (#447) or a
+ * comment permalink whose reply box opened under one specific comment
+ * (LOR-197), a structural walk: the largest ancestor that still contains
+ * exactly one *top-level* comment composer, which is precisely the
+ * boundary between "this post" and "the feed". Two top-level composers
+ * means the walk has left the card, so the last single-composer ancestor
+ * is as wide as it can honestly go - grounding a suggestion in somebody
+ * else's post would be worse than not grounding it.
+ *
+ * "Top-level" is LOR-197's own fix: a reply box under a comment is a
+ * second composer by a plain element count, the same as a different
+ * card's own composer would be, but it is not a different card - it and
+ * the post's own "Add a comment" box both belong to the one card the
+ * comment renders inside. Counting it anyway broke on exactly that shape
+ * (measured 2026-09-10, a comment permalink page whose open reply box
+ * refused every request): the walk gave up one level before it ever
+ * reached the post's own boundary, which is the only place the two
+ * composers are ever seen together. `findReplyTargetCommentId`
+ * (linkedin-dom.ts) is what tells a reply box apart from a top-level one
+ * here, independent of whether the page's own kind classifies at all.
  */
 function resolveCardFor(composer: HTMLElement): Element | null {
   for (const card of findFeedPosts(document)) {
@@ -856,7 +901,10 @@ function resolveCardFor(composer: HTMLElement): Element | null {
   let candidate: Element | null = null;
   let node: Element | null = composer.parentElement;
   for (let depth = 0; node && depth < CARD_MAX_DEPTH; depth += 1, node = node.parentElement) {
-    if (node.querySelectorAll('[contenteditable="true"][role="textbox"]').length > 1) break;
+    const topLevelComposers = Array.from(
+      node.querySelectorAll<HTMLElement>('[contenteditable="true"][role="textbox"]'),
+    ).filter((c) => findReplyTargetCommentId(c) === null);
+    if (topLevelComposers.length > 1) break;
     if (node.tagName === 'MAIN' || node.tagName === 'BODY') break;
     const own = (node.textContent ?? '').replace(composer.textContent ?? '', '').trim();
     if (own.length >= CARD_MIN_TEXT) candidate = node;

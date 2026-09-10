@@ -1195,6 +1195,137 @@ describe('per-card wiring on the feed (2026-09-07 overlay/feed rework)', () => {
   });
 });
 
+describe('LOR-197: a comment permalink whose reply box opened under a comment', () => {
+  /** A comment-permalink page shape reconstructed from the issue's own
+   * report (a `/feed/update/urn:li:activity:.../?dashCommentUrn=...` page,
+   * LinkedIn's own reply box open under one specific comment). No live
+   * LinkedIn session was available to capture this page, so this is a
+   * synthetic reconstruction, not an anonymised capture like
+   * post-detail.html - same posture the #447 "unfamiliar feed variant"
+   * fixture above takes. It carries no `[role="article"][data-urn]`/
+   * `[role="listitem"]` on the card itself, so neither `findFeedPosts` nor
+   * `resolveCardFor`'s known-role fallback can resolve it - only the
+   * structural walk can, and only once it stops treating the reply box as
+   * a second card's own composer.
+   */
+  function renderCommentPermalink(): { composer: HTMLElement; commentId: string } {
+    const commentId = 'urn:li:comment:(activity:7000000000000000001,7000000000000000002)';
+    document.body.innerHTML = `
+      <div data-view-name="feed-full-update">
+        <article>
+          <div><a href="/in/marco-rossi/"><span aria-hidden="true">Marco Rossi</span></a></div>
+          <div class="update-components-text">We shipped the new retry budget across every
+          worker this week, and the false-positive throttling rate dropped by a factor
+          nobody on the team expected going in. The part that actually mattered was not
+          the algorithm change itself, it was watching which requests were the ones
+          getting throttled.</div>
+          <form><div contenteditable="true" role="textbox" aria-label="Aggiungi un commento"></div></form>
+          <div>
+            <article data-id="${commentId}">
+              <h3><span>Giulia Bianchi</span></h3>
+              <section>Which endpoints saw the biggest drop?</section>
+              <form><div contenteditable="true" role="textbox" aria-label="Rispondi a Giulia Bianchi"></div></form>
+            </article>
+          </div>
+        </article>
+      </div>`;
+    const composers = document.querySelectorAll<HTMLElement>(
+      '[contenteditable="true"][role="textbox"]',
+    );
+    return { composer: composers[1], commentId };
+  }
+
+  it('resolves the post card through the reply box, where the old composer-count walk gave up, and names the post author as subject (LOR-198)', async () => {
+    const { composer } = renderCommentPermalink();
+    // No selector recognises this shape - only the structural walk can.
+    expect(findFeedPosts(document)).toEqual([]);
+    suggest.mockImplementation(
+      streamingSuggest('Checked the dashboard for it.', 'The write path was the one that moved.'),
+    );
+
+    delegateComposerClicks();
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(shadows().length).toBe(1);
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(panelText()).not.toMatch(/layout changed/i);
+    expect(shadow().querySelector('.subject')?.textContent).toBe('Marco Rossi');
+  });
+
+  it('names the parent comment id on the request, not just the post', async () => {
+    const { composer, commentId } = renderCommentPermalink();
+    suggest.mockImplementation(streamingSuggest('r', 'd'));
+
+    delegateComposerClicks();
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(1);
+    // vi.fn mock call built entirely by this test, not external input.
+    const call = suggest.mock.calls[0][0] as { post: { replyToCommentId?: string } };
+    expect(call.post.replyToCommentId).toBe(commentId);
+  });
+
+  it("the post's own composer on the same page carries no replyToCommentId", async () => {
+    const { composer } = renderCommentPermalink();
+    const mainComposer = document.querySelectorAll<HTMLElement>(
+      '[contenteditable="true"][role="textbox"]',
+    )[0];
+    expect(mainComposer).not.toBe(composer);
+    suggest.mockImplementation(streamingSuggest('r', 'd'));
+
+    delegateComposerClicks();
+    mainComposer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(1);
+    const call = suggest.mock.calls[0][0] as { post: { replyToCommentId?: string } };
+    expect(call.post.replyToCommentId).toBeUndefined();
+  });
+});
+
+describe('LOR-197: a refusal from a page still loading recovers on retry', () => {
+  it('re-reads the page on Try again instead of replaying the mount-time null capture', async () => {
+    document.body.innerHTML = `
+      <div role="article" data-urn="urn:li:activity:7000000000000000099">
+        <div id="post-text"></div>
+        <form><div contenteditable="true" role="textbox"></div></form>
+      </div>`;
+    const composer = document.querySelector<HTMLElement>(
+      '[contenteditable="true"][role="textbox"]',
+    )!;
+
+    wireCommentAssist(composer);
+    composer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    expect(suggest).not.toHaveBeenCalled();
+    const refusal = logged.find(
+      (e) => e.message === 'activity.linkedin-action.suggestion-refused',
+    ) as { meta?: Record<string, unknown> } | undefined;
+    expect(refusal?.meta?.reason).toBe('selector_health_degraded');
+    expect(shadow().querySelector('.assist-button')?.textContent?.trim()).toBe($tRetry());
+
+    // The page finishes rendering: substantial post text arrives where
+    // there was none at mount time.
+    document.querySelector('#post-text')!.textContent =
+      'We shipped the new retry budget across every worker this week, and the ' +
+      'false-positive throttling rate dropped by a factor we did not expect going in.';
+    suggest.mockImplementation(
+      streamingSuggest('Because they measured it.', 'A real reply, once the text was there.'),
+    );
+
+    shadow().querySelector<HTMLButtonElement>('.assist-button')!.click();
+    await settle();
+
+    expect(suggest).toHaveBeenCalledTimes(1);
+    expect(shadow().querySelector('textarea')?.value).toBe(
+      'A real reply, once the text was there.',
+    );
+  });
+});
+
 function $tRetry(): string {
   // Mirrors dict-en.ts's 'assist.action.retry' literally, so this test does
   // not have to import the whole i18n runtime just to name one button.
