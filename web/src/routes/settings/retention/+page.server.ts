@@ -2,6 +2,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
 import { getDb } from '../../../lib/server/db.js';
 import { requireRole, requireInstanceAdmin } from '../../../lib/server/auth.js';
+import { isCloud } from '@pitchbox/shared/edition';
 import {
   loadRetention,
   saveRetention,
@@ -10,8 +11,19 @@ import {
 } from '@pitchbox/shared/retention';
 import { recordInstanceAudit } from '@pitchbox/shared/instance-audit';
 
+// Retention describes the whole deployment, not any one organization
+// (#183, same as default runner/quota defaults) - viewing it is gated to
+// the per-org 'admin' role on self-host, but on cloud that role is not the
+// right axis (any user can self-create an org and become its admin/owner),
+// so viewing narrows to `requireInstanceAdmin` there too, the same gate the
+// save action below already used. Both are no-ops when auth is off, so
+// self-host is unaffected.
 export const load: PageServerLoad = async (event) => {
-  requireRole(event, 'admin'); // viewing retention is admin-only
+  if (isCloud()) {
+    await requireInstanceAdmin(event);
+  } else {
+    requireRole(event, 'admin'); // viewing retention is admin-only
+  }
   const policy = await loadRetention(getDb());
   return { policy, floor: RETENTION_FLOOR_DAYS };
 };

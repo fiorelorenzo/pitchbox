@@ -1,0 +1,43 @@
+import { describe, expect, it } from 'vitest';
+import { load as settingsIndexLoad } from '../src/routes/settings/+page.server.js';
+import { load as settingsStatusLoad } from '../src/routes/settings/status/+page.server.js';
+
+const settingsIndexLoadFn = settingsIndexLoad as () => Promise<unknown>;
+const settingsStatusLoadFn = settingsStatusLoad as () => Promise<unknown>;
+
+/**
+ * #186: the settings landing page was called Status - wrong ever since #254
+ * flattened the tabbed General page into a rail, since Status was only ever
+ * one card on it. Renamed the route to `settings/general` and the rail
+ * label to General, but `/settings/status` is deep-linked (AGENTS.md), so it
+ * stays as a redirect rather than 404ing. Both `/settings` (the bare landing
+ * redirect) and `/settings/status` (the old route name) must still resolve
+ * to the same page, `settings/general`.
+ */
+
+/** A thrown SvelteKit redirect, narrowed enough to assert on. */
+function redirectOf(err: unknown): { status: number; location: string } {
+  const r = err as { status?: number; location?: string };
+  if (typeof r?.status !== 'number' || typeof r?.location !== 'string') {
+    throw new Error(`expected a redirect, got ${JSON.stringify(err)}`);
+  }
+  return { status: r.status, location: r.location };
+}
+
+describe('settings/+page.server.ts load: bare /settings lands on General', () => {
+  it('307s to /settings/general', async () => {
+    const err = await settingsIndexLoadFn().catch((e) => e);
+    const redirect = redirectOf(err);
+    expect(redirect.status).toBe(307);
+    expect(redirect.location).toBe('/settings/general');
+  });
+});
+
+describe('settings/status/+page.server.ts load: the old route name still redirects', () => {
+  it('307s to /settings/general', async () => {
+    const err = await settingsStatusLoadFn().catch((e) => e);
+    const redirect = redirectOf(err);
+    expect(redirect.status).toBe(307);
+    expect(redirect.location).toBe('/settings/general');
+  });
+});

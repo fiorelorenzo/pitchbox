@@ -60,7 +60,8 @@ already limits them to the active org). Listed here for completeness.
 `settings/extension-pairing` POST, `runners` POST, `playbooks` POST,
 `playbooks/[id]` PATCH + DELETE,
 `settings/default-runner` GET, `settings/quota` GET, `settings/runner-config` GET
-(view only - saving these needs instance admin, see below),
+(view only - saving these needs instance admin, see below; on cloud the read
+itself narrows to instance admin too, see the #183 note below),
 `settings/linkedin-assist` GET + POST (org-scoped, unlike the instance-wide
 settings above - the page's own loader also throws here, see the #254 note
 below), `settings/companion` GET + the `saveProfile`/`toggleVoiceSample` form
@@ -105,11 +106,27 @@ there is exactly one place to audit for who can end up with the flag (#413).
 POST, `settings/webhooks` PUT, `settings/model-functions` POST,
 `webhooks/deliveries/[id]/retry` POST (also tenant-guarded: the delivery
 must belong to the caller's org before the instance-admin gate runs),
-`settings/retention` form action (saving only - viewing the page, and the
-GET routes above, stay `requireRole(event, 'admin')`), `settings/admin/registration`
+`settings/retention` form action (saving only - viewing the page stays
+`requireRole(event, 'admin')` on self-host, see the #183 note below for
+cloud), `settings/admin/registration`
 GET + POST (#505's registration policy switch - open/invite/off - surfaced on
 `settings/admin` itself rather than a route of its own, since it is a single
 value with no per-data-set split to justify one).
+
+**#183: on cloud, viewing `runners`/`quota`/`retention` narrows to instance
+admin too.** Runner detection/config, quota defaults and the retention
+policy describe the whole deployment, not any one tenant, so on self-host
+their reads stay gated to the per-org `admin` role as above (the operator
+_is_ every tenant there). On cloud, `settings/runners`/`settings/quota`'s
+loaders and their GET-equivalent API routes (`settings/default-runner`,
+`settings/quota`, `settings/runner-config`, all listed above) call
+`isInstanceAdmin(event)`/`requireInstanceAdmin(event)` instead of the org
+role, and `settings/retention`'s loader calls `requireInstanceAdmin` in
+place of `requireRole(event, 'admin')` - an org owner who is not the
+instance admin gets the same "no data" shape (or 403, for retention and the
+GET routes) a member gets. A no-op when auth is off, same convention as
+every other instance-admin check. See the #254 note below for how the
+settings rail reflects this.
 
 ### Instance-wide audit trail (#414)
 
@@ -195,9 +212,10 @@ the UI instead of the database; who promoted whom and when is recorded by
 the instance audit trail above (#414), under key `user_promotion`.
 
 The General settings page (four tabs behind one route) was flattened into
-seven top-level routes, one flat rail with no tabs (#254): `settings/status`,
-`settings/runners`, `settings/extension`, `settings/quota`,
-`settings/organization`, `settings/retention`, `settings/security`. LI-19
+seven top-level routes, one flat rail with no tabs (#254): `settings/status`
+(renamed `settings/general` by #186 - see below), `settings/runners`,
+`settings/extension`, `settings/quota`, `settings/organization`,
+`settings/retention`, `settings/security`. LI-19
 (#316) later added an eighth, `settings/linkedin-assist` (the in-page
 LinkedIn assistant's on/off switch, bound project, daily caps and kill
 switch - org-scoped, so it throws `requireRole(event, 'admin')` like
@@ -218,11 +236,16 @@ ever looks at Stripe or the plan catalogue), so the rail hides the link
 entirely rather than opening onto a page with nothing to meter - a stray
 direct hit still loads and says so rather than 404ing or rendering an empty
 plan card). `/settings`
-itself now just redirects (307) to `/settings/status`. The four routes that
+itself now just redirects (307) to `/settings/general`. The four routes that
 used to be General's tabs each gate their own data set in their own loader,
-the same per-data-set split #237 landed on the old combined page: `status`
-(daemon health from a client store) still has no page-level role gate - the
-route itself is member-visible - but the endpoint the store polls,
+the same per-data-set split #237 landed on the old combined page: `general`
+(renamed from `status` by #186 - it was the landing page all along, and
+status was only ever one card on it, so calling it Status stopped being
+accurate once #254 flattened the tabs; `/settings/status` stays a redirect
+to `/settings/general` since it was deep-linked, same reasoning as the bare
+`/settings` redirect) still has no page-level role gate (daemon health
+comes from a client store) - the route itself is member-visible - but the
+endpoint the store polls,
 `GET /api/daemon/status`, gates itself (#184): every tenant on cloud shares
 one daemon, so a per-org role is never the right axis and the route calls
 `requireInstanceAdmin(event)` there instead, a no-op when auth is off so
@@ -233,23 +256,28 @@ card drops the daemon row and the version footer entirely, and `runners`
 (agent runner
 detection/config, `settings/default-runner` + `settings/runner-config`
 GET-equivalent data) and `quota` (posting quota defaults, `settings/quota`
-GET-equivalent data) only populate their payload when `isAdmin` (per-org role
-`admin`/`owner`, or no `locals.org` when auth is off); each route's
-`+page.svelte` shows an "Admin access required" message instead of an
-empty/misleading state when it isn't. `extension`'s paired-devices list
-(`settings/extension-devices` GET) stays member-visible (read-only device
-status); only revoking a device (DELETE) and minting a pairing code (POST
-`settings/extension-pairing`) are admin-gated. The settings rail
-(`web/src/routes/settings/+layout.svelte`) hides the `organization` link when
-auth is off (no org context to show), hides the `retention`/`security`/
-`linkedin-assist`/`companion`/`billing` links from a non-admin since those
-routes' loaders call `requireRole(event, 'admin')` and would 403, and
-additionally hides `billing` from self-host regardless of role
-(`data.isCloud`, root `+layout.server.ts`); `status`/`runners`/`extension`/
-`quota`/`password` are always shown to a signed-in caller because none of
-their loaders throw a role error (`password` still 404s with no
-`locals.user`, i.e. auth off); they only narrow the payload or, for
-`password`, gate on being signed in at all.
+GET-equivalent data) only populate their payload when `isAdmin` - on
+self-host that is still the per-org role (`admin`/`owner`, or no
+`locals.org` when auth is off); on cloud (#183) it is `isInstanceAdmin`
+instead, since the data describes the deployment, not the caller's org.
+Each route's `+page.svelte` shows an "Admin access required" message
+instead of an empty/misleading state when it isn't. `extension`'s
+paired-devices list (`settings/extension-devices` GET) stays member-visible
+(read-only device status); only revoking a device (DELETE) and minting a
+pairing code (POST `settings/extension-pairing`) are admin-gated. The
+settings rail (`web/src/routes/settings/+layout.svelte`) hides the
+`organization` link when auth is off (no org context to show), hides the
+`retention`/`security`/`linkedin-assist`/`companion`/`billing` links from a
+non-admin since those routes' loaders call `requireRole(event, 'admin')`
+and would 403, additionally hides `billing` from self-host regardless of
+role (`data.isCloud`, root `+layout.server.ts`), and, the other direction
+(#183), additionally hides `runners`/`quota`/`retention` from cloud
+regardless of role (`!data.isCloud`) - they describe the whole deployment
+there, not any tenant, and stay reachable to the instance admin from
+`/settings/admin` instead; `general`/`extension`/`password` are always
+shown to a signed-in caller because none of their loaders throw a role
+error (`password` still 404s with no `locals.user`, i.e. auth off); they
+only narrow the payload or, for `password`, gate on being signed in at all.
 
 **Exempt** (no org role): `auth/*`, `extension/*` (token-auth companion),
 `orgs` POST + `orgs/switch` POST (self-service), `orgs/[slug]/invites/[token]/accept`
