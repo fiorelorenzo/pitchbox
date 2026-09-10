@@ -261,7 +261,18 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
     }
   }
 
+  /** Same guard as the comment panel's: nothing else ever writes this panel's
+   * state, so a throw below would leave it in `streaming` forever rather than
+   * saying what went wrong. */
   async function requestSuggestion(retune?: RetuneDirection): Promise<void> {
+    try {
+      await runSuggestion(retune);
+    } catch (e) {
+      void setRefused('generation_failed', { threw: (e as Error)?.message ?? String(e) });
+    }
+  }
+
+  async function runSuggestion(retune?: RetuneDirection): Promise<void> {
     handle.update({ state: { phase: 'streaming', status: 'reading', reasoning: '', draft: '' } });
 
     const assistRes = await api.linkedinAssist();

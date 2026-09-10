@@ -39,6 +39,36 @@ const MIN_VIEWPORT_OVERLAP_PX = 40;
 
 type CaptureMessageResponse = { ok: true; dataUrl: string } | { ok: false };
 
+/**
+ * Whether it is worth paying the round trip to the background worker at all.
+ *
+ * `chrome.permissions` is **not** part of the API surface a content script
+ * gets, so `hasImageCapturePermission()` throws
+ * `Cannot read properties of undefined (reading 'contains')` in here. That
+ * was not theoretical: it hung the in-page panel on "Reading the post..."
+ * forever on any LinkedIn post carrying an image, because the rejection
+ * escaped `requestSuggestion` before the suggest call was ever made
+ * (measured on the real feed, 2026-09-10, against a preview build).
+ * `media-capture.test.ts` stubbed `chrome.permissions` and so could never
+ * see it.
+ *
+ * When the API is absent we answer `true` and let the worker decide: it
+ * holds the grant, checks it, and answers `{ ok: false }` without the
+ * permission, which lands on exactly the same fallback as a refusal here.
+ * The check survives only as the cheap early-out it was written to be, for
+ * the contexts that do expose the API.
+ */
+async function worthAsking(): Promise<boolean> {
+  if (typeof chrome === 'undefined' || typeof chrome.permissions?.contains !== 'function') {
+    return true;
+  }
+  try {
+    return await hasImageCapturePermission();
+  } catch {
+    return true;
+  }
+}
+
 /** The rect `chrome.tabs.captureVisibleTab`'s image actually covers -
  * `getBoundingClientRect()`'s coordinates are already viewport-relative, so
  * this only clips to what is currently on screen. `null` when what remains
@@ -84,7 +114,7 @@ export async function captureObservedImage(
   // grant from the base LinkedIn permission. Checked before even computing
   // whether the media is on screen, so a device that never turned this on
   // never pays for the viewport math either.
-  if (!(await hasImageCapturePermission())) return fallback;
+  if (!(await worthAsking())) return fallback;
   const rect = viewportOverlap(media.element.getBoundingClientRect());
   if (!rect) return fallback;
 

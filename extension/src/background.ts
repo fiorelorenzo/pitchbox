@@ -17,7 +17,7 @@ import {
 import { api, type DmSyncFanout } from './lib/api.js';
 import { logEvent } from './lib/activity.js';
 import { getSettings as getExtensionSettings, type ExtensionSettings } from './lib/settings.js';
-import { hasLinkedInPermission } from './lib/permissions.js';
+import { hasImageCapturePermission, hasLinkedInPermission } from './lib/permissions.js';
 import { recordLinkedInAccess } from './lib/linkedin-access.js';
 import linkedinCommentScriptPath from './content/linkedin-comment.ts?script';
 import linkedinObserveScriptPath from './content/linkedin-observe.ts?script';
@@ -493,13 +493,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: false });
       return false;
     }
-    captureAndCropTabRegion({
-      tabId,
-      windowId,
-      rect: msg.rect,
-      devicePixelRatio: msg.devicePixelRatio,
-      maxLongEdgePx: msg.maxLongEdgePx,
-    })
+    // The grant is checked here rather than in the content script that asked:
+    // `chrome.permissions` is not exposed to a content script at all (it threw
+    // there and hung the panel, 2026-09-10), and this is the side that both
+    // holds the API and performs the capture.
+    hasImageCapturePermission()
+      .then((granted) =>
+        granted
+          ? captureAndCropTabRegion({
+              tabId,
+              windowId,
+              rect: msg.rect,
+              devicePixelRatio: msg.devicePixelRatio,
+              maxLongEdgePx: msg.maxLongEdgePx,
+            })
+          : { ok: false as const },
+      )
       .then(sendResponse)
       .catch(() => sendResponse({ ok: false }));
     return true;
