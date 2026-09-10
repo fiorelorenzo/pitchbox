@@ -236,6 +236,42 @@ mode and looking at the page. Run the probe before a billing release and after
 any change to the price catalogue or the portal. It never writes to the app
 database.
 
+## Exercising the live billing path without paying
+
+Once a Stripe grant is off (LOR-187), testing the live path - Checkout, the
+webhook, the mirrored `org_subscriptions` row - would otherwise mean a real
+charge to whoever runs it, a real Managed Payments fee, and a real invoice to
+reconcile, for a subscription bought only to watch the webhook fire.
+`scripts/stripe-setup.ts` provisions a single-use, 100%-off coupon for
+exactly that instead (LOR-188), in both modes: the pure decision behind it -
+the code, the redemption cap, the expiry - lives in
+`shared/src/stripe/live-verification-coupon.ts`, unit-tested without a key.
+
+The promotion code is `PITCHBOX-VERIFY-N4K7QZX9WT`. Type it into Checkout's
+"Add promotion code" field (`allow_promotion_codes: true` is already set,
+`shared/src/billing/checkout.ts`) to bring any plan's first invoice to zero.
+It is named here on purpose rather than left for someone to find
+undocumented, and it is restricted the same way documenting it demands:
+
+- **100% off, `duration: once`** - only the first invoice is free; the
+  subscription renews at full price afterward, so cancel it once verified
+  rather than relying on the discount to keep it free.
+- **`max_redemptions: 1`** on both the coupon and its promotion code - one
+  real redemption is exactly what proves the webhook path once, and a second
+  is already the leak this guards against.
+- **An expiry** 30 days after the setup script creates it. Past that instant
+  the coupon is not deleted, only inert; delete it in the dashboard and
+  re-run the setup script to mint a fresh one if the window is missed.
+
+A subscription redeemed with it still mirrors normally: the discount changes
+what the invoice collects, not the subscription's price or product, so the
+webhook (`shared/src/billing/webhook.ts`) records it `active` with the
+plan's real limits, the same as a full-price subscription. `pnpm run
+stripe:probe` reports the coupon's and promotion code's presence and
+restrictions, but only in test mode ("Verifying against the real account"
+above, it never holds a live key), so verify a live redemption by hand,
+once, before relying on it.
+
 ## Environment
 
 | Variable                      | Where             | What                                                                                                                       |

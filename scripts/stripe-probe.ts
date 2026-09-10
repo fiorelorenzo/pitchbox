@@ -20,7 +20,12 @@
  *   - the account holds no *enabled* webhook endpoint for the other mode's
  *     deployment (LOR-156) - that endpoint can never verify a signature here,
  *     and `scripts/stripe-setup.ts` only disables it on the run that notices,
- *     never automatically.
+ *     never automatically;
+ *   - the LOR-188 live-verification coupon and its promotion code are still
+ *     present with the restrictions that keep them from leaking into a real
+ *     sale (100% off, single redemption, an expiry) - all four of those are
+ *     immutable in Stripe once created, so a wrong value here means the
+ *     object has to be deleted and re-created, not patched.
  *
  * Run it before a billing release, and after any change to the price
  * catalogue: `pnpm run stripe:probe`. Nothing here writes to the app database.
@@ -29,6 +34,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createStripeClient } from '../shared/src/stripe/client.js';
+import {
+  LIVE_VERIFICATION_COUPON_ID,
+  LIVE_VERIFICATION_MAX_REDEMPTIONS,
+  LIVE_VERIFICATION_PROMOTION_CODE,
+} from '../shared/src/stripe/live-verification-coupon.js';
 import {
   endpointBelongsToMode,
   stripeModeFromKey,
@@ -107,6 +117,82 @@ for (const lookup of LOOKUPS) {
     drift += 1;
   } else {
     console.log(`${lookup}: ok (${price.unit_amount} ${price.currency})`);
+  }
+}
+
+// LOR-188: the 100%-off coupon docs/billing.md names for exercising the live
+// billing path without a real charge. scripts/stripe-setup.ts creates it;
+// this only ever reads it back, the same as the portal configuration below -
+// percent_off, duration, max_redemptions and the expiry are all immutable
+// once the coupon or its promotion code exist, so a wrong value here means
+// delete-and-rerun, not something this probe could ever fix.
+type Coupon = {
+  id: string;
+  valid: boolean;
+  percent_off: number | null;
+  duration: string;
+  max_redemptions: number | null;
+  redeem_by: number | null;
+};
+type PromotionCode = {
+  id: string;
+  code: string;
+  active: boolean;
+  max_redemptions: number | null;
+  coupon: { id: string };
+};
+
+const couponResponse = await fetch(
+  `https://api.stripe.com/v1/coupons/${LIVE_VERIFICATION_COUPON_ID}`,
+  { headers: { Authorization: `Bearer ${readKey()}`, 'Stripe-Version': '2025-03-31.basil' } },
+);
+if (!couponResponse.ok) {
+  console.log(`coupon ${LIVE_VERIFICATION_COUPON_ID}: not on the account (run stripe-setup.ts)`);
+  drift += 1;
+} else {
+  const coupon = (await couponResponse.json()) as Coupon;
+  const issues: string[] = [];
+  if (coupon.percent_off !== 100) issues.push(`percent_off=${coupon.percent_off}`);
+  if (coupon.max_redemptions !== LIVE_VERIFICATION_MAX_REDEMPTIONS) {
+    issues.push(`max_redemptions=${coupon.max_redemptions}`);
+  }
+  if (!coupon.redeem_by) issues.push('no expiry (redeem_by)');
+  if (!coupon.valid) issues.push('no longer valid (expired or exhausted)');
+  if (issues.length > 0) {
+    console.log(`coupon ${coupon.id}: ${issues.join(', ')}`);
+    drift += 1;
+  } else {
+    console.log(
+      `coupon ${coupon.id}: ok (100% off, ${coupon.duration}, max_redemptions=${coupon.max_redemptions}, expires ${new Date(coupon.redeem_by! * 1000).toISOString().slice(0, 10)})`,
+    );
+  }
+
+  const promoResponse = await fetch(
+    `https://api.stripe.com/v1/promotion_codes?code=${encodeURIComponent(LIVE_VERIFICATION_PROMOTION_CODE)}&limit=1`,
+    { headers: { Authorization: `Bearer ${readKey()}`, 'Stripe-Version': '2025-03-31.basil' } },
+  );
+  const promoList = (await promoResponse.json()) as { data: PromotionCode[] };
+  const promo = promoList.data[0];
+  if (!promo) {
+    console.log(
+      `promotion code ${LIVE_VERIFICATION_PROMOTION_CODE}: not on the account (run stripe-setup.ts)`,
+    );
+    drift += 1;
+  } else {
+    const promoIssues: string[] = [];
+    if (promo.coupon.id !== coupon.id) {
+      promoIssues.push(`points at coupon ${promo.coupon.id}, not ${coupon.id}`);
+    }
+    if (!promo.active) promoIssues.push('inactive');
+    if (promo.max_redemptions !== LIVE_VERIFICATION_MAX_REDEMPTIONS) {
+      promoIssues.push(`max_redemptions=${promo.max_redemptions}`);
+    }
+    if (promoIssues.length > 0) {
+      console.log(`promotion code ${promo.code}: ${promoIssues.join(', ')}`);
+      drift += 1;
+    } else {
+      console.log(`promotion code ${promo.code}: ok -> coupon ${coupon.id}`);
+    }
   }
 }
 

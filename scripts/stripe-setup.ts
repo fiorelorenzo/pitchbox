@@ -1,6 +1,7 @@
 // Create or reconcile the Stripe objects Pitchbox billing depends on: the plan
 // catalogue (products + prices), the customer portal configuration, this run's
-// own webhook endpoint, and the Stripe Tax defaults.
+// own webhook endpoint, the Stripe Tax defaults, and the LOR-188 live-verification
+// coupon that lets the live billing path be exercised without a real charge.
 //
 // This file is the source of truth for the catalogue. The app never hardcodes a
 // price id: it resolves prices by `lookup_key` and reads entitlements from the
@@ -31,7 +32,26 @@
 // registrations and the payout account are set once during activation, in the
 // dashboard, and are deliberately not repo-facing. `--head-office` reads the
 // address from the environment when it has to be set from a script.
+//
+// LOR-188: `--dry-run`/a real run also reports on a single 100%-off coupon and
+// its promotion code, so the live billing path (Checkout, the webhook, the
+// mirrored `org_subscriptions` row) can be driven against the real account
+// without a real charge, fee, or invoice - see docs/billing.md "Exercising
+// the live billing path without paying". The decision of what the code,
+// redemption cap and expiry are lives in
+// `shared/src/stripe/live-verification-coupon.ts`, pure and unit-tested
+// without a key; none of it is editable after creation (Stripe's own rule,
+// not ours), so a coupon or promotion code found not to match is reported,
+// never patched or deleted - the same restraint `disableMismatchedWebhook`
+// already takes with a wrong-mode webhook endpoint.
 import { writeFile } from 'node:fs/promises';
+import {
+  LIVE_VERIFICATION_COUPON_DURATION,
+  LIVE_VERIFICATION_COUPON_ID,
+  LIVE_VERIFICATION_MAX_REDEMPTIONS,
+  LIVE_VERIFICATION_PROMOTION_CODE,
+  liveVerificationExpiresAt,
+} from '../shared/src/stripe/live-verification-coupon.js';
 import {
   stripeModeFromKey,
   webhookEndpointTargets,
@@ -88,6 +108,26 @@ type StripeWebhookEndpoint = {
 };
 
 type StripeTaxSettings = { status: string };
+
+type StripeCoupon = {
+  id: string;
+  valid: boolean;
+  percent_off: number | null;
+  duration: 'forever' | 'once' | 'repeating';
+  max_redemptions: number | null;
+  redeem_by: number | null;
+  metadata: Metadata;
+};
+
+type StripePromotionCode = {
+  id: string;
+  code: string;
+  coupon: StripeCoupon;
+  active: boolean;
+  max_redemptions: number | null;
+  expires_at: number | null;
+  metadata: Metadata;
+};
 
 // SaaS, business use. The same code on every plan; it drives what Stripe Tax
 // computes per country.
@@ -534,6 +574,124 @@ async function ensureTax() {
   return saved;
 }
 
+// LOR-188: a single-use, 100%-off coupon that lets the live billing path be
+// exercised against the real account without a real charge. Looked up by its
+// custom id the same way a price is looked up by `lookup_key`. Every field
+// Stripe would reject an edit to (`percent_off`, `duration`,
+// `max_redemptions`, `redeem_by`) is decided once in
+// `shared/src/stripe/live-verification-coupon.ts`, so an existing coupon
+// that does not match it cannot be repaired here - it is reported, the same
+// as `disableMismatchedWebhook` reports rather than fixes a wrong-mode
+// endpoint.
+async function ensureCoupon(): Promise<StripeCoupon> {
+  const list = await stripe<StripeList<StripeCoupon>>('coupons?limit=100');
+  const existing = list.data.find((c) => c.id === LIVE_VERIFICATION_COUPON_ID);
+  const redeemBy = Math.floor(liveVerificationExpiresAt(new Date()).getTime() / 1000);
+
+  if (existing) {
+    const matches =
+      existing.percent_off === 100 &&
+      existing.duration === LIVE_VERIFICATION_COUPON_DURATION &&
+      existing.max_redemptions === LIVE_VERIFICATION_MAX_REDEMPTIONS &&
+      existing.redeem_by !== null;
+    if (!matches) {
+      log(
+        'warn',
+        `coupon ${existing.id} does not match the LOR-188 decision (percent_off=${existing.percent_off}, duration=${existing.duration}, max_redemptions=${existing.max_redemptions}, redeem_by=${existing.redeem_by}) - none of that is editable; delete it in the dashboard and re-run`,
+      );
+    } else if (!existing.valid) {
+      log(
+        'warn',
+        `coupon ${existing.id} is no longer valid (expired or exhausted) - delete it in the dashboard and re-run to mint a fresh one`,
+      );
+    } else {
+      log(
+        'ok',
+        `coupon ${existing.id} (100% off, ${existing.duration}, max_redemptions=${existing.max_redemptions}, expires ${new Date(existing.redeem_by! * 1000).toISOString().slice(0, 10)})`,
+      );
+    }
+    return existing;
+  }
+
+  if (DRY_RUN) {
+    log(
+      'create',
+      `coupon ${LIVE_VERIFICATION_COUPON_ID} (100% off, ${LIVE_VERIFICATION_COUPON_DURATION}, max_redemptions=${LIVE_VERIFICATION_MAX_REDEMPTIONS}, expires ${new Date(redeemBy * 1000).toISOString().slice(0, 10)})`,
+    );
+    return {
+      id: LIVE_VERIFICATION_COUPON_ID,
+      valid: true,
+      percent_off: 100,
+      duration: LIVE_VERIFICATION_COUPON_DURATION,
+      max_redemptions: LIVE_VERIFICATION_MAX_REDEMPTIONS,
+      redeem_by: redeemBy,
+      metadata: { pitchbox: 'live-verification' },
+    };
+  }
+  const created = await stripe<StripeCoupon>('coupons', {
+    id: LIVE_VERIFICATION_COUPON_ID,
+    percent_off: 100,
+    duration: LIVE_VERIFICATION_COUPON_DURATION,
+    max_redemptions: LIVE_VERIFICATION_MAX_REDEMPTIONS,
+    redeem_by: redeemBy,
+    name: 'Pitchbox live billing path verification',
+    metadata: { pitchbox: 'live-verification' },
+  });
+  log(
+    'created',
+    `coupon ${created.id} (expires ${new Date(redeemBy * 1000).toISOString().slice(0, 10)})`,
+  );
+  return created;
+}
+
+// The promotion code that actually redeems the coupon above at Checkout.
+// Looked up by its exact `code` - Stripe's own `promotion_codes` list filter
+// on that field is an exact match, so this is one request either way.
+async function ensurePromotionCode(coupon: StripeCoupon): Promise<StripePromotionCode> {
+  const list = await stripe<StripeList<StripePromotionCode>>(
+    `promotion_codes?code=${encodeURIComponent(LIVE_VERIFICATION_PROMOTION_CODE)}&limit=1`,
+  );
+  const existing = list.data[0];
+
+  if (existing) {
+    const matches =
+      existing.coupon.id === coupon.id &&
+      existing.active &&
+      existing.max_redemptions === LIVE_VERIFICATION_MAX_REDEMPTIONS;
+    if (!matches) {
+      log(
+        'warn',
+        `promotion code ${existing.code} does not match the LOR-188 decision (coupon=${existing.coupon.id}, active=${existing.active}, max_redemptions=${existing.max_redemptions}) - none of that is editable; delete it in the dashboard and re-run`,
+      );
+    } else {
+      log('ok', `promotion code ${existing.code} -> coupon ${coupon.id}`);
+    }
+    return existing;
+  }
+
+  if (DRY_RUN) {
+    log('create', `promotion code ${LIVE_VERIFICATION_PROMOTION_CODE} -> coupon ${coupon.id}`);
+    return {
+      id: 'dry_promo',
+      code: LIVE_VERIFICATION_PROMOTION_CODE,
+      coupon,
+      active: true,
+      max_redemptions: LIVE_VERIFICATION_MAX_REDEMPTIONS,
+      expires_at: coupon.redeem_by,
+      metadata: { pitchbox: 'live-verification' },
+    };
+  }
+  const created = await stripe<StripePromotionCode>('promotion_codes', {
+    coupon: coupon.id,
+    code: LIVE_VERIFICATION_PROMOTION_CODE,
+    max_redemptions: LIVE_VERIFICATION_MAX_REDEMPTIONS,
+    expires_at: coupon.redeem_by,
+    metadata: { pitchbox: 'live-verification' },
+  });
+  log('created', `promotion code ${created.code} -> coupon ${coupon.id}`);
+  return created;
+}
+
 async function main() {
   const account = await stripe<StripeAccount>('account');
   console.log(
@@ -564,6 +722,8 @@ async function main() {
   const webhook = await ensureWebhook(webhookList, ownTarget.url, ownTarget.label);
   await disableMismatchedWebhook(webhookList, mismatchedTarget);
   await ensureTax();
+  const coupon = await ensureCoupon();
+  const promotionCode = await ensurePromotionCode(coupon);
 
   const secrets: string[] = [];
   if (webhook.secret) secrets.push(`STRIPE_WEBHOOK_SECRET=${webhook.secret}`);
@@ -578,6 +738,10 @@ async function main() {
   console.log(
     `  webhook  ${webhook.endpoint.id} -> ${webhook.endpoint.url} (${ownTarget.label}, ${MODE} mode)`,
   );
+  console.log(
+    `  coupon   ${coupon.id} (100% off, ${coupon.duration}, max_redemptions=${coupon.max_redemptions}, expires ${coupon.redeem_by ? new Date(coupon.redeem_by * 1000).toISOString().slice(0, 10) : 'never'})`,
+  );
+  console.log(`  promo    ${promotionCode.code} -> ${coupon.id}`);
 
   if (secrets.length && SECRETS_OUT) {
     await writeFile(SECRETS_OUT, `${secrets.join('\n')}\n`, { mode: 0o600 });
