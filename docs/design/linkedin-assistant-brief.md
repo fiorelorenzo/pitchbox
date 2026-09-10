@@ -28,9 +28,10 @@ Palette      Repo tokens only, the .dark block, no new values (D1, D2, D5): --ba
              --destructive oklch(0.704 0.191 22.216) for a refusal. No brand hue: that is
              still under Unresolved in DECISIONS.md and this surface is not the place to
              settle it.
-             Superseded in one axis by D30 (2026-09-10): the panel's accent is now LinkedIn's
-             own blue, per theme, through the --li-accent* tokens in panel.css. The grounds
-             and the hairline above are unchanged.
+             Superseded in two axes since. D30 (2026-09-10): the panel's accent is now
+             LinkedIn's own blue, per theme, through the --li-accent* tokens in panel.css.
+             D40 (2026-09-10): the grounds above are the dark half only, and the panel takes
+             the light half of the same token file when the page it stands on is light.
 
 Type         Inter only, one weight for labels and one for values. The suggestion body is the
              only long-form text on the surface; everything else is a label or a control.
@@ -39,8 +40,10 @@ Density      Middle, a deliberate deviation from the airy default: the panel sit
              layout it does not own, and every pixel it takes is one LinkedIn wanted for its
              own content. Suggestion text 15px, control row 32px, no airy 68px rows.
 
-Signature    The panel is unmistakably Pitchbox and never imitates LinkedIn: dark card, 1px
-             hairline, its own mark, visibly a tool the human installed. See decision 1.
+Signature    The panel is unmistakably Pitchbox and never imitates LinkedIn: its own mark and
+             accent dot, 1px hairline, its own radius, density and type, visibly a tool the
+             human installed. The ground follows the host page (D40), which is the one axis
+             the signature does not rest on. See decision 1.
 
 States       In scope: resting (present, nothing requested), streaming, ready, edited,
              inserted, and refused. Refused is five real states with five different remedies,
@@ -65,9 +68,11 @@ Non-goals    Not a second inbox: one suggestion for one post, never a queue. Nev
 
 **1. The panel reads as Pitchbox, not as part of LinkedIn.**
 
-Dark card, 1px hairline, its own mark, visibly a tool the human installed. Three reasons. The compliance boundary in `docs/linkedin-integration-design.md` rests on the human always knowing whose text this is and who is acting, and a panel that imitates its host quietly undermines that. A native-looking panel would also have to chase LinkedIn's own restyles forever, on top of the selector fragility #303 already exists to contain. And the standing tooling-chrome preference is that a tool's own palette beats an imported one: the pane should read as a surface of the app, not as a window pasted on top of it.
+Our own card (dark on any page, until D40 below made the ground the host's), 1px hairline, its own mark, visibly a tool the human installed. Three reasons. The compliance boundary in `docs/linkedin-integration-design.md` rests on the human always knowing whose text this is and who is acting, and a panel that imitates its host quietly undermines that. A native-looking panel would also have to chase LinkedIn's own restyles forever, on top of the selector fragility #303 already exists to contain. And the standing tooling-chrome preference is that a tool's own palette beats an imported one: the pane should read as a surface of the app, not as a window pasted on top of it.
 
 The cost is real and stated rather than hidden: a visibly third-party dark overlay on LinkedIn is what the tools LinkedIn has restricted look like. The difference has to come from behaviour rather than appearance, which is why the panel is quiet, small, and clearly inert until asked. The two rejected options were a native light surface (rejected: imitating the host is the deceptive option) and a neutral panel that follows LinkedIn's theme while keeping Pitchbox forms (rejected as a cost that buys little: two themes to verify in AA for a surface whose whole job is to be recognisably ours).
+
+**Reversed in one axis on 2026-09-10 (D40), and the paragraph above is what got it wrong.** Used on a real light feed, the third option is what the panel needed: it now takes the host's ground, light or dark, and keeps everything else here. The cost that was called "little" was the wrong way round, since the dark-on-light card is precisely what made our surface look like the restricted tools, and the two-theme AA verification is a real but ordinary price. What still holds unchanged is the rejection of the _native_ option: the panel matching the page's ground is not the same as borrowing its typography, spacing, control shapes or layout, and none of those move.
 
 **2. The panel is anchored to the post the human acted on, and appears nowhere else.**
 

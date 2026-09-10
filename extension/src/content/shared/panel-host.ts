@@ -39,6 +39,7 @@ import { reactiveProps } from './panel-props.svelte.js';
 import panelCss from '../panel.css?inline';
 import { ensurePanelFont } from './panel-fonts.js';
 import { ulid } from '../../lib/ulid.js';
+import { detectHostTheme, observeHostTheme, type HostTheme } from './host-theme.js';
 
 /** Marks a host element so a second mount on the same anchor is detectable. */
 const HOST_TAG = 'pitchbox-panel-host';
@@ -339,12 +340,18 @@ export function mountPanel<Props extends Record<string, unknown>>(
   const shadow = host.attachShadow({ mode: 'open' });
   applyStyles(shadow);
 
-  // The panel root carries `.dark`, which selects the dark token values and
-  // makes Tailwind's `dark:` variant work inside the shadow tree. The panel is
-  // always dark regardless of LinkedIn's theme: it reads as a Pitchbox surface,
-  // never as part of LinkedIn (D10).
+  // The panel root carries `.dark` only when the page it stands on is dark
+  // (LOR-211, refines D10): the card follows the host's theme, while the
+  // mark, the hairline, the geometry and the type stay ours, which is what
+  // actually tells the human whose surface this is. `.dark` is what selects
+  // the dark token values inside the shadow tree, and it has to sit on this
+  // wrapper rather than on the host element, since a shadow descendant
+  // cannot match `.dark *` across the boundary.
   const root = document.createElement('div');
-  root.className = 'pitchbox-panel dark';
+  const applyTheme = (theme: HostTheme) => {
+    root.className = theme === 'dark' ? 'pitchbox-panel dark' : 'pitchbox-panel';
+  };
+  applyTheme(detectHostTheme());
   shadow.append(root);
 
   // D13: appended to the document itself, not next to the anchor. The panel
@@ -375,6 +382,10 @@ export function mountPanel<Props extends Record<string, unknown>>(
   let observer: MutationObserver | null = null;
   let anchorResize: ResizeObserver | null = null;
   let panelResize: ResizeObserver | null = null;
+  // The page can flip theme with the panel open (LinkedIn's own dark-mode
+  // switch restyles in place, no reload), and a card left on its mount-time
+  // ground is exactly as wrong as one that never followed the host at all.
+  let stopThemeWatch: (() => void) | null = observeHostTheme(applyTheme);
 
   if (typeof ResizeObserver !== 'undefined') {
     // The anchor moving is not the only way the panel drifts out of place:
@@ -433,6 +444,8 @@ export function mountPanel<Props extends Record<string, unknown>>(
       anchorResize = null;
       panelResize?.disconnect();
       panelResize = null;
+      stopThemeWatch?.();
+      stopThemeWatch = null;
       window.removeEventListener('scroll', reposition, true);
       window.removeEventListener('resize', reposition);
       document.removeEventListener('pointerdown', onPointerDown, true);

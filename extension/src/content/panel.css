@@ -109,6 +109,15 @@
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
+  /* The floating card's elevation, and the light theme's alone (LOR-211,
+   * D40). D16 could hold that elevation is the luminance step plus the
+   * hairline while the panel was dark on every page; a white card on
+   * LinkedIn's near-white feed has no step to stand on, and the hairline by
+   * itself leaves a popover looking like an inline block that lost its
+   * place. Two layers under 8% alpha from one light direction, never a
+   * single hard drop. `.pitchbox-panel.dark` sets this to `none`, where a
+   * shadow only muddies a boundary it cannot brighten. */
+  --panel-elevation: 0 1px 2px oklch(0 0 0 / 6%), 0 10px 28px oklch(0 0 0 / 7%);
 }
 
 /* The panel root, and the real isolation boundary.
@@ -129,10 +138,13 @@
  * `:host` still inherit through. Everything the panel needs is re-declared
  * after it, in the same rule, so the later declarations win.
  *
- * The class also carries `.dark` in the markup, which selects the dark token
- * values and makes Tailwind's `dark:` variant work for everything inside (a
- * shadow descendant cannot match `.dark *` when the `.dark` element is the
- * host, so the wrapper has to be inside). */
+ * The class carries `.dark` too, but only when the host page is dark
+ * (LOR-211: the card follows the ground it stands on, `shared/host-theme.ts`
+ * decides which that is). `.dark` selects the dark token values for
+ * everything inside; it has to sit on this wrapper rather than on the host
+ * element, since a shadow descendant cannot match `.dark *` across the
+ * boundary. So every rule below has to hold on both grounds: this file's
+ * light half is no longer dead code. */
 .pitchbox-panel {
   all: initial;
 
@@ -151,9 +163,12 @@
   box-sizing: border-box;
   background: var(--card);
   color: var(--card-foreground);
-  /* Flat and drawn: hairline and background tint, never a shadow. */
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  /* Elevation, which is a per-theme token rather than a value written here:
+   * see `--panel-elevation` in the `:host` block, and `.dark`'s own
+   * override below. */
+  box-shadow: var(--panel-elevation);
   font-family: var(--panel-font-stack);
   /* Middle density, one step down from the dashboard's airy default, because
    * the panel sits in a layout it does not own. See
@@ -198,6 +213,10 @@
   --li-accent-hover: oklch(0.8306 0.1 249.03);
   --li-accent-foreground: oklch(0.205 0 0);
   --li-accent-soft: oklch(0.7606 0.1213 249.03 / 16%);
+  /* See `--panel-elevation`'s own note: on a dark ground a shadow is
+   * invisible at best and a smear around the hairline at worst, so elevation
+   * here is the luminance step against the page plus the border. */
+  --panel-elevation: none;
 }
 
 /* The frame's chrome.
