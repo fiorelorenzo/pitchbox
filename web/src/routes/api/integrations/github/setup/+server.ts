@@ -28,7 +28,13 @@ import { decodeInstallState } from '$lib/server/github-install-state.js';
 // always lands the operator back on the page he started from with a result in
 // the query string, so a failure is something he can read rather than a
 // stack trace.
-const BACK = '/settings/companion';
+//
+// LOR-178/LOR-179: the GitHub repo list and this install panel moved from
+// settings/companion to companion/work (docs/design/DECISIONS.md D35), so
+// this constant moves with it rather than relying on the old route's
+// redirect - a stray extra hop is one more place a query-string result can
+// get lost.
+const BACK = '/companion/work';
 
 function back(result: string, detail?: string): never {
   const params = new URLSearchParams({ github: result });

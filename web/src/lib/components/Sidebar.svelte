@@ -13,6 +13,7 @@
 		Bell,
 		History,
 		BarChart3,
+		BrainCircuit,
 		LogOut,
 		type LucideIcon,
 	} from '@lucide/svelte';
@@ -38,59 +39,87 @@
 		label: string;
 		icon: LucideIcon;
 		exact?: boolean;
+		show?: boolean;
 	};
 
 	type NavGroup = {
 		// Group label, or null for the loose top/bottom items that sit
-		// outside the three labelled sections.
+		// outside the four labelled sections.
 		label: string | null;
 		items: NavItem[];
 	};
+
+	// Surfaced by web/src/routes/+layout.server.ts; defaults true so nothing
+	// hides before the loader has run, same convention `authOn` below uses.
+	const isAdmin = $derived(($page.data?.isAdmin ?? true) as boolean);
 
 	// Grouped per the UX review (#251): Home and Inbox stay loose above the
 	// groups as the daily pair, Notifications and Settings stay loose below.
 	// PEOPLE held Conversations + Contacts + Blocklist; #252 merged
 	// Conversations and Contacts into the single /people destination, so the
-	// group is now People + Blocklist. Nothing here assumes a fixed item
-	// count per group.
-	const navGroups: NavGroup[] = [
-		{
-			label: null,
-			items: [
-				{ href: '/', label: 'Home', icon: Home, exact: true },
-				{ href: '/inbox', label: 'Inbox', icon: Inbox },
-			],
-		},
-		{
-			label: 'Outreach',
-			items: [
-				{ href: '/projects', label: 'Projects', icon: FolderKanban },
-				{ href: '/campaigns', label: 'Campaigns', icon: PlayCircle },
-				{ href: '/playbooks', label: 'Playbooks', icon: BookOpen },
-			],
-		},
-		{
-			label: 'People',
-			items: [
-				{ href: '/people', label: 'People', icon: Users },
-				{ href: '/blocklist', label: 'Blocklist', icon: Shield },
-			],
-		},
-		{
-			label: 'Insight',
-			items: [
-				{ href: '/analytics', label: 'Analytics', icon: BarChart3 },
-				{ href: '/audit', label: 'Audit', icon: History },
-			],
-		},
-		{
-			label: null,
-			items: [
-				{ href: '/notifications', label: 'Notifications', icon: Bell },
-				{ href: '/settings', label: 'Settings', icon: Settings },
-			],
-		},
-	];
+	// group is now People + Blocklist. LOR-178/179 added a fourth labelled
+	// group, Assistant: the companion's own top-level route, split out of
+	// settings/companion into /companion, /companion/voice and
+	// /companion/work (each sub-route gates itself, see
+	// web/src/routes/companion/+page.server.ts), deliberately its own group
+	// rather than folded into Insight (it is not a report) or People (it is
+	// not a contact) - the assist plane is expected to grow more surfaces
+	// next to it. Hidden from a member the same way the settings rail hid
+	// the same route (docs/permissions.md "## UI"): the loader throws
+	// requireRole('admin'), so a visible link would only ever 403. Nothing
+	// here assumes a fixed item count per group; a group left with no items
+	// after the `show` filter below is dropped rather than rendering an
+	// empty label.
+	const navGroups = $derived(
+		(
+			[
+				{
+					label: null,
+					items: [
+						{ href: '/', label: 'Home', icon: Home, exact: true },
+						{ href: '/inbox', label: 'Inbox', icon: Inbox },
+					],
+				},
+				{
+					label: 'Outreach',
+					items: [
+						{ href: '/projects', label: 'Projects', icon: FolderKanban },
+						{ href: '/campaigns', label: 'Campaigns', icon: PlayCircle },
+						{ href: '/playbooks', label: 'Playbooks', icon: BookOpen },
+					],
+				},
+				{
+					label: 'People',
+					items: [
+						{ href: '/people', label: 'People', icon: Users },
+						{ href: '/blocklist', label: 'Blocklist', icon: Shield },
+					],
+				},
+				{
+					label: 'Insight',
+					items: [
+						{ href: '/analytics', label: 'Analytics', icon: BarChart3 },
+						{ href: '/audit', label: 'Audit', icon: History },
+					],
+				},
+				{
+					label: 'Assistant',
+					items: [
+						{ href: '/companion', label: 'Companion', icon: BrainCircuit, show: isAdmin },
+					],
+				},
+				{
+					label: null,
+					items: [
+						{ href: '/notifications', label: 'Notifications', icon: Bell },
+						{ href: '/settings', label: 'Settings', icon: Settings },
+					],
+				},
+			] as NavGroup[]
+		)
+			.map((group) => ({ ...group, items: group.items.filter((item) => item.show ?? true) }))
+			.filter((group) => group.items.length > 0),
+	);
 
 	let unread = $state(0);
 	// Set once a poll fails and cleared on the next success, so the badge can

@@ -14,22 +14,23 @@
     Archive,
     ShieldCheck,
     Sparkles,
-    BrainCircuit,
     ShieldCog,
   } from '@lucide/svelte';
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
-  // Flat rail of twelve (#254 shipped seven; LI-19/#316 added LinkedIn assist;
-  // 2026-09-07's companion decisions added Companion; #506 added Password;
+  // Flat rail of eleven (#254 shipped seven; LI-19/#316 added LinkedIn assist;
+  // 2026-09-07's companion decisions added Companion, moved to its own
+  // top-level /companion sidebar group by LOR-178/179 (see
+  // web/src/lib/components/Sidebar.svelte); #506 added Password;
   // #516 added Onboarding; #555 added Billing). General/Browser extension
   // never 403 - their loaders gate their own data set (member sees an
   // "Admin access required" card instead of a thrown error) - so they're
   // always shown. Password and Onboarding are self-service (gated on being
   // signed in / having an org context at all, not an org role -
   // docs/permissions.md) rather than admin-only. Organization needs an org
-  // context (auth on); Retention, Security, LinkedIn assist, Companion and
-  // Billing loaders call requireRole(event, 'admin') and do throw, so those
+  // context (auth on); Retention, Security and LinkedIn assist loaders call
+  // requireRole(event, 'admin') and do throw, so those
   // stay role-filtered here too. Billing additionally needs `data.isCloud`:
   // self-host has no plan concept at all (shared/src/plans.ts's
   // resolveEntitlements is unlimited there before it ever looks at a
@@ -62,12 +63,6 @@
         href: '/settings/linkedin-assist',
         label: 'LinkedIn assist',
         icon: Sparkles,
-        show: data.isAdmin,
-      },
-      {
-        href: '/settings/companion',
-        label: 'Companion',
-        icon: BrainCircuit,
         show: data.isAdmin,
       },
       { href: '/settings/organization', label: 'Organization', icon: Building2, show: data.authOn },

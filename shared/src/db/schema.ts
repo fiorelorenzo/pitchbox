@@ -1294,12 +1294,12 @@ export const operatorVoiceProfiles = pgTable(
 // Public by URL and no credential (Lorenzo's call, 2026-09-07): the reader
 // calls GitHub's anonymous API, caches what it read, and a private repository
 // is out of scope until the optional GitHub App lands. `fetch_error` is kept
-// so a repo that stopped resolving says so in Settings instead of quietly
-// contributing nothing to every prompt.
+// so a repo that stopped resolving says so on the companion's Work page
+// instead of quietly contributing nothing to every prompt.
 //
 // Organization-wide only (#431): this table used to carry an optional
 // `project_id`, but nothing ever set it - every real caller
-// (`/settings/companion`, `assist/context.ts`) reads across the whole org,
+// (`/companion/work`, `assist/context.ts`) reads across the whole org,
 // never one project. A repo a project itself cites as a source is a
 // `project_sources` row of kind 'github' instead (see below), so there is
 // exactly one place that answers "what are this project's sources".

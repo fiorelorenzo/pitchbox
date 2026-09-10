@@ -86,6 +86,20 @@ async function resultOf(promise: Promise<unknown>): Promise<string> {
   throw new Error('expected a redirect');
 }
 
+/** Same idea as `resultOf`, but keeps the full redirect target rather than
+ * just the `github=` result - for asserting exactly which page the BACK
+ * constant in the route under test sends the operator back to. */
+async function locationOf(promise: Promise<unknown>): Promise<URL> {
+  try {
+    await promise;
+  } catch (thrown) {
+    const location = (thrown as { location?: string }).location;
+    if (!location) throw thrown;
+    return new URL(location, 'http://x');
+  }
+  throw new Error('expected a redirect');
+}
+
 describe('install state', () => {
   beforeEach(() => setEnv({ ENCRYPTION_KEY: 'a'.repeat(64) }));
 
@@ -188,6 +202,17 @@ describe('the setup callback', () => {
     expect(result).toBe('installed');
     const rows = await listInstallations(getDb(), orgA);
     expect(rows).toMatchObject([{ accountLogin: 'fiorelorenzo', installationId: 160289335 }]);
+  });
+
+  it('redirects back to companion/work, not the retired settings route (LOR-178/LOR-179)', async () => {
+    restoreFetch = stubGithub(() => installationJson('fiorelorenzo'));
+    const state = encodeInstallState(orgA, 1);
+    const location = await locationOf(
+      setupGET(
+        setupEvent(orgA, 'admin', { installation_id: '160289335', setup_action: 'install', state }),
+      ),
+    );
+    expect(location.pathname).toBe('/companion/work');
   });
 
   it('refuses an installation id GitHub will not confirm, and writes nothing', async () => {

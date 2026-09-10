@@ -122,7 +122,8 @@ Constraints  Round one's, plus: the panel is now in document.body, so its z-inde
              LinkedIn's sticky chrome and its dismissal has to work for a floating surface
              (Escape, outside pointer-down). Reasoning must never render inside an insertable
              control. Nothing captured about the operator may reach a prompt without being
-             visible and editable in /settings/companion.
+             visible and editable in /companion (moved from /settings/companion by
+             LOR-178/LOR-179, docs/design/DECISIONS.md D35).
 
 Non-goals    Still not a second inbox, still never unprompted, still no DMs or reactions.
              Does not read a profile that is not the operator's own. Does not reach a private

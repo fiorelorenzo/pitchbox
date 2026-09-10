@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { load as settingsIndexLoad } from '../src/routes/settings/+page.server.js';
 import { load as settingsStatusLoad } from '../src/routes/settings/status/+page.server.js';
+import { load as settingsCompanionLoad } from '../src/routes/settings/companion/+page.server.js';
 
 const settingsIndexLoadFn = settingsIndexLoad as () => Promise<unknown>;
 const settingsStatusLoadFn = settingsStatusLoad as () => Promise<unknown>;
+const settingsCompanionLoadFn = settingsCompanionLoad as () => Promise<unknown>;
 
 /**
  * #186: the settings landing page was called Status - wrong ever since #254
@@ -13,6 +15,10 @@ const settingsStatusLoadFn = settingsStatusLoad as () => Promise<unknown>;
  * stays as a redirect rather than 404ing. Both `/settings` (the bare landing
  * redirect) and `/settings/status` (the old route name) must still resolve
  * to the same page, `settings/general`.
+ *
+ * LOR-178/LOR-179 (docs/design/DECISIONS.md D35): `settings/companion`
+ * moved to its own top-level route, `/companion`, split into three pages.
+ * Same reasoning, same pattern - it stays a redirect rather than 404ing.
  */
 
 /** A thrown SvelteKit redirect, narrowed enough to assert on. */
@@ -39,5 +45,14 @@ describe('settings/status/+page.server.ts load: the old route name still redirec
     const redirect = redirectOf(err);
     expect(redirect.status).toBe(307);
     expect(redirect.location).toBe('/settings/general');
+  });
+});
+
+describe('settings/companion/+page.server.ts load: the retired settings route still redirects', () => {
+  it('307s to /companion', async () => {
+    const err = await settingsCompanionLoadFn().catch((e) => e);
+    const redirect = redirectOf(err);
+    expect(redirect.status).toBe(307);
+    expect(redirect.location).toBe('/companion');
   });
 });
