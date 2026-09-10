@@ -19,16 +19,12 @@
 	} from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { dev } from '$app/environment';
 	import { cn } from '$lib/utils';
 	import { toast } from 'svelte-sonner';
 	import SystemStatusCard from '$lib/components/SystemStatusCard.svelte';
 	import OrgSwitcher from '$lib/components/OrgSwitcher.svelte';
 	import { resolveTone, PULSE_DOT_CLASS } from '$lib/config/status-badges';
-
-	// VitePress dev server runs on :5181 with base /pitchbox/. In production
-	// the published Pages site is the source of truth.
-	const DOCS_URL = dev ? 'http://localhost:5181/pitchbox/' : 'https://fiorelorenzo.github.io/pitchbox/';
+	import { DOCS_URL } from '$lib/config/docs';
 
 	// The marketing site (#429): the app moved off the apex to app.pitchbox.app
 	// (#422/#424), so nothing here pointed back at it until now.
