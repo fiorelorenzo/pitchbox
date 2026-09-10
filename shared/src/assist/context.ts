@@ -27,12 +27,24 @@
 //     hand in Settings;
 //   - voice profile: derived from the persona's own voice samples plus
 //     messages, drafts and templates already on file - no new capture;
-//   - projects: this organization's own rows;
+//   - projects: this organization's own rows, each with the latest
+//     `project_insights.summary_md` on file for it (LOR-181, 2026-09-10) -
+//     the cheapest real upgrade over a bare name and description, and the
+//     material the model needs to pick which project (if any) a suggestion
+//     is actually about;
 //   - repositories: GitHub's public API, read server-side and cached in
 //     `github_sources`. No credential, by decision - a private repo waits for
 //     the optional GitHub App.
+//
+// 2026-09-10 (LOR-181): `loadCompanionContext` stopped taking a
+// `currentProjectId` and `ProjectBrief` stopped carrying `isCurrent`. Which
+// project a suggestion is about is no longer known before this call runs -
+// the model decides it, inside the same turn, from the post and this exact
+// project list (`suggest-prompt.ts`, `assist/envelope.ts`'s `PROJECT_MARKER`).
+// Every project in the org is loaded on equal footing; none is marked ahead
+// of time.
 
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { schema, type Db } from '../db/client.js';
 import { loadVoiceProfile } from '../operator-voice-profile.js';
 
@@ -65,8 +77,12 @@ export type ProjectBrief = {
   id: number;
   name: string;
   description?: string | null;
-  /** True for the project this suggestion is being written under. */
-  isCurrent: boolean;
+  /** The most recent `project_insights.summary_md` on file for this project
+   * (LOR-181), or null when the project-insighter playbook has never run
+   * for it. The cheapest real signal the model has for judging whether a
+   * post is actually about this project, beyond its own name/description -
+   * see `suggest-prompt.ts`'s project listing for how it is rendered. */
+  insightSummary?: string | null;
 };
 
 export type CodeRepo = {
@@ -129,16 +145,15 @@ function asCommits(value: unknown): Array<{ message: string; committedAt?: strin
 /**
  * Loads everything the companion is allowed to know for one organization.
  *
- * `currentProjectId` only marks which project the suggestion is being written
- * under - every project in the organization is loaded either way, because the
- * point is that the assistant can talk about the operator's other work when
- * that is the honest thing to say. Null (#523: a suggestion may name no
- * project at all) simply means no project marks as current. Nothing crosses
- * an organization boundary.
+ * Every project in the organization is loaded, each with its own latest
+ * insight - the point is that the assistant can talk about the operator's
+ * other work when that is the honest thing to say, and can judge which one
+ * (if any) a suggestion is actually about (LOR-181). Nothing crosses an
+ * organization boundary.
  */
 export async function loadCompanionContext(
   db: Db,
-  args: { organizationId: number; currentProjectId: number | null },
+  args: { organizationId: number },
 ): Promise<CompanionContext> {
   const [profileRow] = await db
     .select()
@@ -153,6 +168,35 @@ export async function loadCompanionContext(
     .from(schema.projects)
     .where(eq(schema.projects.organizationId, args.organizationId))
     .orderBy(asc(schema.projects.id));
+
+  // Latest `project_insights` row per project, LOR-181: `projectInsights`
+  // carries no organization id of its own, so scoping through the project
+  // ids just loaded is what keeps this from reaching across a tenant
+  // boundary. Ordered by generatedAt desc and reduced in JS to "first seen
+  // per project id" rather than a DISTINCT ON - simpler, and an org's own
+  // project count is small enough that this never has to be its own query
+  // per project either.
+  const latestInsightByProject = new Map<number, string>();
+  if (projectRows.length > 0) {
+    const insightRows = await db
+      .select({
+        projectId: schema.projectInsights.projectId,
+        summaryMd: schema.projectInsights.summaryMd,
+      })
+      .from(schema.projectInsights)
+      .where(
+        inArray(
+          schema.projectInsights.projectId,
+          projectRows.map((p) => p.id),
+        ),
+      )
+      .orderBy(desc(schema.projectInsights.generatedAt));
+    for (const row of insightRows) {
+      if (!latestInsightByProject.has(row.projectId)) {
+        latestInsightByProject.set(row.projectId, row.summaryMd);
+      }
+    }
+  }
 
   const repoRows = await db
     .select()
@@ -188,7 +232,7 @@ export async function loadCompanionContext(
       id: p.id,
       name: p.name,
       description: p.description,
-      isCurrent: p.id === args.currentProjectId,
+      insightSummary: latestInsightByProject.get(p.id) ?? null,
     })),
     // A repo that failed to fetch has no text to contribute, so it is left out
     // of the prompt rather than carried as an empty entry. Settings is where

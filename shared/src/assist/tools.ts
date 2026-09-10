@@ -10,12 +10,16 @@
 // and refuse.
 //
 // Every tool takes its authority from `AssistToolContext`, never from a
-// model-supplied argument: the org id, the bound project id, the observed
-// target and the operator persona are all resolved server-side before the
-// loop ever starts. `project_knowledge`'s `projectId` is the one exception,
-// and it is validated against the binding rather than trusted (see its
-// handler below) - an org id or a project id accepted from the model would
-// be a cross-tenant hole one hallucination wide.
+// model-supplied argument: the org id, the observed target and the operator
+// persona are all resolved server-side before the loop ever starts.
+// `project_knowledge`'s `projectId` is the one argument a tool trusts from
+// the model, and it is validated against the caller's own organization
+// rather than trusted outright (see its handler below) - an org id accepted
+// from the model would be a cross-tenant hole one hallucination wide. Since
+// LOR-181 (2026-09-10) there is no longer a single project "the suggestion
+// is filed under" to also check it against: the model is free to look up
+// any of the organization's own projects while it is still deciding which
+// one (if any) this suggestion is about.
 //
 // A tool that has nothing to say returns `{ ok: false, reason }` - an
 // explicit nothing, never `{ ok: true, data: <empty> }` - because "no prior
@@ -88,9 +92,6 @@ export interface AssistToolContext {
   /** The organization this suggestion belongs to. Every query below filters
    * on this - never on anything a tool argument could name. */
   orgId: number;
-  /** The project this suggestion is filed under, or null when none is bound
-   * (#523: a project is optional context, never a requirement). */
-  boundProjectId: number | null;
   /** Null when nothing was captured for this device (a fresh binding, nothing
    * scrolled since the collector was last on) - every tool that reads it
    * refuses explicitly rather than fabricating a post. */
@@ -491,9 +492,15 @@ const authorHistory: AssistTool<Record<string, never>, AuthorHistoryResult> = {
     }
 
     const [blocklistResult, contactRows, draftRows, acceptedRows, messageRows] = await Promise.all([
+      // No project id: nothing is bound before the model decides one, so
+      // this only ever sees the organization's global blocklist entries -
+      // a project-scoped block only takes effect once the accept path
+      // resolves a real project for this suggestion (`assist-accept.ts`),
+      // the same enforce-where-the-effect-happens posture the rest of the
+      // plane follows.
       isBlocklisted(ctx.db, {
         platformId,
-        projectId: ctx.boundProjectId,
+        projectId: null,
         targetUser: authorHandle,
       }),
       ctx.db
@@ -742,19 +749,9 @@ export interface ProjectKnowledgeResult {
 const projectKnowledge: AssistTool<{ projectId: number }, ProjectKnowledgeResult> = {
   name: 'project_knowledge',
   description:
-    "The named project's brief, the organization's public repos and their recent commits, and that project's insights. Only usable for the project this suggestion is filed under - fetch this when the post is actually about that product, skip it otherwise.",
+    "One of the organization's projects, by id - its brief, the organization's public repos and their recent commits, and that project's own insights. Fetch this for a project listed above when its brief alone is not enough to tell whether the post is actually about it, or once you have decided it is and want more to draft from. The id is checked against this organization only, never trusted otherwise.",
   schema: { projectId: z.number().int().positive() },
   async handler(ctx, args) {
-    if (ctx.boundProjectId == null) {
-      return { ok: false, reason: 'no project is bound to this suggestion' };
-    }
-    if (args.projectId !== ctx.boundProjectId) {
-      return {
-        ok: false,
-        reason: `project ${args.projectId} is not the project this suggestion is filed under`,
-      };
-    }
-
     const [projectRow] = await ctx.db
       .select({
         id: schema.projects.id,

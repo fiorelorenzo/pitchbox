@@ -16,7 +16,6 @@ import { resolveEntitlements } from '@pitchbox/shared/plans';
 import {
   buildSuggestionPrompt,
   buildRetunePrompt,
-  type CurrentProject,
   type ObservedPost,
   type RetuneDirection,
   type SuggestionKind,
@@ -82,6 +81,13 @@ export interface SuggestionResult {
   styleFindings?: StyleFinding[];
   /** True when the model explicitly declined to write a draft. */
   skipped: boolean;
+  /** The project this suggestion resolved to (LOR-181), or null when it is
+   * filed under none - either the model's own explicit `personal`, or a
+   * fallback: no claim stated, or a claim that named an id outside this
+   * organization's own projects. The caller (`resolveSuggestionProject`)
+   * is what tells those apart for logging; this field only carries the
+   * outcome, already validated against the organization. */
+  projectId: number | null;
   ms: number;
   /** The model this suggestion actually asked for - resolveAssistRunnerConfig's
    * result, so an unpinned runner reports ASSIST_DEFAULT_MODEL rather than
@@ -163,6 +169,38 @@ export function resolveAssistRunnerConfig(
 }
 
 /**
+ * Resolves the model's own raw project claim (`envelope.projectChoice`,
+ * `shared/src/assist/envelope.ts`) against the organization's real projects
+ * (LOR-181). The server decides what it accepts, never the model: an id the
+ * model names that is not one of `projects` falls back to `personal` exactly
+ * as a missing or unparseable claim does - `source` is what lets the caller
+ * tell those apart to log the one case worth explaining (`invalid`, where
+ * the model asked for something real that just was not this organization's).
+ *
+ * Pure and synchronous on purpose, mirroring `envelope.ts`'s own posture:
+ * this is a lookup against the exact list the prompt already sent, not a
+ * second database round trip, and it is testable without one either.
+ */
+export type SuggestionProjectResolution =
+  | { projectId: number; source: 'chosen' }
+  | { projectId: null; source: 'personal' }
+  | { projectId: null; source: 'unstated' }
+  | { projectId: null; source: 'invalid'; rawChoice: string };
+
+export function resolveSuggestionProject(
+  rawChoice: string | null,
+  projects: ProjectBrief[],
+): SuggestionProjectResolution {
+  if (rawChoice == null) return { projectId: null, source: 'unstated' };
+  if (rawChoice === 'personal') return { projectId: null, source: 'personal' };
+  const id = Number(rawChoice);
+  if (Number.isInteger(id) && id > 0 && projects.some((p) => p.id === id)) {
+    return { projectId: id, source: 'chosen' };
+  }
+  return { projectId: null, source: 'invalid', rawChoice };
+}
+
+/**
  * The single targeted-rewrite round trip #572 asks for: one more turn on the
  * same runner that wrote the draft, naming the remaining structural
  * findings once, no streaming and no MCP tools attached - the same shape as
@@ -216,9 +254,11 @@ async function runStyleRewrite(
 export function runSuggestion(args: {
   kind: SuggestionKind;
   post: ObservedPost;
-  currentProject: CurrentProject | null;
   persona: OperatorPersona | null;
   voiceProfile: VoiceProfileSummary | null;
+  /** Every project in the organization - LOR-181: also what the model's own
+   * `projectChoice` (`assist/envelope.ts`) is validated against once the
+   * turn finishes. `SuggestionResult.projectId` is the outcome. */
   projects: ProjectBrief[];
   repos: CodeRepo[];
   examples?: ExampleCandidate[];
@@ -237,7 +277,6 @@ export function runSuggestion(args: {
    */
   tone?: AssistTone;
   toneNotes?: string;
-  projectId: number | null;
   orgId?: number;
   runnerSlug: string;
   /** One callback per model chunk, already split into its reasoning/draft
@@ -248,7 +287,7 @@ export function runSuggestion(args: {
    * still live, this call continues that turn's own gathered context
    * instead of rebuilding the whole prompt (`buildRetunePrompt` rather than
    * `buildSuggestionPrompt`). Absent, expired, or scoped to a different
-   * org/project/kind falls back to today's full rebuild. */
+   * org/kind falls back to today's full rebuild. */
   continueSessionId?: string;
   /** #573: fires with the tool name(s) the loop is running, as soon as they
    * are known. Undefined for the ACP path, which has no equivalent hook. */
@@ -354,7 +393,6 @@ export function runSuggestion(args: {
         ? buildAssistToolSet(ASSIST_TOOLS, {
             db,
             orgId: toolOrgId,
-            boundProjectId: args.projectId,
             observedTarget: args.post,
             operator: args.persona,
           })
@@ -363,15 +401,11 @@ export function runSuggestion(args: {
     // #576: reading a session also consumes it - a retune uses its prior
     // context at most once, so a second concurrent request against the same
     // id falls back to a full rebuild rather than racing this one for it.
-    // Scoped to this org/project/kind: a foreign or mismatched id is treated
-    // exactly like an expired one, never trusted.
+    // Scoped to this org/kind: a foreign or mismatched id is treated exactly
+    // like an expired one, never trusted.
     const continuedSession =
       args.continueSessionId && toolSet
-        ? getAssistSession(args.continueSessionId, {
-            orgId: toolOrgId,
-            projectId: args.projectId,
-            kind: args.kind,
-          })
+        ? getAssistSession(args.continueSessionId, { orgId: toolOrgId, kind: args.kind })
         : null;
     if (continuedSession && args.continueSessionId) deleteAssistSession(args.continueSessionId);
     const priorMessages = continuedSession ?? undefined;
@@ -384,7 +418,6 @@ export function runSuggestion(args: {
       : buildSuggestionPrompt({
           kind: args.kind,
           post: args.post,
-          currentProject: args.currentProject,
           persona: args.persona,
           voiceProfile: args.voiceProfile,
           projects: args.projects,
@@ -473,6 +506,20 @@ export function runSuggestion(args: {
       }
       const envelope = splitter.finish();
 
+      // LOR-181: the server decides what it accepts, never the model - see
+      // `resolveSuggestionProject`'s own doc comment. `invalid` is the one
+      // outcome worth a log line: a model that named a real id outside this
+      // organization is a wrong pick that would otherwise be unexplainable
+      // once it only shows up as `projectId: null` on the ledger.
+      const projectResolution = resolveSuggestionProject(envelope.projectChoice, args.projects);
+      if (projectResolution.source === 'invalid') {
+        console.warn(
+          `[assist/suggest] model claimed project "${projectResolution.rawChoice}", which is not ` +
+            `one of this organization's own project ids (${args.projects.map((p) => p.id).join(', ') || 'none'}) - filing under personal instead.`,
+        );
+      }
+      const projectId = projectResolution.projectId;
+
       // #572: everything the human may insert is held to the same
       // deterministic house-style check a campaign draft is. Only `draft`
       // goes through it - `reasoning` is operator-facing and never posted,
@@ -507,14 +554,11 @@ export function runSuggestion(args: {
       // something to persist.
       let sessionId: string | undefined;
       if (toolSet && run.responseMessages && run.responseMessages.length > 0) {
-        sessionId = createAssistSession(
-          { orgId: toolOrgId, projectId: args.projectId, kind: args.kind },
-          [
-            ...(priorMessages ?? []),
-            { role: 'user', content: prompt },
-            ...(run.responseMessages as ModelMessage[]),
-          ],
-        );
+        sessionId = createAssistSession({ orgId: toolOrgId, kind: args.kind }, [
+          ...(priorMessages ?? []),
+          { role: 'user', content: prompt },
+          ...(run.responseMessages as ModelMessage[]),
+        ]);
       }
 
       return {
@@ -522,6 +566,7 @@ export function runSuggestion(args: {
         draft,
         styleFindings: styleFindings.length > 0 ? styleFindings : undefined,
         skipped: envelope.skipped,
+        projectId,
         ms: Date.now() - started,
         model: resolvedConfig.model,
         usage: run.usage

@@ -258,7 +258,7 @@ describe('ingestObservedTargets', () => {
   });
 });
 
-describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds in)', () => {
+describe('loadRecentObservedTarget (#315, LOR-181: what a kind: "post" suggestion grounds in)', () => {
   let linkedinId: number;
   let orgAId: number;
   let orgBId: number;
@@ -276,10 +276,9 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
     projectBId = await makeProject(orgBId, 'recent-obs-proj-b');
   });
 
-  it('returns null for a project the collector has never seen anything for', async () => {
+  it('returns null for an organization the collector has never seen anything for', async () => {
     const result = await loadRecentObservedTarget(getDb(), {
       organizationId: orgAId,
-      projectId: projectAId,
       platformId: linkedinId,
     });
     expect(result).toBeNull();
@@ -308,7 +307,6 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
 
     const result = await loadRecentObservedTarget(db, {
       organizationId: orgAId,
-      projectId: projectAId,
       platformId: linkedinId,
     });
     expect(result?.text).toBe('the newest sighting');
@@ -337,28 +335,31 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
 
     const result = await loadRecentObservedTarget(db, {
       organizationId: orgAId,
-      projectId: projectAId,
       platformId: linkedinId,
     });
     expect(result?.text).toBe('readable content');
   });
 
-  it('never crosses a project boundary within the same org', async () => {
+  // LOR-181 retires the old project-isolation test here: a `post`
+  // suggestion is no longer grounded through a bound project, so which
+  // project the collector happened to attribute a sighting to (still a
+  // real, required column - #304's candidate drain still needs it) must no
+  // longer keep it from grounding a suggestion for the rest of the org.
+  it('reads across every project in the organization, not just one', async () => {
     const db = getDb();
     const otherProjectId = await makeProject(orgAId, 'recent-obs-proj-a2');
     await ingestObservedTargets(db, {
       organizationId: orgAId,
       projectId: otherProjectId,
       platformId: linkedinId,
-      observations: [observation({ text: 'seen for the other project only' })],
+      observations: [observation({ text: 'seen while attributed to a different project' })],
     });
 
     const result = await loadRecentObservedTarget(db, {
       organizationId: orgAId,
-      projectId: projectAId,
       platformId: linkedinId,
     });
-    expect(result).toBeNull();
+    expect(result?.text).toBe('seen while attributed to a different project');
   });
 
   it('never crosses an organization boundary', async () => {
@@ -372,29 +373,6 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
 
     const result = await loadRecentObservedTarget(db, {
       organizationId: orgAId,
-      projectId: projectAId,
-      platformId: linkedinId,
-    });
-    expect(result).toBeNull();
-  });
-
-  it('refuses a mismatched organization and project pair rather than trusting the project id', async () => {
-    const db = getDb();
-    await ingestObservedTargets(db, {
-      organizationId: orgAId,
-      projectId: projectAId,
-      platformId: linkedinId,
-      observations: [observation({ text: 'org A saw this' })],
-    });
-
-    // A project belongs to exactly one organization, so this pair cannot
-    // arise from real data: it can only arise from a caller that resolved
-    // one of the two from somewhere else. The row carries `organization_id`
-    // directly (#263) so the query can refuse rather than be reasoned about,
-    // and this is the assertion that keeps that filter honest.
-    const result = await loadRecentObservedTarget(db, {
-      organizationId: orgBId,
-      projectId: projectAId,
       platformId: linkedinId,
     });
     expect(result).toBeNull();
@@ -419,7 +397,6 @@ describe('loadRecentObservedTarget (#315: what a kind: "post" suggestion grounds
 
     const result = await loadRecentObservedTarget(db, {
       organizationId: orgAId,
-      projectId: projectAId,
       platformId: linkedinId,
     });
     expect(result?.text).toBe('already drained into a scout run');

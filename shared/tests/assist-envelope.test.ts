@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DRAFT_MARKER,
+  PROJECT_MARKER,
   SKIP_MARKER,
   EnvelopeSplitter,
   envelopeInstruction,
@@ -55,6 +56,52 @@ describe('splitSuggestion', () => {
   it('strips a marker that leaked into the draft body', () => {
     const env = splitSuggestion(`r\n${DRAFT_MARKER}\nkeep this ${SKIP_MARKER} and this`);
     expect(env.draft).toBe('keep this  and this');
+  });
+});
+
+// LOR-181: the model states which project (or `personal`) a suggestion is
+// about as the very first thing in its reply, ahead of the reasoning - see
+// the module header for why. `projectChoice` here is always the model's raw,
+// unvalidated claim; resolving it against real projects is
+// `web/src/lib/server/suggest.ts`'s job, not this module's.
+describe('splitSuggestion: project choice', () => {
+  it('reads a project id off the marker', () => {
+    const env = splitSuggestion(
+      `${PROJECT_MARKER}\n42\nThis is clearly about that product.\n${DRAFT_MARKER}\nHere is the draft.`,
+    );
+    expect(env.projectChoice).toBe('42');
+    expect(env.reasoning).toBe('This is clearly about that product.');
+    expect(env.draft).toBe('Here is the draft.');
+  });
+
+  it('reads the literal personal', () => {
+    const env = splitSuggestion(`${PROJECT_MARKER}\npersonal\nJust me, no product.`);
+    expect(env.projectChoice).toBe('personal');
+  });
+
+  it('is null when the model never states one', () => {
+    const env = splitSuggestion('No marker at all here, just an answer.');
+    expect(env.projectChoice).toBeNull();
+  });
+
+  it('is null when the marker is there but the value line is empty', () => {
+    const env = splitSuggestion(`${PROJECT_MARKER}\n\nreasoning follows`);
+    expect(env.projectChoice).toBeNull();
+    // The blank value line must not leak into what the human-facing reasoning shows.
+    expect(env.reasoning).toBe('reasoning follows');
+  });
+
+  it('is null when the value is absurdly long, and never blocks the rest of the response', () => {
+    const overlong = '1'.repeat(200);
+    const env = splitSuggestion(`${PROJECT_MARKER}\n${overlong}\nreasoning\n${DRAFT_MARKER}\ndraft`);
+    expect(env.projectChoice).toBeNull();
+    expect(env.draft).toBe('draft');
+  });
+
+  it('only recognises the marker at the very start - not mid-reasoning', () => {
+    const env = splitSuggestion(`I noticed this first. ${PROJECT_MARKER}\n7\nmore text`);
+    expect(env.projectChoice).toBeNull();
+    expect(env.reasoning).toContain(PROJECT_MARKER);
   });
 });
 
@@ -122,12 +169,40 @@ describe('EnvelopeSplitter', () => {
     expect(out.draft).toBe('');
     expect(s.finish().draft).toBeNull();
   });
+
+  it('reads a streamed project id and never streams the marker as reasoning', () => {
+    const r = stream([`${PROJECT_MARKER}\n`, '9', '\nreasoning here\n', DRAFT_MARKER, '\ndraft']);
+    expect(r.env.projectChoice).toBe('9');
+    expect(r.env.reasoning).toBe('reasoning here');
+    expect(r.streamedReasoning).not.toContain('PITCHBOX-PROJECT');
+    expect(r.streamedReasoning).not.toContain('9');
+  });
+
+  it('survives the project marker arriving one character at a time', () => {
+    const text = `${PROJECT_MARKER}\n3\nwhy\n${DRAFT_MARKER}\nbody`;
+    const r = stream(text.split(''));
+    expect(r.env.projectChoice).toBe('3');
+    expect(r.env.reasoning).toBe('why');
+    expect(r.env.draft).toBe('body');
+  });
+
+  it('resolves to no project without holding back reasoning past the ordinary marker-length lag', () => {
+    const r = stream(['nothing to add here', ', it is a repost']);
+    expect(r.env.projectChoice).toBeNull();
+    expect(r.env.reasoning).toBe('nothing to add here, it is a repost');
+    // Only the ordinary DRAFT/SKIP-marker holdback delays anything here - the
+    // project phase itself resolves "no marker" on the very first push, since
+    // this text diverges from PROJECT_MARKER at its first character.
+    expect(r.streamedReasoning.length).toBeGreaterThan(0);
+  });
 });
 
 describe('envelopeInstruction', () => {
-  it('names both markers, so prompt and parser cannot drift', () => {
+  it('names every marker, so prompt and parser cannot drift', () => {
     const text = envelopeInstruction();
+    expect(text).toContain(PROJECT_MARKER);
     expect(text).toContain(DRAFT_MARKER);
     expect(text).toContain(SKIP_MARKER);
   });
 });
+
