@@ -179,7 +179,6 @@ describe('per-project voice (#408)', () => {
     const db = getDb();
     const context = await loadCompanionContext(db, {
       organizationId: project.organizationId,
-      currentProjectId: project.id,
     });
     const examples = (
       await loadActiveTemplates(db, { projectId: project.id, kind: 'comment' })
@@ -187,7 +186,6 @@ describe('per-project voice (#408)', () => {
     const expected = buildSuggestionPrompt({
       kind: 'post_comment',
       post: POST_BODY.post,
-      currentProject: { name: project.name, description: project.description },
       persona: context.persona,
       // #407: the prompt carries the derived profile instead of the raw
       // sample list, and this test only cares about the tone half.

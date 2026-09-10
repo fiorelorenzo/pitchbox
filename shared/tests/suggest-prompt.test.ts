@@ -7,7 +7,6 @@ import {
   README_EXCERPT_MAX,
   RETUNE_DIRECTIONS,
   VOICE_PROFILE_MAX,
-  type CurrentProject,
 } from '../src/assist/suggest-prompt.js';
 import { HOUSE_STYLE_SECTION } from '../src/house-style.js';
 import { DRAFT_MARKER, SKIP_MARKER } from '../src/assist/envelope.js';
@@ -32,12 +31,15 @@ import type {
 // `persona` to a derived `voiceProfile` passed alongside it. The persona
 // fixture below carries no voice samples any more - `assist-voice-profile`
 // tests own deriving one, this file only owns rendering it into the prompt.
+//
+// 2026-09-10 (LOR-181): `buildSuggestionPrompt` dropped `currentProject` -
+// which project (if any) a suggestion is about is no longer known ahead of
+// the call, it is the model's own choice, stated per `envelope.ts`'s
+// `PROJECT_MARKER`. `ProjectBrief` dropped `isCurrent` along with it: every
+// project in `projects` is listed on equal footing, none marked as "the
+// one" or ranked ahead of the cut.
 
 const post = { text: 'We cut p99 in half by dropping a cache.', authorName: 'Giulia Bianchi' };
-const currentProject: CurrentProject = {
-  name: 'Embertold',
-  description: 'A world wiki for tabletop GMs.',
-};
 const noContext = { persona: null, voiceProfile: null, projects: [], repos: [] };
 
 const persona: OperatorPersona = {
@@ -67,13 +69,12 @@ const projects: ProjectBrief[] = [
     id: 1,
     name: 'Embertold',
     description: 'A world wiki for tabletop GMs.',
-    isCurrent: true,
+    insightSummary: 'Comments mentioning search speed get replies; pricing posts do not.',
   },
   {
     id: 2,
     name: 'Runecast',
     description: 'Dice roller for remote tables.',
-    isCurrent: false,
   },
 ];
 
@@ -97,7 +98,6 @@ describe('buildSuggestionPrompt', () => {
     const prompt = buildSuggestionPrompt({
       kind: 'post_comment',
       post,
-      currentProject,
       ...noContext,
     });
     expect(prompt).toContain(HOUSE_STYLE_SECTION);
@@ -107,7 +107,6 @@ describe('buildSuggestionPrompt', () => {
     const prompt = buildSuggestionPrompt({
       kind: 'post_comment',
       post,
-      currentProject,
       ...noContext,
     });
     expect(prompt).toContain(DRAFT_MARKER);
@@ -124,25 +123,34 @@ describe('buildSuggestionPrompt', () => {
     const prompt = buildSuggestionPrompt({
       kind: 'post_comment',
       post,
-      currentProject,
       ...noContext,
     });
     expect(prompt).toMatch(/post it themselves under their own name/);
   });
 
-  // #523: a project is optional context, not a requirement - a suggestion
-  // can name none at all, and the prompt has to say something other than a
-  // lie about a product that was never named.
-  it('frames a null current project as the operator\u2019s own voice on no particular subject', () => {
-    const prompt = buildSuggestionPrompt({
+  // LOR-181: the model, not a client-asserted binding, decides which project
+  // (if any) a suggestion is about - so the instruction asking it to decide
+  // is unconditional, present whether or not the org has any projects at
+  // all, and it says explicitly that naming none is a real answer.
+  it('always asks the model to decide which project, if any, this is about, and that naming none is a real answer', () => {
+    const withoutProjects = buildSuggestionPrompt({
       kind: 'post_comment',
       post,
-      currentProject: null,
       ...noContext,
     });
-    expect(prompt).toMatch(/own voice, on their own subject, not about any particular product/);
-    expect(prompt).toMatch(/post it themselves under their own name/);
-    expect(prompt).not.toContain('You are drafting for');
+    const withProjects = buildSuggestionPrompt({
+      kind: 'post_comment',
+      post,
+      persona: null,
+      voiceProfile: null,
+      projects,
+      repos: [],
+    });
+    for (const prompt of [withoutProjects, withProjects]) {
+      expect(prompt).toMatch(/decide.*which project.*this suggestion is actually about/s);
+      expect(prompt).toMatch(/writing in the operator's own voice.*is a real answer too/s);
+      expect(prompt).toMatch(/post it themselves under their own name/);
+    }
   });
 
   it('truncates a post longer than the cap instead of forwarding it whole', () => {
@@ -150,7 +158,6 @@ describe('buildSuggestionPrompt', () => {
     const prompt = buildSuggestionPrompt({
       kind: 'post_comment',
       post: { text: long },
-      currentProject,
       ...noContext,
     });
     expect(prompt).toContain('[truncated]');
@@ -170,7 +177,6 @@ describe('buildSuggestionPrompt', () => {
     const prompt = buildSuggestionPrompt({
       kind: 'post_comment',
       post,
-      currentProject,
       ...noContext,
       examples,
     });
@@ -182,7 +188,6 @@ describe('buildSuggestionPrompt', () => {
     const prompt = buildSuggestionPrompt({
       kind: 'post_comment',
       post,
-      currentProject,
       ...noContext,
       hint: 'be blunt about the cache',
     });
@@ -194,10 +199,9 @@ describe('buildSuggestionPrompt', () => {
     const comment = buildSuggestionPrompt({
       kind: 'post_comment',
       post,
-      currentProject,
       ...noContext,
     });
-    const standalone = buildSuggestionPrompt({ kind: 'post', post, currentProject, ...noContext });
+    const standalone = buildSuggestionPrompt({ kind: 'post', post, ...noContext });
     expect(comment).not.toBe(standalone);
     expect(comment).toMatch(/comment to leave on the post/);
     expect(standalone).toMatch(/short post for this account/);
@@ -207,7 +211,6 @@ describe('buildSuggestionPrompt', () => {
     const prompt = buildSuggestionPrompt({
       kind: 'post_comment',
       post,
-      currentProject,
       persona,
       voiceProfile,
       projects,
@@ -224,7 +227,6 @@ describe('buildSuggestionPrompt', () => {
       const prompt = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
-        currentProject,
         persona,
         voiceProfile,
         projects,
@@ -237,11 +239,13 @@ describe('buildSuggestionPrompt', () => {
       // How they write: the derived summary, not a raw post.
       expect(prompt).toContain(voiceProfile.summary);
       expect(prompt).toMatch(/based on what they have actually written/);
-      // Every project, including the sibling not bound to this suggestion,
-      // with the current one marked.
-      expect(prompt).toContain('Embertold (this one)');
-      expect(prompt).toContain('Runecast');
+      // Every project, each with its own id and, when it has one, its latest
+      // insight - LOR-181: no "(this one)" marker, nothing is bound ahead of
+      // the model's own choice.
+      expect(prompt).toContain('[id 1] Embertold');
+      expect(prompt).toContain('[id 2] Runecast');
       expect(prompt).toContain('Dice roller for remote tables.');
+      expect(prompt).toContain('Comments mentioning search speed get replies');
       // What they have shipped.
       expect(prompt).toContain('giuliab/embertold');
       expect(prompt).toContain('Embertold indexes campaign notes');
@@ -252,7 +256,6 @@ describe('buildSuggestionPrompt', () => {
       const prompt = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
-        currentProject,
         ...noContext,
       });
       expect(prompt).not.toContain('Who is writing this');
@@ -265,7 +268,6 @@ describe('buildSuggestionPrompt', () => {
       const prompt = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
-        currentProject,
         persona,
         voiceProfile: null,
         projects: [],
@@ -281,7 +283,6 @@ describe('buildSuggestionPrompt', () => {
       const prompt = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
-        currentProject,
         persona: { ...persona, about: longAbout },
         voiceProfile: null,
         projects: [],
@@ -291,34 +292,18 @@ describe('buildSuggestionPrompt', () => {
       expect(prompt).toContain('[truncated]');
     });
 
-    it('caps the project list at MAX_PROJECTS, keeping only the current project', () => {
-      const filler: ProjectBrief[] = Array.from({ length: MAX_PROJECTS + 5 }, (_, i) => ({
+    // LOR-181 retired the old ranking that put the bound project ahead of the
+    // cut - there is no bound project any more, so the list is just the
+    // org's first MAX_PROJECTS in the order the caller passed them.
+    it('keeps only the first MAX_PROJECTS in list order, with no project singled out', () => {
+      const manyProjects: ProjectBrief[] = Array.from({ length: MAX_PROJECTS + 5 }, (_, i) => ({
         id: 100 + i,
-        name: `Filler ${i}`,
-        description: `Filler project ${i}.`,
-        isCurrent: false,
+        name: `Project ${i}`,
+        description: `Project ${i}'s own description.`,
       }));
-      // Current is last in the input on purpose: a plain slice(0, MAX_PROJECTS)
-      // with no ranking would drop it.
-      const manyProjects: ProjectBrief[] = [
-        ...filler,
-        {
-          id: 1,
-          name: 'Embertold',
-          description: 'The bound project.',
-          isCurrent: true,
-        },
-        {
-          id: 2,
-          name: 'Runecast',
-          description: 'A sibling project, ranked like any other one now.',
-          isCurrent: false,
-        },
-      ];
       const prompt = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
-        currentProject,
         persona: null,
         voiceProfile: null,
         projects: manyProjects,
@@ -326,13 +311,12 @@ describe('buildSuggestionPrompt', () => {
       });
       const shown = manyProjects.filter((p) => prompt.includes(p.name));
       expect(shown).toHaveLength(MAX_PROJECTS);
-      expect(prompt).toContain('Embertold (this one)');
-      // #523 retired the personal project and, with it, the only other
-      // survival guarantee this ranking ever gave: 'Runecast' sits after the
-      // current project in the input with no special status of its own now,
-      // so it falls past the cap exactly like the trailing filler entries do.
-      expect(prompt).not.toContain('Runecast');
-      expect(prompt).not.toContain(`Filler ${filler.length - 1}`);
+      // The first MAX_PROJECTS survive, in order - a project past the cut is
+      // honest context lost, never something the model reorders to save.
+      for (let i = 0; i < MAX_PROJECTS; i++) expect(prompt).toContain(`Project ${i}`);
+      for (let i = MAX_PROJECTS; i < manyProjects.length; i++) {
+        expect(prompt).not.toContain(`Project ${i}`);
+      }
     });
 
     it('clamps the voice profile summary the same regardless of how far past the cap it runs', () => {
@@ -342,7 +326,6 @@ describe('buildSuggestionPrompt', () => {
       const promptJustOver = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
-        currentProject,
         persona: null,
         voiceProfile: { summary: justOver },
         projects: [],
@@ -351,7 +334,6 @@ describe('buildSuggestionPrompt', () => {
       const promptWayOver = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
-        currentProject,
         persona: null,
         voiceProfile: { summary: wayOver },
         projects: [],
@@ -372,7 +354,6 @@ describe('buildSuggestionPrompt', () => {
       const promptJustOver = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
-        currentProject,
         persona: null,
         voiceProfile: null,
         projects: [],
@@ -381,7 +362,6 @@ describe('buildSuggestionPrompt', () => {
       const promptWayOver = buildSuggestionPrompt({
         kind: 'post_comment',
         post,
-        currentProject,
         persona: null,
         voiceProfile: null,
         projects: [],
@@ -403,7 +383,6 @@ describe('a reply names its parent comment (LOR-198)', () => {
     const prompt = buildSuggestionPrompt({
       kind: 'post_comment',
       post: { ...post, replyToCommentId: 'urn:li:comment:(activity:1,2)' },
-      currentProject,
       ...noContext,
     });
     expect(prompt).toContain(
@@ -417,7 +396,6 @@ describe('a reply names its parent comment (LOR-198)', () => {
     const prompt = buildSuggestionPrompt({
       kind: 'post_comment',
       post,
-      currentProject,
       ...noContext,
     });
     expect(prompt).toContain('Write one comment to leave on the post below');
@@ -428,7 +406,6 @@ describe('a reply names its parent comment (LOR-198)', () => {
     const prompt = buildSuggestionPrompt({
       kind: 'post',
       post: { ...post, replyToCommentId: 'urn:li:comment:(activity:1,2)' },
-      currentProject,
       ...noContext,
     });
     expect(prompt).toContain('Write one short post for this account');
@@ -442,7 +419,7 @@ describe('a reply names its parent comment (LOR-198)', () => {
 // the post rather than the phrase "match the room" on its own, and that the
 // house style still outranks all of it.
 describe('tone (#405)', () => {
-  const args = { kind: 'post_comment' as const, post, currentProject, ...noContext };
+  const args = { kind: 'post_comment' as const, post, ...noContext };
 
   it('defaults to the mix when no tone is passed, matching the stored default', () => {
     const prompt = buildSuggestionPrompt(args);
@@ -528,7 +505,7 @@ describe('tone (#405)', () => {
 // different per direction, and it is ordered so it outranks the tone
 // without deleting or rewriting the tone's own instruction.
 describe('retune (#409)', () => {
-  const args = { kind: 'post_comment' as const, post, currentProject, ...noContext };
+  const args = { kind: 'post_comment' as const, post, ...noContext };
 
   it('adds nothing when no direction was asked for', () => {
     const prompt = buildSuggestionPrompt(args);

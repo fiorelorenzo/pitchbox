@@ -106,13 +106,13 @@
 
 <Seo
 	title="Settings - LinkedIn assist"
-	description="On/off, bound project, daily caps and the kill switch for the in-page LinkedIn assistant."
+	description="On/off, daily caps and the kill switch for the in-page LinkedIn assistant."
 />
 
 <PageContainer size="default">
 	<PageHeader
 		title="LinkedIn assist"
-		description="Controls the in-page assistant on linkedin.com: who it writes as, how much it may send, and a kill switch that applies immediately."
+		description="Controls the in-page assistant on linkedin.com: how much it may send, and a kill switch that applies immediately."
 	/>
 
 	{#if s.killSwitch}
@@ -131,9 +131,9 @@
 			<Card.Header>
 				<Card.Title>Assist</Card.Title>
 				<Card.Description>
-					Off by default. Writes as you, the operator - a project is optional context for a
-					suggestion that is genuinely about one of your products, never a requirement to turn
-					this on.
+					Off by default. Writes as you, the operator - it decides which of your projects (if
+					any) a suggestion is actually about from the post itself, so there is nothing to bind
+					here.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
@@ -141,16 +141,6 @@
 					<Checkbox checked={s.enabled} onCheckedChange={(v) => (s.enabled = !!v)} />
 					Assist enabled
 				</label>
-				<div class="grid gap-1.5">
-					<span class="text-sm font-medium">Writes as project</span>
-					<SelectField
-						value={s.projectId ?? undefined}
-						onValueChange={(v) => (s.projectId = v as number)}
-						options={projectOptions}
-						placeholder="No project bound"
-						fullWidth
-					/>
-				</div>
 				<label class="flex items-center gap-2 text-sm">
 					<Checkbox
 						checked={s.collectorEnabled}
@@ -158,6 +148,21 @@
 					/>
 					Observation collector enabled
 				</label>
+				<div class="grid gap-1.5">
+					<span class="text-sm font-medium">Collector attributes sightings to</span>
+					<SelectField
+						value={s.projectId ?? undefined}
+						onValueChange={(v) => (s.projectId = v as number)}
+						options={projectOptions}
+						placeholder="No project bound"
+						fullWidth
+					/>
+					<p class="text-xs text-muted-foreground">
+						Only used by the observation collector, to file what it scrolls past under one of
+						your projects for that project's own campaigns to draw candidates from. Unrelated to
+						what a suggestion writes about.
+					</p>
+				</div>
 			</Card.Content>
 		</Card.Root>
 

@@ -73,6 +73,7 @@ describe('parseSuggestSseFrame', () => {
       skipped: false,
       usage: { outputTokens: 12 },
       ms: 2200,
+      projectId: null,
     });
   });
 
@@ -88,6 +89,7 @@ describe('parseSuggestSseFrame', () => {
       skipped: true,
       usage: undefined,
       ms: 900,
+      projectId: null,
     });
   });
 
@@ -152,7 +154,7 @@ describe('api.suggest', () => {
 
     const events: SuggestEvent[] = [];
     const res = await api.suggest(
-      { projectId: 1, kind: 'post_comment', post: { text: 'a post' } },
+      { kind: 'post_comment', post: { text: 'a post' } },
       (e) => events.push(e),
     );
 
@@ -169,6 +171,7 @@ describe('api.suggest', () => {
         skipped: false,
         usage: undefined,
         ms: 2200,
+        projectId: null,
       },
     ]);
   });
@@ -190,7 +193,7 @@ describe('api.suggest', () => {
     );
 
     const events: SuggestEvent[] = [];
-    await api.suggest({ projectId: 1, kind: 'post_comment', post: { text: 'a post' } }, (e) =>
+    await api.suggest({ kind: 'post_comment', post: { text: 'a post' } }, (e) =>
       events.push(e),
     );
 
@@ -221,7 +224,7 @@ describe('api.suggest', () => {
 
     const events: SuggestEvent[] = [];
     const res = await api.suggest(
-      { projectId: 1, kind: 'post_comment', post: { text: 'a post' } },
+      { kind: 'post_comment', post: { text: 'a post' } },
       (e) => events.push(e),
     );
 
@@ -245,7 +248,7 @@ describe('api.suggest', () => {
 
     const onEvent = vi.fn();
     const res = await api.suggest(
-      { projectId: 1, kind: 'post_comment', post: { text: 'a post' } },
+      { kind: 'post_comment', post: { text: 'a post' } },
       onEvent,
     );
 

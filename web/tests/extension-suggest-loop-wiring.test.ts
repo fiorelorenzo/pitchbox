@@ -72,17 +72,15 @@ describe('runSuggestion: assist tool surface wiring (#566)', () => {
   beforeEach(reset);
 
   it('attaches exactly the seven assist tools and the exact ASSIST_* budget - never the campaign tool set', async () => {
-    const { org, project } = await seedOrgProject('org-loop-wiring');
+    const { org } = await seedOrgProject('org-loop-wiring');
 
     const handle = runSuggestion({
       kind: 'post_comment',
       post: { urn: 'urn:li:activity:1', authorName: 'A', text: 'hi' },
-      currentProject: { name: project.name, description: project.description },
       persona: null,
       voiceProfile: null,
       projects: [],
       repos: [],
-      projectId: project.id,
       orgId: org.id,
       runnerSlug: 'cloud',
     });
@@ -103,8 +101,8 @@ describe('runSuggestion: assist tool surface wiring (#566)', () => {
     });
   });
 
-  it('scopes the tool context to the bound project and the observed post, never a model-supplied id', async () => {
-    const { org, project } = await seedOrgProject('org-loop-ctx');
+  it('scopes the tool context to the org and the observed post, never a model-supplied org id', async () => {
+    const { org } = await seedOrgProject('org-loop-ctx');
     const { project: otherProject } = await seedOrgProject('org-loop-ctx-other');
 
     const handle = runSuggestion({
@@ -115,12 +113,10 @@ describe('runSuggestion: assist tool surface wiring (#566)', () => {
         text: 'hi',
         thread: { comments: [{ body: 'nice post' }], renderedCount: 1, truncated: false },
       },
-      currentProject: { name: project.name, description: project.description },
       persona: null,
       voiceProfile: null,
       projects: [],
       repos: [],
-      projectId: project.id,
       orgId: org.id,
       runnerSlug: 'cloud',
     });
@@ -139,9 +135,10 @@ describe('runSuggestion: assist tool surface wiring (#566)', () => {
     expect(threadResult.ok).toBe(true);
     expect(threadResult.data.comments).toHaveLength(1);
 
-    // project_knowledge validates a model-supplied project id against the
-    // binding - a project belonging to a different org must be refused
-    // rather than answered.
+    // project_knowledge validates a model-supplied project id against this
+    // suggestion's own organization - a project belonging to a different
+    // org must be refused rather than answered, even though nothing is
+    // bound ahead of the model's own choice any more (LOR-181).
     const otherResult = (await tools.project_knowledge.execute(
       { projectId: otherProject.id },
       {},

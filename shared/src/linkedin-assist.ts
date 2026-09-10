@@ -6,12 +6,25 @@ import { projectBelongsToOrg } from './orgs.js';
 // The org-level off switch and owner for the in-page LinkedIn assistant
 // (LI-19, #316, docs/linkedin-integration-design.md). Until this exists the
 // collector (#302) and the panel (#314) have no legitimate way to know
-// whether they should be running or which project they write as.
+// whether they should be running.
+//
+// LOR-181 (2026-09-10): `projectId` stopped being "the project a suggestion
+// writes as" - the assist plane no longer binds to one at all, since the
+// model now picks which project (if any) a suggestion is about from the
+// post itself (`assist/envelope.ts`'s `PROJECT_MARKER`,
+// `web/src/lib/server/suggest.ts`'s `resolveSuggestionProject`). The field
+// stays only because the passive observation collector (#301/#302) still
+// has to attribute every sighting it writes to a real project
+// (`observed_targets.project_id` is `NOT NULL`, and #304's scout-candidate
+// drain is genuinely per-project) - it never had anything to do with which
+// project a suggestion cites, and removing it here would leave the
+// collector no project to write with.
 //
 // Stored in app_config the same way quota_defaults is (shared/src/quota.ts):
 // one row, keyed by a sub-entity inside the jsonb blob. quota_defaults keys
 // by platform slug because it is instance-wide; this keys by organization id
-// because assist is a per-org setting (bound project, per-org caps).
+// because assist is a per-org setting (the collector's project, per-org
+// caps).
 
 const CONFIG_KEY = 'linkedin_assist';
 
@@ -42,7 +55,13 @@ import type { AssistTone } from './assist/tone.js';
 export type LinkedInAssistSettings = {
   /** Whether the in-page assistant may be used at all. Off by default: a fresh install must not start collecting. */
   enabled: boolean;
-  /** The project a suggestion is written as. A suggestion has to be written as some project's voice, so `enabled` cannot be saved true without one. */
+  /** LOR-181: no longer the project a suggestion writes as - the model
+   * decides that per suggestion, from the post itself. What is left to bind
+   * here is the passive observation collector's own attribution target: a
+   * sighting `collectorEnabled` writes has to land in some project's
+   * `observed_targets` buffer (`NOT NULL`, and #304's scout-candidate drain
+   * is genuinely per-project), and this is that project. Never required for
+   * `enabled` (the assistant) - only meaningful when `collectorEnabled`. */
   projectId: number | null;
   /** Whether the passive observation collector runs. Independent of `enabled` so an operator can gather observations without yet exposing suggestions, or vice versa. */
   collectorEnabled: boolean;
@@ -128,13 +147,13 @@ export async function saveLinkedInAssistSettings(
 
 /** The exact shape served to the extension by GET /api/extension/linkedin-assist. */
 export type LinkedInAssistDeviceState = {
-  /** Effective, not raw: false whenever `killSwitch` is set, even if the stored flag is true. #523: no longer requires a live bound project - the assistant binds to the operator, and a project is optional context a suggestion may name. */
+  /** Effective, not raw: false whenever `killSwitch` is set, even if the stored flag is true. LOR-181: never requires a project - the model decides which one (if any) a suggestion is about, per suggestion, from the post itself. */
   enabled: boolean;
-  /** Effective: also requires `enabled`. Unlike `enabled` itself, the collector still needs nothing about a project - it only ever wrote to `observed_targets`. */
+  /** Effective: also requires `enabled`. LOR-181: still gated on `projectId` below at the call site that actually writes an observation (`POST /api/extension/observations`) - the collector's own attribution target, unrelated to what a suggestion cites. */
   collectorEnabled: boolean;
   /** Raw flag, exposed separately so a consumer can render "stopped by an admin" distinctly from "never turned on". */
   killSwitch: boolean;
-  /** Null when unbound or when the stored project id no longer resolves in this org. Context only (#523): a suggestion works with this null, and files under no project when it is. */
+  /** LOR-181: no longer a suggestion's context - null when nothing is bound or the stored id no longer resolves in this org. The passive observation collector's own attribution target (see `LinkedInAssistSettings.projectId`'s doc comment); a suggestion neither reads nor sends this any more. */
   projectId: number | null;
   dailyCommentCap: number;
   dailyPostCap: number;
@@ -175,17 +194,22 @@ export type EffectiveVoice = {
 
 /**
  * Resolves the voice a suggestion should be written in, given the project it
- * is actually being filed under - which may be null (#523: a suggestion can
- * be about no product at all), and need not be the org's bound project.
- * Precedence: the project's own override if it set one, else the org's
- * `linkedin_assist` tone, which itself already falls back to
- * `DEFAULT_ASSIST_TONE` when nothing was ever saved (`loadLinkedInAssistSettings`
- * above) - so this is the one place all three levels collapse into a single
- * answer, rather than each caller re-deriving the fallback chain itself.
+ * is actually being filed under - which may be null (a suggestion can be
+ * about no product at all, or LOR-181: about a product not yet known when
+ * this runs). Precedence: the project's own override if it set one, else
+ * the org's `linkedin_assist` tone, which itself already falls back to
+ * `DEFAULT_ASSIST_TONE` when nothing was ever saved
+ * (`loadLinkedInAssistSettings` above) - so this is the one place all
+ * three levels collapse into a single answer, rather than each caller
+ * re-deriving the fallback chain itself.
  *
  * `project` only needs its two voice columns, not a full row, so a caller
- * that already selected the project (the suggest route does, to enforce the
- * binding) can pass it straight through with no second query. Pass
+ * that already has the project row in hand can pass it straight through
+ * with no second query. LOR-181: `POST /api/extension/suggest` always
+ * passes `{ voiceTone: null, voiceToneNotes: null }` now - which project (if
+ * any) a suggestion is about is the model's own choice, extracted only
+ * after the turn already ran, so there is no project row left to read an
+ * override from before generation starts. Pass
  * `{ voiceTone: null, voiceToneNotes: null }` when no project is filed at all.
  *
  * An unrecognised `voiceTone` (a column written by an older build, or a

@@ -15,7 +15,7 @@ import type { ModelMessage } from 'ai';
  * created for.
  */
 
-const SCOPE = { orgId: 1, projectId: 10, kind: 'post_comment' as const };
+const SCOPE = { orgId: 1, kind: 'post_comment' as const };
 const MESSAGES: ModelMessage[] = [{ role: 'assistant', content: 'gathered context' }];
 
 afterEach(() => {
@@ -33,10 +33,9 @@ describe('createAssistSession / getAssistSession', () => {
     expect(getAssistSession('not-a-real-session', SCOPE)).toBeNull();
   });
 
-  it('refuses a mismatched org, project or kind rather than leaking cross-tenant context', () => {
+  it('refuses a mismatched org or kind rather than leaking cross-tenant context', () => {
     const id = createAssistSession(SCOPE, MESSAGES);
     expect(getAssistSession(id, { ...SCOPE, orgId: 2 })).toBeNull();
-    expect(getAssistSession(id, { ...SCOPE, projectId: 11 })).toBeNull();
     expect(getAssistSession(id, { ...SCOPE, kind: 'post' })).toBeNull();
     // The real scope still works - the mismatched reads above didn't consume it.
     expect(getAssistSession(id, SCOPE)).toEqual(MESSAGES);

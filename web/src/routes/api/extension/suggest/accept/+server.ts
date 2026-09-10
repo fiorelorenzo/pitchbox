@@ -115,27 +115,23 @@ export async function POST(event: RequestEvent) {
   if (!platform) throw error(400, `unknown platform: ${body.platform}`);
 
   // The assist gate (#359's enforcement pattern, applied here too): an org
-  // whose assistant is off, whose kill switch is engaged, or that names a
-  // project other than the bound one must be refused just as firmly as a
-  // suggestion is - a suggestion that cannot be produced but can still be
-  // accepted is a hole in the same switch. Scoped to `linkedin` for the same
-  // reason /suggest scopes it: `linkedin_assist` is a LinkedIn-only setting.
+  // whose assistant is off or whose kill switch is engaged must be refused
+  // just as firmly as a suggestion is - a suggestion that cannot be
+  // produced but can still be accepted is a hole in the same switch.
+  // Scoped to `linkedin` for the same reason /suggest scopes it:
+  // `linkedin_assist` is a LinkedIn-only setting. LOR-181: no longer checks
+  // `body.projectId` against a bound project - there is no such binding
+  // left to check. An old extension build that still sends the project it
+  // used to bind to is ignored exactly like /suggest already ignores it:
+  // `body.projectId` above is validated only against this org's own
+  // projects (never trusted for anything past that), and travels onto the
+  // ledger as context alone.
   if (platform.slug === 'linkedin') {
     const assist = await loadLinkedInAssistDeviceState(db, orgId);
     if (!assist.enabled) {
       return json({
         refused: assist.killSwitch ? 'kill_switch' : 'assist_disabled',
         platform: platform.slug,
-      });
-    }
-    // Same carve-out /suggest makes for the same reason: naming no project
-    // at all is never a bypass of the binding (#523), only naming a
-    // *different* one of the same org is.
-    if (body.projectId != null && assist.projectId !== body.projectId) {
-      return json({
-        refused: 'project_not_bound',
-        platform: platform.slug,
-        boundProjectId: assist.projectId,
       });
     }
   }

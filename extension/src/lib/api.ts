@@ -13,11 +13,11 @@ type DraftSummary = {
 };
 
 /** The exact shape served by GET /api/extension/linkedin-assist (LI-19, #316).
- * `projectId` is context only (#523): which product the assistant speaks
- * for, used for grounding, examples and voice. No `personalProjectId` -
- * an accepted suggestion files under `projectId` if it names one, or under
- * no project at all if it does not; there is no fallback project to land on
- * either way. */
+ * LOR-181: `projectId` is no longer which product a suggestion speaks for -
+ * the server decides that itself, per suggestion, from the post (see
+ * `SuggestEvent`'s `done.projectId`). It stays only as the passive
+ * observation collector's own attribution target
+ * (`linkedin-observe.ts`) - `null` when nothing is bound there. */
 export type LinkedInAssistState = {
   enabled: boolean;
   collectorEnabled: boolean;
@@ -190,16 +190,13 @@ export type AssistStatusPhase =
  * (`quota_exhausted`, tied to a project's bound LinkedIn account) along with the
  * `drafts` row it was a proxy for - what bounds a suggestion now is the
  * per-device/per-org rate limiter and the plan's own suggestions ceiling below.
- * `project_required` and `no_recent_activity` only ever answer a `kind: 'post'`
- * request: #523 makes a project optional for the plane overall, but a `post`
- * suggestion has no post of its own to ground in, so it still needs a real
- * project (`project_required`) with something recent in its observation buffer
- * (`no_recent_activity`). */
+ * LOR-181 retired `project_not_bound` and `project_required`: there is no
+ * bound project left to be refused for, and a `kind: 'post'` suggestion with
+ * nothing recent to ground in refuses with `no_recent_activity` alone now,
+ * org-wide rather than for one project. */
 export type SuggestRefusalReason =
   | 'assist_disabled'
   | 'kill_switch'
-  | 'project_not_bound'
-  | 'project_required'
   | 'no_recent_activity'
   // #556: the plan's own ceiling and a failed payment past its grace window -
   // distinct from each other, so the panel can say which one stopped it and
@@ -208,15 +205,15 @@ export type SuggestRefusalReason =
   | 'plan_payment_required';
 
 /** Every `refused` value POST /api/extension/suggest/accept can answer with: the
- * same assist gate as /suggest (minus its two kind:'post'-only refusals, which
- * grounding a suggestion has no equivalent of once there is text to accept), plus
- * `shared/src/assist-accept.ts`'s own refusals for a suggestion the ledger will
- * not write. #521 retired `no_account`: the accept path no longer needs a bound
- * LinkedIn account to file against. */
+ * same assist gate as /suggest, plus `shared/src/assist-accept.ts`'s own
+ * refusals for a suggestion the ledger will not write. #521 retired
+ * `no_account`: the accept path no longer needs a bound LinkedIn account to
+ * file against. LOR-181 retired `project_not_bound`: an accept no longer
+ * checks a client-named project against anything bound - there is nothing
+ * bound to check it against any more. */
 export type AcceptRefusalReason =
   | 'assist_disabled'
   | 'kill_switch'
-  | 'project_not_bound'
   | 'plan_payment_required'
   | 'blocked'
   | 'uncontactable'
@@ -247,6 +244,13 @@ export type SuggestEvent =
       skipped: boolean;
       usage?: SuggestUsage;
       ms: number;
+      // LOR-181: the project the server resolved this suggestion under -
+      // the model's own choice, validated against the org (see
+      // `resolveSuggestionProject` in web/src/lib/server/suggest.ts). Null
+      // when it is filed under none. Hand this back on `acceptSuggestion`
+      // so the accepted row lands under the same project - there is no
+      // bound project of this client's own to send instead.
+      projectId: number | null;
       // #576: hand this back on the next retune/hint so the loop continues
       // instead of starting over. Absent when there was nothing to persist.
       sessionId?: string;
@@ -395,6 +399,7 @@ export function parseSuggestSseFrame(frame: string): SuggestEvent | null {
             skipped: data.skipped,
             usage: data.usage as SuggestUsage | undefined,
             ms: typeof data.ms === 'number' ? data.ms : 0,
+            projectId: typeof data.projectId === 'number' ? data.projectId : null,
             sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined,
             budgetExhausted:
               typeof data.budgetExhausted === 'boolean' ? data.budgetExhausted : undefined,
@@ -623,12 +628,14 @@ export const api = {
 
   /**
    * GET /api/extension/linkedin-assist (#316): whether the org has turned
-   * on the assistant/collector and which project a suggestion or an
-   * observation writes as. #302's passive collector polls this - see
-   * content/linkedin-observe.ts's own doc comment for the poll cadence it
-   * defends. No backendUrl-targeted variant beyond the single-pairing
-   * default: unlike armed/sent, this call never carries a compose-time
-   * draft URL to resolve a specific backend from.
+   * on the assistant/collector and which project the passive collector
+   * attributes an observation to (LOR-181: no longer which project a
+   * suggestion writes as - the server decides that itself, per suggestion).
+   * #302's passive collector polls this - see content/linkedin-observe.ts's
+   * own doc comment for the poll cadence it defends. No backendUrl-targeted
+   * variant beyond the single-pairing default: unlike armed/sent, this call
+   * never carries a compose-time draft URL to resolve a specific backend
+   * from.
    */
   linkedinAssist: async (
     backendUrl?: string,
@@ -703,9 +710,12 @@ export const api = {
    * render a partial answer instead of a spinner for the five-to-ten-second
    * (measured: 10-14s, #360) wait before the first token. The server can
    * also answer a plain `200 {refused}` ahead of the stream (kill switch, an
-   * exhausted plan ceiling, a project that does not match the bound one) -
-   * both shapes fold into the same `onEvent` calls, so the caller has one
-   * place to switch on `event.kind`.
+   * exhausted plan ceiling) - both shapes fold into the same `onEvent`
+   * calls, so the caller has one place to switch on `event.kind`.
+   *
+   * LOR-181: carries no project any more - which one (if any) a suggestion
+   * is about is the server's own choice, from the post, and it comes back
+   * on `done.projectId` for `acceptSuggestion` to reuse.
    *
    * The outer `ApiResult` reports only transport-level success: a network
    * failure or non-2xx status short-circuits before `onEvent` ever fires.
@@ -717,8 +727,6 @@ export const api = {
    */
   suggest: async (
     params: {
-      /** #523: context only - omit to draft with no product in mind. */
-      projectId?: number;
       kind: SuggestionKind;
       post: SuggestPost;
       hint?: string;
@@ -798,7 +806,13 @@ export const api = {
    */
   acceptSuggestion: async (
     params: {
-      /** #523: context only - omit to file under no project at all. */
+      /** LOR-181: the project `done.projectId` named on this suggestion's
+       * own `suggest` call, echoed back so the ledger files it under the
+       * same one - omit to file under no project at all. Validated only
+       * against this org's own projects (never against a bound one - there
+       * is no such binding left), so an id belonging to another
+       * organization is rejected but naming any of this org's own projects
+       * is always honoured, unlike the old contract this replaces. */
       projectId?: number;
       kind: SuggestionKind;
       post: SuggestPostRef;

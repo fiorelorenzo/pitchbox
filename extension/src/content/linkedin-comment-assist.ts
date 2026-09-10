@@ -103,13 +103,14 @@ import CommentAssistPanel from './linkedin-comment-assist-panel.svelte';
  * is "no marker means no draft", closing #382 (a refusal used to arrive as
  * insertable reasoning text).
  *
- * ## Where an accepted suggestion is filed (#523)
+ * ## Where an accepted suggestion is filed (LOR-181)
  *
- * `boundProjectId` (`assist.projectId`, the same value used to request the
- * suggestion) is what accept sends too - there is no separate "personal"
- * project to fall back to. A suggestion naming no project at all is not a
- * lesser case of one that does: it is a legitimate suggestion filed under
- * no product, and `getOrgUsage` still counts it exactly once.
+ * `done.projectId` - the server's own choice, from the post, never a
+ * project this client bound itself to - is what accept sends. There is no
+ * separate "personal" project to fall back to. A suggestion naming no
+ * project at all is not a lesser case of one that does: it is a legitimate
+ * suggestion filed under no product, and `getOrgUsage` still counts it
+ * exactly once.
  */
 
 const COMMENT_KIND = 'post_comment';
@@ -250,13 +251,13 @@ export function readAssistPost(root: ParentNode = document): AssistPost | null {
 
 /** Every refusal this panel can render, honestly and distinctly: the assist
  * gate's own reasons, the accept path's own three, plus four this client
- * detects itself. `project_required` and `no_recent_activity` are excluded:
- * both only ever answer a `kind: 'post'` request (#315's post composer
- * assist grounds itself server-side; this comment assist always supplies
- * its own post text, so it can never hit either). A `done` event with no
- * draft is never a refusal - see `CommentAssistState.no_draft` below. */
+ * detects itself. `no_recent_activity` is excluded: it only ever answers a
+ * `kind: 'post'` request (#315's post composer assist grounds itself
+ * server-side; this comment assist always supplies its own post text, so
+ * it can never hit it). A `done` event with no draft is never a refusal -
+ * see `CommentAssistState.no_draft` below. */
 export type AssistRefusal =
-  | Exclude<SuggestRefusalReason, 'project_required' | 'no_recent_activity'>
+  | Exclude<SuggestRefusalReason, 'no_recent_activity'>
   | AcceptRefusalReason
   | 'backend_unreachable'
   | 'selector_health_degraded'
@@ -266,7 +267,6 @@ export type AssistRefusal =
 const KNOWN_REFUSALS: Record<AssistRefusal, true> = {
   assist_disabled: true,
   kill_switch: true,
-  project_not_bound: true,
   blocked: true,
   uncontactable: true,
   recently_contacted: true,
@@ -480,7 +480,9 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
 
   let currentReasoning = '';
   let currentDraft = '';
-  let boundProjectId: number | null = null;
+  // LOR-181: captured from `done.projectId` once the model states its
+  // choice - never a bound project of this client's own.
+  let lastResolvedProjectId: number | null = null;
   let lastUsage: SuggestUsage | undefined;
   let lastMs: number | undefined;
   // #576: the live session id from the last `done` event, if any - handed
@@ -593,11 +595,11 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
       void setRefused('assist_disabled');
       return;
     }
-    // #523: a null `assist.projectId` is not a refusal - the assistant
-    // binds to the operator, and a suggestion with no project just files
-    // under none. Naming a project is context only, so it travels through
-    // exactly as read, never coerced to a refusal on this side.
-    boundProjectId = assist.projectId;
+    // LOR-181: `assist.projectId` is no longer read here - it is the
+    // observation collector's own attribution target now, not a
+    // suggestion's context. Which project (if any) this suggestion is
+    // about is the server's own choice, reported back on `done.projectId`
+    // below.
 
     // #569: captured here, not folded into `capturedPost`, because it is
     // the one field on this request that costs a round trip through the
@@ -611,7 +613,6 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
     let draft = '';
     const res = await api.suggest(
       {
-        projectId: boundProjectId ?? undefined,
         kind: COMMENT_KIND,
         post: {
           urn: capturedPost.urn,
@@ -649,6 +650,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
             lastUsage = event.usage;
             lastMs = event.ms;
             lastSessionId = event.sessionId;
+            lastResolvedProjectId = event.projectId;
             currentReasoning = event.reasoning;
             if (event.draft === null) {
               logNoDraft(event.skipped);
@@ -692,7 +694,7 @@ function mountAssistPanel(composer: HTMLElement, post?: Element): void {
       state: { phase: 'accepting', reasoning: currentReasoning, draft: currentDraft },
     });
     const res = await api.acceptSuggestion({
-      projectId: boundProjectId ?? undefined,
+      projectId: lastResolvedProjectId ?? undefined,
       kind: COMMENT_KIND,
       post: {
         urn: capturedPost.urn,

@@ -48,11 +48,13 @@ import PostAssistPanel from './linkedin-post-assist-panel.svelte';
  * endpoint (which would make this script's own DOM reach much larger, and
  * duplicate what the passive observation collector, `linkedin-observe.ts`,
  * already does more carefully with `IntersectionObserver` gating and
- * dedup), the suggestion endpoint grounds `kind: 'post'` itself, server-side,
- * in the most recent thing the observation buffer has actually collected for
- * this project (`shared/src/observed-targets.ts`'s `loadRecentObservedTarget`,
- * wired into `POST /api/extension/suggest`). This script sends only the
- * current page URL for context - never post text it read itself.
+ * dedup), the suggestion endpoint grounds `kind: 'post'` itself,
+ * server-side, in the most recent thing the observation buffer has
+ * actually collected anywhere in the organization (LOR-181: org-wide, not
+ * one bound project's buffer - `shared/src/observed-targets.ts`'s
+ * `loadRecentObservedTarget`, wired into `POST /api/extension/suggest`).
+ * This script sends only the current page URL for context - never post
+ * text it read itself.
  *
  * ## Never unprompted, twice over
  *
@@ -84,33 +86,34 @@ import PostAssistPanel from './linkedin-post-assist-panel.svelte';
  * only ever sends `draft`, and a `done` event whose `draft` is `null`
  * renders no insert affordance - see `no_draft` below.
  *
- * ## Where an accepted suggestion is filed (#523)
+ * ## Where an accepted suggestion is filed (LOR-181)
  *
- * Same routing as the comment assist: `api.acceptSuggestion` sends
- * `boundProjectId` (`assist.projectId`), the same value used to request the
- * suggestion - there is no separate personal project to fall back to.
- * Unlike the comment assist, this kind can never actually reach accept with
- * no project bound: `api.suggest` already refuses with `project_required`
- * before the panel ever has a draft to offer (this kind grounds itself in a
- * project's own observation buffer, see above) - #523 makes a project
- * optional for the plane overall, not for the one kind that has nothing
- * else to ground itself in.
+ * Same routing as the comment assist: `api.acceptSuggestion` sends the
+ * project `done.projectId` named on this suggestion's own request - the
+ * server's own choice, from the post, not a project this client bound
+ * itself to. There is no separate personal project to fall back to: a
+ * `null` `done.projectId` files under none, exactly as the comment assist
+ * does. Unlike the comment assist, this kind still has one project-shaped
+ * refusal of its own - `no_recent_activity` - because the observation
+ * buffer this kind grounds itself in (see the module doc comment) can be
+ * empty; it is no longer about whether a project is bound, since nothing
+ * is bound here any more.
  */
 
 const POST_KIND = 'post';
 
 /** Every refusal this panel can render, honestly and distinctly. A subset of
- * the comment assist's own `AssistRefusal` (LI-17) plus the two refusals
+ * the comment assist's own `AssistRefusal` (LI-17) plus the one refusal
  * `SuggestRefusalReason` carries that only a `kind: 'post'` request can
  * hit: a `post` suggestion never targets one person, so the accept path's
  * `uncontactable`/`recently_contacted` refusals (only reachable with a
  * `targetUser`, see `shared/src/assist-accept.ts`) can never fire here, and
  * this script never reads post content off the page, so
- * `selector_health_degraded` cannot fire either. `project_required` and
- * `no_recent_activity` are the two new ones: the observation buffer this
- * suggestion grounds in (see the module doc comment) needs a real project
- * with something recent in it. A `done` event with no draft is never a
- * refusal - see `PostAssistState.no_draft` below. */
+ * `selector_health_degraded` cannot fire either. `no_recent_activity` is
+ * the new one: the observation buffer this suggestion grounds in (see the
+ * module doc comment) needs something recent in it, org-wide (LOR-181). A
+ * `done` event with no draft is never a refusal - see
+ * `PostAssistState.no_draft` below. */
 export type PostAssistRefusal =
   | Exclude<AcceptRefusalReason, 'uncontactable' | 'recently_contacted'>
   | SuggestRefusalReason
@@ -120,8 +123,6 @@ export type PostAssistRefusal =
 const KNOWN_REFUSALS: Record<PostAssistRefusal, true> = {
   assist_disabled: true,
   kill_switch: true,
-  project_not_bound: true,
-  project_required: true,
   no_recent_activity: true,
   blocked: true,
   backend_unreachable: true,
@@ -215,7 +216,9 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
 
   let currentReasoning = '';
   let currentDraft = '';
-  let boundProjectId: number | null = null;
+  // LOR-181: captured from `done.projectId` once the model states its
+  // choice - never a bound project of this client's own.
+  let lastResolvedProjectId: number | null = null;
   let lastUsage: SuggestUsage | undefined;
   let lastMs: number | undefined;
   // #576: the live session id from the last `done` event, if any.
@@ -290,11 +293,10 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
       void setRefused('assist_disabled');
       return;
     }
-    // #523: a null `assist.projectId` is not a refusal here either - only
-    // `no_recent_activity`/`project_required` from the server itself (this
-    // kind's own grounding needs, distinct from #523's general optionality)
-    // can stop a request for lack of a project.
-    boundProjectId = assist.projectId;
+    // LOR-181: `assist.projectId` is no longer read here - it is the
+    // observation collector's own attribution target now, not a suggestion's
+    // context. Which project (if any) this suggestion is about is the
+    // server's own choice, reported back on `done.projectId` below.
 
     let reasoning = '';
     let draft = '';
@@ -303,7 +305,6 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
     // `post` here is informational context only.
     const res = await api.suggest(
       {
-        projectId: boundProjectId ?? undefined,
         kind: POST_KIND,
         post: { url: location.href },
         retune,
@@ -326,6 +327,7 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
             lastUsage = event.usage;
             lastMs = event.ms;
             lastSessionId = event.sessionId;
+            lastResolvedProjectId = event.projectId;
             currentReasoning = event.reasoning;
             if (event.draft === null) {
               logNoDraft(event.skipped);
@@ -362,7 +364,7 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
       state: { phase: 'accepting', reasoning: currentReasoning, draft: currentDraft },
     });
     const res = await api.acceptSuggestion({
-      projectId: boundProjectId ?? undefined,
+      projectId: lastResolvedProjectId ?? undefined,
       kind: POST_KIND,
       // No urn (a post has none until it publishes), no authorHandle/authorName
       // (this is the operator's own voice, not a reply to someone) - see

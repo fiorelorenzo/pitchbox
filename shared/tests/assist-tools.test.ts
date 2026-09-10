@@ -49,7 +49,7 @@ async function makeProject(orgId: number, slug: string, description?: string): P
 }
 
 function baseCtx(
-  overrides: Partial<AssistToolContext> & { orgId: number; boundProjectId: number },
+  overrides: Partial<AssistToolContext> & { orgId: number },
 ): AssistToolContext {
   return { db: getDb(), observedTarget: null, operator: null, ...overrides };
 }
@@ -59,7 +59,7 @@ describe('shared/src/assist/tools', () => {
 
   describe('read_thread', () => {
     it('refuses with an explicit nothing when no thread was captured', async () => {
-      const ctx = baseCtx({ orgId: 1, boundProjectId: 1, observedTarget: null });
+      const ctx = baseCtx({ orgId: 1, observedTarget: null });
       const result = await ASSIST_TOOLS_BY_NAME.read_thread.handler(ctx, {});
       expect(result.ok).toBe(false);
     });
@@ -83,7 +83,7 @@ describe('shared/src/assist/tools', () => {
           truncated: false,
         },
       };
-      const ctx = baseCtx({ orgId: 1, boundProjectId: 1, observedTarget });
+      const ctx = baseCtx({ orgId: 1, observedTarget });
       const result = await ASSIST_TOOLS_BY_NAME.read_thread.handler(ctx, {});
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -99,7 +99,7 @@ describe('shared/src/assist/tools', () => {
         text: 'Hello world',
         thread: { comments: [], renderedCount: 40, truncated: true },
       };
-      const ctx = baseCtx({ orgId: 1, boundProjectId: 1, observedTarget });
+      const ctx = baseCtx({ orgId: 1, observedTarget });
       const result = await ASSIST_TOOLS_BY_NAME.read_thread.handler(ctx, {});
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -111,7 +111,6 @@ describe('shared/src/assist/tools', () => {
     it('refuses with an explicit nothing when the post has no image at all', async () => {
       const ctx = baseCtx({
         orgId: 1,
-        boundProjectId: 1,
         observedTarget: { text: 'no image here' },
       });
       const result = await ASSIST_TOOLS_BY_NAME.look_at_image.handler(ctx, {});
@@ -121,7 +120,6 @@ describe('shared/src/assist/tools', () => {
     it('refuses with an explicit nothing when the image exists but nothing was captured', async () => {
       const ctx = baseCtx({
         orgId: 1,
-        boundProjectId: 1,
         observedTarget: { text: 'x', image: { kind: 'image' } },
       });
       const result = await ASSIST_TOOLS_BY_NAME.look_at_image.handler(ctx, {});
@@ -131,7 +129,6 @@ describe('shared/src/assist/tools', () => {
     it('describes from alt text with no model call when only alt text is present', async () => {
       const ctx = baseCtx({
         orgId: 1,
-        boundProjectId: 1,
         observedTarget: {
           text: 'x',
           image: { kind: 'image', alt: 'A bar chart showing quarterly growth' },
@@ -151,7 +148,6 @@ describe('shared/src/assist/tools', () => {
       try {
         const ctx = baseCtx({
           orgId: 1,
-          boundProjectId: 1,
           observedTarget: {
             text: 'x',
             image: { kind: 'image', dataUrl: 'data:image/png;base64,AAAA' },
@@ -193,7 +189,6 @@ describe('shared/src/assist/tools', () => {
       const projA = await makeProject(orgA, 'at-proj-a');
       const ctx = baseCtx({
         orgId: orgA,
-        boundProjectId: projA,
         observedTarget: { authorHandle: 'shared-handle', text: 'x' },
       });
       const result = await ASSIST_TOOLS_BY_NAME.author_history.handler(ctx, {});
@@ -209,7 +204,6 @@ describe('shared/src/assist/tools', () => {
       const projA = await makeProject(orgA, 'at-proj-empty');
       const ctx = baseCtx({
         orgId: orgA,
-        boundProjectId: projA,
         observedTarget: { authorHandle: 'nobody-seen-before', text: 'x' },
       });
       const result = await ASSIST_TOOLS_BY_NAME.author_history.handler(ctx, {});
@@ -229,7 +223,6 @@ describe('shared/src/assist/tools', () => {
       });
       const ctx = baseCtx({
         orgId: orgA,
-        boundProjectId: projA,
         observedTarget: { authorHandle: 'spammer', text: 'x' },
       });
       const result = await ASSIST_TOOLS_BY_NAME.author_history.handler(ctx, {});
@@ -243,7 +236,6 @@ describe('shared/src/assist/tools', () => {
     it('refuses with an explicit nothing when the captured post has no author handle', async () => {
       const ctx = baseCtx({
         orgId: 1,
-        boundProjectId: 1,
         observedTarget: { text: 'no author here' },
       });
       const result = await ASSIST_TOOLS_BY_NAME.author_history.handler(ctx, {});
@@ -254,7 +246,7 @@ describe('shared/src/assist/tools', () => {
   describe('operator_voice', () => {
     it('reports an honest default, never an invented voice, when the corpus is thin', async () => {
       const orgA = await ensureOrg('ov-org-thin');
-      const ctx = baseCtx({ orgId: orgA, boundProjectId: 1 });
+      const ctx = baseCtx({ orgId: orgA});
       const result = await ASSIST_TOOLS_BY_NAME.operator_voice.handler(ctx, {});
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -265,61 +257,49 @@ describe('shared/src/assist/tools', () => {
 
     it('always answers - never refuses, even with nothing on file', async () => {
       const orgA = await ensureOrg('ov-org-never-refuses');
-      const ctx = baseCtx({ orgId: orgA, boundProjectId: 1 });
+      const ctx = baseCtx({ orgId: orgA});
       const result = await ASSIST_TOOLS_BY_NAME.operator_voice.handler(ctx, {});
       expect(result.ok).toBe(true);
     });
   });
 
   describe('project_knowledge', () => {
-    it('refuses a project id that is neither the bound project nor the personal project', async () => {
+    // LOR-181: retired the old "bound project" restriction along with the
+    // binding it used to check against - a suggestion has no project bound
+    // ahead of the model's own turn any more, so this tool now answers for
+    // any of the organization's own projects, not just one distinguished
+    // one. This is the property that changed; the org-scoping test below it
+    // (a real security boundary) is unaffected.
+    it("answers for any of the organization's own projects, not just one bound project", async () => {
       const orgA = await ensureOrg('pk-org-a');
-      const projBound = await makeProject(orgA, 'pk-bound');
-      const projOther = await makeProject(orgA, 'pk-other');
-      const ctx = baseCtx({ orgId: orgA, boundProjectId: projBound });
+      await makeProject(orgA, 'pk-first');
+      const projSecond = await makeProject(orgA, 'pk-second', 'A product that does X');
+      const ctx = baseCtx({ orgId: orgA });
       const result = await ASSIST_TOOLS_BY_NAME.project_knowledge.handler(ctx, {
-        projectId: projOther,
-      });
-      expect(result.ok).toBe(false);
-    });
-
-    it("refuses another organization's project id even though it is a valid row", async () => {
-      const orgA = await ensureOrg('pk-org-x');
-      const orgB = await ensureOrg('pk-org-y');
-      const projBoundA = await makeProject(orgA, 'pk-bound-a');
-      const projB = await makeProject(orgB, 'pk-proj-b', "org B's own product");
-      const ctx = baseCtx({ orgId: orgA, boundProjectId: projBoundA });
-      const result = await ASSIST_TOOLS_BY_NAME.project_knowledge.handler(ctx, {
-        projectId: projB,
-      });
-      expect(result.ok).toBe(false);
-    });
-
-    it('answers for the bound project with its description', async () => {
-      const orgA = await ensureOrg('pk-org-b');
-      const projBound = await makeProject(orgA, 'pk-bound2', 'A product that does X');
-      const ctx = baseCtx({ orgId: orgA, boundProjectId: projBound });
-      const result = await ASSIST_TOOLS_BY_NAME.project_knowledge.handler(ctx, {
-        projectId: projBound,
+        projectId: projSecond,
       });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.data.project.description).toBe('A product that does X');
     });
 
-    // #523 retired the personal project and, with it, project_knowledge's
-    // bypass for it - a non-bound project id now always refuses, no
-    // exceptions. Deleted rather than re-pinned to a plain seeded project:
-    // the behaviour this test defended (a distinguished project id that
-    // skips the binding check) no longer exists in the handler at all, and
-    // the two tests above already cover the real current contract (a bound
-    // project answers, any other one refuses).
+    it("refuses another organization's project id even though it is a valid row", async () => {
+      const orgA = await ensureOrg('pk-org-x');
+      const orgB = await ensureOrg('pk-org-y');
+      const projB = await makeProject(orgB, 'pk-proj-b', "org B's own product");
+      const ctx = baseCtx({ orgId: orgA });
+      const result = await ASSIST_TOOLS_BY_NAME.project_knowledge.handler(ctx, {
+        projectId: projB,
+      });
+      expect(result.ok).toBe(false);
+    });
+
     it('refuses with an explicit nothing when the project has no description, repos or insights', async () => {
       const orgA = await ensureOrg('pk-org-empty');
-      const projBound = await makeProject(orgA, 'pk-bound-empty');
-      const ctx = baseCtx({ orgId: orgA, boundProjectId: projBound });
+      const projEmpty = await makeProject(orgA, 'pk-empty');
+      const ctx = baseCtx({ orgId: orgA });
       const result = await ASSIST_TOOLS_BY_NAME.project_knowledge.handler(ctx, {
-        projectId: projBound,
+        projectId: projEmpty,
       });
       expect(result.ok).toBe(false);
     });
@@ -336,14 +316,14 @@ describe('shared/src/assist/tools', () => {
         active: true,
         fetchedAt: new Date(),
       });
-      const projBound = await makeProject(
+      const proj = await makeProject(
         orgA,
-        'pk-bound-repo',
+        'pk-repo',
         'A product with no repos of its own',
       );
-      const ctx = baseCtx({ orgId: orgA, boundProjectId: projBound });
+      const ctx = baseCtx({ orgId: orgA });
       const result = await ASSIST_TOOLS_BY_NAME.project_knowledge.handler(ctx, {
-        projectId: projBound,
+        projectId: proj,
       });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -365,7 +345,7 @@ describe('shared/src/assist/tools', () => {
           text: "Org B's own database migration story, never seen by org A.",
         },
       ]);
-      const ctx = baseCtx({ orgId: orgA, boundProjectId: 1 });
+      const ctx = baseCtx({ orgId: orgA});
       const result = await ASSIST_TOOLS_BY_NAME.my_prior_takes.handler(ctx, {
         query: 'database migration',
       });
@@ -377,7 +357,7 @@ describe('shared/src/assist/tools', () => {
 
     it('refuses with an explicit nothing when nothing matches', async () => {
       const orgA = await ensureOrg('pt-org-empty');
-      const ctx = baseCtx({ orgId: orgA, boundProjectId: 1 });
+      const ctx = baseCtx({ orgId: orgA});
       const result = await ASSIST_TOOLS_BY_NAME.my_prior_takes.handler(ctx, {
         query: 'quantum photosynthesis',
       });
@@ -386,7 +366,7 @@ describe('shared/src/assist/tools', () => {
 
     it('refuses with an explicit nothing when the query has no searchable words', async () => {
       const orgA = await ensureOrg('pt-org-nowords');
-      const ctx = baseCtx({ orgId: orgA, boundProjectId: 1 });
+      const ctx = baseCtx({ orgId: orgA});
       const result = await ASSIST_TOOLS_BY_NAME.my_prior_takes.handler(ctx, { query: 'a an it' });
       expect(result.ok).toBe(false);
     });
@@ -394,7 +374,7 @@ describe('shared/src/assist/tools', () => {
 
   describe('check_style', () => {
     it('never refuses - a clean draft gets an empty findings list', async () => {
-      const ctx = baseCtx({ orgId: 1, boundProjectId: 1 });
+      const ctx = baseCtx({ orgId: 1});
       const result = await ASSIST_TOOLS_BY_NAME.check_style.handler(ctx, {
         text: 'A clean, direct sentence.',
       });
@@ -404,7 +384,7 @@ describe('shared/src/assist/tools', () => {
     });
 
     it('surfaces a real house-style finding', async () => {
-      const ctx = baseCtx({ orgId: 1, boundProjectId: 1 });
+      const ctx = baseCtx({ orgId: 1});
       const result = await ASSIST_TOOLS_BY_NAME.check_style.handler(ctx, {
         text: 'This is great \u2014 really great.',
       });

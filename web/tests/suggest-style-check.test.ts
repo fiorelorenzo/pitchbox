@@ -56,12 +56,10 @@ function baseArgs() {
   return {
     kind: 'post_comment' as const,
     post: { urn: 'urn:li:activity:1', authorName: 'A', text: 'hi' },
-    currentProject: { name: 'p', description: null },
     persona: null,
     voiceProfile: null,
     projects: [],
     repos: [],
-    projectId: 1,
     runnerSlug: 'claude-code',
   };
 }
