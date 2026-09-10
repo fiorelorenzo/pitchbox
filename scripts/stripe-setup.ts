@@ -122,12 +122,31 @@ type StripeCoupon = {
 type StripePromotionCode = {
   id: string;
   code: string;
-  coupon: StripeCoupon;
+  /** Pre-`2026-08-26.dahlia` shape: the coupon inline on the promotion code. */
+  coupon?: StripeCoupon;
+  /** `2026-08-26.dahlia` and later: the discount is wrapped in `promotion`. */
+  promotion?: { type?: string; coupon?: StripeCoupon | string };
   active: boolean;
   max_redemptions: number | null;
   expires_at: number | null;
   metadata: Metadata;
 };
+
+/**
+ * The coupon a promotion code points at, across the API-version change this
+ * account has already crossed. `POST /v1/promotion_codes` took a flat `coupon`
+ * until `2026-08-26.dahlia`, which replaced it with a required `promotion`
+ * object and answers `Received unknown parameter: coupon` otherwise (measured
+ * on the real test account, 2026-09-10, while creating this very code). The
+ * read side moved with it, so both shapes are accepted here rather than
+ * assuming either one.
+ */
+function promotionCodeCouponId(code: StripePromotionCode): string | undefined {
+  const nested = code.promotion?.coupon;
+  if (typeof nested === 'string') return nested;
+  if (nested?.id) return nested.id;
+  return code.coupon?.id;
+}
 
 // SaaS, business use. The same code on every plan; it drives what Stripe Tax
 // computes per country.
@@ -246,12 +265,25 @@ function form(value: unknown, prefix = '', out = new URLSearchParams()): URLSear
   return out;
 }
 
+/**
+ * The API version every request here is written against, pinned for the same
+ * reason `stripe-probe.ts` pins it: this script hand-maintains its own request
+ * shapes, and the account's default version moves under it. Measured on
+ * 2026-09-10: the account had reached `2026-08-26.dahlia`, where
+ * `POST /v1/promotion_codes` replaced the flat `coupon` parameter with a
+ * required `promotion` object, so an unpinned run failed with
+ * `Received unknown parameter: coupon` after having already created the
+ * coupon. Bump this deliberately, with the request shapes, never by accident.
+ */
+const STRIPE_API_VERSION = '2025-03-31.basil';
+
 async function stripe<T>(path: string, body?: unknown, method?: string): Promise<T> {
   const verb = method ?? (body ? 'POST' : 'GET');
   const res = await fetch(`https://api.stripe.com/v1/${path}`, {
     method: verb,
     headers: {
       Authorization: `Bearer ${KEY}`,
+      'Stripe-Version': STRIPE_API_VERSION,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: body ? form(body) : undefined,
@@ -655,13 +687,13 @@ async function ensurePromotionCode(coupon: StripeCoupon): Promise<StripePromotio
 
   if (existing) {
     const matches =
-      existing.coupon.id === coupon.id &&
+      promotionCodeCouponId(existing) === coupon.id &&
       existing.active &&
       existing.max_redemptions === LIVE_VERIFICATION_MAX_REDEMPTIONS;
     if (!matches) {
       log(
         'warn',
-        `promotion code ${existing.code} does not match the LOR-188 decision (coupon=${existing.coupon.id}, active=${existing.active}, max_redemptions=${existing.max_redemptions}) - none of that is editable; delete it in the dashboard and re-run`,
+        `promotion code ${existing.code} does not match the LOR-188 decision (coupon=${promotionCodeCouponId(existing) ?? '-'}, active=${existing.active}, max_redemptions=${existing.max_redemptions}) - none of that is editable; delete it in the dashboard and re-run`,
       );
     } else {
       log('ok', `promotion code ${existing.code} -> coupon ${coupon.id}`);
@@ -674,7 +706,7 @@ async function ensurePromotionCode(coupon: StripeCoupon): Promise<StripePromotio
     return {
       id: 'dry_promo',
       code: LIVE_VERIFICATION_PROMOTION_CODE,
-      coupon,
+      promotion: { type: 'coupon', coupon },
       active: true,
       max_redemptions: LIVE_VERIFICATION_MAX_REDEMPTIONS,
       expires_at: coupon.redeem_by,
