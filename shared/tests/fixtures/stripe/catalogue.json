@@ -31,6 +31,38 @@
       }
     }
   },
+  "pitchbox_solo_yearly": {
+    "price": {
+      "id": "price_1UDgxkPbW9e1kAHzUFWCJwie",
+      "lookup_key": "pitchbox_solo_yearly",
+      "unit_amount": 29000,
+      "currency": "eur",
+      "recurring": {
+        "interval": "year",
+        "interval_count": 1,
+        "meter": null,
+        "trial_period_days": null,
+        "usage_type": "licensed"
+      }
+    },
+    "product": {
+      "id": "prod_VE9GiXplzTBzJR",
+      "name": "Pitchbox Solo",
+      "metadata": {
+        "limit_budget_usd": "10",
+        "limit_concurrency": "2",
+        "limit_devices": "3",
+        "limit_premium_models": "false",
+        "limit_projects": "3",
+        "limit_retention_days": "30",
+        "limit_runs": "500",
+        "limit_seats": "1",
+        "limit_suggestions": "500",
+        "plan": "solo",
+        "tax_code_note": "SaaS business use"
+      }
+    }
+  },
   "pitchbox_growth_monthly": {
     "price": {
       "id": "price_1UDgxkPbW9e1kAHzqte5gL1y",
@@ -103,6 +135,38 @@
       "currency": "eur",
       "recurring": {
         "interval": "month",
+        "interval_count": 1,
+        "meter": null,
+        "trial_period_days": null,
+        "usage_type": "licensed"
+      }
+    },
+    "product": {
+      "id": "prod_VE9GOLwLC23uUF",
+      "name": "Pitchbox Scale",
+      "metadata": {
+        "limit_budget_usd": "70",
+        "limit_concurrency": "8",
+        "limit_devices": "0",
+        "limit_premium_models": "true",
+        "limit_projects": "30",
+        "limit_retention_days": "180",
+        "limit_runs": "8000",
+        "limit_seats": "10",
+        "limit_suggestions": "8000",
+        "plan": "scale",
+        "tax_code_note": "SaaS business use"
+      }
+    }
+  },
+  "pitchbox_scale_yearly": {
+    "price": {
+      "id": "price_1UDgxlPbW9e1kAHzfLrdSXuZ",
+      "lookup_key": "pitchbox_scale_yearly",
+      "unit_amount": 199000,
+      "currency": "eur",
+      "recurring": {
+        "interval": "year",
         "interval_count": 1,
         "meter": null,
         "trial_period_days": null,

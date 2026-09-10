@@ -11,6 +11,9 @@
  *   - the Checkout payload this repo sends is one Stripe accepts under Managed
  *     Payments, including that the parameters it must not send are absent;
  *   - the portal session opens for a customer this repo created;
+ *   - the portal configuration still defers a downgrade to period end, which
+ *     is a property of an object in Stripe and cannot be asserted from here
+ *     any other way (#613);
  *   - the recorded catalogue in shared/tests/fixtures/stripe/catalogue.json
  *     still matches the account, which is what keeps the hermetic mapping test
  *     honest.
@@ -25,11 +28,16 @@ import { createStripeClient } from '../shared/src/stripe/client.js';
 
 const KEY_PATH = join(homedir(), '.config/pitchbox-stripe-test.key');
 const FIXTURE = join(import.meta.dirname, '../shared/tests/fixtures/stripe/catalogue.json');
+// All six prices, not a sample: every one of them is a price a customer can be
+// sold, so a drifted amount or a missing lookup key on any of them is a real
+// defect, and the two yearly ones were exactly the pair nothing looked at.
 const LOOKUPS = [
   'pitchbox_solo_monthly',
+  'pitchbox_solo_yearly',
   'pitchbox_growth_monthly',
   'pitchbox_growth_yearly',
   'pitchbox_scale_monthly',
+  'pitchbox_scale_yearly',
 ];
 
 function readKey(): string {
@@ -87,6 +95,64 @@ for (const lookup of LOOKUPS) {
     drift += 1;
   } else {
     console.log(`${lookup}: ok (${price.unit_amount} ${price.currency})`);
+  }
+}
+
+// The portal configuration is what defers a downgrade to period end (#613), and
+// nothing in the app can assert it: the app only ever passes a configuration id
+// to `billing_portal/sessions`, and the behaviour lives in the object that id
+// names. A configuration whose `schedule_at_period_end` conditions went missing
+// applies a cheaper price immediately, taking value from a customer who did
+// nothing wrong, and it looks identical from this repo. So read it back here.
+//
+// Only the conditions can be checked this way. `subscription_update.products`,
+// which is what decides that all six prices are switchable, is accepted on
+// write and then **not returned** on read (measured 2026-09-10: the object
+// comes back with `enabled`, `default_allowed_updates`, `proration_behavior`,
+// `schedule_at_period_end`, `billing_cycle_anchor` and
+// `trial_update_behavior`, and nothing else). Reading it back proves nothing
+// about the price list, so this does not pretend to: that half is verified by
+// opening a portal session for a subscribed customer and looking at the page.
+const REQUIRED_CONDITIONS = ['decreasing_item_amount', 'shortening_interval'];
+
+type PortalConfiguration = {
+  id: string;
+  is_default: boolean;
+  metadata: Record<string, string>;
+  features: {
+    subscription_update: {
+      enabled: boolean;
+      schedule_at_period_end?: { conditions: { type: string }[] };
+    };
+  };
+};
+
+const portalResponse = await fetch(
+  'https://api.stripe.com/v1/billing_portal/configurations?limit=100',
+  { headers: { Authorization: `Bearer ${readKey()}`, 'Stripe-Version': '2025-03-31.basil' } },
+);
+const portalList = (await portalResponse.json()) as { data: PortalConfiguration[] };
+const portal =
+  portalList.data.find((c) => c.metadata?.pitchbox === 'portal') ??
+  portalList.data.find((c) => c.is_default);
+
+if (!portal) {
+  console.log('portal: no configuration on the account');
+  drift += 1;
+} else {
+  const update = portal.features.subscription_update;
+  const conditions = (update.schedule_at_period_end?.conditions ?? []).map((c) => c.type);
+  const missing = REQUIRED_CONDITIONS.filter((c) => !conditions.includes(c));
+  if (!update.enabled) {
+    console.log(`portal ${portal.id}: subscription_update is disabled, no plan switching at all`);
+    drift += 1;
+  } else if (missing.length > 0) {
+    console.log(
+      `portal ${portal.id}: a downgrade applies IMMEDIATELY - missing schedule_at_period_end condition(s) ${missing.join(', ')}`,
+    );
+    drift += 1;
+  } else {
+    console.log(`portal ${portal.id}: ok (defers on ${conditions.join(', ')})`);
   }
 }
 
