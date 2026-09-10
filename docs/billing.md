@@ -287,6 +287,7 @@ Subscriptions and emails, dashboard only - no API key reaches it):
 | Emails about expiring cards                     | on                                |
 | Emails when card payments fail                  | on                                |
 | Emails when bank debit payments fail            | on                                |
+| Payment method updates                          | link to a Stripe-hosted page      |
 | Link for customers to manage their subscription | on, to the Stripe customer portal |
 | Trial reminder                                  | off - there is no trial           |
 
@@ -302,11 +303,16 @@ read-only at day 14, so the order is: failure and email, 14 days of grace,
 read-only, then the cancellation arrives as
 `customer.subscription.deleted` and drops the org to Free, a working plan.
 
-One knob is deliberately left alone. **Payment method updates** still points at
-`https://pitchbox.app` for every email (the legacy "mix of both" setup);
-switching it to the Stripe-hosted page is the right destination, but the
-dashboard warns the change "cannot be reversed", so it is Lorenzo's call rather
-than a settings edit.
+**Payment method updates is a one-way door, and it is now through it.** Until
+2026-09-10 the account was on the legacy "mix of both" setup, where all four
+emails pointed at `https://pitchbox.app`, the marketing homepage, where no card
+can be updated. It is now the Stripe-hosted page: the customer updates the card
+without signing in to the app, and the destination stops depending on our
+deploy. The dashboard confirms that switch with "this change cannot be
+reversed", and it means it - the legacy option is gone from the page
+afterward, and the custom-URL fields with it. The only remaining choice there
+is a single custom link, which would need an authenticated page of ours that
+can actually take a card, which Managed Payments does not give us.
 
 Two consequences worth knowing before support is promised anywhere:
 
