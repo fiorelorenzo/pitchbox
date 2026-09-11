@@ -113,6 +113,72 @@ describe('checkStyle: structural rules, one test per rule with a passing counter
   });
 });
 
+describe('checkStyle: Italian counterparts of the structural rules (classifyLanguage picks the list)', () => {
+  const italianCases: Array<{ ruleId: string; fires: string; doesNotFire: string }> = [
+    {
+      ruleId: 'filler-opener',
+      fires: 'Grande post, davvero un ottimo lavoro da parte del team.',
+      doesNotFire: 'Il team ha lavorato bene su questo argomento nelle ultime settimane.',
+    },
+    {
+      ruleId: 'puffery',
+      fires: 'La nostra piattaforma è davvero innovativa e pronta per il mercato.',
+      doesNotFire: 'La nostra piattaforma è pronta per il mercato da qualche settimana.',
+    },
+    {
+      ruleId: 'wrapup-closer',
+      fires: 'Il progetto è terminato in orario. Resto a disposizione per qualsiasi chiarimento.',
+      doesNotFire: 'Il progetto è terminato in orario e il cliente ha già dato un primo riscontro.',
+    },
+    {
+      ruleId: 'not-x-but-y',
+      fires: "Questo non è un problema, è un'opportunità da cogliere subito.",
+      doesNotFire: 'Questo è un problema serio, ma il team lo risolverà entro venerdì.',
+    },
+    {
+      ruleId: 'fast-paced-cliche',
+      fires: 'In un mondo sempre più connesso, la velocità di risposta conta davvero.',
+      doesNotFire: 'Il mondo del lavoro cambia sempre più velocemente di quanto pensassimo.',
+    },
+    {
+      ruleId: 'tricolon',
+      fires: 'Il prodotto è veloce, semplice, e affidabile.',
+      doesNotFire: 'Il prodotto è veloce e affidabile.',
+    },
+  ];
+
+  it.each(italianCases)(
+    '$ruleId fires on the Italian construction, tags the finding, and not on ordinary Italian prose',
+    ({ ruleId, fires, doesNotFire }) => {
+      const found = checkStyle(fires);
+      expect(ruleIds(found)).toContain(ruleId);
+      const hit = found.find((f) => f.ruleId === ruleId);
+      expect(hit?.message).toContain('(Italian)');
+      expect(ruleIds(checkStyle(doesNotFire))).not.toContain(ruleId);
+    },
+  );
+
+  it('flags "cosa ne pensi?" only when it is the closing sentence, not mid-text', () => {
+    const closing = 'Abbiamo appena lanciato la nuova funzione di ricerca. Cosa ne pensi?';
+    expect(ruleIds(checkStyle(closing))).toContain('wrapup-closer');
+    const midText =
+      'Cosa ne pensi? Fammi sapere entro la fine della settimana quando riesci a provarla di persona con il resto del team.';
+    expect(ruleIds(checkStyle(midText))).not.toContain('wrapup-closer');
+  });
+
+  it('flags "approfondire" as a closing verb only near the end of the draft, not as a general word ban', () => {
+    const closing =
+      'Abbiamo condiviso i risultati del test interno. Fammi sapere se vuoi approfondire.';
+    expect(ruleIds(checkStyle(closing))).toContain('wrapup-closer');
+    // "approfondire" is an ordinary Italian verb far from the end of the
+    // draft here - the puffery list deliberately excludes it as a bare
+    // word ban, and the closer check is gated to the closing window.
+    const midText =
+      'Vorrei approfondire questo argomento in un articolo dedicato nelle prossime settimane, perché il team ha raccolto moltissimi dati interessanti durante lo sviluppo del progetto, e sarebbe un peccato non condividerli con calma.';
+    expect(ruleIds(checkStyle(midText))).not.toContain('wrapup-closer');
+  });
+});
+
 describe('checkStyle: the check is not conditional', () => {
   it('runs every rule regardless of draft length', () => {
     // A one-character draft still gets checked; there is no length guard.
@@ -142,6 +208,21 @@ describe('checkStyle: accents and diacritics are never touched', () => {
     expect(repaired).toContain('pi\u00F9');
     expect(repaired).toContain('gi\u00E0');
     expect(repaired).toContain('\u00E8 qui');
+  });
+
+  it('matches an Italian phrase carrying an accent and applyMechanicalRepairs leaves it untouched', () => {
+    const text = 'In un mondo sempre più connesso \u2014 la velocità conta davvero.';
+    const findings = checkStyle(text);
+    const fastPaced = findings.find((f) => f.ruleId === 'fast-paced-cliche');
+    expect(fastPaced?.span).toBe('In un mondo sempre più');
+    expect(fastPaced?.message).toContain('(Italian)');
+    const repaired = applyMechanicalRepairs(text);
+    // The em dash is mechanically repaired; the accented phrase this rule
+    // matched, and every other accented letter in the text, survive
+    // byte-for-byte - only the character-level finding was ever touched.
+    expect(repaired).toBe('In un mondo sempre più connesso, la velocità conta davvero.');
+    expect(repaired).toContain('più');
+    expect(repaired).toContain('velocità');
   });
 });
 
