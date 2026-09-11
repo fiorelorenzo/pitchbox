@@ -14,6 +14,8 @@ import {
   type SuggestUsage,
 } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
+import { setLocale } from '../lib/i18n/index.js';
+import { resolvePanelLocale } from './shared/panel-locale.js';
 import { mountPanel, panelFor, type PanelHandle } from './shared/panel-host.js';
 import { insertComposerText } from './linkedin-comment.js';
 import {
@@ -444,4 +446,12 @@ function init(): void {
   obs.observe(document.documentElement, { childList: true, subtree: true });
 }
 
-if (claimDocument('linkedin-post-assist')) init();
+// LOR-261: see linkedin-comment-assist.ts's own note on this - same
+// posture, `init()` never waits on the round trip, resolved once per
+// document rather than on a later settings change, and against this
+// script's own copy of `lib/i18n/index.js` (a separate build from that
+// script's, no shared module graph between the two).
+if (claimDocument('linkedin-post-assist')) {
+  init();
+  void resolvePanelLocale().then(setLocale);
+}

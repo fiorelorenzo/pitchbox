@@ -14,6 +14,8 @@ import {
   type SuggestUsage,
 } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
+import { setLocale } from '../lib/i18n/index.js';
+import { resolvePanelLocale } from './shared/panel-locale.js';
 import { mountPanel, panelFor, type PanelHandle } from './shared/panel-host.js';
 import { insertComposerText } from './linkedin-comment.js';
 import {
@@ -960,4 +962,35 @@ function init(): void {
   }, COMPOSER_WAIT_MS);
 }
 
-if (claimDocument('linkedin-comment-assist')) init();
+// LOR-261: `init()` wires everything the human can act on immediately, same
+// as before - the panel simply renders at DEFAULT_LOCALE until this
+// resolves, which in practice is long before a human clicks anything.
+// Gating `init()` on the round trip would risk delaying the composer wait
+// diagnostic and every selector observer for no benefit real usage ever
+// needs.
+//
+// Two decisions this fix has to make explicit, matching AGENTS.md's own
+// note on the side panel's theme (applied at mount only, once mistaken for
+// a bug):
+//
+// 1. This resolves once per document, not on every mount and not on a
+//    later `chrome.storage` change. An operator who flips the language in
+//    Settings while a LinkedIn tab is already open sees the new language on
+//    that tab's next load, not on that tab's next composer click - a panel
+//    is short-lived and per-composer, the page is not, and there is
+//    nowhere on this side of the message boundary to hear about the change
+//    without adding a second `chrome.storage` reader here (the drift class
+//    of bug `PairingList.svelte` already shipped once).
+// 2. `locale`/`t` (`lib/i18n/index.js`) are module-scope singletons, but
+//    this script and `linkedin-post-assist.js` are separate builds with no
+//    shared module graph (each is a standalone IIFE - see
+//    `panel-scripts.ts`'s own doc comment for why) - so each gets its own
+//    copy of that module and its own store, resolved independently
+//    (against the same worker, so both land on the same answer). Two panels
+//    from *this* script, open on the same page at once, do share one store
+//    and stay in lockstep with each other, which is the behaviour the
+//    module singleton is for.
+if (claimDocument('linkedin-comment-assist')) {
+  init();
+  void resolvePanelLocale().then(setLocale);
+}

@@ -17,6 +17,7 @@ import {
 import { api, type DmSyncFanout } from './lib/api.js';
 import { logEvent } from './lib/activity.js';
 import { getSettings as getExtensionSettings, type ExtensionSettings } from './lib/settings.js';
+import { resolveInitialLocale } from './lib/i18n/index.js';
 import { hasImageCapturePermission, hasLinkedInPermission } from './lib/permissions.js';
 import { recordLinkedInAccess } from './lib/linkedin-access.js';
 import linkedinCommentScriptPath from './content/linkedin-comment.ts?script';
@@ -510,6 +511,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           : { ok: false as const },
       )
       .then(sendResponse)
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (msg?.type === 'pitchbox:resolve-locale') {
+    // LOR-261: the in-page LinkedIn panel resolves its locale here rather
+    // than reading chrome.storage itself - see
+    // content/shared/panel-locale.ts's own doc comment for why. This is the
+    // same storage/UI-language fallback the side panel's `main.ts` already
+    // runs, just from a context that can answer a content script's request.
+    resolveInitialLocale()
+      .then((locale) => sendResponse({ ok: true, locale }))
       .catch(() => sendResponse({ ok: false }));
     return true;
   }
