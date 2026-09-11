@@ -50,18 +50,18 @@ describe('POST /api/extension/locale', () => {
   beforeEach(reset);
 
   it('rejects a request with no bearer token (401)', async () => {
-    await expect(
-      localePost({ request: bearer(null, { locale: 'it' }) }),
-    ).rejects.toMatchObject({ status: 401 });
+    await expect(localePost({ request: bearer(null, { locale: 'it' }) })).rejects.toMatchObject({
+      status: 401,
+    });
   });
 
   it('rejects a locale outside the supported set (400)', async () => {
     const org = await seedOrg('loc-invalid');
     const token = 'device-token-invalid-locale';
     await mintDevice(org.id, token);
-    await expect(
-      localePost({ request: bearer(token, { locale: 'fr' }) }),
-    ).rejects.toMatchObject({ status: 400 });
+    await expect(localePost({ request: bearer(token, { locale: 'fr' }) })).rejects.toMatchObject({
+      status: 400,
+    });
   });
 
   it('writes through to the bound user and reports synced: true', async () => {
