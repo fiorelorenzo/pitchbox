@@ -188,9 +188,9 @@
     domain="draft-state"
     value={data.contactHistory.repliedAt ? 'replied' : 'sent'}
   />
-  <span>{t(locale, 'conversations.first-contact', { when: relativeTime(data.contactHistory.firstContactedAt) })}</span>
+  <span>{t(locale, 'conversations.first-contact', { when: relativeTime(data.contactHistory.firstContactedAt, locale) })}</span>
   {#if data.contactHistory.repliedAt}
-    <span>· {t(locale, 'conversations.replied-at', { when: relativeTime(data.contactHistory.repliedAt) })}</span>
+    <span>· {t(locale, 'conversations.replied-at', { when: relativeTime(data.contactHistory.repliedAt, locale) })}</span>
   {/if}
 </div>
 
@@ -208,7 +208,7 @@
           <StatusBadge domain="draft-kind" value={draft.kind} />
           <span>{t(locale, 'conversations.draft-number', { id: draft.id })}</span>
           {#if draft.sentAt}
-            <span>· {t(locale, 'conversations.sent-at', { when: relativeTime(draft.sentAt) })}</span>
+            <span>· {t(locale, 'conversations.sent-at', { when: relativeTime(draft.sentAt, locale) })}</span>
           {/if}
         </div>
       </div>
@@ -240,7 +240,7 @@
           <span class="font-mono">
             {isUs ? t(locale, 'conversations.you-label') : cp.userLabel(m.author)}
           </span>
-          <span>· {relativeTime(m.createdAt)}</span>
+          <span>· {relativeTime(m.createdAt, locale)}</span>
         </div>
       </div>
     {/each}

@@ -512,11 +512,11 @@
                   {truncateBody(c.lastMessage.body)}
                 </p>
                 <p class="mt-1 text-[11px] text-muted-foreground">
-                  {relativeTime(c.lastMessage.createdAt)}
+                  {relativeTime(c.lastMessage.createdAt, locale)}
                 </p>
               {:else}
                 <p class="mt-1 text-xs text-muted-foreground">
-                  {t(locale, 'people.sent-no-reply', { when: relativeTime(c.lastContactedAt) })}
+                  {t(locale, 'people.sent-no-reply', { when: relativeTime(c.lastContactedAt, locale) })}
                 </p>
               {/if}
             </div>
@@ -611,7 +611,7 @@
 		<span class="inline-flex items-center gap-1.5">
 			<StatusBadge domain="contact-status" value="replied" />
 			<span class="text-[10px] text-muted-foreground tabular-nums">
-				{relativeTime(c.repliedAt)}
+				{relativeTime(c.repliedAt, locale)}
 			</span>
 		</span>
 	{:else if c.replyCheckedAt}
@@ -666,7 +666,7 @@
 				</Table.Cell>
 				<Table.Cell>{@render kindCell(c)}</Table.Cell>
 				<Table.Cell class="text-xs text-muted-foreground" title={String(c.lastContactedAt)}>
-					{relativeTime(c.lastContactedAt)}
+					{relativeTime(c.lastContactedAt, locale)}
 				</Table.Cell>
 				<Table.Cell>{@render replyCell(c)}</Table.Cell>
 				<Table.Cell class="text-right">{@render draftCell(c)}</Table.Cell>
@@ -694,7 +694,7 @@
 				{@render replyCell(c)}
 			</div>
 			<div class="text-xs text-muted-foreground" title={String(c.lastContactedAt)}>
-				{t(locale, 'people.last-contacted', { when: relativeTime(c.lastContactedAt) })}
+				{t(locale, 'people.last-contacted', { when: relativeTime(c.lastContactedAt, locale) })}
 			</div>
 		</div>
 	{/each}

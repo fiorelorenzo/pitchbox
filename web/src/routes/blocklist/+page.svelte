@@ -249,7 +249,7 @@
 									{e.scope}{e.projectSlug ? ` · ${e.projectSlug}` : ''}
 								</Table.Cell>
 								<Table.Cell class="text-xs text-muted-foreground" title={String(e.addedAt)}>
-									{relativeTime(e.addedAt)}
+									{relativeTime(e.addedAt, locale)}
 								</Table.Cell>
 								<Table.Cell>
 									{#if isAdmin}

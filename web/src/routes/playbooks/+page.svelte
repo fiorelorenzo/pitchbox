@@ -124,7 +124,7 @@
 					<p class="text-xs text-muted-foreground line-clamp-3">{p.description}</p>
 				{/if}
 				<p class="text-[10px] text-muted-foreground/70">
-					{t(locale, 'playbooks.updated-at', { when: relativeTime(p.updatedAt) })}
+					{t(locale, 'playbooks.updated-at', { when: relativeTime(p.updatedAt, locale) })}
 				</p>
 				<div class="flex gap-2">
 					<Button size="sm" variant="outline" onclick={() => goto(`/playbooks/${p.id}`)}>

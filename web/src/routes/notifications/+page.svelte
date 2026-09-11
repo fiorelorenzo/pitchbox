@@ -115,7 +115,7 @@
 								<p class="text-xs text-muted-foreground mt-0.5">{n.body}</p>
 							{/if}
 							<p class="text-[10px] text-muted-foreground/70 mt-1">
-								<span class="font-mono">{n.kind}</span> · {relativeTime(n.createdAt)}
+							<span class="font-mono">{n.kind}</span> · {relativeTime(n.createdAt, locale)}
 							</p>
 						</div>
 					</div>
@@ -156,7 +156,7 @@
 										{badgeLabel(locale, 'webhook-delivery-status', d.status)} · <span class="font-mono">{d.eventType}</span>
 									</p>
 									<p class="text-muted-foreground/80 mt-0.5">
-										{t(locale, 'notifications.delivery-attempt', { attempts: d.attempts, maxAttempts: d.maxAttempts })} · {relativeTime(d.createdAt)}
+										{t(locale, 'notifications.delivery-attempt', { attempts: d.attempts, maxAttempts: d.maxAttempts })} · {relativeTime(d.createdAt, locale)}
 									</p>
 									{#if d.lastError}
 										<p class="{TONE_TEXT_CLASS.rose} mt-0.5 truncate" title={d.lastError}>
