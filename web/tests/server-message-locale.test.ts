@@ -45,14 +45,14 @@ async function seedProject(orgId: number, name: string): Promise<number> {
   return project.id;
 }
 
-function postEvent(orgId: number, body: unknown, locale: 'en' | 'it'): RequestEvent {
+function postEvent<T>(orgId: number, body: unknown, locale: 'en' | 'it'): T {
   return {
     locals: { org: { id: orgId, slug: 'default', role: 'owner' }, locale },
     request: new Request('http://x/', { method: 'POST', body: JSON.stringify(body) }),
-  } as unknown as RequestEvent;
+  } as unknown as T;
 }
 
-function patchEvent(orgId: number, id: number, body: unknown, locale: 'en' | 'it'): RequestEvent {
+function patchEvent<T>(orgId: number, id: number, body: unknown, locale: 'en' | 'it'): T {
   return {
     locals: { org: { id: orgId, slug: 'default', role: 'owner' }, locale },
     params: { id: String(id) },
@@ -61,7 +61,7 @@ function patchEvent(orgId: number, id: number, body: unknown, locale: 'en' | 'it
       body: JSON.stringify(body),
       headers: { 'content-type': 'application/json' },
     }),
-  } as unknown as RequestEvent;
+  } as unknown as T;
 }
 
 describe('runner_not_allowed message: same key, translated sentence (#219/#410)', () => {
