@@ -185,3 +185,138 @@ No case body from either corpus is quoted anywhere above or in the script's own 
 every number is an aggregate (a count, a median, a correlation) and every third-party
 contact in candidate 16 is an anonymised label (`contact-01` through `contact-22`), not a
 name.
+
+## LOR-281: does the reply-drafter's own domain carry it?
+
+Status: spike, closed. No prompt change, no scorer change, no playbook change - LOR-281's
+own acceptance criteria rule that out regardless of the numbers below, the same way LOR-271's
+did above. This section and `scripts/spike-lor281-reply-drafter-length-signal.ts` are the
+whole deliverable.
+
+Filed from LOR-271's own conclusion above. On Corpus B (233 of Lorenzo's real sent LinkedIn
+DMs), three candidates cleared LOR-271's bar: the length of the message he's replying to
+(r=0.44 raw, r=0.61 log), how long he took to reply (r=0.37 log), and which specific contact
+he's replying to (eta<sup>2</sup>=0.375, the largest effect anywhere in that spike). LOR-271
+measured all three on a private, reciprocal exchange between people who already know each
+other. That is not the reply-drafter playbook's own domain
+(`playbooks/reply-drafter.md`: a continuation of a thread on Reddit, Hacker News or Mastodon,
+`reply_comment` public or `reply_dm` private) on at least two axes that matter: the target
+user is a stranger far more often than an existing contact, and on Reddit/HN a `reply_comment`
+is public rather than a DM. The argument for reusing LOR-271's numbers there is exactly
+"both are a reciprocal 1:1 exchange" - and per LOR-271's own issue, that argument, not the DM
+numbers themselves, is the risk this spike exists to check.
+
+### No corpus of that domain exists to harvest
+
+Checked before writing a line of analysis, not assumed: no Reddit/HN/Mastodon export sits
+anywhere under `private/` in this worktree, this worktree's database is a fresh core seed
+with no real campaign history, and no production database is reachable from a worktree.
+LOR-271's own two corpora came from Lorenzo's own logged-in LinkedIn session; nothing
+analogous has been harvested yet for a real Reddit, Hacker News or Mastodon account. This is
+not a gap in this analysis, it is a gap in the data available to it - the same posture
+LOR-271 itself took for "existing comment count / thread position" (untestable, no data,
+scored neither way, not guessed at).
+
+Given that, this spike does the next best thing rather than pretend the gap does not exist:
+it re-uses Corpus B (already carrying the strongest three candidates) and asks the one
+question it _can_ answer without new data - does relationship depth explain those three
+candidates? - since "he already knows this person" is exactly the assumption a stranger
+reply on Reddit or HN breaks. Every conversation in Corpus B is split into **single-exchange**
+(he replied to that contact exactly once in the whole export - the closest this corpus gets
+to "a stranger, once") and **established** (two or more of his replies to the same contact -
+the shape LOR-271 actually measured). A candidate whose effect survives in the single-exchange
+half is not just an artifact of an existing relationship; one that does not is itself an
+answer for that half of the analogy.
+
+### The test
+
+| candidate                          | subset                   | n          | effect                | 95% CI          | p      | verdict                                 |
+| ---------------------------------- | ------------------------ | ---------- | --------------------- | --------------- | ------ | --------------------------------------- |
+| preceding message length (log-log) | full corpus (reproduced) | 188        | r=0.606               | [0.507, 0.689]  | 0.0001 | **load-bearing** (LOR-271's own number) |
+| preceding message length (log-log) | single-exchange          | 51         | r=0.615               | [0.408, 0.761]  | 0.0001 | **load-bearing - survives**             |
+| preceding message length (log-log) | established              | 137        | r=0.58                | [0.457, 0.682]  | 0.0001 | **load-bearing** (comparison group)     |
+| response latency (log-log)         | full corpus (reproduced) | 188        | r=0.365               | [0.234, 0.482]  | 0.0001 | **load-bearing** (LOR-271's own number) |
+| response latency (log-log)         | single-exchange          | 51         | r=0.208               | [-0.072, 0.457] | 0.1414 | **does not survive**                    |
+| response latency (log-log)         | established              | 137        | r=0.373               | [0.219, 0.509]  | 0.0001 | **load-bearing** (comparison group)     |
+| which contact he is replying to    | full corpus (reproduced) | 105 of 188 | eta<sup>2</sup>=0.375 | n/a             | 0.0131 | **load-bearing** (LOR-271's own number) |
+| which contact he is replying to    | single-exchange          | 51         | -                     | n/a             | -      | **structurally uncomputable**           |
+
+Every row reproduces from `npx tsx scripts/spike-lor281-reply-drafter-length-signal.ts`
+(exact command in "Reproduction" below); nothing here is hand-copied from a different run.
+
+**Preceding message length holds up.** It clears the same bar in the single-exchange half
+(r=0.615 log, n=51) as it does in the established half (r=0.58 log, n=137) and the full corpus
+(r=0.606 log, n=188) - within noise of each other, not a step down. Whatever drives this
+correlation, it is not "he already knows this person."
+
+**Response latency does not.** It clears p<0.05 with a medium-or-larger effect in the
+established half (r=0.373 log, p=0.0001) but not in the single-exchange half (r=0.208 log,
+p=0.1414, CI crosses zero) - consistent with a delayed reply to an established contact coming
+with more catching-up text than a delayed reply to someone he may never hear from again. At
+n=51 this is "not distinguishable from noise at this n," the same verdict LOR-271 gave
+borderline candidates on Corpus A, not a confident rejection - but it is real evidence the
+effect concentrates in ongoing relationships rather than being latency-driven in general.
+
+**Contact identity is the one that cannot even be asked the question.** Every contact in the
+single-exchange half has exactly one reply by construction - that is what "single-exchange"
+means - so an eta-squared there would measure group size, not a per-contact effect: zero
+groups reach any floor at all. Widening the lens: only 22 of 89 distinct conversation partners
+in the whole of Corpus B (24.7%) ever reach the >=3-reply floor LOR-271's own eta-squared
+needed - the largest effect LOR-271 found is already concentrated in a minority of Lorenzo's
+own LinkedIn contacts. A Reddit or HN account replying to strangers in public threads has,
+structurally, far fewer repeat contacts than an existing professional network built over
+years - this is reasoned from how the two platforms work, not measured on Reddit data, since
+no Reddit data exists to measure it on (see above). Reasoned or measured, the direction is the
+same: the single largest effect in LOR-271's spike is the one candidate least likely to
+transfer to the reply-drafter's actual domain, because that domain's own shape is largely
+incompatible with the repeated-contact structure the effect needs to exist at all.
+
+### Conclusion
+
+**No signal-derived length target ships from this spike, and nothing under
+`playbooks/reply-drafter.md` or `shared/src/assist/suggest-prompt.ts` changes.** Two
+independent reasons, either one sufficient on its own: LOR-281's own acceptance criteria rule
+out a prompt or playbook change in this issue regardless of the numbers, and separately, no
+real corpus of the reply-drafter's actual domain (a Reddit/HN/Mastodon thread-reply pair) was
+obtainable to test the analogy directly - only a same-corpus proxy for one axis of it
+(relationship depth). That proxy is not reassuring across the board: it is genuinely
+supportive for preceding-message length (survives the stranger-like restriction intact) and
+genuinely discouraging for the other two candidates LOR-271 found - response latency weakens
+below the significance bar, and contact identity, the largest effect measured anywhere in
+LOR-271's spike, is structurally the least transferable of the three to a domain of mostly
+one-off strangers.
+
+`playbooks/reply-drafter.md`'s existing length guidance (1-3 short paragraphs for a `reply_dm`,
+1-2 sentences for a `reply_comment`) stays exactly as written - the same
+operator/genre-level default LOR-271 recommended keeping for the structurally similar
+comment-drafting problem, for the same reason: nothing measured against the domain that
+actually matters clears a bar worth keying a change on.
+
+### What would change this answer
+
+A real corpus of reply-drafter thread-reply pairs (the parent turn plus the reply Lorenzo
+actually sent, harvested from real Reddit, Hacker News or Mastodon account activity - real
+text, no synthetic cases, the same discipline Corpus A and B were held to), at a scale
+comparable to Corpus B (n in the 100+ range). `scripts/spike-lor281-reply-drafter-length-signal.ts`
+already has a loader for it: `--reddit-cases=<path>` (schema in the script's own
+`RedditCase`/`RedditCasesFile` types - id/platform/replyKind/precedingWords/replyWords/
+optional latencyMinutes/contactId) runs the same candidates against it with no further code
+change, the same promise LOR-271's own script makes for a bigger post-comment corpus. Worth
+testing first on that corpus, in order: preceding message length (the one candidate that
+survived this spike's own stranger-like restriction), then response latency and contact
+identity only if the first replicates and there is n to spare - contact identity specifically
+needs enough repeat contacts to reach the >=3-reply floor at all, which a cold-outreach
+account may simply never accumulate.
+
+### Reproduction
+
+```bash
+npx tsx scripts/spike-lor281-reply-drafter-length-signal.ts
+```
+
+Optional flags: `--export-dir=<path>` (default `private/voice-eval/linkedin-export`, same
+Corpus B LOR-271's script reads) and `--reddit-cases=<path>` (default: none, reported as an
+explicit zero-data finding rather than skipped silently). No model call, no network - the
+permutation test uses the same seeded mulberry32 PRNG LOR-271's script uses, so a re-run
+prints byte-identical numbers; verified by diffing two consecutive runs before writing this
+section.
