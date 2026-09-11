@@ -3,7 +3,12 @@
 	import { relativeTime } from '$lib/utils/time';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { getPresenter } from '$lib/platforms/presenter';
-	import { scoreBand, DEFAULT_QUALITY_RUBRIC, type QualityRubric } from '@pitchbox/shared/quality-judge';
+	import {
+		scoreBand,
+		DEFAULT_QUALITY_RUBRIC,
+		DETERMINISTIC_QUALITY_MODEL,
+		type QualityRubric,
+	} from '@pitchbox/shared/quality-judge';
 	import { TONE_CLASS, type Tone } from '$lib/config/status-badges';
 	import { parseStyleFindings } from '$lib/utils/style-findings';
 
@@ -30,6 +35,13 @@
 		dedupWarning?: string | null;
 		undeliverableReason?: string | null;
 		qualityScore?: number | null;
+		qualityReason?: string | null;
+		// LOR-229: the literal string `DETERMINISTIC_QUALITY_MODEL` when the
+		// score is computed (no model call), or a real Gateway model id when
+		// a configured judge scored it - `null` when there is no score at
+		// all. Never rendered as the same badge as the other: a measurement
+		// and an opinion are different claims.
+		qualityModel?: string | null;
 		variantGroupId?: string | null;
 		variantLabel?: string | null;
 		scheduledSendAfter?: string | Date | null;
@@ -51,6 +63,14 @@
 
 	const presenter = $derived(getPresenter(draft.platformSlug));
 	const band = $derived(scoreBand(draft.qualityScore, rubric));
+	const isJudged = $derived(
+		draft.qualityModel != null && draft.qualityModel !== DETERMINISTIC_QUALITY_MODEL,
+	);
+	const qualityTitle = $derived(
+		isJudged
+			? `Judged by ${draft.qualityModel}${draft.qualityReason ? `: ${draft.qualityReason}` : ''}`
+			: `Measured (style checker + operator voice, no model call)${draft.qualityReason ? `: ${draft.qualityReason}` : ''}`,
+	);
 	// Mirrors DraftDetail's scheduledUntil: only a future scheduled_send_after
 	// is worth flagging - a past one no longer blocks the send.
 	const scheduledUntil = $derived.by(() => {
@@ -59,7 +79,7 @@
 		return when.getTime() > Date.now() ? when : null;
 	});
 	// D44: same rose as the "red" quality band - a reviewer flags the same
-	// way whether the LLM judge or the mechanical style checker raised it.
+	// way whether the judge or the mechanical style checker raised it.
 	const styleFindingCount = $derived(parseStyleFindings(draft.metadata).length);
 </script>
 
@@ -84,9 +104,9 @@
 			{#if band !== 'none'}
 				<span
 					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium {TONE_CLASS[BAND_TONE[band as 'red' | 'amber' | 'green']]}"
-					title="Quality score (LLM judge)"
+					title={qualityTitle}
 				>
-					Q{draft.qualityScore}
+					{isJudged ? 'J' : 'M'}{draft.qualityScore}
 				</span>
 			{/if}
 			{#if styleFindingCount > 0}

@@ -632,8 +632,6 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       inputSchema: {
         body: z.string().min(1).describe('the rewritten draft body'),
         title: z.string().optional().describe('new title (post drafts only)'),
-        qualityScore: z.number().optional().describe('quality score 0-100 for the rewritten draft'),
-        qualityReason: z.string().optional().describe('one-line reason for the score'),
         runId: z
           .number()
           .int()
@@ -642,13 +640,13 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
           .describe('run id (defaults to PITCHBOX_RUN_ID)'),
       },
     },
-    async ({ body, title, qualityScore, qualityReason, runId }) => {
+    async ({ body, title, runId }) => {
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         const ownershipErr = await checkOwnership('run', rid);
         if (ownershipErr) return errorResult(ownershipErr);
-        return jsonResult(await draftRegenFinish(rid, body, title, qualityScore, qualityReason));
+        return jsonResult(await draftRegenFinish(rid, body, title));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }
@@ -691,8 +689,6 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
         'Persist the drafted reply body, clear the drafting flag, and mark the run success. Returns { draftId }.',
       inputSchema: {
         body: z.string().min(1).describe('the drafted reply body'),
-        qualityScore: z.number().optional().describe('quality score 0-100 for the drafted reply'),
-        qualityReason: z.string().optional().describe('one-line reason for the score'),
         runId: z
           .number()
           .int()
@@ -701,13 +697,13 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
           .describe('run id (defaults to PITCHBOX_RUN_ID)'),
       },
     },
-    async ({ body, qualityScore, qualityReason, runId }) => {
+    async ({ body, runId }) => {
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         const ownershipErr = await checkOwnership('run', rid);
         if (ownershipErr) return errorResult(ownershipErr);
-        return jsonResult(await replyDraftFinish(rid, body, qualityScore, qualityReason));
+        return jsonResult(await replyDraftFinish(rid, body));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }

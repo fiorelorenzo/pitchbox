@@ -55,7 +55,7 @@ Write like this instead:
 
 1. **Start the run.** Call `run_start` (no arguments needed; it defaults to this session's campaign).
 
-   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (`targetHashtags`, optional `keywords`, `avoidKeywords`, `perTagLimit`, `maxAgeHours`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`, `rubricTemplate`.
+   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (`targetHashtags`, optional `keywords`, `avoidKeywords`, `perTagLimit`, `maxAgeHours`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`.
 
    Treat `campaign.config.systemInstructions` as additional voice & content guidance - it overrides defaults.
 
@@ -92,11 +92,9 @@ Write like this instead:
 
 8. **Pick the account.** Use the first account with `role === 'personal'`. Record `accountId`.
 
-9. **Score each draft.** Using `rubricTemplate` from the run context, score the reply 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, contextual replies and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+9. **Check your own style before persisting.** Call `check_style` with the exact reply body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
 
-10. **Check your own style before persisting.** Call `check_style` with the exact reply body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
-
-11. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+10. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
 > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
 
@@ -111,15 +109,13 @@ Each draft (sent later as a reply status via `in_reply_to_id`, on human approval
   "body": "<reply text>",
   "reasoning": "2-3 sentences on why this status, what angle, what value you're adding.",
   "sourceRef": { "statusId": "109...", "statusUrl": "https://mastodon.social/@alice/109..." },
-  "metadata": { "matchedHashtag": "selfhosted", "matchedKeyword": "self-hosted" },
-  "qualityScore": 74,
-  "qualityReason": "concrete reference to their status, adds a real point"
+  "metadata": { "matchedHashtag": "selfhosted", "matchedKeyword": "self-hosted" }
 }
 ```
 
 `targetUser` is the author of the status you are replying to, as the fully qualified `author.acct` handle. Replying to someone counts as contacting them, so it feeds the blocklist, the dedup window and contact history. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.statusId` points at.
 
-12. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+11. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 

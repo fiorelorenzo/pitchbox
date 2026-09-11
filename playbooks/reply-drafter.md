@@ -48,7 +48,7 @@ Write like this instead:
 
 ## Steps
 
-1. **Load context.** Call `reply_draft_start` (no arguments needed). From the result read: `replyKind` (`reply_dm` / `reply_comment`), `platform`, `parent` (the original outbound draft's `body` and `reasoning`, for voice), `rubricTemplate`, and `thread` (every prior turn in chronological order, `isFromUs` marking ours vs theirs).
+1. **Load context.** Call `reply_draft_start` (no arguments needed). From the result read: `replyKind` (`reply_dm` / `reply_comment`), `platform`, `parent` (the original outbound draft's `body` and `reasoning`, for voice), and `thread` (every prior turn in chronological order, `isFromUs` marking ours vs theirs).
 
 2. **Read how you actually write.** Call `operator_voice` (no arguments) for your persona and derived writing voice, and `my_prior_takes` with a short query naming the subject of this conversation, for what you have already said about it elsewhere. `parent` already anchors the voice for this one thread; these two widen that to how you actually write in general.
 
@@ -62,13 +62,11 @@ Write like this instead:
    - No placeholders, no meta commentary. Output the message text a human would send.
    - Apply the House style section above literally: it outranks every default here and holds even when the campaign voice says nothing about it.
 
-4. **Score the reply.** Using `rubricTemplate`, score the reply 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted replies and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason`.
+4. **Check your own style before persisting.** Call `check_style` with the exact reply body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `reply_draft_finish` has no live model to send a rewrite back to.
 
-5. **Check your own style before persisting.** Call `check_style` with the exact reply body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `reply_draft_finish` has no live model to send a rewrite back to.
+5. **Submit.** Call `reply_draft_finish` with `{ "body": "<your reply>" }`. It writes the body, clears the drafting flag, and marks the run success. If it returns an error, read the message, fix the payload, and try again. **Maximum two retries.**
 
-6. **Submit.** Call `reply_draft_finish` with `{ "body": "<your reply>", "qualityScore": 68, "qualityReason": "answers their question, on tone" }`. It writes the body, clears the drafting flag, and marks the run success. If it returns an error, read the message, fix the payload, and try again. **Maximum two retries.**
-
-7. **On failure.** If `reply_draft_start` errors or you genuinely cannot draft a reply, call `run_finish` with `{ "status": "failed", "error": "<short reason>" }` and stop. The placeholder stays and the reviewer sees a Retry.
+6. **On failure.** If `reply_draft_start` errors or you genuinely cannot draft a reply, call `run_finish` with `{ "status": "failed", "error": "<short reason>" }` and stop. The placeholder stays and the reviewer sees a Retry.
 
 ## What this playbook must never do
 

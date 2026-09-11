@@ -52,7 +52,7 @@ Write like this instead:
 
 1. **Start the run.** Call `run_start` (no arguments needed).
 
-   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (`targetSubreddits`, `topicKeywords`, `avoidKeywords`, `postAngle`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`, `rubricTemplate`.
+   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (`targetSubreddits`, `topicKeywords`, `avoidKeywords`, `postAngle`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`.
 
 2. **Study each target subreddit.** For every subreddit in `campaign.config.targetSubreddits`, call `subreddit_snapshot` with `{ "subreddit": "<name>" }`.
    - Read the top posts of the week (titles, body excerpts, score, comment counts) from `posts`.
@@ -75,11 +75,9 @@ Write like this instead:
    - The title or body contains any term from `campaign.config.avoidKeywords`.
    - The subreddit's `rules` show explicit "no self-promotion" / "no AI-generated content" rules and the draft can't reasonably claim to be human-authored substantive content.
 
-6. **Score each draft.** Using `rubricTemplate` from the run context, score the post 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted posts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+6. **Check your own style before persisting.** Call `check_style` with the exact title and body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
 
-7. **Check your own style before persisting.** Call `check_style` with the exact title and body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
-
-8. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+7. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft:
 
@@ -96,13 +94,11 @@ Write like this instead:
        "subreddit": "<sub>",
        "format": "<launch | lessons | discussion | comparison>"
      },
-     "metadata": { "subreddit": "<sub>" },
-     "qualityScore": 78,
-     "qualityReason": "specific reference to their post, clear ask"
+     "metadata": { "subreddit": "<sub>" }
    }
    ```
 
-9. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
+8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
 
 ## Hard rules
 

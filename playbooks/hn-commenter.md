@@ -52,7 +52,7 @@ Write like this instead:
 
 1. **Start the run.** Call `run_start` (no arguments needed).
 
-   From the result extract `runId`, `project`, `platform` (should be `hackernews`), `campaign.config` (expects `listing` such as `top` / `new` / `ask` / `show`, optional `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `rubricTemplate`.
+   From the result extract `runId`, `project`, `platform` (should be `hackernews`), `campaign.config` (expects `listing` such as `top` / `new` / `ask` / `show`, optional `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`.
 
 2. **Fetch candidate stories.** Call `hn_search` once per topic keyword (or once with no query) and merge: `{ "listing": "<listing>", "query": "<keyword>", "limit": 30 }`.
 
@@ -79,11 +79,9 @@ Write like this instead:
 
 6. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` - no secret. Record `accountId`.
 
-7. **Score each draft.** Using `rubricTemplate` from the run context, score the comment 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted comments and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+7. **Check your own style before persisting.** Call `check_style` with the exact comment body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
 
-8. **Check your own style before persisting.** Call `check_style` with the exact comment body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
-
-9. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+8. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft:
 
@@ -96,15 +94,13 @@ Write like this instead:
      "body": "<comment text>",
      "reasoning": "Why this story, what angle, what value you're adding.",
      "sourceRef": { "itemUrl": "https://news.ycombinator.com/item?id=12345", "title": "..." },
-     "metadata": { "itemId": 12345, "listing": "top", "score": 142 },
-     "qualityScore": 78,
-     "qualityReason": "specific reference to their post, clear ask"
+     "metadata": { "itemId": 12345, "listing": "top", "score": 142 }
    }
    ```
 
    `targetUser` is the author of the story you are replying to (`by` on the item you scored). Commenting on someone's story counts as contacting them, so it feeds the blocklist, the dedup window and contact history. Hacker News has no scout staging candidates for the run, so nothing can recover this handle if you omit it: copy it across for every draft.
 
-10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+9. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 

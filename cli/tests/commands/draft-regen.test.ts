@@ -92,21 +92,20 @@ afterAll(async () => {
 });
 
 describe('pitchbox drafts:regen:*', () => {
-  it('start returns the draft, hint, platform, and rubric template', () => {
+  it('start returns the draft, hint, and platform - no rubric template, since scoring is no longer self-reported', () => {
     const parsed = lastJson(cli(`drafts:regen:start --run=${regenRunId}`));
     expect(parsed.ok).toBe(true);
     expect(parsed.data.draftId).toBe(draftId);
     expect(parsed.data.hint).toBe('shorter');
     expect(parsed.data.platform).toBe('reddit');
     expect(parsed.data.draft.body).toBe('old body');
-    expect(typeof parsed.data.rubricTemplate).toBe('string');
-    expect(parsed.data.rubricTemplate.length).toBeGreaterThan(0);
+    expect(parsed.data.rubricTemplate).toBeUndefined();
   });
 
-  it('finish overwrites the body, bumps version + count, clears the flag, ends the run, and re-scores', async () => {
+  it('finish overwrites the body, bumps version + count, clears the flag, ends the run, and recomputes the quality score server-side', async () => {
     const out = cliWithStdin(
       `drafts:regen:finish --run=${regenRunId}`,
-      JSON.stringify({ body: 'new body', qualityScore: 70, qualityReason: 'tightened' }),
+      JSON.stringify({ body: 'new body' }),
     );
     const parsed = lastJson(out);
     expect(parsed.ok).toBe(true);
@@ -118,13 +117,15 @@ describe('pitchbox drafts:regen:*', () => {
     expect(d.version).toBe(1);
     expect(d.regenerationCount).toBe(1);
     expect(d.regeneratingRunId).toBeNull();
-    expect(d.qualityScore).toBe(70);
-    expect(d.qualityReason).toBe('tightened');
+    // No style findings and no operator voice corpus in this fixture - the
+    // deterministic scorer has nothing to measure, so it reports "not
+    // scored" rather than guessing a number.
+    expect(d.qualityScore).toBeNull();
+    expect(d.qualityModel).toBeNull();
 
     const [r] = await db.select().from(schema.runs).where(eq(schema.runs.id, regenRunId));
     expect(r.status).toBe('success');
     expect(r.finishedAt).not.toBeNull();
-    expect(d.qualityModel).toBe(r.agentRunner);
 
     const [evt] = await db
       .select()
@@ -132,6 +133,22 @@ describe('pitchbox drafts:regen:*', () => {
       .where(eq(schema.draftEvents.draftId, draftId));
     expect(evt.event).toBe('regenerated');
     expect((evt.details as { previousBody: string }).previousBody).toBe('old body');
+  });
+
+  it('finish caps the score below green when the rewritten body carries a style finding, never trusting a self-report', async () => {
+    const out = cliWithStdin(
+      `drafts:regen:finish --run=${regenRunId}`,
+      JSON.stringify({
+        body: "In today's fast-paced world, it's worth noting the update shipped.",
+      }),
+    );
+    expect(lastJson(out).ok).toBe(true);
+
+    const db = getDb();
+    const [d] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draftId));
+    expect(d.qualityModel).toBe('deterministic');
+    expect(d.qualityScore).not.toBeNull();
+    expect(d.qualityScore).toBeLessThan(75);
   });
 
   it('finish rejects an empty body', () => {

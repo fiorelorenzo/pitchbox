@@ -109,4 +109,19 @@ describe('model function configuration', () => {
     // running, so it takes the drafting model rather than failing the run.
     expect(modelFunctionForPlaybook('some-future-playbook')).toBe('campaign_draft');
   });
+
+  it('quality_judge stays unconfigured by default (LOR-229): the raw config, not the resolved default, is what gates the judge call', async () => {
+    const db = getDb();
+    const config = await loadModelFunctionConfig(db);
+    expect(config.quality_judge).toBeNull();
+    // `resolveFunctionModel` still falls back to a coded default like every
+    // other function - `quality-judge.ts` deliberately never calls it for
+    // this one, reading `loadModelFunctionConfig` directly instead, since a
+    // resolved default would make the judge run on every deployment.
+    expect(await resolveFunctionModel(db, 'quality_judge')).toBe(
+      defaultModelForFunction('quality_judge'),
+    );
+    await saveModelFunctionModel(db, 'quality_judge', 'openai/gpt-5-mini');
+    expect((await loadModelFunctionConfig(db)).quality_judge).toBe('openai/gpt-5-mini');
+  });
 });

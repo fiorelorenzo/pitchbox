@@ -63,7 +63,7 @@ Pitchbox tracks every successful outreach in `contact_history`. Before creating 
 
 Dedup is per organization (#263). Two organizations reaching the same handle do not warn each other, because doing so would tell one tenant that another had already been in touch. On a single-tenant install everything lives under the `default` organization, so this makes no difference.
 
-A public comment counts as contact with the post's author (#336). A `post_comment` draft therefore carries that author as its `target_user`, and marking it as sent writes a `contact_history` row exactly like a DM: the author enters the dedup window, the blocklist applies before the draft is even created, and a second reply to the same person is warned about or skipped per the policy below. The handle is not left to the playbook to copy across. `drafts:create` derives it from the run's own staged candidates, matching them to the draft by the post identifier the draft already carries (`shared/src/comment-target.ts`). Hacker News stages no candidates, so there the playbook remains the only source, and a comment whose author cannot be named keeps a null target and writes no contact row rather than an invented one.
+A public comment counts as contact with the post's author (#336). A `post_comment` draft therefore carries that author as its `target_user`, and marking it as sent writes a `contact_history` row exactly like a DM: the author enters the dedup window, the blocklist applies before the draft is even created, and a second reply to the same person is warned about or skipped per the policy below. The handle is not left to the playbook to copy across. `drafts:create` derives it from the run's own staged candidates, matching them to the draft by the post identifier the draft already carries (`shared/src/comment-target.ts`). Hacker News stages no candidates, so there the playbook remains the only source, and a comment whose author cannot be named keeps a null target a…
 
 Behaviour is governed by `app_config.dedup_policy`:
 
@@ -93,28 +93,46 @@ The inbox detail panel offers a `Regenerate` action alongside Approve/Reject. Th
 
 ## Quality scoring
 
-New drafts carry a 0-100 quality score, but it is self-reported, not an
-independent judge's opinion: `shared/src/quality-judge.ts` holds only the
-rubric template and the score-to-band mapping, and no model call is ever
-made from that module. The rubric and thresholds live in
-`app_config.quality_rubric`:
+The score is no longer self-reported by the drafting agent. `shared/src/quality-judge.ts` computes a
+deterministic component at persistence time from `shared/src/voice-metrics.ts` and the operator's own
+measured voice profile (`shared/src/operator-voice-profile.ts`): style-checker findings (from
+`shared/src/style-check.ts`), per-axis stylometric distance against the operator's own corpus, and the
+draft's length against the operator's own typical length - no model call, no configuration required. A
+non-zero style-finding count caps the score so it can never read as "green"
+(`app_config.quality_rubric`'s `threshold_green`), regardless of anything else measured.
+
+An axis the module cannot measure (e.g. the operator's voice corpus is too thin, or nothing comparable is
+available) is excluded from the score rather than counted as a match or a miss.
+
+A second, optional component is a real judge call: a real model reads the draft against a rubric
+template and returns its own score and reason, but ONLY when an admin has explicitly configured a model
+for the `quality_judge` function in Settings → Admin → Models (`shared/src/ai/model-functions.ts`) - an
+unconfigured deployment never makes this call, so it costs nothing and never runs by default. When it's
+off, the deterministic score is what's shown; the judge is absent, never a zero that drags the score
+down.
+
+Both live behind the same `app_config.quality_rubric` config shape as before (`rubric_template`,
+`threshold_red`, `threshold_green`) - `rubric_template` now prompts the optional judge (when configured)
+rather than the drafting agent, and an org's existing customized rubric_template is preserved; only the
+literal old default text is upgraded automatically to the new wording:
 
 ```json
 {
-  "rubric_template": "Score the draft 0-100 on clarity, relevance, personalization, tone. Return JSON.",
+  "rubric_template": "Score the draft 0-100 on whether it reads as a real person, not an AI reply.",
   "threshold_red": 40,
   "threshold_green": 75
 }
 ```
 
-Scoring is inline: whenever the agent writes a draft body, it is handed
-`rubric_template` and scores its own output against it, passing the score
-back on the same tool call that persists the body - there is no separate
-scoring pass, and no second model checking the first one's work. The score,
-reason and the model that wrote (and scored) the draft are persisted on
-`drafts.quality_score`, `drafts.quality_reason`, `drafts.quality_model`. The inbox renders a
-colour-coded `Q<score>` badge next to each draft (red `< threshold_red`,
-green `>= threshold_green`, amber in between) and exposes a
+The score, reason and its source are persisted on `drafts.quality_score`, `drafts.quality_reason`,
+`drafts.quality_model` - `quality_model` holds the literal string `"deterministic"` when no judge ran, or
+the judge's real model id when one did, so a caller can always tell which kind of number it's looking at.
+Per-axis detail (which axes were measured, the length ratio, the raw style findings, the judge's own
+output when present) travels in the draft's `metadata.qualityDetail`.
+
+The inbox renders a badge distinguishing the two: a "measured" badge when the score is
+deterministic-only, and a distinctly-styled "judged" badge (naming the model) when a real judge call
+scored it - the two are different claims and never render identically. It still exposes a
 `?minQuality=<n>` filter on the URL.
 
 ## A/B variant drafts

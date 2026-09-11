@@ -245,6 +245,7 @@ export type InboxDraft = {
   scheduledSendAfter: Date | null;
   qualityScore: number | null;
   qualityReason: string | null;
+  qualityModel: string | null;
   variantGroupId: string | null;
   variantLabel: string | null;
   regenerationCount: number;
@@ -334,6 +335,7 @@ export async function queryInboxDraftsPage(
       scheduledSendAfter: schema.drafts.scheduledSendAfter,
       qualityScore: schema.drafts.qualityScore,
       qualityReason: schema.drafts.qualityReason,
+      qualityModel: schema.drafts.qualityModel,
       variantGroupId: schema.drafts.variantGroupId,
       variantLabel: schema.drafts.variantLabel,
       regenerationCount: schema.drafts.regenerationCount,

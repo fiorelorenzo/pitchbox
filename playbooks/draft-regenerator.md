@@ -48,7 +48,7 @@ Write like this instead:
 
 ## Steps
 
-1. **Load context.** Call `draft_regen_start` (no arguments needed). From the result read: `hint`, `platform`, `persona`, `rubricTemplate`, and `draft` (`kind`, `title`, `body`, `targetUser`, `reasoning`, `sourceRef`).
+1. **Load context.** Call `draft_regen_start` (no arguments needed). From the result read: `hint`, `platform`, `persona`, and `draft` (`kind`, `title`, `body`, `targetUser`, `reasoning`, `sourceRef`).
 
 2. **Read how you actually write.** Call `operator_voice` (no arguments) for your persona and derived writing voice, and `my_prior_takes` with a short query naming the subject of `draft.body`, for what you have already said about it elsewhere. `persona` already carries the voice this specific draft was written in - these two keep the rewrite consistent with how you actually write in general, not just with that one draft.
 
@@ -64,24 +64,20 @@ Write like this instead:
    - No placeholders, no "TBD", no meta commentary. Output the message text a human would send.
    - Apply the House style section above literally: it outranks every default here and holds even when the campaign voice says nothing about it.
 
-4. **Score the rewritten draft.** Using `rubricTemplate`, score the rewrite 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted drafts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason`.
+4. **Check your own style before persisting.** Call `check_style` with the exact rewritten body (and title, if you changed it) you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `draft_regen_finish` has no live model to send a rewrite back to.
 
-5. **Check your own style before persisting.** Call `check_style` with the exact rewritten body (and title, if you changed it) you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `draft_regen_finish` has no live model to send a rewrite back to.
-
-6. **Submit.** Call `draft_regen_finish` with:
+5. **Submit.** Call `draft_regen_finish` with:
 
    ```json
    {
      "body": "<the rewritten body>",
-     "title": "<only for post drafts, else omit>",
-     "qualityScore": 74,
-     "qualityReason": "tighter and more specific"
+     "title": "<only for post drafts, else omit>"
    }
    ```
 
    The tool overwrites the draft body, bumps its version, records the previous body for undo, and finalizes the run. **If the tool returns an error**, read the message, fix the payload, and try again. **Maximum two retries.**
 
-7. **On failure.** If `draft_regen_start` reports the draft is gone or no longer pending review, or you genuinely cannot improve it, call `run_finish` with `{ "status": "failed", "error": "<short reason>" }` and stop. The draft keeps its current body.
+6. **On failure.** If `draft_regen_start` reports the draft is gone or no longer pending review, or you genuinely cannot improve it, call `run_finish` with `{ "status": "failed", "error": "<short reason>" }` and stop. The draft keeps its current body.
 
 ## What this playbook must never do
 

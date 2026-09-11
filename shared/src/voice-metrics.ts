@@ -163,7 +163,12 @@ function setDistance(a: string[], b: string[]): number {
   return union === 0 ? 0 : round2(1 - intersection / union);
 }
 
-function rhythmDistance(a: RhythmProfile, b: RhythmProfile): number {
+/** Exported (LOR-229) so a caller comparing a candidate against something
+ * other than a single real reply - the operator's own pooled corpus
+ * profile, which shares this exact per-axis shape - can reuse this math
+ * instead of a second copy of it. `distanceAxes` below is still the one
+ * candidate-vs-real-reply entry point `scoreCandidate` uses. */
+export function rhythmDistance(a: RhythmProfile, b: RhythmProfile): number {
   return round2(
     mean([
       numDist(a.medianSentenceWords, b.medianSentenceWords, 20),
@@ -175,7 +180,7 @@ function rhythmDistance(a: RhythmProfile, b: RhythmProfile): number {
   );
 }
 
-function punctuationDistance(a: PunctuationProfile, b: PunctuationProfile): number {
+export function punctuationDistance(a: PunctuationProfile, b: PunctuationProfile): number {
   return round2(
     mean([
       numDist(a.commasPer100Words, b.commasPer100Words, 10),
@@ -191,7 +196,7 @@ function punctuationDistance(a: PunctuationProfile, b: PunctuationProfile): numb
   );
 }
 
-function shapeDistance(a: ShapeProfile, b: ShapeProfile): number {
+export function shapeDistance(a: ShapeProfile, b: ShapeProfile): number {
   // emoji/hashtags are deliberately not compared here: measureOneText always
   // computes them over a one-item list, and voice-profile.ts's own
   // MIN_PHRASE_REPEATS floor (2 separate items) means a single text can
@@ -206,7 +211,7 @@ function shapeDistance(a: ShapeProfile, b: ShapeProfile): number {
   );
 }
 
-function voiceMarkersDistance(a: VoiceMarkerProfile, b: VoiceMarkerProfile): number {
+export function voiceMarkersDistance(a: VoiceMarkerProfile, b: VoiceMarkerProfile): number {
   return round2(
     mean([
       numDist(a.firstPersonPer100Words, b.firstPersonPer100Words, 10),
@@ -218,7 +223,7 @@ function voiceMarkersDistance(a: VoiceMarkerProfile, b: VoiceMarkerProfile): num
   );
 }
 
-function lexiconDistance(a: LexiconProfile, b: LexiconProfile): number {
+export function lexiconDistance(a: LexiconProfile, b: LexiconProfile): number {
   return setDistance(a.avoidedWords, b.avoidedWords);
 }
 
