@@ -97,6 +97,19 @@ export type VoiceProfileSummary = {
    * sentence buried in a persona description - a number in the task's own
    * instruction does not. */
   medianCommentWords: number | null;
+  /** The same comment-genre measurement's own interquartile range of
+   * whole-piece length, in words (LOR-232's rhythm axis's `itemWordsSpread`,
+   * read per genre same as `medianCommentWords` above) - null under the
+   * exact same condition. LOR-253: `medianCommentWords` alone is a single
+   * point, and a point read as a target gets treated as a ceiling no matter
+   * how the task's prose hedges it - this is the measured range around it,
+   * so `suggest-prompt.ts` can name a real upper end instead of an abstract
+   * "not a ceiling" with nothing concrete behind it. Zero (never negative)
+   * when the corpus is too small to have a spread of its own
+   * (`interquartileRange`'s own floor is four items) - `suggest-prompt.ts`
+   * treats that the same as "no range to add", not a range of zero words.
+   */
+  commentWordsSpread: number | null;
 };
 
 export type ProjectBrief = {
@@ -263,6 +276,10 @@ export async function loadCompanionContext(
           medianCommentWords:
             voiceProfileRow.evidence.genres.comment.medianItemWords > 0
               ? voiceProfileRow.evidence.genres.comment.medianItemWords
+              : null,
+          commentWordsSpread:
+            voiceProfileRow.evidence.genres.comment.itemWordsSpread > 0
+              ? voiceProfileRow.evidence.genres.comment.itemWordsSpread
               : null,
         }
       : null,

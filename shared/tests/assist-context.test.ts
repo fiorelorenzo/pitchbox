@@ -32,8 +32,8 @@ async function ensureOrg(slug: string): Promise<number> {
   return org!.id;
 }
 
-describe('loadCompanionContext: medianCommentWords (LOR-233)', () => {
-  it("reads the comment genre's own median off evidence, not the pooled rhythm", async () => {
+describe('loadCompanionContext: medianCommentWords (LOR-233), commentWordsSpread (LOR-253)', () => {
+  it("reads the comment genre's own median and spread off evidence, not the pooled rhythm", async () => {
     await reset();
     const orgId = await ensureOrg('lor233-median');
     await getDb()
@@ -58,6 +58,7 @@ describe('loadCompanionContext: medianCommentWords (LOR-233)', () => {
     const context = await loadCompanionContext(getDb(), { organizationId: orgId });
     expect(context.voiceProfile?.commentSummary).toMatch(/about 7 words/);
     expect(context.voiceProfile?.medianCommentWords).toBe(7);
+    expect(context.voiceProfile?.commentWordsSpread).toBe(4);
   });
 
   it('reports null, never 0, when the comment genre has not cleared the floor to derive one', async () => {
@@ -84,5 +85,6 @@ describe('loadCompanionContext: medianCommentWords (LOR-233)', () => {
     const context = await loadCompanionContext(getDb(), { organizationId: orgId });
     expect(context.voiceProfile?.commentSummary).toBeNull();
     expect(context.voiceProfile?.medianCommentWords).toBeNull();
+    expect(context.voiceProfile?.commentWordsSpread).toBeNull();
   });
 });

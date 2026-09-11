@@ -273,6 +273,20 @@ const TASK: Record<SuggestionKind, string> = {
   post: 'Write one short post for this account, taking the post below as the starting point rather than something to summarise. Say one thing and stop.',
 };
 
+/** LOR-253: appended to the "only when there is something specific to add"
+ * sentence, never to the standalone "Length target" line below it. Measured
+ * against the eval set, a second number sitting in its own "Length target"
+ * line moved the *whole* distribution up - short, reactive posts drifted
+ * longer along with the genuinely long ones, because the model read it as a
+ * second target to reach for rather than a ceiling that only applies once
+ * the task's own condition ("something specific to add") is already met.
+ * Folding the number into that same conditional sentence keeps the number
+ * behind the condition instead of beside it. */
+function substanceClause(upperWords: number): string {
+  const upper = `${upperWords} word${upperWords === 1 ? '' : 's'}`;
+  return ` This operator has gone as long as about ${upper} when a post genuinely earned it - do not cut a real answer short to stay near the usual case.`;
+}
+
 /**
  * `post_comment`'s own task, sharpened into a reply when the human opened
  * a reply box under one specific comment rather than the post's own
@@ -282,12 +296,19 @@ const TASK: Record<SuggestionKind, string> = {
  * post - the two `post_comment` requests used to be identical past this
  * point. Names the id rather than the words: the thread's own text is
  * `read_thread`'s job, not this prompt's.
+ *
+ * `upperWords` (LOR-253) is `lengthTarget`'s measured stretch, folded into
+ * the task's own conditional sentence rather than into a second standalone
+ * line - see `substanceClause`'s own doc comment for why. Absent (`0`) when
+ * `lengthTarget` found no spread to name, in which case the task reads
+ * exactly as LOR-233 left it.
  */
-function taskFor(kind: SuggestionKind, replyToCommentId?: string): string {
+function taskFor(kind: SuggestionKind, replyToCommentId?: string, upperWords = 0): string {
+  const suffix = upperWords > 0 ? substanceClause(upperWords) : '';
   if (kind === 'post_comment' && replyToCommentId) {
-    return `Write one reply to the comment with id "${replyToCommentId}" in the thread below (call read_thread to see who wrote it and what it says) - not a comment on the post itself. A short reaction in the operator's own voice is a complete answer on its own, not a fallback, when that is genuinely what the reply calls for. Write a longer reply, one paragraph, two at most, only when there is something specific to add that commenter or another reader would not already know. Never pad a short reaction into something that reads as more substantial than it is.`;
+    return `Write one reply to the comment with id "${replyToCommentId}" in the thread below (call read_thread to see who wrote it and what it says) - not a comment on the post itself. A short reaction in the operator's own voice is a complete answer on its own, not a fallback, when that is genuinely what the reply calls for. Write a longer reply, one paragraph, two at most, only when there is something specific to add that commenter or another reader would not already know. Never pad a short reaction into something that reads as more substantial than it is.${suffix}`;
   }
-  return TASK[kind];
+  return `${TASK[kind]}${kind === 'post_comment' ? suffix : ''}`;
 }
 
 /**
@@ -352,6 +373,36 @@ function median(nums: number[]): number {
   return Math.round(sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!);
 }
 
+/** How far past the median `postLooksSubstantive`'s upper end reaches, in
+ * multiples of the measured interquartile range (LOR-253). Not a word count
+ * - a calibration ratio, the same kind of constant `voice-profile.ts`
+ * already uses for its own thresholds (`TRAIT_DOMINANCE_RATIO`,
+ * `PHRASE_COVERAGE_RATIO`). 2 (the standard Tukey boxplot "mild outlier"
+ * fence is Q3 + 1.5 * IQR, which for a right-skewed length distribution
+ * lands close to `median + 2 * IQR`) measurably over-corrected on the eval
+ * set's own "short" bucket once the substance gate below let it fire on the
+ * genuinely medium-length cases too, not only the very long ones - 1.5 is
+ * the smaller value that still moves the "long" bucket's median well past
+ * the old 9-to-12-word floor (LOR-253's own before/after measurement, in
+ * the PR) without pushing "short" past a few words of where it already
+ * was. */
+const LENGTH_SPREAD_MULTIPLIER = 1.5;
+
+/** Same reasoning as `median` above, and the same three-line duplication
+ * `voice-profile.ts`'s own `interquartileRange` already carries - kept local
+ * rather than imported for the same "not worth a new import surface" reason.
+ * Below four items there is nothing honest to call a spread (one outlier in
+ * a corpus of three is the whole corpus, not a distribution), so this
+ * returns 0 the same way `voice-profile.ts`'s copy does. */
+function interquartileRange(nums: number[]): number {
+  if (nums.length < 4) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const half = Math.floor(sorted.length / 2);
+  const q1 = median(sorted.slice(0, half));
+  const q3 = median(sorted.slice(sorted.length - half));
+  return q3 - q1;
+}
+
 /**
  * Names a length target in words for a `post_comment` task, derived rather
  * than fixed (LOR-233) - `null` when neither source below exists, which the
@@ -369,18 +420,65 @@ function median(nums: number[]): number {
  * thread rendered at all, which is always, on the SDUI feed (see this
  * file's `ObservedThread` doc comment).
  *
- * Returns which source won alongside the number: a human reading a
+ * `spread` is LOR-253's addition: the same source's own interquartile range,
+ * 0 when the source is too thin to have one. A single median read as a
+ * target gets treated as a ceiling no matter how the surrounding sentence
+ * hedges it - measured against the eval set, the three cases that called
+ * for a real answer (39, 39 and 130 words) came back at 9 to 12 regardless of
+ * that hedge. The spread gives the model a second, concrete number - how far
+ * this same voice actually stretches - rather than an abstract permission to
+ * ignore the first one.
+ *
+ * Returns which source won alongside the numbers: a human reading a
  * suggestion should be able to tell why it came out the length it did, not
  * just that it did.
  */
 function lengthTarget(
   voiceProfile: VoiceProfileSummary | null,
   thread: ObservedThread | undefined,
-): { words: number; source: 'room' | "operator's own habit" } | null {
+): { words: number; spread: number; source: 'room' | "operator's own habit" } | null {
   const threadWords = (thread?.comments ?? []).map((c) => wordCount(c.body)).filter((n) => n > 0);
-  if (threadWords.length > 0) return { words: median(threadWords), source: 'room' };
+  if (threadWords.length > 0) {
+    return { words: median(threadWords), spread: interquartileRange(threadWords), source: 'room' };
+  }
   const own = voiceProfile?.medianCommentWords;
-  return own && own > 0 ? { words: own, source: "operator's own habit" } : null;
+  if (!own || own <= 0) return null;
+  const ownSpread = voiceProfile?.commentWordsSpread;
+  return {
+    words: own,
+    spread: ownSpread && ownSpread > 0 ? ownSpread : 0,
+    source: "operator's own habit",
+  };
+}
+
+/**
+ * Gates `substanceClause` on the post itself (LOR-253), reusing
+ * `register.ts`'s own measurement rather than a second one. Measured on the
+ * eval set first, per the issue's own instruction not to ship this if it
+ * came back weak: raw word-count correlation between the post and the real
+ * reply is weak (Pearson r = 0.118, r = 0.382 on log-scaled lengths) and it
+ * misses the single longest real reply outright (a 130-word reflection on a
+ * personal post carrying neither trait below) - not strong enough to size
+ * the target itself, which is why `lengthTarget` never reads it.
+ *
+ * It is used here only as a one-way gate, not as the number's source: adding
+ * the substance clause to *every* prompt (the first version of this fix)
+ * measurably pulled the whole distribution up, including plainly reactive
+ * posts - a launch photo drifted from a 12-word reaction toward 18 to 31
+ * words across repeated runs, which is exactly the regression the issue
+ * warns against. `code-or-jargon` and `numbers` are the two traits that
+ * measured longer real replies on average (17.0 vs 14.9, and 16.3 vs 14.8
+ * words) rather than shorter - restricting the clause to posts carrying at
+ * least one of them cuts how often it fires on the eval set's own
+ * very-short bucket from 16 of 16 to 5 of 16, while still firing on 2 of the
+ * 3 genuinely long cases. It will still miss a case like the 130-word one
+ * above; nothing mechanical catches that one, and this does not pretend to.
+ */
+function postLooksSubstantive(text: string): boolean {
+  const register = readPostRegister(text);
+  return (
+    register?.traits.includes('code-or-jargon') || register?.traits.includes('numbers') || false
+  );
 }
 
 /**
@@ -582,15 +680,22 @@ export function buildSuggestionPrompt(args: {
     ].join('\n'),
   );
 
-  parts.push(`Your task: ${taskFor(kind, post.replyToCommentId)}`);
-
   // LOR-233: a length target in words, named explicitly rather than left
   // for the model to reconcile "adds something" against a voice profile
   // that separately says "about 7 words" - see `lengthTarget`'s own doc
   // comment for which source wins and why. `post` has no room to read a
   // target off (no thread, no per-genre comment habit) and keeps its own
-  // brevity instruction in TASK.post above instead.
-  //
+  // brevity instruction in TASK.post above instead. Computed before `Your
+  // task` (LOR-253) so its measured upper end can be folded into the task's
+  // own conditional sentence - see `substanceClause`'s doc comment for why
+  // that upper end no longer lives in this line as a second number.
+  const target = kind === 'post_comment' ? lengthTarget(voiceProfile, post.thread) : null;
+  const upperWords =
+    target && target.spread > 0 && postLooksSubstantive(post.text)
+      ? Math.round(target.words + target.spread * LENGTH_SPREAD_MULTIPLIER)
+      : 0;
+  parts.push(`Your task: ${taskFor(kind, post.replyToCommentId, upperWords)}`);
+
   // Deliberately not a ceiling: a median is the typical case, not every
   // case, and roughly half of what the operator actually writes runs
   // longer than it - sometimes much longer, when the post itself is the
@@ -601,18 +706,15 @@ export function buildSuggestionPrompt(args: {
   // avoid, just moved from "always long" to "always short". The target is
   // a default to return to once there is nothing left to say, not a limit
   // on how much there is to say.
-  if (kind === 'post_comment') {
-    const target = lengthTarget(voiceProfile, post.thread);
-    if (target) {
-      const words = `${target.words} word${target.words === 1 ? '' : 's'}`;
-      const clause =
-        target.source === 'room'
-          ? `this thread's own comments run about ${words}`
-          : `the operator's own comments run about ${words}`;
-      parts.push(
-        `Length target: ${clause} - treat that as the length to return to once you have said what is worth saying, not a ceiling on it. Padding a short reaction out to look more substantial is the defect; a longer comment earned by something real to say is not, and the post below sometimes calls for exactly that.`,
-      );
-    }
+  if (target) {
+    const words = `${target.words} word${target.words === 1 ? '' : 's'}`;
+    const clause =
+      target.source === 'room'
+        ? `this thread's own comments run about ${words}`
+        : `the operator's own comments run about ${words}`;
+    parts.push(
+      `Length target: ${clause} - treat that as the length to return to once you have said what is worth saying, not a ceiling on it. Padding a short reaction out to look more substantial is the defect; a longer comment earned by something real to say is not, and the post below sometimes calls for exactly that.`,
+    );
   }
 
   // The tone, after the task and before the operator's steer, because that is

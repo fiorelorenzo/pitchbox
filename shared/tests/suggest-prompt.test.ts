@@ -65,6 +65,7 @@ const voiceProfile: VoiceProfileSummary = {
   commentSummary: null,
   editSignature: null,
   medianCommentWords: null,
+  commentWordsSpread: null,
 };
 
 const projects: ProjectBrief[] = [
@@ -263,6 +264,7 @@ describe('buildSuggestionPrompt', () => {
           'Based on 27 of their own comments (190 words). Usually writes one short sentence.',
         editSignature: null,
         medianCommentWords: 7,
+        commentWordsSpread: null,
       };
       const commentPrompt = buildSuggestionPrompt({
         kind: 'post_comment',
@@ -413,6 +415,7 @@ describe('buildSuggestionPrompt', () => {
           commentSummary: null,
           editSignature: null,
           medianCommentWords: null,
+          commentWordsSpread: null,
         },
         projects: [],
         repos: [],
@@ -426,6 +429,7 @@ describe('buildSuggestionPrompt', () => {
           commentSummary: null,
           editSignature: null,
           medianCommentWords: null,
+          commentWordsSpread: null,
         },
         projects: [],
         repos: [],
@@ -505,6 +509,7 @@ describe('buildSuggestionPrompt', () => {
           commentSummary: null,
           editSignature: null,
           medianCommentWords: 7,
+          commentWordsSpread: null,
         },
         projects: [],
         repos: [],
@@ -538,6 +543,7 @@ describe('buildSuggestionPrompt', () => {
           commentSummary: null,
           editSignature: null,
           medianCommentWords: 7,
+          commentWordsSpread: null,
         },
         projects: [],
         repos: [],
@@ -556,6 +562,7 @@ describe('buildSuggestionPrompt', () => {
           commentSummary: null,
           editSignature: null,
           medianCommentWords: 12,
+          commentWordsSpread: null,
         },
         projects: [],
         repos: [],
@@ -582,6 +589,7 @@ describe('buildSuggestionPrompt', () => {
           commentSummary: null,
           editSignature: null,
           medianCommentWords: 7,
+          commentWordsSpread: null,
         },
         projects: [],
         repos: [],
@@ -599,12 +607,147 @@ describe('buildSuggestionPrompt', () => {
           commentSummary: null,
           editSignature: null,
           medianCommentWords: 1,
+          commentWordsSpread: null,
         },
         projects: [],
         repos: [],
       });
       expect(prompt).toMatch(/about 1 word\b/);
       expect(prompt).not.toContain('about 1 words');
+    });
+
+    // The default `post` fixture ('We cut p99 in half by dropping a cache.')
+    // is nine words - below register.ts's own floor to read anything off, so
+    // `postLooksSubstantive` reads it as not-substantive regardless of
+    // content. These tests use a longer, jargon-and-numbers post instead, so
+    // the gate genuinely fires - see `postLooksSubstantive`'s own doc comment
+    // for why that gate exists and what it is measured against.
+    const substantivePost = {
+      ...post,
+      text: 'We migrated the whole payments pipeline to a new queue this week and cut p99 latency by 40ms, which is the biggest win the team has shipped this quarter.',
+    };
+
+    it('LOR-253: folds a measured upper end into the task itself when the post looks substantive and the comment genre has a real spread', () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post: substantivePost,
+        persona: null,
+        voiceProfile: {
+          summary: 'irrelevant',
+          commentSummary: null,
+          editSignature: null,
+          medianCommentWords: 7,
+          commentWordsSpread: 15,
+        },
+        projects: [],
+        repos: [],
+      });
+      // The standalone "Length target" line stays exactly as LOR-233 left it -
+      // a single point, no second number - so the short/very-short buckets it
+      // already served well are untouched (see suggest-prompt.ts's own
+      // module-level rationale for why the upper end moved out of this line).
+      expect(prompt).toMatch(
+        /Length target: the operator's own comments run about 7 words - treat/,
+      );
+      expect(prompt).not.toContain('stretching up toward');
+      // The upper end lives inside the task's own conditional sentence
+      // instead, right after "Never pad a short reaction..." - still inside
+      // "Your task:", never inside the standalone "Length target" line.
+      expect(prompt).toMatch(
+        /Never pad a short reaction into something that reads as more substantial than it is\. This operator has gone as long as about 30 words when a post genuinely earned it/,
+      );
+      expect(prompt.indexOf('Your task:')).toBeLessThan(prompt.indexOf('has gone as long as'));
+      expect(prompt.indexOf('has gone as long as')).toBeLessThan(prompt.indexOf('Length target:'));
+    });
+
+    it('says nothing extra in the task when the post itself gives no reason to expect a longer answer, even with a real spread on file', () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        persona: null,
+        voiceProfile: {
+          summary: 'irrelevant',
+          commentSummary: null,
+          editSignature: null,
+          medianCommentWords: 7,
+          commentWordsSpread: 15,
+        },
+        projects: [],
+        repos: [],
+      });
+      expect(prompt).not.toContain('has gone as long as');
+    });
+
+    it('says nothing extra in the task when the corpus is too small to have a spread of its own, even on a substantive post', () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post: substantivePost,
+        persona: null,
+        voiceProfile: {
+          summary: 'irrelevant',
+          commentSummary: null,
+          editSignature: null,
+          medianCommentWords: 7,
+          commentWordsSpread: 0,
+        },
+        projects: [],
+        repos: [],
+      });
+      expect(prompt).toMatch(
+        /Length target: the operator's own comments run about 7 words - treat/,
+      );
+      expect(prompt).not.toContain('has gone as long as');
+    });
+
+    it("folds the thread's own measured spread into the task too, when the page sent enough comments to have one and the post looks substantive", () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post: {
+          ...substantivePost,
+          thread: {
+            comments: [
+              { body: Array(5).fill('word').join(' ') },
+              { body: Array(8).fill('word').join(' ') },
+              { body: Array(10).fill('word').join(' ') },
+              { body: Array(30).fill('word').join(' ') },
+              { body: Array(40).fill('word').join(' ') },
+            ],
+            renderedCount: 5,
+            truncated: false,
+          },
+        },
+        persona: null,
+        voiceProfile: null,
+        projects: [],
+        repos: [],
+      });
+      expect(prompt).toMatch(
+        /Length target: this thread's own comments run about 10 words - treat/,
+      );
+      expect(prompt).toMatch(
+        /This operator has gone as long as about \d+ words when a post genuinely earned it/,
+      );
+    });
+
+    it('folds the upper end into a reply task the same way as the plain comment task', () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post: { ...substantivePost, replyToCommentId: 'c1' },
+        persona: null,
+        voiceProfile: {
+          summary: 'irrelevant',
+          commentSummary: null,
+          editSignature: null,
+          medianCommentWords: 7,
+          commentWordsSpread: 15,
+        },
+        projects: [],
+        repos: [],
+      });
+      expect(prompt).toMatch(/Write one reply to the comment with id "c1"/);
+      expect(prompt).toMatch(
+        /This operator has gone as long as about 30 words when a post genuinely earned it/,
+      );
     });
   });
 });

@@ -43,8 +43,14 @@ import {
 import { scoreCandidate, type VoiceCandidateScore } from '../shared/src/voice-metrics.js';
 import { buildSuggestionPrompt, type ObservedPost } from '../shared/src/assist/suggest-prompt.js';
 import { splitSuggestion } from '../shared/src/assist/envelope.js';
-import { measureVoiceCorpus, describeVoiceProfile } from '../shared/src/assist/voice-profile.js';
+import {
+  measureVoiceCorpus,
+  describeVoiceProfile,
+  measureVoiceCorpusByGenre,
+  describeVoiceProfileForGenre,
+} from '../shared/src/assist/voice-profile.js';
 import { DEFAULT_VOICE_PROFILE } from '../shared/src/assist/voice-defaults.js';
+import type { VoiceProfileSummary } from '../shared/src/assist/context.js';
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -87,14 +93,56 @@ const cases = limit && limit > 0 ? file.cases.slice(0, limit) : file.cases;
 // ---------------------------------------------------------------------------
 // The voice profile the prompt is built with - exactly what `main` derives
 // today when `--thin` is absent, `voice-defaults.ts`'s own default otherwise.
+//
+// LOR-253: this used to hand `buildSuggestionPrompt` a bare `{ summary }`,
+// which meant `lengthTarget`'s comment-genre path (`medianCommentWords`,
+// `commentWordsSpread`) never fired in this harness at all - every eval run
+// silently skipped the exact section this issue changes. The set's own
+// `actualReply` texts *are* the operator's real comment corpus, so they feed
+// `measureVoiceCorpusByGenre` the same way a real derivation would, tagged
+// 'comment' - computed once over the whole set and applied to every case,
+// the same way a real `operator_voice_profiles` row is derived once from
+// history and then applied prospectively.
 // ---------------------------------------------------------------------------
 
-function resolveVoiceProfileSummary(): string {
-  if (thin || file.voiceCorpus.length === 0) return DEFAULT_VOICE_PROFILE.summary;
-  const measurement = measureVoiceCorpus(
+function resolveVoiceProfileSummary(): VoiceProfileSummary | null {
+  if (thin || file.voiceCorpus.length === 0) {
+    return {
+      summary: DEFAULT_VOICE_PROFILE.summary,
+      commentSummary: null,
+      editSignature: null,
+      medianCommentWords: null,
+      commentWordsSpread: null,
+    };
+  }
+  const pooled = measureVoiceCorpus(
     file.voiceCorpus.map((c, i) => ({ id: i + 1, kind: 'voice_sample' as const, text: c.text })),
   );
-  return describeVoiceProfile(measurement) ?? DEFAULT_VOICE_PROFILE.summary;
+  const summary = describeVoiceProfile(pooled) ?? DEFAULT_VOICE_PROFILE.summary;
+
+  const commentCorpus = cases
+    .filter((c): c is VoiceEvalCase & { actualReply: string } => c.actualReply !== null)
+    .map((c, i) => ({
+      id: i + 1,
+      kind: 'voice_sample' as const,
+      genre: 'comment' as const,
+      text: c.actualReply,
+    }));
+  const commentMeasurement = measureVoiceCorpusByGenre(commentCorpus).comment;
+
+  return {
+    summary,
+    commentSummary: describeVoiceProfileForGenre('comment', commentMeasurement),
+    editSignature: null,
+    medianCommentWords:
+      commentMeasurement.rhythm.medianItemWords > 0
+        ? commentMeasurement.rhythm.medianItemWords
+        : null,
+    commentWordsSpread:
+      commentMeasurement.rhythm.itemWordsSpread > 0
+        ? commentMeasurement.rhythm.itemWordsSpread
+        : null,
+  };
 }
 
 const voiceProfileSummary = resolveVoiceProfileSummary();
@@ -160,7 +208,7 @@ async function generateCandidate(
     kind: 'post_comment',
     post,
     persona: null,
-    voiceProfile: { summary: voiceProfileSummary },
+    voiceProfile: voiceProfileSummary,
     projects: [],
     repos: [],
     tone: 'match-room',
