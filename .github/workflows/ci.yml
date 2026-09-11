@@ -7,10 +7,25 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# One in-flight run per ref per event; new pushes cancel the old run.
+# One in-flight run per PR ref: a new push to a PR supersedes a stale run of
+# the same branch, which is what `cancel-in-progress` is for.
+#
+# On `push: main` that is wrong, and it cost us the trunk gate for a whole day
+# (LOR-295). The runs a merge cancels there are not redundant: each one
+# validates a different commit, and `Tests (Postgres)` runs only on the trunk
+# (the deliberate PR/trunk split documented in AGENTS.md), so a following merge
+# kills the only full-suite gate this repo has. It then cascades, since
+# deploy-preview triggers on a *successful* CI workflow_run and a cancelled one
+# deploys nothing. Measured on 2026-09-11: 14 of the last 20 trunk runs
+# cancelled, and every preview deploy that day skipped.
+#
+# So the trunk keys its group per commit: runs queue, and every commit gets a
+# conclusion. This repo is public, so all four jobs run on GitHub-hosted
+# runners with no minute charge, and a wave of merges costs queue time rather
+# than money.
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 permissions:
   contents: read
