@@ -103,6 +103,22 @@ function extractVoiceLanguagePin(config: unknown): 'en' | 'it' | null {
   return language === 'en' || language === 'it' ? language : null;
 }
 
+/** LOR-294: `draftRegenFinish` and `replyDraftFinish` both run on a run row
+ * whose `campaignId` was already copied forward from the draft's origin run
+ * (`startDraftRegeneration`/`startReplyDrafting` in
+ * `@pitchbox/shared/reply-drafter` and `draft-regenerate`), so the pin is one
+ * extra select away rather than a second hop through `draft.runId` the way
+ * `draftRegenStart` looks up persona. Mirrors `extractVoiceLanguagePin`'s own
+ * "absent beats wrong" stance: a run with no campaign (or a campaign with no
+ * pin) reads as no pin, never a thrown error. */
+async function resolveCampaignLanguagePin(db: Db, campaignId: number): Promise<'en' | 'it' | null> {
+  const [campaign] = await db
+    .select({ config: schema.campaigns.config })
+    .from(schema.campaigns)
+    .where(eq(schema.campaigns.id, campaignId));
+  return campaign ? extractVoiceLanguagePin(campaign.config) : null;
+}
+
 /** Word count the same simple way every other length axis in this codebase
  * does (voice-metrics.ts's own scorer, suggest-prompt.ts's `wordCount`) -
  * split on whitespace, drop empties. Reused below for both a draft's own
@@ -808,12 +824,20 @@ export async function draftRegenFinish(runId: number, body: string, title?: stri
 
   const newCount = draft.regenerationCount + 1;
   const newTitle = title ?? draft.title;
+  // LOR-294: the same pin `createDrafts` threads through at creation time
+  // (LOR-265/LOR-291) - `run.campaignId` was copied forward from the
+  // draft's origin run when this regeneration run was started.
+  const languagePin =
+    run.campaignId != null ? await resolveCampaignLanguagePin(db, run.campaignId) : null;
   // LOR-229: `draft_regen_finish` still has no live model to send a
   // targeted style-rewrite instruction back to (the playbook calls
   // `check_style` itself, mid-turn, for that) - but `checkStyle` is pure
   // and cheap, so the quality score below measures the rewritten body fresh
   // rather than trusting the agent already ran the check.
-  const styleFindings = [...checkStyle(body), ...(newTitle ? checkStyle(newTitle) : [])];
+  const styleFindings = [
+    ...checkStyle(body, languagePin ?? undefined),
+    ...(newTitle ? checkStyle(newTitle, languagePin ?? undefined) : []),
+  ];
   const orgId = await getProjectOrgId(db, draft.projectId);
   const [corpusProfile, rubric] = await Promise.all([
     orgId != null ? resolveOperatorCorpusProfile(db, orgId) : Promise.resolve(null),
@@ -835,6 +859,7 @@ export async function draftRegenFinish(runId: number, body: string, title?: stri
     rubric,
     post: sourceText,
     threadCommentWordCounts,
+    expectedLanguage: languagePin ?? undefined,
   });
   const priorMeta = (draft.metadata ?? {}) as Record<string, unknown>;
   const newMeta: Record<string, unknown> = { ...priorMeta, qualityDetail: quality.qualityDetail };
@@ -982,9 +1007,14 @@ export async function replyDraftFinish(runId: number, body: string) {
   const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, replyDraftId));
   if (!draft) throw new Error(`reply draft ${replyDraftId} not found`);
 
+  // LOR-294: same pin `draftRegenFinish` and `createDrafts` thread through
+  // (LOR-265/LOR-291) - `run.campaignId` was copied forward from the
+  // parent draft's origin run when this reply_drafting run was started.
+  const languagePin =
+    run.campaignId != null ? await resolveCampaignLanguagePin(db, run.campaignId) : null;
   // LOR-229: same discipline as `draftRegenFinish` - no live model to send a
   // rewrite back to here, but the score still measures the real body fresh.
-  const styleFindings = checkStyle(body);
+  const styleFindings = checkStyle(body, languagePin ?? undefined);
   const orgId = await getProjectOrgId(db, draft.projectId);
   const [corpusProfile, rubric, replyContext] = await Promise.all([
     orgId != null ? resolveOperatorCorpusProfile(db, orgId) : Promise.resolve(null),
@@ -1008,6 +1038,7 @@ export async function replyDraftFinish(runId: number, body: string) {
     rubric,
     post: sourceText,
     threadCommentWordCounts,
+    expectedLanguage: languagePin ?? undefined,
   });
   const priorMeta = (draft.metadata ?? {}) as Record<string, unknown>;
   const newMeta: Record<string, unknown> = { ...priorMeta, qualityDetail: quality.qualityDetail };

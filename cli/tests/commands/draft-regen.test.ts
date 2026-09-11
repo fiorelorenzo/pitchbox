@@ -191,4 +191,97 @@ describe('pitchbox drafts:regen:*', () => {
       cliWithStdin(`drafts:regen:finish --run=${regenRunId}`, JSON.stringify({ body: '  ' })),
     ).toThrow();
   });
+
+  // LOR-294: `draftRegenFinish` used to call `checkStyle`/`scoreDraftQuality`
+  // with no `expectedLanguage`, so a regenerated draft scored and was
+  // checked differently from a created one even though both answer to the
+  // same pinned campaign. Body is the LOR-291 fixture shape - short enough
+  // that `classifyLanguage` alone reads it as 'unknown', which is exactly
+  // the case the pin exists to settle. Before this issue an `unknown`
+  // verdict ran both phrase lists (a spurious English "leverage" finding
+  // alongside the real Italian one) and scored with no expected language
+  // recorded at all - both wrong for a campaign that pinned Italian.
+  it('finish threads the campaign language pin into both the style checker and the quality score (LOR-294)', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [proj] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'p-lor294', name: 'P294' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({ projectId: proj.id, platformId: platform.id, handle: 'a294' })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: proj.id,
+        platformId: platform.id,
+        name: 'c294',
+        skillSlug: 'reddit-scout',
+        config: { voice: { language: 'it' } },
+      })
+      .returning();
+    const [origin] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'success' })
+      .returning();
+    const body = 'Sinergia forte qui, complimenti, leverage forte.';
+    const [draft] = await db
+      .insert(schema.drafts)
+      .values({
+        runId: origin.id,
+        projectId: proj.id,
+        platformId: platform.id,
+        accountId: account.id,
+        kind: 'dm',
+        body: 'old body',
+        targetUser: 'someone',
+        state: 'pending_review',
+      })
+      .returning();
+    // A draft_regeneration run copies its campaignId forward from the
+    // draft's origin run (shared/src/draft-regenerate.ts's
+    // startDraftRegeneration) - reproduced by hand here since this test
+    // inserts the run directly rather than calling that function.
+    const [regen] = await db
+      .insert(schema.runs)
+      .values({
+        kind: 'draft_regeneration',
+        campaignId: campaign.id,
+        projectId: proj.id,
+        trigger: 'manual',
+        status: 'running',
+        params: { draftId: draft.id, hint: null },
+      })
+      .returning();
+
+    const out = cliWithStdin(`drafts:regen:finish --run=${regen.id}`, JSON.stringify({ body }));
+    expect(lastJson(out).ok).toBe(true);
+
+    const [d] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draft.id));
+    const metadata = d.metadata as {
+      styleFindings?: Array<{ ruleId: string; message: string; span: string }>;
+    };
+    // Checked: only the Italian rule list ran - the pin excludes the
+    // English list outright, so "leverage" (a real English-list phrase
+    // too) never ships as a second, spurious finding.
+    const puffery = metadata.styleFindings!.filter((f) => f.ruleId === 'puffery');
+    expect(puffery).toHaveLength(1);
+    expect(puffery[0]?.span).toBe('Sinergia');
+    expect(puffery[0]?.message).toContain('(Italian)');
+    // Scored: the quality axis recorded the pin as the expected language,
+    // not the null it falls back to with no post and no pin.
+    const detail = (d.metadata as Record<string, unknown>).qualityDetail as {
+      deterministic: { expectedLanguage: string | null };
+    };
+    expect(detail.deterministic.expectedLanguage).toBe('it');
+  });
 });
