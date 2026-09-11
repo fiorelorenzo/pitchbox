@@ -9,6 +9,7 @@ import {
   checkHostPermissions,
   checkLinkedinPlatformNetworkCalls,
   checkNetworkTargets,
+  checkRepoWideLinkedinNetworkTargets,
   checkSyntheticInteractions,
   defaultRepoPaths,
 } from './linkedin-boundary.js';
@@ -173,5 +174,26 @@ describe('rule 6: host_permissions never includes linkedin (#317 keeps it option
 
   it('passes on the real manifest', async () => {
     expect(await checkHostPermissions(REPO_PATHS.manifestPath)).toEqual([]);
+  });
+});
+
+describe('rule 7: no linkedin/licdn fetch anywhere in the repo outside the allowlisted Data Portability directory', () => {
+  const fixtureRoot = path.join(FIXTURES, 'rule7-repo-wide-linkedin');
+
+  it('passes for a fetch inside the allowlisted directory and flags the identical fetch anywhere else', () => {
+    const violations = checkRepoWideLinkedinNetworkTargets(fixtureRoot, [
+      'shared/src/linkedin-portability',
+    ]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].rule).toBe(7);
+    expect(violations[0].file).toContain('some-other-integration/client.ts');
+    expect(violations[0].file).not.toContain('linkedin-portability');
+    expect(violations[0].message).toContain(
+      'outside the allowlisted LinkedIn Data Portability directory',
+    );
+  });
+
+  it('passes on the real repo with this rule alone, since the allowlisted directory is reserved and unpopulated', () => {
+    expect(checkRepoWideLinkedinNetworkTargets(REPO_PATHS.repoRoot)).toEqual([]);
   });
 });

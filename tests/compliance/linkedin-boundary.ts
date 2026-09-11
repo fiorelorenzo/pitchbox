@@ -1,6 +1,6 @@
 // Static enforcement of docs/linkedin-integration-design.md's "compliance
 // boundary" (#308). Each `checkRuleN` function below implements exactly one
-// of the six prohibitions and returns every violation it finds - it never
+// of the seven prohibitions and returns every violation it finds - it never
 // throws on a clean tree and never skips a rule because a file happens not
 // to exist (an empty scan directory legitimately produces zero violations,
 // which is not the same thing as skipping the rule).
@@ -21,7 +21,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
-export type RuleId = 1 | 2 | 3 | 4 | 5 | 6;
+export type RuleId = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export type Violation = {
   rule: RuleId;
@@ -116,58 +116,72 @@ export function resolveModuleFile(fromFile: string, specifier: string): string |
 // ---------------------------------------------------------------------------
 // Rule 1: no fetch/XMLHttpRequest/sendBeacon whose target mentions linkedin/licdn.
 // ---------------------------------------------------------------------------
-export function checkNetworkTargets(scanDir: string): Violation[] {
-  const violations: Violation[] = [];
-  for (const file of walkFiles(scanDir, ['.ts', '.svelte'])) {
-    const sf = parseSource(file);
-    const usesXhr = /new\s+XMLHttpRequest\b/.test(sf.text);
-    const visit = (node: ts.Node): void => {
-      if (ts.isCallExpression(node)) {
-        const callee = node.expression;
-        if (ts.isIdentifier(callee) && callee.text === 'fetch' && node.arguments.length > 0) {
-          const target = node.arguments[0].getText(sf);
-          if (NETWORK_TARGET_RE.test(target)) {
-            violations.push(
-              makeViolation(
-                1,
-                file,
-                `calls fetch(${trim(target)}) whose target mentions "linkedin"/"licdn"`,
-              ),
+/** True when a network call's target source text is an unambiguous
+ * same-origin relative path (`'/api/settings/linkedin-assist'`), which can
+ * never resolve to a linkedin.com/licdn.com host no matter what word
+ * appears later in the path - a route Pitchbox itself named after the
+ * LinkedIn feature it configures is not a request toward linkedin.com.
+ * Protocol-relative (`//host/...`) and absolute URLs are deliberately never
+ * treated as same-origin here, so `//www.linkedin.com/x` and
+ * `'https://...linkedin...'` are both still caught. */
+function isUnambiguousSameOriginPath(targetText: string): boolean {
+  return /^(['"`])\/(?!\/)/.test(targetText);
+}
+
+/** Every `fetch(...)`/`XMLHttpRequest#open(...)`/`navigator.sendBeacon(...)`
+ * call in `file` whose target argument mentions "linkedin"/"licdn" and is
+ * not an unambiguous same-origin relative path, as a human-readable detail
+ * string - shared by rule 1 (extension-only) and rule 7 (repo-wide) so the
+ * two can never drift on what counts as a violation, only on where each one
+ * looks for one. */
+function collectLinkedinNetworkCallDetails(file: string): string[] {
+  const sf = parseSource(file);
+  const usesXhr = /new\s+XMLHttpRequest\b/.test(sf.text);
+  const details: string[] = [];
+  const isRealTarget = (target: string): boolean =>
+    NETWORK_TARGET_RE.test(target) && !isUnambiguousSameOriginPath(target);
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      if (ts.isIdentifier(callee) && callee.text === 'fetch' && node.arguments.length > 0) {
+        const target = node.arguments[0].getText(sf);
+        if (isRealTarget(target)) {
+          details.push(`calls fetch(${trim(target)}) whose target mentions "linkedin"/"licdn"`);
+        }
+      } else if (ts.isPropertyAccessExpression(callee)) {
+        const method = callee.name.text;
+        if (method === 'open' && usesXhr && node.arguments.length > 1) {
+          const target = node.arguments[1].getText(sf);
+          if (isRealTarget(target)) {
+            details.push(
+              `calls XMLHttpRequest#open(..., ${trim(target)}) whose target mentions "linkedin"/"licdn"`,
             );
           }
-        } else if (ts.isPropertyAccessExpression(callee)) {
-          const method = callee.name.text;
-          if (method === 'open' && usesXhr && node.arguments.length > 1) {
-            const target = node.arguments[1].getText(sf);
-            if (NETWORK_TARGET_RE.test(target)) {
-              violations.push(
-                makeViolation(
-                  1,
-                  file,
-                  `calls XMLHttpRequest#open(..., ${trim(target)}) whose target mentions "linkedin"/"licdn"`,
-                ),
+        } else if (method === 'sendBeacon') {
+          const objectText = callee.expression.getText(sf);
+          if (/\bnavigator\b/.test(objectText)) {
+            const target = node.arguments[0]?.getText(sf) ?? '';
+            if (isRealTarget(target)) {
+              details.push(
+                `calls navigator.sendBeacon(${trim(target)}, ...) whose target mentions "linkedin"/"licdn"`,
               );
-            }
-          } else if (method === 'sendBeacon') {
-            const objectText = callee.expression.getText(sf);
-            if (/\bnavigator\b/.test(objectText)) {
-              const target = node.arguments[0]?.getText(sf) ?? '';
-              if (NETWORK_TARGET_RE.test(target)) {
-                violations.push(
-                  makeViolation(
-                    1,
-                    file,
-                    `calls navigator.sendBeacon(${trim(target)}, ...) whose target mentions "linkedin"/"licdn"`,
-                  ),
-                );
-              }
             }
           }
         }
       }
-      ts.forEachChild(node, visit);
-    };
-    visit(sf);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return details;
+}
+
+export function checkNetworkTargets(scanDir: string): Violation[] {
+  const violations: Violation[] = [];
+  for (const file of walkFiles(scanDir, ['.ts', '.svelte'])) {
+    for (const detail of collectLinkedinNetworkCallDetails(file)) {
+      violations.push(makeViolation(1, file, detail));
+    }
   }
   return violations;
 }
@@ -790,7 +804,59 @@ export async function checkHostPermissions(manifestPath: string): Promise<Violat
   return violations;
 }
 
+// ---------------------------------------------------------------------------
+// Rule 7 (repo-level): no fetch/XMLHttpRequest/sendBeacon whose target
+// mentions linkedin/licdn anywhere in the repository, except inside the one
+// directory named in LINKEDIN_NETWORK_ALLOWLIST. Rules 1 and 5 each cover
+// one known LinkedIn-adjacent surface - the extension, the platform adapter
+// - and neither would have caught a new fetch added anywhere else in the
+// repo, which is exactly the gap a member-consented, server-side Data
+// Portability client (LOR-246, docs/design/linkedin-portability.md) would
+// open silently if it landed in a directory neither rule happens to scan.
+// This rule closes that gap by scanning everywhere and naming the one
+// exception explicitly, so the exception is a decision this file records
+// rather than an accident of scope. No such client exists yet - the
+// allowlisted directory is reserved, not populated - so this rule passes
+// against the real repo exactly like every other rule here.
+// ---------------------------------------------------------------------------
+export const LINKEDIN_NETWORK_ALLOWLIST: readonly string[] = ['shared/src/linkedin-portability'];
+
+function isRepoOwnComplianceFixture(repoRoot: string, file: string): boolean {
+  const ownFixturesPrefix = path.join(repoRoot, 'tests', 'compliance', 'fixtures') + path.sep;
+  return file.startsWith(ownFixturesPrefix);
+}
+
+export function checkRepoWideLinkedinNetworkTargets(
+  repoRoot: string,
+  allowlistRelDirs: readonly string[] = LINKEDIN_NETWORK_ALLOWLIST,
+): Violation[] {
+  const violations: Violation[] = [];
+  const allowedPrefixes = allowlistRelDirs.map((rel) => path.join(repoRoot, rel) + path.sep);
+  for (const file of walkFiles(repoRoot, ['.ts', '.svelte'])) {
+    // This checker's own fixtures (under repoRoot's own tests/compliance/
+    // fixtures/) deliberately contain the violations rules 1-6 test for;
+    // they are not real product surface and must not be swept into a scan
+    // that, unlike every other rule here, has no fixed scanDir. Scoped to
+    // repoRoot rather than any path containing the same segment, so a test
+    // that points this function at a fixture tree as its own repoRoot (this
+    // rule's own fixtures, below) is not excluded from itself.
+    if (isRepoOwnComplianceFixture(repoRoot, file)) continue;
+    if (allowedPrefixes.some((prefix) => file.startsWith(prefix))) continue;
+    for (const detail of collectLinkedinNetworkCallDetails(file)) {
+      violations.push(
+        makeViolation(
+          7,
+          file,
+          `${detail}, outside the allowlisted LinkedIn Data Portability directory`,
+        ),
+      );
+    }
+  }
+  return violations;
+}
+
 export type RepoPaths = {
+  repoRoot: string;
   extensionSrcDir: string;
   manifestPath: string;
   linkedinDomPath: string;
@@ -799,6 +865,7 @@ export type RepoPaths = {
 
 export function defaultRepoPaths(repoRoot: string): RepoPaths {
   return {
+    repoRoot,
     extensionSrcDir: path.join(repoRoot, 'extension', 'src'),
     manifestPath: path.join(repoRoot, 'extension', 'manifest.config.ts'),
     linkedinDomPath: path.join(
@@ -821,5 +888,6 @@ export async function checkAll(paths: RepoPaths): Promise<Violation[]> {
     ...checkAlarmsReachability(paths.extensionSrcDir),
     ...checkLinkedinPlatformNetworkCalls(paths.linkedinPlatformDir),
     ...(await checkHostPermissions(paths.manifestPath)),
+    ...checkRepoWideLinkedinNetworkTargets(paths.repoRoot),
   ];
 }
