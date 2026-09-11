@@ -460,6 +460,30 @@ agent CLIs to stay lean.
 - **Security disclosure.** This repo is public with a live prod deploy (`app.pitchbox.app`). Never put unpatched-vulnerability repro detail (steps, `file:line`) in a public issue, PR, or committed doc - file a private GitHub security advisory instead and leave a neutral `[security]` stub issue pointing to it.
 - **English everywhere.** All in-code comments and user-facing UI strings are in English (even when the conversation is in another language). No em dashes in any text - use regular hyphens or colons.
 
+## Pull requests
+
+One shape for every repo of mine: `skill://opening-a-pull-request`. The issue and its
+neighbours before the branch, the branch name Linear renders on the issue, Conventional
+Commits in the first person, the body's four sections from
+`.github/PULL_REQUEST_TEMPLATE.md` (Screenshots is never deleted), an independent review
+applied in a second commit, and the card closed only against evidence. What is true only
+here:
+
+- **Scopes** for the subject: the workspace names, matching `area:*` on the Linear
+  issue - `shared`, `web`, `cli`, `daemon`, `extension`, `playbooks`, `tests`, `docs`,
+  `cloud`, `deploy` - and a comma-separated list when a change spans several
+  (`fix(shared,web): ...`).
+- **Required check**: the aggregate `ci` context, from the branch ruleset's
+  `required_status_checks`. `preflight` (`.github/preflight.json`) is the local
+  stand-in for the `Tests (Postgres)` job that no longer runs on a PR; run it, or let
+  the installed `pre-push` hook run it, before pushing.
+- **Merge**: `gh pr merge <n> --squash --delete-branch` is the only method the ruleset
+  allows (`allowed_merge_methods: ["squash"]`), and `allow_auto_merge` is on, so arm
+  `gh pr merge <n> --auto --squash --delete-branch` right after opening rather than
+  waiting on `ci` yourself. `delete_branch_on_merge` is also on, so nothing needs
+  deleting by hand; local `main` still needs `git checkout main && git reset --hard
+  origin/main` afterward, since it diverges on every squash.
+
 ## Design and UI
 
 - **Dev target for `uishot`.** `pnpm run dev:web` puts the SvelteKit app on `127.0.0.1:5180` (or run the full `pnpm run dev`, which brings it up alongside everything else). Either way it needs Postgres up and migrated first (`pnpm run db:up && pnpm run migrate`) plus an `ENCRYPTION_KEY` in `.env` - screenshotting before that just hits a connection error. Shoot `/` first: `PITCHBOX_AUTH` is off by default, so the dashboard renders with no login.
