@@ -1,6 +1,9 @@
 import type { Dict } from './types.js';
+import { timeEn } from './dict/time.js';
 
 export const en = {
+  ...timeEn,
+
   // Shared across every session-less auth page (/login, /register, /reset,
   // /reset/[token]): identical wording on all four, so one key rather than
   // four copies that could drift.

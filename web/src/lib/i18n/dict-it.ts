@@ -1,4 +1,5 @@
 import type { Dict } from './types.js';
+import { timeIt } from './dict/time.js';
 
 /**
  * Glossary decisions, recorded in `docs/design/DECISIONS.md`: "draft"
@@ -7,6 +8,8 @@ import type { Dict } from './types.js';
  * way an Italian founder actually talks about them in this kind of product.
  */
 export const it = {
+  ...timeIt,
+
   'auth.disabled-title': 'Autenticazione disattivata',
   'auth.disabled-seo-title': 'Autenticazione disattivata',
   'auth.go-to-app': 'Vai a Pitchbox',
