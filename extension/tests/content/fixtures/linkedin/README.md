@@ -81,14 +81,27 @@ and would rot the fixture anyway. Every name is mapped to a synthetic one, prose
 with fixed filler, images become empty `<img>` slots, every `href` becomes
 `/in/example-person/`, and the numeric part of every URN/id is renumbered as described above.
 
-Audit a regenerated file before committing it. This should print no names, no URLs, and no
-long digit run other than the renumbered ones:
+Audit a regenerated or hand-scrubbed file before committing it. This should print no names, no
+URLs, and no long digit run other than the renumbered ones:
 
 ```bash
 cd extension/tests/content/fixtures/linkedin
 grep -ocE 'https?://|licdn|\.jpg|\.png' *.html                      # expect 0
 grep -ohE '[0-9]{10,}' *.html | sort -u                             # expect only 700...0001, 700...0002, ...
 ```
+
+That first check is a paragraph, not a guarantee: LOR-252 found ten real `lnkd.in`
+shortlinks, a real `x.com` handle and a real `pitchbox.app` URL sitting in the committed
+fixtures for months, all of them in an anchor's link *text* rather than its `href` (which
+scrubHref already rewrote), because the capture script's short-text branch let anything
+under 24 characters through unscrubbed until #LOR-228 fixed it - and the fixtures already
+committed were never re-scrubbed until then. `extension/tests/content/linkedin-fixture-links.test.ts`
+is the runnable form of this check: it globs every file in this directory, and fails,
+naming the file and the exact match, if any link resolves anywhere other than the
+reserved, non-resolving `example.com` - not merely "anywhere that isn't linkedin.com",
+since an `x.com` handle or a company domain is just as identifying as a real LinkedIn URL.
+Run it (`pnpm exec vitest run extension/tests/content/linkedin-fixture-links.test.ts`)
+after any hand edit or recapture; it also runs with the rest of the suite.
 
 Names are the part a machine cannot fully check, so read the diff. The scrubber replaces
 strings of two or more capitalised words, which catches a display name and misses a
