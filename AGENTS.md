@@ -96,18 +96,29 @@ host permission optional (#317). So:
 `pnpm run test:linkedin-compliance` is a **third** config
 (`vitest.compliance.config.ts`) and a required CI check. It is not a unit suite:
 it parses the real extension source and manifest and fails the build on six
-prohibitions (no request toward linkedin.com or licdn, no cookie or storage read
-inside a LinkedIn content script, no synthetic click or submit on a
-`linkedin-dom.ts` node, no alarm reachable from LinkedIn code, no network call
-in the LinkedIn platform directory, and `https://www.linkedin.com/*` staying an
-optional host permission rather than a blanket grant). Run it before touching
-anything under `extension/src/content/linkedin-*` or the manifest. Rule 2
-derives its scan set from the static `content_scripts` **and** from any
+prohibitions (no request toward linkedin.com or licdn, no `document.cookie`,
+`chrome.cookies`, `localStorage`, or `sessionStorage` read inside a LinkedIn
+content script, no synthetic click or submit on a `linkedin-dom.ts` node, no
+alarm reachable from LinkedIn code, no network call in the LinkedIn platform
+directory, and `https://www.linkedin.com/*` staying an optional host
+permission rather than a blanket grant). Run it before touching anything
+under `extension/src/content/linkedin-*` or the manifest. Rule 2 derives its
+scan set from the static `content_scripts` **and** from any
 `chrome.scripting.registerContentScripts` call whose matches mention LinkedIn,
 because the LinkedIn grant is optional and its scripts register at runtime; a
 LinkedIn-looking script under `content/` that no registration accounts for is
 itself a violation, so wire the registration rather than working around the
 checker (#350).
+
+**Rule 2's scope stops at `chrome.storage`, deliberately.** `chrome.storage.local`/
+`.sync` is the extension's own sandboxed namespace, isolated per-extension by
+the browser - it cannot reach LinkedIn's cookies or LinkedIn's own page
+`localStorage`/`sessionStorage`, which is exactly what the four scanned APIs
+guard against. `extension/src/lib/api.ts`'s `pickPairing()` -> `getSettings()`
+already reads `chrome.storage.local` from both LinkedIn panel scripts (the
+billing-link refusal path) precisely because that read cannot touch anything
+LinkedIn owns; widening rule 2 to flag it would fail CI on code already on
+`main` for no compliance gain (LOR-283).
 
 ### Local verification: run the minimal covering subset
 

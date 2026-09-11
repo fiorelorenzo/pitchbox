@@ -27,11 +27,12 @@ the word "linkedin" (`OPERATOR_PROFILE_PATH`, same file), so a static scanner
 can tell "posts to our backend" from "fetches LinkedIn" on sight. That
 scanner is real, not a promise: `pnpm run test:linkedin-compliance`
 (`tests/compliance/linkedin-boundary.test.ts`) parses the built extension and
-fails on six things - a fetch toward linkedin.com or licdn, a cookie or
-storage read inside a LinkedIn content script, a synthetic click or submit on
-a LinkedIn element, an alarm reachable from LinkedIn code, a network call
-anywhere in the LinkedIn platform directory, and the LinkedIn host permission
-turning into a blanket grant instead of the optional one it has to stay. It
+fails on six things - a fetch toward linkedin.com or licdn, a `document.cookie`,
+`chrome.cookies`, `localStorage`, or `sessionStorage` read inside a LinkedIn
+content script, a synthetic click or submit on a LinkedIn element, an alarm
+reachable from LinkedIn code, a network call anywhere in the LinkedIn platform
+directory, and the LinkedIn host permission turning into a blanket grant
+instead of the optional one it has to stay. It
 is a required CI check, and it inspects the real manifest and source, not a
 checklist someone filled in.
 

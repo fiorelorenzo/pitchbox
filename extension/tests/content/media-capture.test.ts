@@ -149,7 +149,7 @@ describe('captureObservedImage (#569)', () => {
     expect(image).toEqual({ alt: 'a chart', kind: 'image', partial: false });
   });
 
-  it('never fetches or navigates toward linkedin.com/licdn.com, and never touches cookies or storage', () => {
+  it('never fetches or navigates toward linkedin.com/licdn.com, and never reads document.cookie, chrome.cookies, localStorage, or sessionStorage', () => {
     expect(mediaCaptureSource).not.toMatch(/fetch\(|XMLHttpRequest|sendBeacon/);
     expect(mediaCaptureSource).not.toMatch(
       /document\.cookie|localStorage|sessionStorage|chrome\.cookies/,
