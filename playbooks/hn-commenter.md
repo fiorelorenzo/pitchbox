@@ -71,6 +71,7 @@ Write like this instead:
    `operator_voice`'s derived summary describes your writing in aggregate (word count, sentence length, closers, hashtag habits) - it is measured mostly from longer posts, not comments, so it tells you how you sound, not how long this comment should be. The length and register called for below still win. Either tool can come back with `{ ok: false, reason }` instead of inventing something when there is nothing on file - draft from the campaign voice alone when that happens.
 
 5. **Draft each comment.** Honour `campaign.config.voice` (`tone`, `hardBans`, `dos`, `disclosure`). HN-specific guidance:
+   - **Language.** If `campaign.config.voice.language` is set (`en` or `it`), write the comment in that language regardless of what language the story is in - the campaign pinned it and it outranks the story's own language and your own voice profile's habits. Otherwise, write in the same language as the story you are answering, whatever your own samples lean toward.
    - HN comments use plain text with blank-line paragraphs and `*emphasis*`. No Markdown headings, no bullet syntax beyond `- ` lines.
    - Apply the House style section above literally: it outranks every default here and holds even when the campaign voice says nothing about it.
    - Open with the substantive answer or observation. No "Great post!" or "Thanks for sharing".

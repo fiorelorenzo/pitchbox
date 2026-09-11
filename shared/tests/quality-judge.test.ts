@@ -253,6 +253,55 @@ describe('quality-judge', () => {
       expect(unclassifiable.distance.languageMatch).toBeNull();
     });
 
+    it('LOR-265: an explicit pin outranks the post for what "correct" means on this axis', () => {
+      const italianBody =
+        'Questo aggiornamento e fantastico, complimenti a tutto il team per il lavoro.';
+      const englishPost = 'We shipped a big update to the product this week after a long sprint.';
+
+      // Without a pin, an Italian body answering an English post is a
+      // mismatch (LOR-251's original behaviour, still the default).
+      const withoutPin = computeDeterministicQuality({
+        body: italianBody,
+        styleFindings: [],
+        corpus: null,
+        rubric: DEFAULT_QUALITY_RUBRIC,
+        post: englishPost,
+      });
+      expect(withoutPin.languageMatch).toBe(false);
+      expect(withoutPin.expectedLanguage).toBe('en');
+
+      // Pinned to Italian, the same Italian body answering the same
+      // English post is a match, not a mismatch - the whole reason a pin
+      // exists is to make this outcome correct on purpose (LOR-265).
+      const withPin = computeDeterministicQuality({
+        body: italianBody,
+        styleFindings: [],
+        corpus: null,
+        rubric: DEFAULT_QUALITY_RUBRIC,
+        post: englishPost,
+        expectedLanguage: 'it',
+      });
+      expect(withPin.languageMatch).toBe(true);
+      expect(withPin.distance.languageMatch).toBe(0);
+      expect(withPin.expectedLanguage).toBe('it');
+      // Still recorded for transparency - only outranked, never erased.
+      expect(withPin.postLanguage).toBe('en');
+
+      // The pin does not launder a wrong answer: a candidate that ignores
+      // it is still a real finding, just measured against the pin instead
+      // of the post.
+      const wrongDespitePin = computeDeterministicQuality({
+        body: 'This reply is in English even though the campaign pinned Italian.',
+        styleFindings: [],
+        corpus: null,
+        rubric: DEFAULT_QUALITY_RUBRIC,
+        post: englishPost,
+        expectedLanguage: 'it',
+      });
+      expect(wrongDespitePin.languageMatch).toBe(false);
+      expect(wrongDespitePin.expectedLanguage).toBe('it');
+    });
+
     it('prefers the visible thread median over the operator corpus median for the length axis (LOR-251)', () => {
       const corpus = corpusFrom(LONG_OPERATOR_SAMPLE);
       const body = 'One two three four five six seven eight nine ten.';

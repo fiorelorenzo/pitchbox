@@ -41,6 +41,7 @@
 // rationale; this file only owns rendering the result.
 
 import { HOUSE_STYLE_HEADING, HOUSE_STYLE_SECTION } from '../house-style.js';
+import { classifyLanguage } from './voice-profile.js';
 import { envelopeInstruction } from './envelope.js';
 import type { CodeRepo, OperatorPersona, ProjectBrief, VoiceProfileSummary } from './context.js';
 import { describePostRegister, readPostRegister } from './register.js';
@@ -259,6 +260,47 @@ function clamp(text: string, max: number): string {
   return t.length <= max ? t : `${t.slice(0, max)}\n[truncated]`;
 }
 
+/** The two languages `classifyLanguage` (voice-profile.ts) and the style
+ * checker's phrase lists both know - the corpus this product measures is
+ * English/Italian, and nothing here claims to handle a third. */
+export type DraftLanguage = 'en' | 'it';
+
+const LANGUAGE_NAMES: Record<DraftLanguage, string> = { en: 'English', it: 'Italian' };
+
+/**
+ * LOR-265: the one place the draft's language is decided, so the three
+ * mechanisms that used to each infer it separately - this prompt (asking
+ * the model to write in "the language the operator writes in"), the voice
+ * profile's own bilingual summary ("writes primarily in both English and
+ * Italian", which resolves to "either" for a genuinely bilingual operator),
+ * and the style checker's after-the-fact rule-list choice - never have to
+ * reconcile three different answers.
+ *
+ * Precedence, in order:
+ *   1. `pin` - an explicit choice an operator made (a campaign setting
+ *      today). Outranks everything: an operator who set one meant it,
+ *      regardless of what the post or their own corpus say.
+ *   2. The post being answered, when `classifyLanguage` can read one off
+ *      it with real confidence. The person who wrote the post is the one
+ *      who reads the reply, so their language wins over the operator's own
+ *      habits - that is the whole reason this function exists.
+ *   3. Nothing. A bilingual operator's own corpus is genuinely "either"
+ *      (`LanguageMix.primary === 'mixed'`), and a short or markerless post
+ *      cannot be classified at all (`classifyLanguage` returns 'unknown').
+ *      Guessing here would just be a fourth inference standing in for the
+ *      three this function replaces, so `buildSuggestionPrompt` adds no
+ *      language instruction in this case - exactly the prompt's behaviour
+ *      before this function existed.
+ */
+export function resolveDraftLanguage(args: {
+  pin?: DraftLanguage;
+  postText?: string;
+}): DraftLanguage | null {
+  if (args.pin) return args.pin;
+  const detected = args.postText ? classifyLanguage(args.postText) : 'unknown';
+  return detected === 'unknown' ? null : detected;
+}
+
 // LOR-233: the old wording ("it has to add something... say so in one
 // sentence instead of padding") made a substantive addition the only
 // legitimate outcome, which is false for most of what the operator
@@ -431,6 +473,16 @@ export function buildSuggestionPrompt(args: {
    * override it with. It affects this call only.
    */
   retune?: RetuneDirection;
+  /**
+   * An explicit language pin (LOR-265) - a campaign setting an operator
+   * set because they only want to publish in one language whatever the
+   * room does. Never inferred here: the caller resolves which setting (if
+   * any) applies to this request and passes the code straight through.
+   * Absent, `resolveDraftLanguage` falls through to the post being
+   * answered instead of a setting - see that function's own doc comment
+   * for the full precedence.
+   */
+  languagePin?: DraftLanguage;
 }): string {
   const { kind, post, persona, voiceProfile, projects, repos } = args;
   const tone: AssistTone = args.tone ?? DEFAULT_ASSIST_TONE;
@@ -583,6 +635,21 @@ export function buildSuggestionPrompt(args: {
   );
 
   parts.push(`Your task: ${taskFor(kind, post.replyToCommentId)}`);
+
+  // LOR-265: the draft's language, resolved in the one place this decision
+  // is made (`resolveDraftLanguage`'s own doc comment states the
+  // precedence) - a pin outranks the post, the post outranks nothing at
+  // all. No instruction below means classifyLanguage could not read a
+  // confident language off the post and no pin applies, exactly the
+  // prompt's behaviour before this existed.
+  const draftLanguage = resolveDraftLanguage({ pin: args.languagePin, postText: post.text });
+  if (draftLanguage) {
+    parts.push(
+      args.languagePin
+        ? `Write your reply in ${LANGUAGE_NAMES[draftLanguage]}. That language is pinned for this account and outranks the post's own language below and the operator's own habits above.`
+        : `Write your reply in ${LANGUAGE_NAMES[draftLanguage]}, matching the post below - the person reading your reply wrote in that language, whatever the operator's own samples lean toward.`,
+    );
+  }
 
   // LOR-233: a length target in words, named explicitly rather than left
   // for the model to reconcile "adds something" against a voice profile

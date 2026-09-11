@@ -79,6 +79,7 @@ Write like this instead:
    `operator_voice`'s derived summary describes your writing in aggregate (word count, sentence length, closers, hashtag habits) - it is measured mostly from longer posts, not short replies, so it tells you how you sound, not how long this reply should be or whether it carries a hashtag. The length and register called for below still win. Either tool can come back with `{ ok: false, reason }` instead of inventing something when there is nothing on file - draft from the campaign voice alone when that happens.
 
 7. **Draft the reply.** The voice rules are in `campaign.config.voice` (`tone`, `hardBans`, `dos`, `disclosure`). Mastodon-specific guidance:
+   - **Language.** If `campaign.config.voice.language` is set (`en` or `it`), write the reply in that language regardless of what language the status is in - the campaign pinned it and it outranks the status's own language and your own voice profile's habits. Otherwise, write in the same language as the status you are answering, whatever your own samples lean toward.
    - Honour every entry in `campaign.config.voice.hardBans` literally - exact substrings to never emit.
    - Apply the House style section above literally: it outranks every default here and holds even when the campaign voice says nothing about it.
    - Plain text, natural paragraph breaks (blank line between paragraphs), no markdown headings. Hashtags only if they genuinely belong (rarely, in a reply).

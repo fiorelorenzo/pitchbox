@@ -213,6 +213,15 @@ export interface DeterministicQualityDetail {
   candidateLanguage: VoiceMetricsLanguage;
   /** `null` when `sourceMeasured` is false. */
   postLanguage: VoiceMetricsLanguage | null;
+  /** LOR-265: the language `languageMatch` actually checked the candidate
+   * against - an explicit campaign pin when the caller passed one
+   * (`resolveDraftLanguage`'s precedence for the campaign plane, mirrored
+   * here for the finding that enforces it), else `postLanguage`. Differs
+   * from `postLanguage` only when a pin overrode it - that difference is
+   * what tells a reviewer (or `describeDeterministic`) whether a mismatch
+   * finding means "wrong language for this campaign" or "wrong language
+   * for this post". */
+  expectedLanguage: VoiceMetricsLanguage | null;
 }
 
 /** 3-line copy of `voice-metrics.ts`'s own private `median`, on purpose -
@@ -248,6 +257,18 @@ export function computeDeterministicQuality(args: {
    * playbook supplied any - the length axis's preferred comparator over the
    * operator's own corpus median. */
   threadCommentWordCounts?: number[];
+  /**
+   * LOR-265: an explicit campaign language pin, when the campaign that
+   * produced this draft set one. Outranks the post for what "correct"
+   * means on the languageMatch axis - the same precedence
+   * `suggest-prompt.ts`'s `resolveDraftLanguage` states for the prompt
+   * side, stated again here because this is a second, independent place
+   * "the right language" gets decided (the check, not the request). A
+   * campaign pinned to Italian that correctly answers an English post in
+   * Italian must score a match, not a mismatch, against the post it was
+   * explicitly asked to override.
+   */
+  expectedLanguage?: 'en' | 'it';
 }): DeterministicQualityDetail {
   const { body, styleFindings, corpus, rubric, threadCommentWordCounts } = args;
   const post = args.post && args.post.trim() !== '' ? args.post : null;
@@ -261,9 +282,13 @@ export function computeDeterministicQuality(args: {
   const structuralMeasurable = corpus !== null && candidateM.register !== null;
   const lexiconMeasurable = corpus !== null && candidateM.wordCount >= AVOIDED_WORDS_MIN_WORDS;
 
+  // LOR-265: a pin decides "correct" outright; absent one, the post being
+  // answered still does, exactly as before this issue existed.
+  const expectedLanguage: VoiceMetricsLanguage | null =
+    args.expectedLanguage ?? (postM !== null ? postM.language : null);
   const languageMatch =
-    postM !== null && candidateM.language !== 'unknown' && postM.language !== 'unknown'
-      ? candidateM.language === postM.language
+    expectedLanguage !== null && expectedLanguage !== 'unknown' && candidateM.language !== 'unknown'
+      ? candidateM.language === expectedLanguage
       : null;
 
   const distance: DeterministicQualityAxes = {
@@ -326,6 +351,7 @@ export function computeDeterministicQuality(args: {
     languageMatch,
     candidateLanguage: candidateM.language,
     postLanguage: postM !== null ? postM.language : null,
+    expectedLanguage,
   };
 }
 
@@ -348,7 +374,15 @@ function describeDeterministic(d: DeterministicQualityDetail): string | null {
     parts.push(`${Math.round(d.distance.echo * 100)}% echo of the source post`);
   }
   if (d.languageMatch === false) {
-    parts.push('answered in a different language than the source post');
+    // LOR-265: `expectedLanguage` only differs from `postLanguage` when a
+    // campaign pin overrode it - naming which one was violated is the
+    // difference between "the operator broke their own pin" and "the
+    // draft ignored the post it answered".
+    parts.push(
+      d.expectedLanguage !== null && d.expectedLanguage !== d.postLanguage
+        ? `answered in a different language than the campaign's pin (${d.expectedLanguage})`
+        : 'answered in a different language than the source post',
+    );
   }
   const corpusAxisCount = [
     d.distance.rhythm,
@@ -473,6 +507,9 @@ export async function scoreDraftQuality(
     rubric: QualityRubric;
     post?: string | null;
     threadCommentWordCounts?: number[];
+    /** LOR-265: passed straight through to `computeDeterministicQuality` -
+     * see that function's own doc comment for the precedence. */
+    expectedLanguage?: 'en' | 'it';
   },
 ): Promise<DraftQualityResult> {
   const deterministic = computeDeterministicQuality({
@@ -482,6 +519,7 @@ export async function scoreDraftQuality(
     rubric: args.rubric,
     post: args.post,
     threadCommentWordCounts: args.threadCommentWordCounts,
+    expectedLanguage: args.expectedLanguage,
   });
   const judged = await judgeQuality(db, {
     body: args.body,

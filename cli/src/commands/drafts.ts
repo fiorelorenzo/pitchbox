@@ -83,6 +83,24 @@ function extractOfferSubject(config: unknown): string | null {
   return typeof subject === 'string' && subject.trim() !== '' ? subject : null;
 }
 
+/** Pulls `campaign.config.voice.language` out of jsonb config, if present
+ * and one of the two values `resolveDraftLanguage`/`checkStyle` actually
+ * know (LOR-265) - anything else (an older campaign, a malformed value)
+ * reads as no pin rather than throwing, the same "accepted as-is, absent
+ * beats wrong" stance `extractOfferSubject` above already takes. Feeds
+ * `scoreDraftQuality`'s `expectedLanguage`, so a campaign pinned to
+ * Italian that correctly writes Italian on an English post scores a
+ * language match, not a manufactured mismatch against the post it was
+ * explicitly asked to override.
+ */
+function extractVoiceLanguagePin(config: unknown): 'en' | 'it' | null {
+  if (config == null || typeof config !== 'object') return null;
+  const voice = (config as Record<string, unknown>).voice;
+  if (voice == null || typeof voice !== 'object') return null;
+  const language = (voice as Record<string, unknown>).language;
+  return language === 'en' || language === 'it' ? language : null;
+}
+
 /** Word count the same simple way every other length axis in this codebase
  * does (voice-metrics.ts's own scorer, suggest-prompt.ts's `wordCount`) -
  * split on whitespace, drop empties. Reused below for both a draft's own
@@ -294,6 +312,10 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
   // (issue #325); every other scenario either has no subject or builds its
   // compose URL from the body alone.
   const offerSubject = extractOfferSubject(campaign.config);
+  // LOR-265: read once per batch, same as offerSubject above - every draft
+  // in this run answers to the same campaign, so the pin (if any) applies
+  // to all of them alike.
+  const languagePin = extractVoiceLanguagePin(campaign.config);
 
   // A `post_comment` is contact with the post's author (issue #336), and the
   // author is already on the run's own staged candidates, so fill it in here
@@ -457,6 +479,7 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
         rubric: qualityRubric,
         post: sourceText,
         threadCommentWordCounts,
+        expectedLanguage: languagePin ?? undefined,
       });
       const variantQuality = variantResults
         ? await Promise.all(
@@ -469,6 +492,7 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
                 rubric: qualityRubric,
                 post: sourceText,
                 threadCommentWordCounts,
+                expectedLanguage: languagePin ?? undefined,
               }),
             ),
           )

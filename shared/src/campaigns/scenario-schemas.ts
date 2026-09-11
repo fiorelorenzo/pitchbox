@@ -32,19 +32,29 @@ const RedditScoutSchema = z
   })
   .strict();
 
+const draftingVoiceShape = {
+  tone: z.enum(['casual', 'neutral', 'professional']),
+  hardBans: z.array(z.string()),
+  dos: z.array(z.string()),
+  disclosure: z.string().min(1),
+  // LOR-265: an explicit per-campaign language pin, next to `tone`. Every
+  // drafting scenario below shares this shape, so a pin is spelled and
+  // validated identically regardless of platform - the same discipline
+  // classifyLanguage/checkStyle already apply to `en`/`it`, the only two
+  // languages this product's language tooling actually knows. Absent, the
+  // playbook defaults to the language of the post/thread it answers (or,
+  // for a proactive post, the operator's own corpus) - never a setting.
+  // Left off reddit-scout's own voice above: a scout stages candidates, it
+  // never drafts final text, so there is nothing here for a pin to govern.
+  language: z.enum(['en', 'it']).optional(),
+};
+
 const RedditCommenterSchema = z
   .object({
     targetSubreddits: z.array(z.string().min(1)).min(1),
     topicKeywords: z.array(z.string().min(1)),
     avoidKeywords: z.array(z.string().min(1)),
-    voice: z
-      .object({
-        tone: z.enum(['casual', 'neutral', 'professional']),
-        hardBans: z.array(z.string()),
-        dos: z.array(z.string()),
-        disclosure: z.string().min(1),
-      })
-      .strict(),
+    voice: z.object(draftingVoiceShape).strict(),
     valuePropositions: z.array(z.string().min(1)),
     productUrl: z.url(),
     systemInstructions: z.string().min(1),
@@ -57,14 +67,7 @@ const RedditPosterSchema = z
     topicKeywords: z.array(z.string().min(1)),
     avoidKeywords: z.array(z.string().min(1)),
     postAngle: z.string().min(1),
-    voice: z
-      .object({
-        tone: z.enum(['casual', 'neutral', 'professional']),
-        hardBans: z.array(z.string()),
-        dos: z.array(z.string()),
-        disclosure: z.string().min(1),
-      })
-      .strict(),
+    voice: z.object(draftingVoiceShape).strict(),
     valuePropositions: z.array(z.string().min(1)),
     productUrl: z.url(),
     systemInstructions: z.string().min(1),
@@ -78,14 +81,7 @@ const HnCommenterSchema = z
     listing: HnListingEnum,
     topicKeywords: z.array(z.string().min(1)),
     avoidKeywords: z.array(z.string().min(1)),
-    voice: z
-      .object({
-        tone: z.enum(['casual', 'neutral', 'professional']),
-        hardBans: z.array(z.string()),
-        dos: z.array(z.string()),
-        disclosure: z.string().min(1),
-      })
-      .strict(),
+    voice: z.object(draftingVoiceShape).strict(),
     valuePropositions: z.array(z.string().min(1)),
     productUrl: z.url(),
     systemInstructions: z.string().min(1),
@@ -98,14 +94,7 @@ const HnPosterSchema = z
     format: z.enum(['show-hn', 'ask-hn', 'text']).optional(),
     topicKeywords: z.array(z.string().min(1)),
     avoidKeywords: z.array(z.string().min(1)),
-    voice: z
-      .object({
-        tone: z.enum(['casual', 'neutral', 'professional']),
-        hardBans: z.array(z.string()),
-        dos: z.array(z.string()),
-        disclosure: z.string().min(1),
-      })
-      .strict(),
+    voice: z.object(draftingVoiceShape).strict(),
     valuePropositions: z.array(z.string().min(1)),
     productUrl: z.url(),
     systemInstructions: z.string().min(1),

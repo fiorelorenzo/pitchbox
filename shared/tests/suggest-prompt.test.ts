@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSuggestionPrompt,
+  resolveDraftLanguage,
   MAX_EXAMPLES,
   MAX_POST_CHARS,
   MAX_PROJECTS,
@@ -770,5 +771,63 @@ describe('retune (#409)', () => {
     expect(prompt.indexOf('outranks the tone above')).toBeLessThan(
       prompt.indexOf(HOUSE_STYLE_SECTION),
     );
+  });
+});
+
+// LOR-265: the "either" problem this issue exists to fix - nothing in the
+// prompt ever named a language explicitly, so a bilingual operator's own
+// derived voice profile ("writes primarily in both English and Italian")
+// carried no usable signal for which language *this* reply should be in.
+// `resolveDraftLanguage` is the one place that decision gets made; these
+// tests pin its precedence directly, then pin that `buildSuggestionPrompt`
+// actually turns the result into an instruction.
+describe('resolveDraftLanguage (LOR-265)', () => {
+  it('an explicit pin outranks everything, regardless of the post', () => {
+    expect(resolveDraftLanguage({ pin: 'it', postText: 'This is an English post.' })).toBe('it');
+    expect(resolveDraftLanguage({ pin: 'en', postText: undefined })).toBe('en');
+  });
+
+  it('absent a pin, defaults to the language of the post being answered', () => {
+    expect(resolveDraftLanguage({ postText: 'We shipped a new feature this week.' })).toBe('en');
+    expect(
+      resolveDraftLanguage({
+        postText: 'Abbiamo appena lanciato una nuova funzionalita questa settimana.',
+      }),
+    ).toBe('it');
+  });
+
+  it('resolves nothing when there is no pin and the post cannot be classified with confidence - never a guessed default', () => {
+    expect(resolveDraftLanguage({ postText: 'ok' })).toBeNull();
+    expect(resolveDraftLanguage({ postText: undefined })).toBeNull();
+    expect(resolveDraftLanguage({})).toBeNull();
+  });
+});
+
+describe('language instruction in the prompt (LOR-265)', () => {
+  const args = { kind: 'post_comment' as const, ...noContext };
+
+  it('with no pin, states the language as matching the post - the default this issue changes', () => {
+    const englishPost = { text: 'We just shipped a new feature and the results look great.' };
+    const prompt = buildSuggestionPrompt({ ...args, post: englishPost });
+    expect(prompt).toMatch(/Write your reply in English, matching the post below/);
+
+    const italianPost = {
+      text: 'Abbiamo appena lanciato una nuova funzionalita e i risultati sono ottimi.',
+    };
+    const italianPrompt = buildSuggestionPrompt({ ...args, post: italianPost });
+    expect(italianPrompt).toMatch(/Write your reply in Italian, matching the post below/);
+  });
+
+  it('a pin overrides an English post and says so, outranking the post', () => {
+    const englishPost = { text: 'We just shipped a new feature and the results look great.' };
+    const prompt = buildSuggestionPrompt({ ...args, post: englishPost, languagePin: 'it' });
+    expect(prompt).toMatch(/Write your reply in Italian\. That language is pinned/);
+    expect(prompt).not.toMatch(/matching the post below/);
+  });
+
+  it('adds no language instruction when neither a pin nor the post says anything with confidence - unchanged behaviour', () => {
+    const unclassifiablePost = { text: 'ok' };
+    const prompt = buildSuggestionPrompt({ ...args, post: unclassifiablePost });
+    expect(prompt).not.toMatch(/Write your reply in/);
   });
 });

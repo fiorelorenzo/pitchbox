@@ -510,6 +510,114 @@ describe('pitchbox drafts:create', () => {
     expect(detail.deterministic.distance.languageMatch).toBeNull();
   });
 
+  // LOR-265: the finding that makes the pin more than a prompt tweak - a
+  // campaign pinned to Italian that correctly answers an English post in
+  // Italian must score a language *match*, not a manufactured mismatch
+  // against the post it was explicitly asked to override, and the style
+  // checker (unchanged - `classifyLanguage` on the real, Italian body) must
+  // run the Italian phrase list on it, not the English one.
+  it('a campaign pinned to Italian scores a language match on an English post, and the style checker runs the Italian rule list (LOR-265)', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'demo-lor265', name: 'D265' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        handle: 'giulia',
+        role: 'personal',
+      })
+      .returning();
+    // The pin lives on campaign.config.voice.language (LOR-265), the same
+    // shared voice shape every drafting scenario's config already carries
+    // tone/hardBans/dos/disclosure through.
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c265',
+        skillSlug: 'reddit-commenter',
+        config: { voice: { language: 'it' } },
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    // The post is unambiguously English; the reply is unambiguously
+    // Italian - the exact case the pin exists to protect - and opens with
+    // an Italian-only filler-opener tell ("Ottimo punto") so the persisted
+    // style findings can show which language's rule list actually fired.
+    const postText =
+      'We just shipped the new expense reconciliation workflow after months of testing and the whole team is relieved it finally works end to end.';
+    const body =
+      'Ottimo punto, avete fatto un gran lavoro con il nuovo flusso di riconciliazione delle spese dopo mesi di test e sono contento che funzioni bene.';
+    const payload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'post_comment',
+        subreddit: 'smallbusiness',
+        targetUser: 'opuser',
+        body,
+        sourceRef: { permalink: '/r/smallbusiness/comments/xyz/y/', sourceText: postText },
+        metadata: {},
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, payload);
+    const res = JSON.parse(out.trim().split('\n').at(-1)!);
+    expect(res.ok).toBe(true);
+    expect(res.data.inserted).toBe(1);
+
+    const [draft] = await db
+      .select()
+      .from(schema.drafts)
+      .where(eq(schema.drafts.accountId, account.id));
+
+    // The style checker ran on the real, unedited Italian body and found
+    // the Italian-list finding, not an English one - proof the rule list
+    // it ran was the Italian one, decided by the body's own language, not
+    // by the pin (style-check.ts is unmodified by this issue on purpose).
+    const metadata = draft.metadata as {
+      styleFindings?: Array<{ ruleId: string; message: string }>;
+    };
+    expect(metadata.styleFindings).toBeDefined();
+    const fillerFinding = metadata.styleFindings!.find((f) => f.ruleId === 'filler-opener');
+    expect(fillerFinding).toBeDefined();
+    expect(fillerFinding!.message).toContain('(Italian)');
+
+    // The quality axis: without the pin this would read `languageMatch:
+    // false` (Italian body against an English post) - the pin makes it a
+    // match, and `expectedLanguage`/`postLanguage` together show why.
+    const detail = (draft.metadata as Record<string, unknown>).qualityDetail as {
+      deterministic: {
+        languageMatch: boolean | null;
+        candidateLanguage: string;
+        postLanguage: string | null;
+        expectedLanguage: string | null;
+        distance: { languageMatch: number | null };
+      };
+    };
+    expect(detail.deterministic.candidateLanguage).toBe('it');
+    expect(detail.deterministic.postLanguage).toBe('en');
+    expect(detail.deterministic.expectedLanguage).toBe('it');
+    expect(detail.deterministic.languageMatch).toBe(true);
+    expect(detail.deterministic.distance.languageMatch).toBe(0);
+  });
+
   it('skips blocklisted targets and reports them in the response', async () => {
     const db = getDb();
     const [platform] = await db
