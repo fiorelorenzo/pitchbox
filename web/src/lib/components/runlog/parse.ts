@@ -2,6 +2,7 @@
 // (raw stream parsing now lives in AcpRunner on the server).
 import type { CliEnvelope } from '@pitchbox/shared/runlog';
 import type { TimelineEvent } from './types';
+import { t, tn, type Locale } from '$lib/i18n/index.js';
 
 let nextId = 0;
 
@@ -170,4 +171,47 @@ export function pairToolEvents(events: TimelineEvent[]): TimelineEvent[] {
   }
 
   return output;
+}
+
+/**
+ * Describes a parsed CLI envelope's `data` payload in one line, for the
+ * tool-call/tool-result rows that show a paired MCP result inline
+ * (ToolCallEvent, ToolResultEvent - previously duplicated verbatim in both).
+ * Recognises a handful of `mcp__pitchbox__*` result shapes by their fields;
+ * anything else falls back to a bare key list, which is diagnostic rather
+ * than prose and so stays untranslated on purpose.
+ */
+export function describeEnvelopeData(d: unknown, locale?: Locale | null): string {
+  if (!d || typeof d !== 'object') return String(d ?? '');
+  if (Array.isArray(d)) return tn(locale, 'runlog.envelope-items', d.length);
+  const obj = d as Record<string, unknown>;
+
+  // run:start shape
+  if ('runId' in obj && ('accounts' in obj || 'campaign' in obj)) {
+    const parts = [t(locale, 'runlog.envelope-run-started', { runId: String(obj.runId) })];
+    if (obj.project) {
+      parts.push(t(locale, 'runlog.envelope-project', { project: String(obj.project) }));
+    }
+    if (Array.isArray(obj.accounts)) {
+      parts.push(tn(locale, 'runlog.envelope-accounts', obj.accounts.length));
+    }
+    if (obj.contacted != null) {
+      parts.push(tn(locale, 'runlog.envelope-contacted', Number(obj.contacted)));
+    }
+    return parts.join(' · ');
+  }
+  // reddit:scout
+  if ('runId' in obj && 'candidatesFetched' in obj) {
+    return tn(locale, 'runlog.envelope-candidates-fetched', Number(obj.candidatesFetched));
+  }
+  // drafts:create
+  if ('runId' in obj && 'inserted' in obj) {
+    return tn(locale, 'runlog.envelope-drafts-created', Number(obj.inserted));
+  }
+  // staging:candidates
+  if ('runId' in obj && 'staged' in obj) {
+    return tn(locale, 'runlog.envelope-staged-candidates', Number(obj.staged));
+  }
+  // fallback: show key list
+  return `{${Object.keys(obj).slice(0, 5).join(', ')}}`;
 }

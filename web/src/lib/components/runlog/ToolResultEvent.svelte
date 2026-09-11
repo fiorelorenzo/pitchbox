@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { CheckCircle2, XCircle } from '@lucide/svelte';
 	import { slide } from 'svelte/transition';
+	import { page } from '$app/stores';
 	import type { CliEnvelope } from './types';
+	import { describeEnvelopeData } from './parse';
 	import { TONE_TEXT_CLASS } from '$lib/config/status-badges';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	let {
 		data,
@@ -20,38 +23,10 @@
 		ontoggle: () => void;
 	} = $props();
 
+	const locale = $derived($page.data.locale as Locale);
+
 	let env = $derived(data.parsedEnvelope);
-
-	function describeEnvelopeData(d: unknown): string {
-		if (!d || typeof d !== 'object') return String(d ?? '');
-		if (Array.isArray(d)) return `${d.length} items`;
-		const obj = d as Record<string, unknown>;
-
-		// run:start shape
-		if ('runId' in obj && ('accounts' in obj || 'campaign' in obj)) {
-			const parts = [`run #${obj.runId} started`];
-			if (obj.project) parts.push(`project ${obj.project}`);
-			if (Array.isArray(obj.accounts)) parts.push(`${obj.accounts.length} accounts`);
-			if (obj.contacted != null) parts.push(`${obj.contacted} contacted`);
-			return parts.join(' · ');
-		}
-		// reddit:scout
-		if ('runId' in obj && 'candidatesFetched' in obj) {
-			return `${obj.candidatesFetched} candidates fetched`;
-		}
-		// drafts:create
-		if ('runId' in obj && 'inserted' in obj) {
-			return `${obj.inserted} drafts created`;
-		}
-		// staging:candidates
-		if ('runId' in obj && 'staged' in obj) {
-			return `${obj.staged} staged candidates`;
-		}
-		// fallback: show key list
-		return `{${Object.keys(obj).slice(0, 5).join(', ')}}`;
-	}
-
-	let envelopePreview = $derived(env ? describeEnvelopeData(env.data) : '');
+	let envelopePreview = $derived(env ? describeEnvelopeData(env.data, locale) : '');
 </script>
 
 <div class="min-w-0">
@@ -62,14 +37,14 @@
 	>
 		{#if data.isError}
 			<XCircle class="size-3.5 text-destructive shrink-0" />
-			<span class="text-xs font-medium text-destructive">Error</span>
+			<span class="text-xs font-medium text-destructive">{t(locale, 'runlog.error-label')}</span>
 		{:else if env}
 			{#if env.ok}
 				<CheckCircle2 class="size-3.5 {TONE_TEXT_CLASS.emerald} shrink-0" />
 				<span class="text-xs text-muted-foreground">{envelopePreview}</span>
 			{:else}
 				<XCircle class="size-3.5 text-destructive shrink-0" />
-				<span class="text-xs font-medium text-destructive">{env.error ?? 'Command failed'}</span>
+				<span class="text-xs font-medium text-destructive">{env.error ?? t(locale, 'runlog.command-failed')}</span>
 			{/if}
 		{:else}
 			<CheckCircle2 class="size-3.5 {TONE_TEXT_CLASS.emerald} opacity-70 shrink-0" />
@@ -80,7 +55,7 @@
 		{/if}
 
 		<span class="text-xs text-muted-foreground/50 ml-auto shrink-0 group-hover:text-muted-foreground">
-			{collapsed ? 'expand' : 'collapse'}
+			{collapsed ? t(locale, 'runlog.expand') : t(locale, 'runlog.collapse')}
 		</span>
 	</button>
 

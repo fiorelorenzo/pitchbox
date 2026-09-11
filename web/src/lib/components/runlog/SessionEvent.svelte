@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { Sparkles } from '@lucide/svelte';
+	import { page } from '$app/stores';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import { resolveTone, TONE_CLASS, TONE_TEXT_CLASS } from '$lib/config/status-badges';
+	import { resolveTone, TONE_CLASS, TONE_TEXT_CLASS, badgeLabel } from '$lib/config/status-badges';
+	import type { Locale } from '$lib/i18n/index.js';
 
 	const sessionTone = resolveTone('event-kind', 'session');
 
@@ -10,6 +12,8 @@
 	}: {
 		data: { sessionId?: string; model?: string; cwd?: string };
 	} = $props();
+
+	const locale = $derived($page.data.locale as Locale);
 
 	let shortId = $derived(data.sessionId?.slice(0, 8) ?? '-');
 
@@ -27,7 +31,9 @@
 
 <div class="flex items-center gap-2 flex-wrap min-w-0 py-0.5">
 	<Sparkles class="size-3.5 {TONE_TEXT_CLASS[sessionTone]} shrink-0" />
-	<span class="text-xs font-medium text-muted-foreground">Session</span>
+	<span class="text-xs font-medium text-muted-foreground"
+		>{badgeLabel(locale, 'event-kind', 'session')}</span
+	>
 
 	{#if data.model}
 		<Tooltip.Provider>
