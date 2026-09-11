@@ -10,6 +10,10 @@
     hardBans: string[];
     dos: string[];
     disclosure: string;
+    // Optional pin on the language the draft itself is written in (LOR-265),
+    // independent of the dashboard's own display language - see
+    // docs/languages.md. Undefined (the default) means "match the post".
+    language?: 'en' | 'it';
   };
   type Props = { value: V; onChange: (v: V) => void; disabled?: boolean };
   let { value, onChange, disabled = false }: Props = $props();
@@ -35,6 +39,22 @@
       {disabled}
       fullWidth
     />
+  </label>
+  <label class="flex flex-col gap-1 text-xs">
+    {t(locale, 'campaigns.forms.field-language')}
+    <SelectField
+      value={value.language ?? 'match-post'}
+      onValueChange={(v) =>
+        patch({ language: v === 'match-post' ? undefined : (v as 'en' | 'it') })}
+      options={[
+        { value: 'match-post', label: t(locale, 'campaigns.forms.language-match-post') },
+        { value: 'en', label: t(locale, 'campaigns.forms.language-english') },
+        { value: 'it', label: t(locale, 'campaigns.forms.language-italian') },
+      ]}
+      {disabled}
+      fullWidth
+    />
+    <span class="font-normal text-muted-foreground">{t(locale, 'campaigns.forms.field-language-help')}</span>
   </label>
   <label class="flex flex-col gap-1 text-xs">
     {t(locale, 'campaigns.forms.field-hard-bans')}
