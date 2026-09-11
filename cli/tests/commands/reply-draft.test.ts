@@ -154,12 +154,14 @@ describe('pitchbox drafts:reply:*', () => {
     expect(d.body).toBe('Happy to help - here is more.');
     expect(d.draftingRunId).toBeNull();
     expect(d.state).toBe('pending_review');
-    // No style findings and no operator voice corpus in this fixture - the
-    // deterministic scorer has nothing to measure, so it reports "not
-    // scored" rather than guessing a number, and never the drafting run's
-    // own agentRunner the way the old self-report used to.
-    expect(d.qualityScore).toBeNull();
-    expect(d.qualityModel).toBeNull();
+    // No operator voice corpus in this fixture, but the reply thread
+    // always supplies a source (the inbound message "tell me more") for
+    // the echo/length-vs-thread axes (LOR-251), so the deterministic
+    // scorer now has something to measure even with no corpus - unlike
+    // before LOR-251, this no longer reports "not scored", and still never
+    // the drafting run's own agentRunner the way the old self-report used to.
+    expect(d.qualityScore).not.toBeNull();
+    expect(d.qualityModel).toBe('deterministic');
     const [r] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
     expect(r.status).toBe('success');
     const [evt] = await db
@@ -182,6 +184,23 @@ describe('pitchbox drafts:reply:*', () => {
     expect(d.qualityModel).toBe('deterministic');
     expect(d.qualityScore).not.toBeNull();
     expect(d.qualityScore).toBeLessThan(75);
+  });
+
+  it('finish measures echo against the most recent inbound thread message, not the parent draft (LOR-251)', async () => {
+    // The "in today's fast-paced world" clause is a known style finding,
+    // which caps the score at an integer regardless of the axis average.
+    const out = cliWithStdin(
+      `drafts:reply:finish --run=${runId}`,
+      JSON.stringify({ body: "In today's fast-paced world, happy to tell you more about that." }),
+    );
+    expect(lastJson(out).ok).toBe(true);
+    const db = getDb();
+    const [d] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, replyDraftId));
+    const detail = (d.metadata as Record<string, unknown>).qualityDetail as {
+      deterministic: { sourceMeasured: boolean; distance: { echo: number | null } };
+    };
+    expect(detail.deterministic.sourceMeasured).toBe(true);
+    expect(detail.deterministic.distance.echo).not.toBeNull();
   });
 
   it('finish rejects an empty body', () => {

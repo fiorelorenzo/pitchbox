@@ -111,13 +111,16 @@ Each draft (the human opens the real post from the Inbox and pastes this in them
   "reasoning": "2-3 sentences on why this post, what angle, what value you're adding.",
   "sourceRef": {
     "externalId": "urn:li:activity:1234567890",
-    "url": "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/"
+    "url": "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/",
+    "sourceText": "<the candidate's text - the post exactly as the browser rendered it>"
   },
   "metadata": { "authorHandle": "jane-doe" }
 }
 ```
 
 `targetUser` is the author of the post you are replying to, and it is their profile slug (`author.handle`), never their display name: a name cannot be blocklisted or deduped. Commenting on someone's post counts as contacting them, so it feeds the blocklist, the dedup window and contact history, exactly as the in-page assist already does. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.externalId` points at; an observation captured without a slug has no target, and null is the right answer there.
+
+`sourceRef.sourceText` is the post you are actually answering - copy the candidate's real `text`, never a paraphrase. The server measures how much of your reply echoes the post's own wording and whether you answered in its language, and both checks need the real text; it also clamps the length, so send it in full.
 
 11. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 

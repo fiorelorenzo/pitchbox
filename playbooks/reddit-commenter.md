@@ -107,12 +107,18 @@ Each draft:
   "targetUser": "<the post author's username, from the candidate's user.name>",
   "body": "<comment markdown>",
   "reasoning": "2-3 sentences on why this post, what angle, what value you're adding.",
-  "sourceRef": { "permalink": "/r/Solo_Roleplaying/comments/abc/.../", "postTitle": "..." },
+  "sourceRef": {
+    "permalink": "/r/Solo_Roleplaying/comments/abc/.../",
+    "postTitle": "...",
+    "sourceText": "<the post's title and selftext, verbatim - the title alone when selftext is empty>"
+  },
   "metadata": { "matchedBy": "search", "postAgeHours": 8 }
 }
 ```
 
 `targetUser` is the author of the post you are replying to. Commenting on someone's post counts as contacting them, so it feeds the blocklist, the dedup window and contact history. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.permalink` points at.
+
+`sourceRef.sourceText` is the post you are actually answering - copy the candidate's real `title`/`selftext`, never a paraphrase or your own summary of it. The server measures how much of your comment echoes the post's own wording and whether you answered in its language, and both checks need the real text to mean anything; the server also clamps it to a fixed length, so send it in full rather than trimming it yourself.
 
 10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 

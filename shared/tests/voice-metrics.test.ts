@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { scoreCandidate, type ScoreCandidateArgs } from '../src/voice-metrics.js';
+import { scoreCandidate, echoScore, type ScoreCandidateArgs } from '../src/voice-metrics.js';
 import { loadVoiceEvalCases } from '../src/voice-eval-cases.js';
 
 // LOR-44: "sounds like him" is a product claim, not an opinion, and this is
@@ -161,6 +161,28 @@ describe('scoreCandidate', () => {
       actualReply: null,
     });
     expect(result.styleFindings.some((f) => f.ruleId === 'em-dash')).toBe(true);
+  });
+});
+
+describe('echoScore', () => {
+  // LOR-251: exported so quality-judge.ts's computeDeterministicQuality can
+  // reuse this exact math for a campaign draft against the post it
+  // answers, rather than a second copy - these defend the contract that
+  // caller now relies on directly, not just through scoreCandidate.
+  it("measures how much of the candidate is made of the post's own words", () => {
+    const post = 'We just shipped the new expense reconciliation workflow after months of testing.';
+    const copying = echoScore(
+      'Congrats on shipping the new expense reconciliation workflow!',
+      post,
+    );
+    const original = echoScore('Huge milestone, well deserved after all that effort.', post);
+    expect(copying).not.toBeNull();
+    expect(original).not.toBeNull();
+    expect(copying!).toBeGreaterThan(original!);
+  });
+
+  it('reports null when the candidate has no content words of its own', () => {
+    expect(echoScore('💪', 'A perfectly ordinary post about something.')).toBeNull();
   });
 });
 
