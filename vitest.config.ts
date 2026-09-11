@@ -63,6 +63,17 @@ export default defineConfig({
       // and remapping it would break every web route test in this suite.
       $ext: fileURLToPath(new URL('./extension/src/lib', import.meta.url)),
       $ui: fileURLToPath(new URL('./extension/src/lib/components/ui', import.meta.url)),
+      // SvelteKit's own `$app/*` virtual modules only exist once its Vite
+      // plugin is wired in, which this config deliberately doesn't do (see
+      // the `$lib` comment above - remapping it would break every server
+      // route test). No test mounted a dashboard Svelte component before
+      // LOR-290, so nothing needed these until its form round-trip test:
+      // `web/tests/support/app-{stores,navigation}.ts` are plain stand-ins,
+      // not the real runtime.
+      '$app/stores': fileURLToPath(new URL('./web/tests/support/app-stores.ts', import.meta.url)),
+      '$app/navigation': fileURLToPath(
+        new URL('./web/tests/support/app-navigation.ts', import.meta.url),
+      ),
     },
     // Svelte's package exports hand back its *server* build unless the
     // `browser` condition is set, and its server build throws
@@ -96,14 +107,24 @@ export default defineConfig({
     // .svelte" before a single test runs - the failure mode that made
     // mounting any component using Button impossible here. Inlining routes
     // it through the plugin like any workspace source file instead.
-    server: { deps: { inline: [/@lucide\/svelte/] } },
+    // Same class of failure for `bits-ui` (dist/bits/utilities/portal/portal.svelte
+    // and friends) and `runed` (its watch.svelte.js uses `$effect`, which
+    // throws `rune_outside_svelte` unless compiled by the svelte plugin
+    // rather than loaded as plain externalized JS) - bits-ui's Select
+    // depends on runed internally. Both hit first mounting
+    // `$lib/components/ui/select-field` for LOR-290's campaign-form
+    // round-trip test.
+    server: { deps: { inline: [/@lucide\/svelte/, /bits-ui/, /runed/] } },
     globalSetup: ['./tests/global-setup.ts'],
     // Runs inside every test file: snapshots `process.env` before the file
     // and restores it after, so a variable one file sets (and fails to
     // restore, which a hand-rolled restore does whenever something throws
     // first) cannot change what a later file sees. See tests/setup-env.ts
     // for what that failure actually looked like (LOR-217).
-    setupFiles: ['./tests/setup-env.ts'],
+    // `web/tests/support/dom-polyfills.ts` runs before every file's own
+    // imports resolve (a polyfill assigned inside the test file itself is
+    // too late - see that file's own comment) and is a no-op outside jsdom.
+    setupFiles: ['./tests/setup-env.ts', './web/tests/support/dom-polyfills.ts'],
     // Point all tests at a dedicated test database so they never truncate the
     // user's real data. AI_GATEWAY_API_KEY is blanked the same way and for the
     // same reason: dotenv (shared/src/db/client.ts) loads the developer's real
