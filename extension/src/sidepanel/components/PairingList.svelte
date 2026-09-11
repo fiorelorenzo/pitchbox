@@ -14,6 +14,7 @@
   import * as AlertDialog from '$ui/alert-dialog';
   import { t } from '$ext/i18n';
   import { api, type LinkedInAssistPlanState } from '$ext/api';
+  import { applyAccountLocale } from '$ext/account-locale';
   import PlanReadout from './PlanReadout.svelte';
   import {
     patchPairing,
@@ -91,7 +92,9 @@
 
   async function loadPlan(backendUrl: string): Promise<void> {
     const res = await api.linkedinAssist(backendUrl);
-    if (res.ok) plans = { ...plans, [backendUrl]: res.data.plan };
+    if (!res.ok) return;
+    plans = { ...plans, [backendUrl]: res.data.plan };
+    void applyAccountLocale(res.data.locale);
   }
 
   // Every mutation below routes through home, which re-reads storage and

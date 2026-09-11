@@ -253,6 +253,13 @@
       "when": 1789127583566,
       "tag": "0036_wild_mongoose",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1789131715475,
+      "tag": "0037_lowly_shatterstar",
+      "breakpoints": true
     }
   ]
 }

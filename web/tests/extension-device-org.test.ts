@@ -121,11 +121,19 @@ describe('extension device/pairing org attribution', () => {
       const body = (await res.json()) as { deviceId: number };
 
       const [device] = await db
-        .select({ organizationId: schema.extensionDevices.organizationId })
+        .select({
+          organizationId: schema.extensionDevices.organizationId,
+          userId: schema.extensionDevices.userId,
+        })
         .from(schema.extensionDevices)
         .where(eq(schema.extensionDevices.id, body.deviceId));
       expect(device.organizationId).toBe(orgActive.id);
       expect(device.organizationId).not.toBe(orgFirst.id);
+      // LOR-262: the session that minted this device is who it belongs to,
+      // for the account-locale read/write plane - captured here since this
+      // is the one existing test already driving a real session through
+      // this route rather than a hand-injected locals object.
+      expect(device.userId).toBe(user.id);
     });
   });
 });

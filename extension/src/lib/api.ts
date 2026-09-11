@@ -636,13 +636,39 @@ export const api = {
    * variant beyond the single-pairing default: unlike armed/sent, this call
    * never carries a compose-time draft URL to resolve a specific backend
    * from.
+   *
+   * `locale` is LOR-262: the account's stored language override, `null`
+   * when this device has no bound user. Every caller of this function
+   * (PairingList's plan poll, both in-page assist panels, the passive
+   * collector) applies it through `applyAccountLocale`
+   * (`lib/account-locale.ts`) rather than reading it directly.
    */
   linkedinAssist: async (
     backendUrl?: string,
-  ): Promise<ApiResult<{ assist: LinkedInAssistState; plan: LinkedInAssistPlanState }>> => {
+  ): Promise<
+    ApiResult<{ assist: LinkedInAssistState; plan: LinkedInAssistPlanState; locale: string | null }>
+  > => {
     const p = await pickPairing(backendUrl);
     if (!p) return { ok: false, status: 0, error: 'not configured' };
     return getJson(p, '/api/extension/linkedin-assist');
+  },
+
+  /**
+   * POST /api/extension/locale (LOR-262): write-through half of the
+   * account-wide language override. Called from LanguageCard.svelte's
+   * picker right after its own local `setSettings` write, best-effort - a
+   * failure here (offline, no pairing, device not bound to an account)
+   * never rolls back the local change, since local storage is already the
+   * source of truth for this install regardless of whether the account
+   * agrees yet.
+   */
+  syncLocale: async (
+    locale: 'en' | 'it',
+    backendUrl?: string,
+  ): Promise<ApiResult<{ synced: boolean; locale: string | null }>> => {
+    const p = await pickPairing(backendUrl);
+    if (!p) return { ok: false, status: 0, error: 'not configured' };
+    return postJson(p, '/api/extension/locale', { locale });
   },
 
   /**

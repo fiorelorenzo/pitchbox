@@ -58,11 +58,17 @@ export async function POST({
   const db = getDb();
 
   let organizationId: number | null;
+  // LOR-262: which signed-in user this pairing belongs to, so the device
+  // can later read/write that account's language preference. Only ever
+  // set on this session-authenticated path - the code-redemption pairing
+  // route below has no session to record one from.
+  let userId: number | null = null;
 
   if (AUTH_ON) {
     const cookie = cookies.get(SESSION_COOKIE);
     const session = cookie ? await loadSession(db, cookie) : null;
     if (!session) throw error(401, 'unauthenticated');
+    userId = session.userId;
     // Honor the session's active org (switchable via the org switcher), not
     // just the user's first membership - loadOrganizationForUser ignores
     // activeOrganizationId entirely.
@@ -126,7 +132,7 @@ export async function POST({
   const label = `Browser extension${userAgent ? ` (${userAgent.slice(0, 80)})` : ''}`;
   const [row] = await db
     .insert(schema.extensionDevices)
-    .values({ organizationId, label, tokenHash, expiresAt })
+    .values({ organizationId, userId, label, tokenHash, expiresAt })
     .returning({ id: schema.extensionDevices.id });
 
   return json({ token, deviceId: row.id, orgName: org?.name ?? null, deviceLabel: label });

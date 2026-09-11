@@ -35,6 +35,16 @@ export type ExtensionAuthContext = {
    * access, mirroring `requireRole`'s no-op when auth is off.
    */
   organizationId: number | null;
+  /**
+   * LOR-262: the signed-in user who paired this device, when we happen to
+   * know one - set only by `/api/extension/auto-pair` (the one pairing path
+   * with a live session at mint time). Null for a device paired by
+   * redeeming a one-time code (no session to record) and for any device
+   * minted before this column existed. `GET /api/extension/linkedin-assist`
+   * and `POST /api/extension/locale` are the two routes that read this;
+   * everything else on this plane is org-scoped and has no reason to.
+   */
+  userId: number | null;
 };
 
 export async function requireExtensionAuth(request: Request): Promise<ExtensionAuthContext> {
@@ -68,7 +78,7 @@ export async function requireExtensionAuth(request: Request): Promise<ExtensionA
     .update(schema.extensionDevices)
     .set({ lastSeenAt: new Date() })
     .where(eq(schema.extensionDevices.id, device.id));
-  return { deviceId: device.id, organizationId: device.organizationId };
+  return { deviceId: device.id, organizationId: device.organizationId, userId: device.userId };
 }
 
 /**

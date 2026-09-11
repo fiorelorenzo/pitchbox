@@ -3,7 +3,7 @@ import { sql, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
-import { hashPassword, createSession } from '@pitchbox/shared/auth';
+import { hashPassword, createSession, setUserLocale } from '@pitchbox/shared/auth';
 import {
   ASSIST_COMMENT_CAP_CEILING,
   ASSIST_POST_CAP_CEILING,
@@ -67,10 +67,10 @@ function tokenHash(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-async function mintDevice(organizationId: number | null, token: string) {
+async function mintDevice(organizationId: number | null, token: string, userId?: number) {
   await getDb()
     .insert(schema.extensionDevices)
-    .values({ organizationId, tokenHash: tokenHash(token), label: 'test' });
+    .values({ organizationId, userId: userId ?? null, tokenHash: tokenHash(token), label: 'test' });
 }
 
 function deviceRequest(token: string | null): Request {
@@ -331,6 +331,45 @@ describe('GET /api/extension/linkedin-assist (device read path)', () => {
       if (savedEdition === undefined) delete process.env.PITCHBOX_EDITION;
       else process.env.PITCHBOX_EDITION = savedEdition;
     }
+  });
+
+  // LOR-262: locale is served alongside assist/plan on this same endpoint
+  // (no second poll) rather than one org-wide value - it is null for a
+  // device with no bound user (self-host, or a device paired by redeeming
+  // a one-time code), and it is the specific user's own stored value when
+  // one is bound, regardless of what org that device is scoped to.
+  it('locale is null for a device with no bound user', async () => {
+    const { orgId, projectId } = await seedOrg('la-locale-unbound');
+    await saveLinkedInAssistSettings(getDb(), orgId, {
+      ...defaultLinkedInAssistSettings(),
+      enabled: true,
+      projectId,
+    });
+    const token = 'device-token-locale-unbound';
+    await mintDevice(orgId, token);
+
+    const body = await (await deviceGet({ request: deviceRequest(token) })).json();
+    expect(body.locale).toBeNull();
+  });
+
+  it("reports the bound user's own stored locale", async () => {
+    const { orgId, projectId } = await seedOrg('la-locale-bound');
+    await saveLinkedInAssistSettings(getDb(), orgId, {
+      ...defaultLinkedInAssistSettings(),
+      enabled: true,
+      projectId,
+    });
+    const [user] = await getDb()
+      .insert(schema.users)
+      .values({ username: 'la-locale-user', passwordHash: 'x' })
+      .returning();
+    await setUserLocale(getDb(), user.id, 'it');
+
+    const token = 'device-token-locale-bound';
+    await mintDevice(orgId, token, user.id);
+
+    const body = await (await deviceGet({ request: deviceRequest(token) })).json();
+    expect(body.locale).toBe('it');
   });
 });
 

@@ -24,10 +24,10 @@
  *   3. `Accept-Language`, negotiated against the supported set;
  *   4. English.
  *
- * `accountLocale` has no data source yet: no column exists on `users` and
- * nothing populates it. LOR-262 adds the storage and the UI and passes the
- * account's value in; this module's precedence does not change when it
- * does (see `hooks.server.ts`'s call site for exactly where that plugs in).
+ * `accountLocale` is `users.locale` (LOR-262), read alongside the rest of
+ * the session by `shared/src/auth.ts`'s `loadSession` and passed in at
+ * `hooks.server.ts`'s call site - this module's precedence did not change
+ * when the data source landed, only where the value comes from.
  *
  * The language of *this* interface is a different axis from the language a
  * *draft* is written in (`shared/src/assist/voice-profile.ts`'s
@@ -97,13 +97,17 @@ export function negotiateLocale(header: string | null | undefined): Locale {
 
 export interface LocaleResolutionInput {
   /**
-   * The signed-in user's stored preference. `undefined`/`null` for a
-   * signed-out visitor, self-host with auth off, or a user who has never
-   * set one - each of those falls through to the cookie. LOR-262 is what
-   * populates this from the account; this is a data-source change for that
-   * issue, not a precedence rewrite.
+   * The signed-in user's stored preference (LOR-262: `users.locale`, a raw
+   * DB column, not the `Locale` type - hence `string`, matching
+   * `cookieLocale` below rather than looking pre-validated). `undefined`/
+   * `null` for a signed-out visitor, self-host with auth off, or a user
+   * who has never set one - each of those falls through to the cookie.
+   * An unrecognised stored value (a row written before 'it' existed, a
+   * hand-edited one) falls through the same way an unrecognised cookie
+   * does, via the `isLocale` check below - never thrown, never trusted
+   * outright.
    */
-  accountLocale?: Locale | null;
+  accountLocale?: string | null;
   /** `event.cookies.get(LOCALE_COOKIE)` - a string, since a cookie value is
    * never typed, or absent entirely. */
   cookieLocale?: string | null;
