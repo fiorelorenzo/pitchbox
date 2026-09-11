@@ -27,7 +27,7 @@
 // different-shaped object for exactly this reason - a default is a rule to
 // follow, not a number this module claims to have measured.
 
-import { readPostRegister, type RegisterTrait } from './register.js';
+import { readPostRegister, type PostRegister, type RegisterTrait } from './register.js';
 
 export type VoiceCorpusItemKind = 'voice_sample' | 'message' | 'draft' | 'template';
 
@@ -637,8 +637,10 @@ export type LexiconProfile = {
   avoidedWords: string[];
 };
 
-/** Below this many words, an absence proves nothing. */
-const AVOIDED_WORDS_MIN_WORDS = 200;
+/** Below this many words, an absence proves nothing. Exported so a single-
+ * text comparison (voice-metrics.ts, LOR-44) can gate the lexicon axis on
+ * the exact same floor rather than guessing a second one. */
+export const AVOIDED_WORDS_MIN_WORDS = 200;
 
 /** Candidate words a default-sounding draft leaks - mirrors house style's
  * puffery bans (`shared/src/style-check.ts`'s PUFFERY_WORDS and
@@ -848,6 +850,53 @@ export function measureVoiceCorpus(corpus: VoiceCorpusItem[]): VoiceMeasurement 
     voiceMarkers: measureVoiceMarkers(texts, wordCount),
     lexicon: measureLexicon(texts.join(' '), wordCount),
     language: measureLanguage(items),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// A single piece of text, not a corpus (LOR-44).
+// ---------------------------------------------------------------------------
+
+export type OneTextMeasurement = {
+  wordCount: number;
+  /** Null exactly when register.ts's own floor (MIN_WORDS_TO_DESCRIBE) says
+   * this text is too short to have measurable habits - a caller comparing
+   * two texts should read that as "this axis is not measurable here", never
+   * as a zero or a match. */
+  register: PostRegister | null;
+  rhythm: RhythmProfile;
+  punctuation: PunctuationProfile;
+  shape: ShapeProfile;
+  voiceMarkers: VoiceMarkerProfile;
+  lexicon: LexiconProfile;
+  language: 'en' | 'it' | 'unknown';
+};
+
+/**
+ * The same six axes `measureVoiceCorpus` derives from a corpus, read off a
+ * single piece of text instead - voice-metrics.ts's (LOR-44) entry point for
+ * comparing one candidate against one real reply rather than describing a
+ * habit across many. Deliberately not a second implementation: every axis
+ * below calls the exact function `measureVoiceCorpus` calls, just with a
+ * one-item list, so this can never drift from what a corpus measurement
+ * means. `usesLists` (shape's own corpus-level trait) falls back the same
+ * way `measureVoiceCorpus` does - off register's own traits, gated by the
+ * same MIN_WORDS_TO_DESCRIBE floor as everything else here.
+ */
+export function measureOneText(text: string): OneTextMeasurement {
+  const t = text.trim();
+  const texts = t ? [t] : [];
+  const wordCount = t ? t.split(/\s+/u).filter(Boolean).length : 0;
+  const register = readPostRegister(t);
+  return {
+    wordCount,
+    register,
+    rhythm: measureRhythm(texts),
+    punctuation: measurePunctuation(texts, wordCount),
+    shape: measureShape(texts, register?.traits.includes('list-layout') ?? false),
+    voiceMarkers: measureVoiceMarkers(texts, wordCount),
+    lexicon: measureLexicon(t, wordCount),
+    language: classifyLanguage(t),
   };
 }
 

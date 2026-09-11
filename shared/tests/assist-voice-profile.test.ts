@@ -6,6 +6,8 @@ import {
   measureVoiceCorpusByGenre,
   describeVoiceProfile,
   describeVoiceProfileForGenre,
+  measureOneText,
+  classifyLanguage,
   MIN_ITEMS_TO_DERIVE,
   EMPTY_RHYTHM,
   EMPTY_PUNCTUATION,
@@ -575,4 +577,68 @@ describe('no model call in the derivation path', () => {
       }
     });
   }
+});
+
+// LOR-44: measureOneText reads the same six axes off a single string,
+// reusing every measure* function measureVoiceCorpus itself calls (a
+// one-item list rather than a second implementation). What is worth
+// pinning here is the floor behaviour a caller comparing two short texts
+// depends on: register (and therefore rhythm/punctuation/shape/voice-
+// markers) is null below register.ts's own 12-word floor, and language is
+// 'unknown' below its own 2-stopword floor - two independent floors, so a
+// six-word Italian reply can classify a language while still reporting no
+// register at all.
+describe('measureOneText', () => {
+  it('measures an English, first-person text at or above the register floor', () => {
+    const m = measureOneText(
+      'I shipped the new dashboard today, and I think it turned out great, honestly.',
+    );
+    expect(m.wordCount).toBe(14);
+    expect(m.register).not.toBeNull();
+    expect(m.register?.traits).toContain('first-person');
+    expect(m.language).toBe('en');
+  });
+
+  it('reports no register below the 12-word floor, even when the language is classifiable', () => {
+    const m = measureOneText("che bello, non vedo l'ora!");
+    expect(m.wordCount).toBeLessThan(12);
+    expect(m.register).toBeNull();
+    // Below the floor, rhythm/punctuation/shape/voiceMarkers still return a
+    // real (if degenerate) measurement rather than throwing - a caller
+    // gates on `register === null` itself rather than this crashing.
+    expect(m.rhythm.medianSentenceWords).toBeGreaterThan(0);
+    // Two Italian stopword hits ('che', 'non') clear the language floor
+    // independently of the (unmet) register floor.
+    expect(m.language).toBe('it');
+  });
+
+  it('reports language as unknown below its own 2-marker floor', () => {
+    const m = measureOneText('Grande!');
+    expect(m.register).toBeNull();
+    expect(m.language).toBe('unknown');
+  });
+
+  it('derives usesLists from its own register trait, matching the corpus-level rule', () => {
+    const m = measureOneText(
+      'Here is the plan for next week:\n- ship the export feature\n- fix the flaky test\n- write the docs',
+    );
+    expect(m.register?.traits).toContain('list-layout');
+    expect(m.shape.usesLists).toBe(true);
+  });
+
+  it('never throws on empty text', () => {
+    const m = measureOneText('   ');
+    expect(m.wordCount).toBe(0);
+    expect(m.register).toBeNull();
+    expect(m.language).toBe('unknown');
+    expect(m.rhythm).toEqual(EMPTY_RHYTHM);
+  });
+});
+
+describe('classifyLanguage (exported for style-check.ts and voice-metrics.ts)', () => {
+  it('classifies English, Italian and unclassifiable text', () => {
+    expect(classifyLanguage('This is the plan for the week and it is going well.')).toBe('en');
+    expect(classifyLanguage("che bello, non vedo l'ora!")).toBe('it');
+    expect(classifyLanguage('Grande!')).toBe('unknown');
+  });
 });

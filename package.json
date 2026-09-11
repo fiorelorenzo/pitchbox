@@ -13,6 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:linkedin-compliance": "vitest run --config vitest.compliance.config.ts",
+    "eval:voice": "tsx scripts/voice-eval.ts",
+    "eval:voice:import": "tsx scripts/voice-eval-import.ts",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p cli && tsc --noEmit -p daemon && pnpm -F @pitchbox/extension check && pnpm -F web check",
@@ -41,6 +43,7 @@
     "migrations:check": "pnpm -F shared migrations:check"
   },
   "devDependencies": {
+    "@ai-sdk/gateway": "^4.0.75",
     "@eslint/js": "^10.0.1",
     "@fontsource-variable/inter": "^5.2.8",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
@@ -48,6 +51,7 @@
     "@typescript-eslint/eslint-plugin": "^8.62.1",
     "@typescript-eslint/parser": "^8.62.1",
     "@typescript/native": "npm:typescript@^7.0.2",
+    "ai": "^7.0.93",
     "concurrently": "^10.0.5",
     "eslint": "^10.9.1",
     "globals": "^17.12.0",
@@ -58,7 +62,8 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vite": "^8.2.2",
     "vitepress": "^1.6.4",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "zod": "^4.5.4"
   },
   "pnpm": {
     "overrides": {

@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "voiceCorpus": [
+    {
+      "id": "sample-1",
+      "text": "Shipped the new onboarding flow today. Three days chasing a race condition that only showed up under load, and the fix was five lines. Slow week, small diff, happy with it."
+    },
+    {
+      "id": "sample-2",
+      "text": "Talked to two customers this morning. Both hit the same edge case in the CSV import, so that is what we are fixing before anything else this week. Feels good to have one clear priority for once."
+    },
+    {
+      "id": "sample-3",
+      "text": "Wrote two hundred lines of tests today and deleted a hundred and fifty lines of code. Net negative, in the good way. That is my kind of Tuesday."
+    }
+  ],
+  "cases": [
+    {
+      "id": "synth-launch-01",
+      "genre": "launch",
+      "postAuthor": "Fictional Founder",
+      "post": {
+        "text": "After eight months heads down, we are opening signups for Fictional Founder's new expense tool today. It started as a spreadsheet I built for my own team and turned into something three hundred companies now use in beta."
+      },
+      "actualReply": "Congrats, huge milestone."
+    },
+    {
+      "id": "synth-technical-01",
+      "genre": "technical-thread",
+      "postAuthor": "Fictional Engineer",
+      "post": {
+        "text": "Spent the afternoon debugging a deadlock in our job queue. Turned out two workers were acquiring the same two row locks in opposite order under load. Fixed by always locking in id order. Classic, and still took four hours to find."
+      },
+      "actualReply": "Lock ordering bugs are the worst to find and the easiest to explain once you see them."
+    },
+    {
+      "id": "synth-italian-01",
+      "genre": "italian",
+      "postAuthor": "Persona Inventata",
+      "post": {
+        "text": "Oggi abbiamo chiuso il primo cliente pagante del nostro prodotto. Sei mesi di lavoro, tante notti a chiederci se avesse senso, e oggi la risposta è arrivata da sola."
+      },
+      "actualReply": "Bravissimi, se lo aspettava anche prima!"
+    },
+    {
+      "id": "synth-silence-01",
+      "genre": "silence",
+      "postAuthor": "Fictional Competitor",
+      "post": {
+        "text": "We just raised a round to build the exact same thing three other companies already shipped last year, except ours has a mascot."
+      },
+      "actualReply": null
+    },
+    {
+      "id": "synth-comment-reply-01",
+      "genre": "comment-reply",
+      "postAuthor": "Fictional Organizer",
+      "post": {
+        "text": "Day two of the residency and the whiteboard is already full of half-finished diagrams nobody remembers drawing. Good sign or bad sign?",
+        "thread": {
+          "comments": [
+            { "body": "Good sign, always." },
+            {
+              "body": "Means people are actually arguing about the design instead of just agreeing."
+            }
+          ]
+        }
+      },
+      "actualReply": "Good sign."
+    }
+  ]
+}
