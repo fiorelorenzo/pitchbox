@@ -425,6 +425,24 @@ describe('describeVoiceProfile', () => {
     expect(described).toContain('Writes primarily in both English and Italian.');
   });
 
+  it('reads as a sentence for every ending, including the absence of one', () => {
+    // LOR-284: the ending used to be a noun phrase pushed into a shared
+    // "Tends to end on ..." template, which composed into "Tends to end on no
+    // clear ending, trailing off" on Lorenzo's own imported corpus. The
+    // paragraph is shown to a customer and composed into the suggestion
+    // prompt, so each ending is asserted as its whole sentence rather than by
+    // substring.
+    const ending = (e: 'question' | 'claim' | 'none') =>
+      describeVoiceProfile({ ...BASE, shape: { ...EMPTY_SHAPE, ending: e } })!;
+
+    expect(ending('question')).toContain('Tends to end on a question.');
+    expect(ending('claim')).toContain('Tends to end on a claim.');
+    expect(ending('none')).toContain(
+      'Tends to trail off rather than land on a question or a claim.',
+    );
+    expect(ending('none')).not.toMatch(/end on no clear ending/);
+  });
+
   it('says nothing when the corpus was measurable but had no dominant trait, phrase or word', () => {
     const flat: VoiceMeasurement = {
       ...BASE,
