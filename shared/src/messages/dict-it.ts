@@ -52,4 +52,37 @@ export const it = {
     'Sei stato invitato a unirti a {orgName} su Pitchbox come {role}.\n\n' +
     "Accetta l'invito: {url}\n\n" +
     'Questo invito scade il {expiresAt}. Se non te lo aspettavi, puoi ignorare questa email.',
+
+  // See the comment on these keys in dict-en.ts.
+  'usageNotification.title.runs': '{threshold}% del limite di esecuzioni degli agenti',
+  'usageNotification.title.suggestions': '{threshold}% del limite di suggerimenti assistente',
+  'usageNotification.title.projects': '{threshold}% del limite di progetti',
+  'usageNotification.title.seats': '{threshold}% del limite di posti',
+  'usageNotification.title.extensionDevices': '{threshold}% del limite di dispositivi abbinati',
+  'usageNotification.title.costUsd': '{threshold}% del limite di spesa sui modelli',
+
+  'usageNotification.body.runs':
+    'Hai usato {usedText} esecuzioni degli agenti su {limitText} disponibili per il periodo che ' +
+    'termina il {periodEnd}. Aggiorna il piano da Impostazioni > Fatturazione prima che il ' +
+    'servizio inizi a rifiutare le richieste.',
+  'usageNotification.body.suggestions':
+    'Hai usato {usedText} suggerimenti assistente su {limitText} disponibili per il periodo che ' +
+    'termina il {periodEnd}. Aggiorna il piano da Impostazioni > Fatturazione prima che il ' +
+    'servizio inizi a rifiutare le richieste.',
+  'usageNotification.body.projects':
+    'Hai usato {usedText} progetti su {limitText} disponibili per il periodo che termina il ' +
+    '{periodEnd}. Aggiorna il piano da Impostazioni > Fatturazione prima che il servizio inizi ' +
+    'a rifiutare le richieste.',
+  'usageNotification.body.seats':
+    'Hai usato {usedText} posti su {limitText} disponibili per il periodo che termina il ' +
+    '{periodEnd}. Aggiorna il piano da Impostazioni > Fatturazione prima che il servizio inizi ' +
+    'a rifiutare le richieste.',
+  'usageNotification.body.extensionDevices':
+    'Hai usato {usedText} dispositivi abbinati su {limitText} disponibili per il periodo che ' +
+    'termina il {periodEnd}. Aggiorna il piano da Impostazioni > Fatturazione prima che il ' +
+    'servizio inizi a rifiutare le richieste.',
+  'usageNotification.body.costUsd':
+    'Hai usato {usedText} di {limitText} di spesa sui modelli disponibile per il periodo che ' +
+    'termina il {periodEnd}. Aggiorna il piano da Impostazioni > Fatturazione prima che il ' +
+    'servizio inizi a rifiutare le richieste.',
 } satisfies Dict;

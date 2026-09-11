@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { notifications, appConfig, webhookDeliveries } from './db/schema.js';
+import { t, type Locale, type MessageParams } from './messages/index.js';
 
 /**
  * Stable, short identifier for a webhook target. The URL itself isn't safe to
@@ -20,6 +21,64 @@ export type NotificationInput = {
   payload?: Record<string, unknown>;
   severity?: NotificationSeverity;
 };
+
+/**
+ * LOR-288: a `notifications` row is organization-wide, and its readers do
+ * not all share one `Locale` (`users.locale` is per-account, not per-org -
+ * see `shared/src/db/schema.ts`'s `users.locale` comment). Baking a
+ * rendered sentence into `title`/`body` at write time therefore picks a
+ * winner among readers who have not been decided yet, and is wrong for
+ * every reader who is not that winner. `docs/design/DECISIONS.md` records
+ * the decision this shape implements: keep `title`/`body` as the
+ * `DEFAULT_LOCALE` rendering (for the two locale-blind consumers, the
+ * outgoing webhook payload below and any legacy reader of the raw
+ * columns), and additionally store the machine key plus params a producer
+ * rendered them from, so `renderNotification` below can re-render in
+ * whichever locale the *current* reader's request resolved
+ * (`event.locals.locale` on web, the same value D46/D47 already compute) -
+ * every time the row is listed for display, not once at insert time.
+ *
+ * `payload.i18nTitleKey`/`i18nTitleParams` are required together;
+ * `i18nBodyKey`/`i18nBodyParams` are optional (a notification with no
+ * body has nothing to re-render). Every other `payload` field
+ * (`checkUsageThresholds`'s `metric`/`threshold`/`used`/`limit`/
+ * `periodEnd`) is untouched by this convention - it stays whatever shape
+ * its producer already gave it.
+ */
+export type NotificationI18nPayload = {
+  i18nTitleKey?: string;
+  i18nTitleParams?: MessageParams;
+  i18nBodyKey?: string;
+  i18nBodyParams?: MessageParams;
+};
+
+export type NotificationRow = {
+  title: string;
+  body: string | null;
+  payload: unknown;
+};
+
+/**
+ * A row with no `i18nTitleKey` - every notification kind that has not
+ * adopted the convention above, and every row written before it landed -
+ * returns its stored `title`/`body` unchanged: a legacy row keeps showing
+ * exactly what its reader already saw, never a blank or a raw key name.
+ */
+export function renderNotification(
+  row: NotificationRow,
+  locale: Locale,
+): { title: string; body: string | null } {
+  const payload = (row.payload ?? {}) as NotificationI18nPayload;
+  if (typeof payload.i18nTitleKey !== 'string') {
+    return { title: row.title, body: row.body };
+  }
+  const title = t(locale, payload.i18nTitleKey, payload.i18nTitleParams);
+  const body =
+    typeof payload.i18nBodyKey === 'string'
+      ? t(locale, payload.i18nBodyKey, payload.i18nBodyParams)
+      : row.body;
+  return { title, body };
+}
 
 const WEBHOOK_KEY = 'notification_webhooks';
 

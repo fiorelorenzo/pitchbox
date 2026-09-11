@@ -2,7 +2,7 @@ import { desc, eq } from 'drizzle-orm';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireOrgId } from '$lib/server/auth.js';
-import { listRecent, loadWebhooks } from '@pitchbox/shared/notifications';
+import { listRecent, loadWebhooks, renderNotification } from '@pitchbox/shared/notifications';
 
 export async function load(event: RequestEvent) {
   const orgId = await requireOrgId(event);
@@ -17,5 +17,10 @@ export async function load(event: RequestEvent) {
       .orderBy(desc(schema.webhookDeliveries.createdAt))
       .limit(50),
   ]);
-  return { notifications: items, webhooks, deliveries };
+  // LOR-288: a notifications row is organization-wide and stores a
+  // machine key plus params rather than one fixed locale's text
+  // (docs/design/DECISIONS.md) - re-rendered here in this reader's own
+  // event.locals.locale, the same value D46/D47 already resolve.
+  const notifications = items.map((n) => ({ ...n, ...renderNotification(n, event.locals.locale) }));
+  return { notifications, webhooks, deliveries };
 }
