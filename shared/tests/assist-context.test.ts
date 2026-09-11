@@ -16,10 +16,13 @@ import { loadCompanionContext } from '../src/assist/context.js';
 // the pure tests cannot exercise since they never touch `loadVoiceProfile`.
 
 async function reset() {
-  await getDb().execute(
-    sql`TRUNCATE operator_voice_profiles, organizations RESTART IDENTITY CASCADE`,
-  );
+  // Scoped, not a blanket TRUNCATE of organizations (LOR-282): this file's
+  // own tests only ever touch scratch orgs it creates itself
+  // (ensureOrg('lor233-...')), never the seeded `slug = 'default'` row that
+  // most of the suite falls back to. Truncating `organizations` wholesale
+  // deleted that row for the rest of the run, with nothing to recreate it.
   await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
+  await getDb().execute(sql`TRUNCATE operator_voice_profiles RESTART IDENTITY CASCADE`);
 }
 
 async function ensureOrg(slug: string): Promise<number> {
