@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import * as Card from '$lib/components/ui/card';
@@ -9,7 +11,7 @@
 	import { toast } from 'svelte-sonner';
 	import { untrack } from 'svelte';
 	import PageContainer from '$lib/components/PageContainer.svelte';
-	import { resolveTone, TONE_TEXT_CLASS, PULSE_DOT_CLASS } from '$lib/config/status-badges';
+	import { resolveTone, TONE_TEXT_CLASS, PULSE_DOT_CLASS, badgeLabel } from '$lib/config/status-badges';
 
 	type Notification = {
 		id: number;
@@ -43,6 +45,7 @@
 
 	let { data }: { data: PageData } = $props();
 	const isAdmin = $derived(data.isAdmin ?? true);
+	const locale = $derived($page.data.locale as Locale);
 	let webhookUrl = $state(untrack(() => data.webhooks.url ?? ''));
 	let savingWebhook = $state(false);
 	let retrying = $state<Record<number, boolean>>({});
@@ -51,9 +54,9 @@
 		retrying[id] = true;
 		try {
 			const res = await fetch(`/api/webhooks/deliveries/${id}/retry`, { method: 'POST' });
-			if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Retry failed');
+			if (!res.ok) toast.error(res.status === 403 ? t(locale, 'notifications.error-admin-required') : t(locale, 'notifications.error-retry-failed'));
 			else {
-				toast.success('Re-queued');
+				toast.success(t(locale, 'notifications.toast-requeued'));
 				await invalidateAll();
 			}
 		} finally {
@@ -63,7 +66,7 @@
 
 	async function markAllRead() {
 		const res = await fetch('/api/notifications', { method: 'POST' });
-		if (!res.ok) toast.error('Failed to mark as read');
+		if (!res.ok) toast.error(t(locale, 'notifications.error-mark-read-failed'));
 		else await invalidateAll();
 	}
 
@@ -75,8 +78,8 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ url: webhookUrl.trim() || null }),
 			});
-			if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Save failed');
-			else toast.success('Webhook saved');
+			if (!res.ok) toast.error(res.status === 403 ? t(locale, 'notifications.error-admin-required') : t(locale, 'notifications.error-save-failed'));
+			else toast.success(t(locale, 'notifications.toast-webhook-saved'));
 		} finally {
 			savingWebhook = false;
 		}
@@ -84,18 +87,18 @@
 </script>
 
 <PageContainer size="default">
-<Seo title="Notifications" description="Recent system events and notification delivery configuration." />
+<Seo title={t(locale, 'notifications.seo-title')} description={t(locale, 'notifications.seo-description')} />
 
-<PageHeader title="Notifications" description="Recent run, draft, and reply events.">
+<PageHeader title={t(locale, 'notifications.title')} description={t(locale, 'notifications.header-description')}>
 	{#snippet actions()}
-		<Button variant="outline" onclick={markAllRead}>Mark all as read</Button>
+		<Button variant="outline" onclick={markAllRead}>{t(locale, 'notifications.mark-all-read')}</Button>
 	{/snippet}
 </PageHeader>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
 	<div class="lg:col-span-2 flex flex-col gap-2">
 		{#if data.notifications.length === 0}
-			<p class="text-sm text-muted-foreground">No notifications yet.</p>
+			<p class="text-sm text-muted-foreground">{t(locale, 'notifications.empty')}</p>
 		{/if}
 		{#each data.notifications as n (n.id)}
 			<Card.Root size="sm">
@@ -112,7 +115,7 @@
 								<p class="text-xs text-muted-foreground mt-0.5">{n.body}</p>
 							{/if}
 							<p class="text-[10px] text-muted-foreground/70 mt-1">
-								<span class="font-mono">{n.kind}</span> · {relativeTime(n.createdAt)}
+							<span class="font-mono">{n.kind}</span> · {relativeTime(n.createdAt, locale)}
 							</p>
 						</div>
 					</div>
@@ -124,37 +127,36 @@
 	<div>
 		<Card.Root size="sm">
 			<Card.Header>
-				<Card.Title class="text-base">Outgoing webhook</Card.Title>
+				<Card.Title class="text-base">{t(locale, 'notifications.webhook-title')}</Card.Title>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-3">
 				<p class="text-xs text-muted-foreground">
-					POST a JSON payload to a URL for every notification. Leave empty to disable. Wire this to
-					Slack, Discord, or your own service.
+					{t(locale, 'notifications.webhook-description')}
 				</p>
-				<Input bind:value={webhookUrl} placeholder="https://hooks.example.com/..." disabled={!isAdmin} />
+				<Input bind:value={webhookUrl} placeholder={t(locale, 'notifications.webhook-url-placeholder')} disabled={!isAdmin} />
 				{#if isAdmin}
-					<Button onclick={saveWebhook} disabled={savingWebhook}>Save</Button>
+					<Button onclick={saveWebhook} disabled={savingWebhook}>{t(locale, 'notifications.save-button')}</Button>
 				{/if}
 			</Card.Content>
 		</Card.Root>
 
 		<Card.Root size="sm" class="mt-4">
 			<Card.Header>
-				<Card.Title class="text-base">Recent deliveries</Card.Title>
+				<Card.Title class="text-base">{t(locale, 'notifications.deliveries-title')}</Card.Title>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-2">
 				{#if data.deliveries.length === 0}
-					<p class="text-xs text-muted-foreground">No deliveries yet.</p>
+					<p class="text-xs text-muted-foreground">{t(locale, 'notifications.deliveries-empty')}</p>
 				{:else}
 					<div class="flex flex-col divide-y divide-border/60">
 						{#each data.deliveries as d (d.id)}
 							<div class="py-2 flex items-start gap-2 text-xs">
 								<div class="min-w-0 flex-1">
 									<p class="font-medium {TONE_TEXT_CLASS[resolveTone('webhook-delivery-status', d.status)]}">
-										{d.status} · <span class="font-mono">{d.eventType}</span>
+										{badgeLabel(locale, 'webhook-delivery-status', d.status)} · <span class="font-mono">{d.eventType}</span>
 									</p>
 									<p class="text-muted-foreground/80 mt-0.5">
-										attempt {d.attempts}/{d.maxAttempts} · {relativeTime(d.createdAt)}
+										{t(locale, 'notifications.delivery-attempt', { attempts: d.attempts, maxAttempts: d.maxAttempts })} · {relativeTime(d.createdAt, locale)}
 									</p>
 									{#if d.lastError}
 										<p class="{TONE_TEXT_CLASS.rose} mt-0.5 truncate" title={d.lastError}>
@@ -169,7 +171,7 @@
 										disabled={retrying[d.id]}
 										onclick={() => retryDelivery(d.id)}
 									>
-										Retry
+										{t(locale, 'notifications.retry-button')}
 									</Button>
 								{/if}
 							</div>

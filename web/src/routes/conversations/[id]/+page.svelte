@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -64,6 +66,7 @@
   let { data }: { data: Data } = $props();
 
   const cp = $derived(getPresenter(data.thread.platform));
+  const locale = $derived($page.data.locale as Locale);
 
   const isDrafting = $derived(
     data.replyDraft?.draftingRunId != null && data.replyDraft?.draftingRunStatus === 'running',
@@ -87,7 +90,7 @@
     try {
       const res = await fetch(`/api/drafts/${data.replyDraft.id}/reply-draft/retry`, { method: 'POST' });
       if (res.status === 409) {
-        toast.info('Reply drafting is already in progress');
+        toast.info(t(locale, 'conversations.toast-retry-in-progress'));
         location.reload();
         return;
       }
@@ -95,8 +98,8 @@
         const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
         const message =
           res.status >= 500
-            ? 'Could not retry the reply draft. Please try again.'
-            : (body.error ?? body.message ?? 'Could not retry the reply draft.');
+            ? t(locale, 'conversations.error-retry-5xx')
+            : (body.error ?? body.message ?? t(locale, 'conversations.error-retry'));
         if (res.status >= 500) {
           console.error('failed to retry reply draft', data.replyDraft.id, res.status, body);
         }
@@ -106,7 +109,7 @@
       }
       location.reload();
     } catch {
-      const message = 'Could not retry the reply draft, check your connection.';
+      const message = t(locale, 'conversations.error-retry-offline');
       retryError = message;
       toast.error(message);
     } finally {
@@ -125,7 +128,7 @@
     });
     const outcome = await interpretDraftPatchResponse(res);
     if (outcome.kind === 'version_conflict') {
-      toast.info('This draft changed elsewhere, reloaded.');
+      toast.info(t(locale, 'inbox.toast-version-conflict'));
       location.reload();
       throw new DraftVersionConflictError();
     }
@@ -140,7 +143,7 @@
       await patchReplyDraft({ state: 'rejected' });
     } catch (e) {
       if (e instanceof DraftVersionConflictError) return;
-      toast.error('Action failed', { description: (e as Error).message });
+      toast.error(t(locale, 'inbox.toast-action-failed-title'), { description: (e as Error).message });
     } finally {
       rejectingReply = false;
     }
@@ -153,7 +156,7 @@
       await patchReplyDraft({ state: 'approved' });
     } catch (e) {
       if (e instanceof DraftVersionConflictError) return;
-      toast.error('Action failed', { description: (e as Error).message });
+      toast.error(t(locale, 'inbox.toast-action-failed-title'), { description: (e as Error).message });
     } finally {
       approvingReply = false;
     }
@@ -162,20 +165,20 @@
 
 <PageContainer size="default">
 <Seo
-  title={`Conversation with ${data.thread.targetUser}`}
-  description="Threaded view of an outreach conversation."
+  title={t(locale, 'conversations.seo-title', { user: data.thread.targetUser })}
+  description={t(locale, 'conversations.seo-description')}
 />
 
 <PageHeader
   title={cp.userLabel(data.thread.targetUser)}
-  description={`Conversation via ${cp.userLabel(data.thread.accountHandle)} on ${data.thread.platform}`}
+  description={t(locale, 'conversations.header-description', { account: cp.userLabel(data.thread.accountHandle), platform: data.thread.platform })}
 >
   {#snippet actions()}
     <a
       href="/people"
       class="inline-flex items-center rounded-md border border-border/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
     >
-      Back to threads
+      {t(locale, 'conversations.back-to-threads')}
     </a>
   {/snippet}
 </PageHeader>
@@ -185,9 +188,9 @@
     domain="draft-state"
     value={data.contactHistory.repliedAt ? 'replied' : 'sent'}
   />
-  <span>First contact {relativeTime(data.contactHistory.firstContactedAt)}</span>
+  <span>{t(locale, 'conversations.first-contact', { when: relativeTime(data.contactHistory.firstContactedAt, locale) })}</span>
   {#if data.contactHistory.repliedAt}
-    <span>· Replied {relativeTime(data.contactHistory.repliedAt)}</span>
+    <span>· {t(locale, 'conversations.replied-at', { when: relativeTime(data.contactHistory.repliedAt, locale) })}</span>
   {/if}
 </div>
 
@@ -203,9 +206,9 @@
         </div>
         <div class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
           <StatusBadge domain="draft-kind" value={draft.kind} />
-          <span>Draft #{draft.id}</span>
+          <span>{t(locale, 'conversations.draft-number', { id: draft.id })}</span>
           {#if draft.sentAt}
-            <span>· Sent {relativeTime(draft.sentAt)}</span>
+            <span>· {t(locale, 'conversations.sent-at', { when: relativeTime(draft.sentAt, locale) })}</span>
           {/if}
         </div>
       </div>
@@ -213,7 +216,7 @@
 
     {#if data.messages.length === 0 && !data.parentDraft}
       <p class="py-8 text-center text-sm text-muted-foreground">
-        No messages captured yet for this thread.
+        {t(locale, 'conversations.no-messages')}
       </p>
     {/if}
 
@@ -235,9 +238,9 @@
             <StatusBadge domain="draft-kind" value={m.kind} />
           {/if}
           <span class="font-mono">
-            {isUs ? 'you' : cp.userLabel(m.author)}
+            {isUs ? t(locale, 'conversations.you-label') : cp.userLabel(m.author)}
           </span>
-          <span>· {relativeTime(m.createdAt)}</span>
+          <span>· {relativeTime(m.createdAt, locale)}</span>
         </div>
       </div>
     {/each}
@@ -249,7 +252,7 @@
     <Card.Content class="flex flex-col gap-2 p-4">
       <div class="flex items-center justify-between">
         <span class="text-xs font-medium {TONE_TEXT_CLASS.emerald}"
-          >Suggested reply (auto-drafted)</span
+          >{t(locale, 'conversations.suggested-reply-label')}</span
         >
         <StatusBadge domain="draft-kind" value={data.replyDraft.kind} />
       </div>
@@ -267,32 +270,32 @@
             loading={rejectingReply}
             disabled={replyActionBusy}
             class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            aria-label="Reject reply draft"
+            aria-label={t(locale, 'conversations.aria-reject-reply')}
             onclick={async (e: MouseEvent) => {
               e.preventDefault();
               await rejectReplyDraft();
-            }}>Reject</Button
+            }}>{t(locale, 'inbox.reject-button')}</Button
           >
         </form>
         {#if isDrafting}
-          <span class="text-xs text-muted-foreground">Drafting reply…</span>
+          <span class="text-xs text-muted-foreground">{t(locale, 'draft-detail.drafting-reply')}</span>
         {:else if draftingFailed}
-          <span class="text-xs text-destructive">Reply drafting failed</span>
+          <span class="text-xs text-destructive">{t(locale, 'draft-detail.reply-drafting-failed')}</span>
           <Button
             size="sm"
             variant="outline"
             loading={retryingReply}
             disabled={replyActionBusy}
-            aria-label="Retry drafting the reply"
-            onclick={retryReplyDraft}>Retry</Button
+            aria-label={t(locale, 'conversations.aria-retry-reply')}
+            onclick={retryReplyDraft}>{t(locale, 'inbox.retry')}</Button
           >
         {:else}
           <Button
             size="sm"
             loading={approvingReply}
             disabled={replyActionBusy}
-            aria-label="Approve reply draft"
-            onclick={approveReplyDraft}>Approve</Button
+            aria-label={t(locale, 'conversations.aria-approve-reply')}
+            onclick={approveReplyDraft}>{t(locale, 'draft-detail.approve-button')}</Button
           >
         {/if}
       </div>
@@ -307,14 +310,14 @@
   <Card.Root size="sm" class="mt-4">
     <Card.Content class="flex flex-col gap-2 p-4">
       <Textarea
-        placeholder="Write a reply…"
+        placeholder={t(locale, 'conversations.reply-placeholder')}
         rows={3}
         disabled
         class="resize-none bg-background"
       />
       <div class="flex items-center justify-between">
-        <span class="text-[11px] text-muted-foreground">No auto-drafted reply yet</span>
-        <Button size="sm" disabled>Send</Button>
+        <span class="text-[11px] text-muted-foreground">{t(locale, 'conversations.no-reply-draft-yet')}</span>
+        <Button size="sm" disabled>{t(locale, 'conversations.send-button')}</Button>
       </div>
     </Card.Content>
   </Card.Root>

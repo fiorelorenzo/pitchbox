@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
   import Spinner from '$lib/components/Spinner.svelte';
   import PageContainer from '$lib/components/PageContainer.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
@@ -11,6 +12,7 @@
   type Range = '7d' | '30d' | 'all';
 
   let { data } = $props<{ data: { campaigns: { id: number; name: string }[] } }>();
+  const locale = $derived($page.data.locale as Locale);
 
   function parseRange(value: string | null): Range {
     return value === '7d' || value === '30d' ? value : 'all';
@@ -24,18 +26,18 @@
   let error = $state<string | null>(null);
 
   const campaignOptions = $derived([
-    { value: '', label: 'All campaigns' },
+    { value: '', label: t(locale, 'analytics.all-campaigns') },
     ...data.campaigns.map((c: { id: number; name: string }) => ({
       value: String(c.id),
       label: c.name,
     })),
   ]);
 
-  const RANGE_OPTIONS: { value: Range; label: string }[] = [
-    { value: '7d', label: 'Last 7 days' },
-    { value: '30d', label: 'Last 30 days' },
-    { value: 'all', label: 'All time' },
-  ];
+  const RANGE_OPTIONS: { value: Range; label: string }[] = $derived([
+    { value: '7d', label: t(locale, 'analytics.range.7d') },
+    { value: '30d', label: t(locale, 'analytics.range.30d') },
+    { value: 'all', label: t(locale, 'analytics.range.all') },
+  ]);
 
   // Built from scratch rather than off `$page.url` so this never subscribes to
   // the page store from inside the effect below - doing that would make every
@@ -64,16 +66,16 @@
       if (!res.ok) {
         if (res.status >= 500) {
           console.error('failed to load analytics funnel', res.status, body);
-          error = 'Something went wrong loading the funnel. Please try again.';
+          error = t(locale, 'analytics.error-5xx');
         } else {
-          error = body.error ?? `Failed to load the funnel (HTTP ${res.status}).`;
+          error = body.error ?? t(locale, 'analytics.error-http', { status: res.status });
         }
         stages = [];
         return;
       }
       stages = (body.stages ?? []) as Stage[];
     } catch {
-      error = 'Could not load the funnel, check your connection.';
+      error = t(locale, 'analytics.error-network');
       stages = [];
     } finally {
       loading = false;
@@ -93,17 +95,17 @@
 
 <PageContainer size="default">
   <PageHeader
-    title="Analytics"
-    description="Draft funnel from proposed through replied, filtered by campaign and date range."
+    title={t(locale, 'analytics.title')}
+    description={t(locale, 'analytics.header-description')}
   />
 
   <div class="mb-6 flex flex-wrap items-end gap-3">
     <div class="flex flex-col gap-1">
-      <label class="text-xs text-muted-foreground" for="analytics-campaign">Campaign</label>
+      <label class="text-xs text-muted-foreground" for="analytics-campaign">{t(locale, 'analytics.label-campaign')}</label>
       <SelectField id="analytics-campaign" bind:value={campaignId} options={campaignOptions} />
     </div>
     <div class="flex flex-col gap-1">
-      <label class="text-xs text-muted-foreground" for="analytics-range">Date range</label>
+      <label class="text-xs text-muted-foreground" for="analytics-range">{t(locale, 'analytics.label-range')}</label>
       <SelectField id="analytics-range" bind:value={range} options={RANGE_OPTIONS} />
     </div>
   </div>
@@ -111,21 +113,21 @@
   {#if loading}
     <div class="flex items-center gap-2 text-sm text-muted-foreground">
       <Spinner size="sm" />
-      <span>Loading…</span>
+      <span>{t(locale, 'analytics.loading')}</span>
     </div>
   {:else if error}
     <div role="alert" class="rounded-md border p-4 text-sm {TONE_BANNER_CLASS.rose}">
       {error}
     </div>
   {:else if stages.length === 0}
-    <p class="text-sm text-muted-foreground">No data.</p>
+    <p class="text-sm text-muted-foreground">{t(locale, 'analytics.no-data')}</p>
   {:else}
     <div class="flex flex-col gap-3">
       {#each stages as s (s.stage)}
         {@const width = Math.max(2, Math.round((s.count / max) * 100))}
         <div>
           <div class="flex items-baseline justify-between text-sm mb-1">
-            <span class="font-medium capitalize">{s.stage}</span>
+            <span class="font-medium capitalize">{t(locale, `analytics.stage.${s.stage}`)}</span>
             <span class="text-muted-foreground">
               {s.count}
               {#if s.rate !== null}

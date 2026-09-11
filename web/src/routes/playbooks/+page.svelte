@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import * as Card from '$lib/components/ui/card';
@@ -23,6 +25,7 @@
 
 	let { data }: { data: { playbooks: PlaybookRow[]; isAdmin?: boolean } } = $props();
 	const isAdmin = $derived(data.isAdmin ?? true);
+	const locale = $derived($page.data.locale as Locale);
 
 	let createOpen = $state(false);
 	let slug = $state('');
@@ -45,12 +48,12 @@
 				}),
 			});
 			if (!res.ok) {
-				if (res.status === 403) toast.error('You need admin access for that');
-				else toast.error('Create failed', { description: res.status === 409 ? 'Slug already taken' : '' });
+				if (res.status === 403) toast.error(t(locale, 'playbooks.error-admin-required'));
+				else toast.error(t(locale, 'playbooks.toast-create-failed-title'), { description: res.status === 409 ? t(locale, 'playbooks.error-slug-taken') : '' });
 				return;
 			}
 			const payload = await res.json();
-			toast.success('Playbook created');
+			toast.success(t(locale, 'playbooks.toast-created'));
 			createOpen = false;
 			slug = name = description = body = '';
 			await goto(`/playbooks/${payload.playbook.id}`);
@@ -74,7 +77,7 @@
 		try {
 			const res = await fetch(`/api/playbooks/${deleteTarget.id}`, { method: 'DELETE' });
 			if (!res.ok) {
-				toast.error(res.status === 403 ? 'You need admin access for that' : 'Delete failed');
+				toast.error(res.status === 403 ? t(locale, 'playbooks.error-admin-required') : t(locale, 'playbooks.toast-delete-failed'));
 				return;
 			}
 			deleteDialogOpen = false;
@@ -87,15 +90,15 @@
 </script>
 
 <PageContainer size="narrow">
-<Seo title="Playbooks" description="Edit or create the markdown playbooks the agent runner executes." />
+<Seo title={t(locale, 'playbooks.seo-title')} description={t(locale, 'playbooks.seo-description')} />
 
 <PageHeader
-	title="Playbooks"
-	description="Markdown instructions the agent runner executes. Built-in entries are read-only - duplicate to customise."
+	title={t(locale, 'playbooks.title')}
+	description={t(locale, 'playbooks.header-description')}
 >
 	{#snippet actions()}
 		{#if isAdmin}
-			<Button onclick={() => (createOpen = true)}>New playbook</Button>
+			<Button onclick={() => (createOpen = true)}>{t(locale, 'playbooks.new-button')}</Button>
 		{/if}
 	{/snippet}
 </PageHeader>
@@ -112,7 +115,7 @@
 					<span
 						class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
 					>
-						built-in
+					{t(locale, 'playbooks.builtin-badge')}
 					</span>
 				{/if}
 			</Card.Header>
@@ -121,14 +124,14 @@
 					<p class="text-xs text-muted-foreground line-clamp-3">{p.description}</p>
 				{/if}
 				<p class="text-[10px] text-muted-foreground/70">
-					Updated {relativeTime(p.updatedAt)}
+					{t(locale, 'playbooks.updated-at', { when: relativeTime(p.updatedAt, locale) })}
 				</p>
 				<div class="flex gap-2">
 					<Button size="sm" variant="outline" onclick={() => goto(`/playbooks/${p.id}`)}>
-						{p.isBuiltin ? 'View' : 'Edit'}
+						{p.isBuiltin ? t(locale, 'playbooks.view-button') : t(locale, 'playbooks.edit-button')}
 					</Button>
 					{#if !p.isBuiltin && isAdmin}
-						<Button size="sm" variant="ghost" onclick={() => openDeleteDialog(p)}>Delete</Button>
+						<Button size="sm" variant="ghost" onclick={() => openDeleteDialog(p)}>{t(locale, 'playbooks.delete-button')}</Button>
 					{/if}
 				</div>
 			</Card.Content>
@@ -139,36 +142,35 @@
 <Dialog.Root bind:open={createOpen}>
 	<Dialog.Content class="max-w-2xl">
 		<Dialog.Header>
-			<Dialog.Title>New playbook</Dialog.Title>
+			<Dialog.Title>{t(locale, 'playbooks.create-dialog-title')}</Dialog.Title>
 			<Dialog.Description>
-				Markdown the agent runner will execute. Pick a slug matching the campaign skill that should
-				use this playbook (e.g. reddit-scout).
+				{t(locale, 'playbooks.create-dialog-description')}
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="flex flex-col gap-3">
 			<label class="flex flex-col gap-1 text-xs">
-				Slug
-				<Input bind:value={slug} placeholder="my-playbook" />
+				{t(locale, 'playbooks.label-slug')}
+				<Input bind:value={slug} placeholder={t(locale, 'playbooks.slug-placeholder')} />
 			</label>
 			<label class="flex flex-col gap-1 text-xs">
-				Name
-				<Input bind:value={name} placeholder="My playbook" />
+				{t(locale, 'playbooks.label-name')}
+				<Input bind:value={name} placeholder={t(locale, 'playbooks.name-placeholder')} />
 			</label>
 			<label class="flex flex-col gap-1 text-xs">
-				Description
-				<Input bind:value={description} placeholder="What this playbook does" />
+				{t(locale, 'playbooks.label-description')}
+				<Input bind:value={description} placeholder={t(locale, 'playbooks.description-placeholder')} />
 			</label>
 			<label class="flex flex-col gap-1 text-xs">
-				Body (markdown)
+				{t(locale, 'playbooks.label-body')}
 				<Textarea bind:value={body} rows={14} class="font-mono text-xs" />
 			</label>
 			<div class="flex justify-end gap-2">
-				<Button variant="ghost" onclick={() => (createOpen = false)}>Cancel</Button>
+				<Button variant="ghost" onclick={() => (createOpen = false)}>{t(locale, 'playbooks.cancel-button')}</Button>
 				<Button
 					onclick={create}
 					disabled={busy || !slug.trim() || !name.trim() || body.trim().length === 0}
 				>
-					Create
+					{t(locale, 'playbooks.create-button')}
 				</Button>
 			</div>
 		</div>
@@ -178,16 +180,15 @@
 <AlertDialog.Root bind:open={deleteDialogOpen}>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>Delete "{deleteTarget?.name}"?</AlertDialog.Title>
+			<AlertDialog.Title>{t(locale, 'playbooks.delete-dialog-title', { name: deleteTarget?.name ?? '' })}</AlertDialog.Title>
 			<AlertDialog.Description>
-				This removes the playbook. Campaigns using its skill slug will need another playbook
-				before they can run again.
+				{t(locale, 'playbooks.delete-dialog-description')}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel onclick={() => (deleteDialogOpen = false)}>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Cancel onclick={() => (deleteDialogOpen = false)}>{t(locale, 'playbooks.cancel-button')}</AlertDialog.Cancel>
 			<AlertDialog.Action onclick={confirmRemove} disabled={deleting}>
-				{deleting ? 'Deleting…' : 'Delete playbook'}
+				{deleting ? t(locale, 'playbooks.deleting-button') : t(locale, 'playbooks.delete-confirm-button')}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>

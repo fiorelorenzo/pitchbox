@@ -10,6 +10,7 @@
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 	import { untrack } from 'svelte';
 	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { TONE_CLASS, TONE_BANNER_CLASS } from '$lib/config/status-badges';
@@ -42,6 +43,7 @@
 	};
 
 	let { data }: { data: PageData } = $props();
+	const locale = $derived($page.data.locale as Locale);
 
 	let event = $state(untrack(() => data.filters.event));
 	let draftId = $state(
@@ -55,7 +57,7 @@
 	let to = $state(untrack(() => data.filters.to));
 
 	const eventOptions = $derived([
-		{ value: '', label: 'All events' },
+		{ value: '', label: t(locale, 'audit.all-events') },
 		...data.eventTypes.map((e) => ({ value: e, label: e })),
 	]);
 
@@ -106,8 +108,8 @@
 				const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
 				const message =
 					res.status >= 500
-						? 'Could not load more events. Please try again.'
-						: (body.error ?? body.message ?? 'Could not load more events.');
+						? t(locale, 'audit.error-load-more-5xx')
+						: (body.error ?? body.message ?? t(locale, 'audit.error-load-more'));
 				if (res.status >= 500) console.error('failed to load more audit events', res.status, body);
 				loadMoreError = message;
 				toast.error(message);
@@ -117,7 +119,7 @@
 			items = [...items, ...nextPage.rows];
 			itemsNextCursor = nextPage.nextCursor;
 		} catch {
-			loadMoreError = 'Could not reach the server. Check your connection and try again.';
+			loadMoreError = t(locale, 'audit.error-network');
 			toast.error(loadMoreError);
 		} finally {
 			loadingMore = false;
@@ -131,34 +133,34 @@
 </script>
 
 <PageContainer size="wide">
-<Seo title="Audit" description="Unified audit log of draft and run events." />
+<Seo title={t(locale, 'audit.seo-title')} description={t(locale, 'audit.seo-description')} />
 
-<PageHeader title="Audit log" description="Time-ordered feed of draft and run events." />
+<PageHeader title={t(locale, 'audit.title')} description={t(locale, 'audit.header-description')} />
 
 <Card.Root size="sm" class="mt-4">
 	<Card.Content class="grid grid-cols-1 md:grid-cols-6 gap-3 py-3">
 		<div class="flex flex-col gap-1">
-			<label for="audit-event" class="text-xs text-muted-foreground">Event</label>
+			<label for="audit-event" class="text-xs text-muted-foreground">{t(locale, 'audit.label-event')}</label>
 			<SelectField bind:value={event} options={eventOptions} fullWidth />
 		</div>
 		<div class="flex flex-col gap-1">
-			<label for="audit-draft" class="text-xs text-muted-foreground">Draft ID</label>
+			<label for="audit-draft" class="text-xs text-muted-foreground">{t(locale, 'audit.label-draft-id')}</label>
 			<Input id="audit-draft" bind:value={draftId} placeholder="123" inputmode="numeric" />
 		</div>
 		<div class="flex flex-col gap-1">
-			<label for="audit-run" class="text-xs text-muted-foreground">Run ID</label>
+			<label for="audit-run" class="text-xs text-muted-foreground">{t(locale, 'audit.label-run-id')}</label>
 			<Input id="audit-run" bind:value={runId} placeholder="456" inputmode="numeric" />
 		</div>
 		<div class="flex flex-col gap-1">
-			<label for="audit-actor" class="text-xs text-muted-foreground">Actor</label>
-			<Input id="audit-actor" bind:value={actor} placeholder="user-id or 'agent'" />
+			<label for="audit-actor" class="text-xs text-muted-foreground">{t(locale, 'audit.label-actor')}</label>
+			<Input id="audit-actor" bind:value={actor} placeholder={t(locale, 'audit.actor-placeholder')} />
 		</div>
 		<div class="flex flex-col gap-1">
-			<label for="audit-from" class="text-xs text-muted-foreground">From</label>
+			<label for="audit-from" class="text-xs text-muted-foreground">{t(locale, 'audit.label-from')}</label>
 			<Input id="audit-from" type="date" bind:value={from} />
 		</div>
 		<div class="flex flex-col gap-1">
-			<label for="audit-to" class="text-xs text-muted-foreground">To</label>
+			<label for="audit-to" class="text-xs text-muted-foreground">{t(locale, 'audit.label-to')}</label>
 			<Input id="audit-to" type="date" bind:value={to} />
 		</div>
 		<div class="md:col-span-6 flex justify-end gap-2">
@@ -172,9 +174,9 @@
 					from = '';
 					to = '';
 					goto('/audit');
-				}}>Reset</Button
+				}}>{t(locale, 'audit.reset-button')}</Button
 			>
-			<Button onclick={applyFilters}>Apply</Button>
+			<Button onclick={applyFilters}>{t(locale, 'audit.apply-button')}</Button>
 		</div>
 	</Card.Content>
 </Card.Root>
@@ -184,11 +186,11 @@
 		<Table.Root>
 			<Table.Header>
 				<Table.Row>
-					<Table.Head class="w-44">Timestamp</Table.Head>
-					<Table.Head class="w-20">Kind</Table.Head>
-					<Table.Head>Event</Table.Head>
-					<Table.Head>Target</Table.Head>
-					<Table.Head>Actor</Table.Head>
+					<Table.Head class="w-44">{t(locale, 'audit.col-timestamp')}</Table.Head>
+					<Table.Head class="w-20">{t(locale, 'audit.col-kind')}</Table.Head>
+					<Table.Head>{t(locale, 'audit.col-event')}</Table.Head>
+					<Table.Head>{t(locale, 'audit.col-target')}</Table.Head>
+					<Table.Head>{t(locale, 'audit.col-actor')}</Table.Head>
 				</Table.Row>
 			</Table.Header>
 			<Table.Body>
@@ -203,18 +205,18 @@
 									r.kind === 'draft' ? 'sky' : 'violet'
 								]}"
 							>
-								{r.kind}
+								{r.kind === 'draft' ? t(locale, 'audit.kind-draft') : t(locale, 'audit.kind-run')}
 							</span>
 						</Table.Cell>
 						<Table.Cell class="font-mono text-xs">{r.event}</Table.Cell>
 						<Table.Cell class="text-xs">
 							{#if r.draftId !== null}
 								<a class="underline hover:no-underline" href="/inbox?draft={r.draftId}"
-									>draft #{r.draftId}</a
+									>{t(locale, 'audit.target-draft', { id: r.draftId })}</a
 								>
 							{:else if r.runId !== null}
 								<a class="underline hover:no-underline" href="/campaigns?run={r.runId}"
-									>run #{r.runId}</a
+									>{t(locale, 'audit.target-run', { id: r.runId })}</a
 								>
 							{:else}
 								<span class="text-muted-foreground">-</span>
@@ -226,7 +228,7 @@
 				{#if items.length === 0}
 					<Table.Row>
 						<Table.Cell colspan={5} class="text-center text-sm text-muted-foreground py-8">
-							No events match the current filters.
+							{t(locale, 'audit.empty')}
 						</Table.Cell>
 					</Table.Row>
 				{/if}
@@ -234,7 +236,7 @@
 		</Table.Root>
 		{#if itemsNextCursor}
 			<div class="flex flex-col items-center gap-2 py-3">
-				<Button variant="outline" onclick={loadMore} loading={loadingMore}>Load more</Button>
+				<Button variant="outline" onclick={loadMore} loading={loadingMore}>{t(locale, 'audit.load-more')}</Button>
 				{#if loadMoreError}
 					<div
 						role="alert"
@@ -248,7 +250,7 @@
 								onclick={loadMore}
 								class="mt-1 underline underline-offset-2 hover:no-underline"
 							>
-								Retry
+								{t(locale, 'audit.retry')}
 							</button>
 						</div>
 					</div>

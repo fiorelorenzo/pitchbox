@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import type { Locale } from '$lib/i18n/index.js';
+  import { t, type Locale } from '$lib/i18n/index.js';
   import { Search, Users, MessageSquare, AlertTriangle } from '@lucide/svelte';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/PageHeader.svelte';
@@ -22,7 +22,7 @@
   import { encodeThreadId } from '../conversations/[id]/thread-id';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import PageContainer from '$lib/components/PageContainer.svelte';
-  import { resolveTone, TONE_CLASS, TONE_BANNER_CLASS } from '$lib/config/status-badges';
+  import { resolveTone, TONE_CLASS, TONE_BANNER_CLASS, badgeLabel } from '$lib/config/status-badges';
 
   type Contact = {
     id: number;
@@ -102,8 +102,12 @@
 
   let headerDescription = $derived(
     data.tab === 'contacts'
-      ? `Everyone your campaigns have messaged, posted to, or commented on. ${data.totals.unique} unique across ${data.totals.total} contacts - ${data.totals.replied} replied.`
-      : "Every outreach you've sent plus replies captured by the browser extension.",
+      ? t(locale, 'people.description-contacts', {
+          unique: data.totals.unique,
+          total: data.totals.total,
+          replied: data.totals.replied,
+        })
+      : t(locale, 'people.description-threads'),
   );
 
   // ---- Contacts tab ("All contacts") ----------------------------------
@@ -113,7 +117,7 @@
   const contactsPlatformOptions = $derived(
     data.tab === 'contacts'
       ? [
-          { value: '', label: 'All platforms' },
+          { value: '', label: t(locale, 'people.all-platforms') },
           ...data.platforms.map((p) => ({ value: p.slug, label: p.slug })),
         ]
       : [],
@@ -170,8 +174,8 @@
         const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
         const message =
           res.status >= 500
-            ? 'Could not load more contacts. Please try again.'
-            : (body.error ?? body.message ?? 'Could not load more contacts.');
+            ? t(locale, 'people.error-load-more-contacts-5xx')
+            : (body.error ?? body.message ?? t(locale, 'people.error-load-more-contacts'));
         if (res.status >= 500) console.error('failed to load more contacts', res.status, body);
         contactsLoadMoreError = message;
         toast.error(message);
@@ -186,7 +190,7 @@
       contactsMatchingCount = nextPage.matchingCount;
       contactsNextCursor = nextPage.nextCursor;
     } catch {
-      contactsLoadMoreError = 'Could not reach the server. Check your connection and try again.';
+      contactsLoadMoreError = t(locale, 'people.error-network');
       toast.error(contactsLoadMoreError);
     } finally {
       contactsLoadingMore = false;
@@ -293,8 +297,8 @@
         const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
         const message =
           res.status >= 500
-            ? 'Could not load more conversations. Please try again.'
-            : (body.error ?? body.message ?? 'Could not load more conversations.');
+            ? t(locale, 'people.error-load-more-threads-5xx')
+            : (body.error ?? body.message ?? t(locale, 'people.error-load-more-threads'));
         if (res.status >= 500) console.error('failed to load more conversations', res.status, body);
         threadsLoadMoreError = message;
         toast.error(message);
@@ -304,7 +308,7 @@
       threadsItems = [...threadsItems, ...nextPage.conversations];
       threadsNextCursor = nextPage.nextCursor;
     } catch {
-      threadsLoadMoreError = 'Could not reach the server. Check your connection and try again.';
+      threadsLoadMoreError = t(locale, 'people.error-network');
       toast.error(threadsLoadMoreError);
     } finally {
       threadsLoadingMore = false;
@@ -314,16 +318,16 @@
 
 <PageContainer size="default">
 <Seo
-  title="People"
-  description="Everyone your campaigns have reached, and every conversation with them - one destination instead of a guess between two."
+  title={t(locale, 'people.seo-title')}
+  description={t(locale, 'people.seo-description')}
 />
 
-<PageHeader title="People" description={headerDescription} />
+<PageHeader title={t(locale, 'people.title')} description={headerDescription} />
 
 <Tabs.Root value={data.tab} onValueChange={(v) => setTab(v as Tab)} class="mb-4">
   <Tabs.List>
-    <Tabs.Trigger value="threads">Threads</Tabs.Trigger>
-    <Tabs.Trigger value="contacts">All contacts</Tabs.Trigger>
+    <Tabs.Trigger value="threads">{t(locale, 'people.tab-threads')}</Tabs.Trigger>
+    <Tabs.Trigger value="contacts">{t(locale, 'people.tab-contacts')}</Tabs.Trigger>
   </Tabs.List>
 </Tabs.Root>
 
@@ -332,7 +336,7 @@
   <ExtensionDeviceNudgeBanner kind={data.extensionNudge?.kind ?? null} orgId={data.orgId ?? null} />
 
   <div class="mb-4 flex flex-wrap items-center gap-2">
-    {#each [{ key: 'all', label: 'All' }, { key: 'awaiting', label: 'Awaiting reply' }, { key: 'replied', label: 'Replied' }] as f (f.key)}
+    {#each [{ key: 'all', label: t(locale, 'people.thread-filter.all') }, { key: 'awaiting', label: t(locale, 'people.thread-filter.awaiting') }, { key: 'replied', label: t(locale, 'people.thread-filter.replied') }] as f (f.key)}
       {@const active = threadsFilter === f.key}
       <button
         type="button"
@@ -363,7 +367,7 @@
       <Input
         bind:value={threadsSearch}
         onkeydown={threadsSearchKeydown}
-        placeholder="Search handle or message"
+        placeholder={t(locale, 'people.threads-search-placeholder')}
         class="h-8 pl-8 text-xs"
       />
     </div>
@@ -379,12 +383,12 @@
         window.location.href = `/api/export/conversations?${qs.toString()}`;
       }}
     >
-      Export CSV
+      {t(locale, 'people.export-csv')}
     </Button>
   </div>
 
   <div class="mb-4 flex flex-wrap items-center gap-2">
-    {#each [{ key: 'all', label: 'All kinds' }, { key: 'dm', label: 'DMs' }, { key: 'post_comment', label: 'Comments' }] as k (k.key)}
+    {#each [{ key: 'all', label: t(locale, 'people.kind-filter.all') }, { key: 'dm', label: t(locale, 'people.kind-filter.dm') }, { key: 'post_comment', label: t(locale, 'people.kind-filter.post_comment') }] as k (k.key)}
       {@const active = threadsKindFilter === k.key}
       <button
         type="button"
@@ -406,14 +410,14 @@
       {#if data.counts.all === 0}
         <EmptyState
           icon={MessageSquare}
-          title="No conversations yet"
-          description="Once you send a DM or a comment-reply and the browser extension picks up an inbound message, the thread will land here. Pair the extension from the side panel to start syncing."
+          title={t(locale, 'people.empty-threads-title')}
+          description={t(locale, 'people.empty-threads-body')}
         />
       {:else if threadsItems.length === 0}
         <EmptyState
           icon={Search}
-          title="No matches"
-          description="No conversations match the current filters. Try clearing the search or switching the kind filter."
+          title={t(locale, 'people.empty-threads-no-matches-title')}
+          description={t(locale, 'people.empty-threads-no-matches-body')}
           size="sm"
         />
       {:else}
@@ -433,7 +437,7 @@
           <div
             role="button"
             tabindex={0}
-            aria-label={`Open conversation with ${cp.userLabel(c.targetUser)}`}
+            aria-label={t(locale, 'people.aria-open-conversation', { user: cp.userLabel(c.targetUser) })}
             onclick={() => goto(href)}
             onkeydown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -465,7 +469,7 @@
                   <StatusBadge domain="draft-state" value="replied" />
                 {/if}
                 <span class="text-xs text-muted-foreground">
-                  via {cp.userLabel(c.accountHandle)}
+                  {t(locale, 'people.via-account', { account: cp.userLabel(c.accountHandle) })}
                   {#if subredditCtx}
                     · {cp.primaryLabel(locale, { kind: 'post_comment', targetUser: null, metadata: { subreddit: subredditCtx } })}
                   {:else}
@@ -476,7 +480,7 @@
                   class="ml-auto inline-flex items-center gap-2 text-[11px] text-muted-foreground/70"
                 >
                   {#if c.draftId != null}
-                    <span class="group-hover:text-muted-foreground">Draft #{c.draftId}</span>
+                    <span class="group-hover:text-muted-foreground">{t(locale, 'people.draft-number', { id: c.draftId })}</span>
                   {/if}
                   <a
                     href={replyUrl({
@@ -490,29 +494,29 @@
                     onclick={(e) => e.stopPropagation()}
                     class="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-0.5 text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-foreground"
                     title={c.draftKind === 'post_comment' && subredditCtx
-                      ? `Open the thread on ${cp.primaryLabel(locale, { kind: 'post_comment', targetUser: null, metadata: { subreddit: subredditCtx } })}`
+                      ? t(locale, 'people.aria-open-thread-on', { label: cp.primaryLabel(locale, { kind: 'post_comment', targetUser: null, metadata: { subreddit: subredditCtx } }) })
                       : c.chatRoomId
-                        ? `Open chat with ${cp.userLabel(c.targetUser)}`
-                        : `Open ${cp.userLabel(c.targetUser)}'s profile`}
+                        ? t(locale, 'people.aria-open-chat-with', { user: cp.userLabel(c.targetUser) })
+                        : t(locale, 'people.aria-open-profile', { user: cp.userLabel(c.targetUser) })}
                   >
                     <MessageSquare class="size-3" />
-                    Reply
+                    {t(locale, 'people.reply-link')}
                   </a>
                 </span>
               </div>
               {#if c.lastMessage}
                 <p class="mt-1 text-sm leading-snug">
                   <span class="text-muted-foreground"
-                    >{c.lastMessage.isFromUs ? 'you' : cp.userLabel(c.lastMessage.author)}:</span
+                    >{c.lastMessage.isFromUs ? t(locale, 'people.you-label') : cp.userLabel(c.lastMessage.author)}:</span
                   >
                   {truncateBody(c.lastMessage.body)}
                 </p>
                 <p class="mt-1 text-[11px] text-muted-foreground">
-                  {relativeTime(c.lastMessage.createdAt)}
+                  {relativeTime(c.lastMessage.createdAt, locale)}
                 </p>
               {:else}
                 <p class="mt-1 text-xs text-muted-foreground">
-                  Sent {relativeTime(c.lastContactedAt)} - no reply yet.
+                  {t(locale, 'people.sent-no-reply', { when: relativeTime(c.lastContactedAt, locale) })}
                 </p>
               {/if}
             </div>
@@ -521,7 +525,7 @@
         {#if threadsNextCursor}
           <div class="flex flex-col items-center gap-2 py-3">
             <Button variant="outline" size="sm" onclick={threadsLoadMore} loading={threadsLoadingMore}>
-              Load more
+              {t(locale, 'people.load-more-threads')}
             </Button>
             {#if threadsLoadMoreError}
               <div
@@ -536,7 +540,7 @@
                     onclick={threadsLoadMore}
                     class="mt-1 underline underline-offset-2 hover:no-underline"
                   >
-                    Retry
+                    {t(locale, 'people.retry')}
                   </button>
                 </div>
               </div>
@@ -562,14 +566,14 @@
           <Input
             bind:value={contactsQuery}
             onkeydown={contactsSearchKeydown}
-            placeholder="Search target user…"
+            placeholder={t(locale, 'people.contacts-search-placeholder')}
             class="h-9 w-full sm:w-64 pl-8"
           />
         </div>
       </div>
       <div class="flex items-center gap-3">
         <span class="text-xs text-muted-foreground">
-          {contactsItems.length} of {contactsMatchingCount} shown
+          {t(locale, 'people.contacts-shown-count', { shown: contactsItems.length, total: contactsMatchingCount })}
         </span>
         <Button
           variant="outline"
@@ -582,7 +586,7 @@
             window.location.href = `/api/export/contacts?${qs.toString()}`;
           }}
         >
-          Export CSV
+          {t(locale, 'people.export-csv')}
         </Button>
       </div>
     </Card.Header>
@@ -590,8 +594,8 @@
       {#if contactsItems.length === 0}
         <EmptyState
           icon={Users}
-          title="No contacts yet"
-          description="Every time a draft is marked as sent, the target lands here with first-seen / last-seen timestamps. Run a campaign and approve a draft to populate the table."
+          title={t(locale, 'people.empty-contacts-title')}
+          description={t(locale, 'people.empty-contacts-body')}
         />
       {:else}
 {#snippet kindCell(c: Contact)}
@@ -607,13 +611,13 @@
 		<span class="inline-flex items-center gap-1.5">
 			<StatusBadge domain="contact-status" value="replied" />
 			<span class="text-[10px] text-muted-foreground tabular-nums">
-				{relativeTime(c.repliedAt)}
+				{relativeTime(c.repliedAt, locale)}
 			</span>
 		</span>
 	{:else if c.replyCheckedAt}
-		<span class="text-[10px] text-muted-foreground">no reply yet</span>
+		<span class="text-[10px] text-muted-foreground">{badgeLabel(locale, 'contact-status', 'no_reply')}</span>
 	{:else}
-		<span class="text-[10px] text-muted-foreground italic">unchecked</span>
+		<span class="text-[10px] text-muted-foreground italic">{badgeLabel(locale, 'contact-status', 'unchecked')}</span>
 	{/if}
 {/snippet}
 
@@ -639,13 +643,13 @@
 <Table.Root>
 	<Table.Header>
 		<Table.Row>
-			<Table.Head>Target</Table.Head>
-			<Table.Head>Platform</Table.Head>
-			<Table.Head>From account</Table.Head>
-			<Table.Head>Kind</Table.Head>
-			<Table.Head>Last contacted</Table.Head>
-			<Table.Head>Reply</Table.Head>
-			<Table.Head class="text-right">Draft</Table.Head>
+			<Table.Head>{t(locale, 'people.col-target')}</Table.Head>
+			<Table.Head>{t(locale, 'people.col-platform')}</Table.Head>
+			<Table.Head>{t(locale, 'people.col-from-account')}</Table.Head>
+			<Table.Head>{t(locale, 'people.col-kind')}</Table.Head>
+			<Table.Head>{t(locale, 'people.col-last-contacted')}</Table.Head>
+			<Table.Head>{t(locale, 'people.col-reply')}</Table.Head>
+			<Table.Head class="text-right">{t(locale, 'people.col-draft')}</Table.Head>
 		</Table.Row>
 	</Table.Header>
 	<Table.Body>
@@ -662,7 +666,7 @@
 				</Table.Cell>
 				<Table.Cell>{@render kindCell(c)}</Table.Cell>
 				<Table.Cell class="text-xs text-muted-foreground" title={String(c.lastContactedAt)}>
-					{relativeTime(c.lastContactedAt)}
+					{relativeTime(c.lastContactedAt, locale)}
 				</Table.Cell>
 				<Table.Cell>{@render replyCell(c)}</Table.Cell>
 				<Table.Cell class="text-right">{@render draftCell(c)}</Table.Cell>
@@ -690,7 +694,7 @@
 				{@render replyCell(c)}
 			</div>
 			<div class="text-xs text-muted-foreground" title={String(c.lastContactedAt)}>
-				Last contacted {relativeTime(c.lastContactedAt)}
+				{t(locale, 'people.last-contacted', { when: relativeTime(c.lastContactedAt, locale) })}
 			</div>
 		</div>
 	{/each}
@@ -698,7 +702,7 @@
 
 {#if contactsNextCursor}
 	<div class="flex flex-col items-center gap-2 py-3">
-		<Button variant="outline" size="sm" onclick={contactsLoadMore} loading={contactsLoadingMore}>Load more</Button>
+		<Button variant="outline" size="sm" onclick={contactsLoadMore} loading={contactsLoadingMore}>{t(locale, 'people.load-more-contacts')}</Button>
 		{#if contactsLoadMoreError}
 			<div
 				role="alert"
@@ -712,7 +716,7 @@
 						onclick={contactsLoadMore}
 						class="mt-1 underline underline-offset-2 hover:no-underline"
 					>
-						Retry
+					{t(locale, 'people.retry')}
 					</button>
 				</div>
 			</div>
