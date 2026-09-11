@@ -30,6 +30,8 @@
     "./templates": "./src/templates.ts",
     "./house-style": "./src/house-style.ts",
     "./style-check": "./src/style-check.ts",
+    "./voice-metrics": "./src/voice-metrics.ts",
+    "./voice-eval-cases": "./src/voice-eval-cases.ts",
     "./assist/suggest-prompt": "./src/assist/suggest-prompt.ts",
     "./assist/envelope": "./src/assist/envelope.ts",
     "./assist/context": "./src/assist/context.ts",
