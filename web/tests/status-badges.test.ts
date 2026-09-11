@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { DRAFT_KINDS } from '@pitchbox/shared/quota-types';
 import { REPLY_KINDS } from '@pitchbox/shared/reply-drafter';
-import { DRAFT_KIND, resolveBadge, badgeLabel, BADGE_DOMAIN } from '../src/lib/config/status-badges';
+import {
+  DRAFT_KIND,
+  resolveBadge,
+  badgeLabel,
+  BADGE_DOMAIN,
+} from '../src/lib/config/status-badges';
 
 // `badgeLabel` falls through to the raw value for one `resolveBadge` does not
 // know either, which is the right behaviour for genuinely unknown data but

@@ -96,7 +96,7 @@
 >
 	<div class="flex justify-between items-center gap-2">
 		<span class="font-medium text-sm truncate flex items-center gap-1.5">
-			{presenter.primaryLabel(draft)}
+			{presenter.primaryLabel(locale, draft)}
 			{#if draft.variantLabel}
 				<span
 					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-200"

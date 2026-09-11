@@ -7,16 +7,16 @@ import '../../src/lib/platforms/linkedin/presenter';
 describe('presenter registry', () => {
   it('returns Reddit presenter with r/ and u/ semantics', () => {
     const p = getPresenter('reddit');
-    expect(p.primaryLabel({ kind: 'dm', targetUser: 'bob', metadata: {} })).toBe('u/bob');
+    expect(p.primaryLabel('en', { kind: 'dm', targetUser: 'bob', metadata: {} })).toBe('u/bob');
     expect(
-      p.primaryLabel({
+      p.primaryLabel('en', {
         kind: 'post_comment',
         targetUser: null,
         metadata: { subreddit: 'rpg' },
       }),
     ).toBe('r/rpg');
     expect(p.userLabel('alice')).toBe('u/alice');
-    expect(p.eventLabel('armed')).toBe('Send clicked on Reddit');
+    expect(p.eventLabel('en', 'armed')).toBe('Send clicked on Reddit');
   });
 
   // The reply drafter's kinds are `reply_dm` / `reply_comment`, not `dm` /
@@ -25,8 +25,10 @@ describe('presenter registry', () => {
   // as a data bug (#258).
   it('treats a reply DM as DM-shaped, with no subreddit expected', () => {
     const p = getPresenter('reddit');
-    expect(p.primaryLabel({ kind: 'reply_dm', targetUser: 'bob', metadata: {} })).toBe('u/bob');
-    expect(p.primaryLabel({ kind: 'reply_dm', targetUser: null, metadata: {} })).toBe(
+    expect(p.primaryLabel('en', { kind: 'reply_dm', targetUser: 'bob', metadata: {} })).toBe(
+      'u/bob',
+    );
+    expect(p.primaryLabel('en', { kind: 'reply_dm', targetUser: null, metadata: {} })).toBe(
       'Reddit DM reply',
     );
   });
@@ -34,47 +36,51 @@ describe('presenter registry', () => {
   it('names a comment reply by its subreddit, since it lives in one', () => {
     const p = getPresenter('reddit');
     expect(
-      p.primaryLabel({
+      p.primaryLabel('en', {
         kind: 'reply_comment',
         targetUser: 'bob',
         metadata: { subreddit: 'selfhosted' },
       }),
     ).toBe('r/selfhosted');
-    expect(p.primaryLabel({ kind: 'reply_comment', targetUser: null, metadata: {} })).toBe(
+    expect(p.primaryLabel('en', { kind: 'reply_comment', targetUser: null, metadata: {} })).toBe(
       'Reddit reply',
     );
   });
 
   it('returns Mastodon presenter with fully-qualified-handle semantics', () => {
     const p = getPresenter('mastodon');
-    expect(p.primaryLabel({ kind: 'dm', targetUser: 'alice@fosstodon.org', metadata: {} })).toBe(
-      'alice@fosstodon.org',
+    expect(
+      p.primaryLabel('en', { kind: 'dm', targetUser: 'alice@fosstodon.org', metadata: {} }),
+    ).toBe('alice@fosstodon.org');
+    expect(p.primaryLabel('en', { kind: 'post', targetUser: null, metadata: {} })).toBe(
+      'Mastodon post',
     );
-    expect(p.primaryLabel({ kind: 'post', targetUser: null, metadata: {} })).toBe('Mastodon post');
     // Handles are already fully qualified - no double "@" prefixing.
     expect(p.userLabel('@bot@mastodon.example')).toBe('@bot@mastodon.example');
     expect(p.userLabel('bot@mastodon.example')).toBe('@bot@mastodon.example');
-    expect(p.eventLabel('armed')).toBe('Send clicked on Mastodon');
+    expect(p.eventLabel('en', 'armed')).toBe('Send clicked on Mastodon');
   });
 
   it('returns LinkedIn presenter with the vanity slug rendered as a profile path, not @handle', () => {
     const p = getPresenter('linkedin');
-    expect(p.primaryLabel({ kind: 'post_comment', targetUser: 'jane-doe', metadata: {} })).toBe(
-      'linkedin.com/in/jane-doe',
+    expect(
+      p.primaryLabel('en', { kind: 'post_comment', targetUser: 'jane-doe', metadata: {} }),
+    ).toBe('linkedin.com/in/jane-doe');
+    expect(
+      p.primaryLabel('en', { kind: 'comment_reply', targetUser: 'jane-doe', metadata: {} }),
+    ).toBe('linkedin.com/in/jane-doe');
+    expect(p.primaryLabel('en', { kind: 'post', targetUser: null, metadata: {} })).toBe(
+      'LinkedIn post',
     );
-    expect(p.primaryLabel({ kind: 'comment_reply', targetUser: 'jane-doe', metadata: {} })).toBe(
-      'linkedin.com/in/jane-doe',
-    );
-    expect(p.primaryLabel({ kind: 'post', targetUser: null, metadata: {} })).toBe('LinkedIn post');
     expect(p.userLabel('jane-doe')).toBe('linkedin.com/in/jane-doe');
-    expect(p.eventLabel('armed')).toBe('Send clicked on LinkedIn');
+    expect(p.eventLabel('en', 'armed')).toBe('Send clicked on LinkedIn');
   });
 
   it('falls back to a generic presenter for unknown slugs', () => {
     const p = getPresenter('mystery');
-    expect(p.primaryLabel({ kind: 'dm', targetUser: 'bob', metadata: {} })).toBe('@bob');
+    expect(p.primaryLabel('en', { kind: 'dm', targetUser: 'bob', metadata: {} })).toBe('@bob');
     expect(p.userLabel('alice')).toBe('@alice');
-    expect(p.eventLabel('armed')).toBeNull();
+    expect(p.eventLabel('en', 'armed')).toBeNull();
   });
 });
 
