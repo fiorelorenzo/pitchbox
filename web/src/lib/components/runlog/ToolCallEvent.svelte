@@ -16,9 +16,11 @@
 		XCircle,
 	} from '@lucide/svelte';
 	import { slide } from 'svelte/transition';
+	import { page } from '$app/stores';
 	import type { CliEnvelope } from './types';
 	import TodoWriteCard from './TodoWriteCard.svelte';
 	import { resolveTone, TONE_CLASS, TONE_TEXT_CLASS } from '$lib/config/status-badges';
+	import { t, splitAroundToken, type Locale } from '$lib/i18n/index.js';
 
 	const toolCallTone = resolveTone('event-kind', 'tool-call');
 
@@ -42,6 +44,8 @@
 		collapsed: boolean;
 		ontoggle: () => void;
 	} = $props();
+
+	const locale = $derived($page.data.locale as Locale);
 
 	type IconComponent = typeof Terminal;
 
@@ -77,6 +81,13 @@
 	);
 	let fileName = $derived(filePath ? filePath.split('/').filter(Boolean).pop() ?? filePath : '');
 
+	// "Launching {skill}" embeds the skill name as its own element (not
+	// plain interpolated text), so it splits around the token rather than
+	// building the sentence with string concatenation.
+	let launchingSkillParts = $derived(
+		splitAroundToken(locale, 'runlog.launching-skill', 'skill'),
+	);
+
 	let copied = $state(false);
 	async function copyCommand(e: MouseEvent) {
 		e.stopPropagation();
@@ -99,23 +110,6 @@
 		!pr ? 'pending' : pr.isError ? 'error' : 'ok',
 	);
 	let statusTone = $derived(resolveTone('tool-call-status', statusKind));
-
-	function describeEnvelopeData(d: unknown): string {
-		if (!d || typeof d !== 'object') return String(d ?? '');
-		if (Array.isArray(d)) return `${d.length} items`;
-		const obj = d as Record<string, unknown>;
-		if ('runId' in obj && ('accounts' in obj || 'campaign' in obj)) {
-			const parts = [`run #${obj.runId} started`];
-			if (obj.project) parts.push(`project ${obj.project}`);
-			if (Array.isArray(obj.accounts)) parts.push(`${obj.accounts.length} accounts`);
-			if (obj.contacted != null) parts.push(`${obj.contacted} contacted`);
-			return parts.join(' · ');
-		}
-		if ('runId' in obj && 'candidatesFetched' in obj) return `${obj.candidatesFetched} candidates fetched`;
-		if ('runId' in obj && 'inserted' in obj) return `${obj.inserted} drafts created`;
-		if ('runId' in obj && 'staged' in obj) return `${obj.staged} staged candidates`;
-		return `{${Object.keys(obj).slice(0, 5).join(', ')}}`;
-	}
 </script>
 
 <div class="min-w-0">
@@ -174,7 +168,8 @@
 						<span class="text-muted-foreground/50 ml-1">{data.input.path}</span>
 					{/if}
 				{:else if data.name.toLowerCase() === 'skill'}
-					Launching <span class="font-semibold">{data.input.skill ?? '-'}</span>
+					{launchingSkillParts[0]}<span class="font-semibold">{data.input.skill ?? '-'}</span
+					>{launchingSkillParts[1]}
 				{:else if isTodoWrite}
 					<TodoWriteCard todos={data.input.todos as { status: string; content: string; activeForm: string }[]} inline />
 				{:else}
@@ -186,24 +181,26 @@
 			<span class="shrink-0 flex items-center gap-1">
 				{#if statusKind === 'pending'}
 					<Loader2 class="size-3 animate-spin {TONE_TEXT_CLASS[statusTone]}" />
-					<span class="text-[10px] {TONE_TEXT_CLASS[statusTone]} font-mono">running</span>
+					<span class="text-[10px] {TONE_TEXT_CLASS[statusTone]} font-mono"
+						>{t(locale, 'runlog.status-running')}</span
+					>
 				{:else if statusKind === 'error'}
 					<XCircle class="size-3 text-destructive" />
 					{#if pr?.exitCode !== undefined}
 						<span class="text-[10px] font-mono rounded px-1 py-0.5 bg-destructive/15 text-destructive"
-							>exit {pr.exitCode}</span
+							>{t(locale, 'runlog.status-exit', { code: pr.exitCode })}</span
 						>
 					{:else}
-						<span class="text-[10px] font-mono text-destructive">error</span>
+						<span class="text-[10px] font-mono text-destructive">{t(locale, 'runlog.status-error')}</span>
 					{/if}
 				{:else}
 					<CheckCircle2 class="size-3 {TONE_TEXT_CLASS[statusTone]}" />
 					{#if isBashTool && pr?.exitCode !== undefined}
 						<span class="text-[10px] font-mono rounded px-1 py-0.5 {TONE_CLASS[statusTone]}"
-							>exit {pr.exitCode}</span
+							>{t(locale, 'runlog.status-exit', { code: pr.exitCode })}</span
 						>
 					{:else}
-						<span class="text-[10px] font-mono {TONE_TEXT_CLASS[statusTone]}">ok</span>
+						<span class="text-[10px] font-mono {TONE_TEXT_CLASS[statusTone]}">{t(locale, 'runlog.status-ok')}</span>
 					{/if}
 				{/if}
 			</span>
@@ -211,7 +208,7 @@
 			<span
 				class="text-xs text-muted-foreground/50 shrink-0 group-hover:text-muted-foreground"
 			>
-				{collapsed ? 'expand' : 'collapse'}
+				{collapsed ? t(locale, 'runlog.expand') : t(locale, 'runlog.collapse')}
 			</span>
 		</button>
 
@@ -220,7 +217,7 @@
 			<button
 				onclick={copyCommand}
 				class="shrink-0 text-muted-foreground/60 hover:text-muted-foreground transition-colors p-0.5 rounded"
-				aria-label="Copy command"
+				aria-label={t(locale, 'runlog.aria-copy-command')}
 			>
 				{#if copied}
 					<Check class="size-3 text-emerald-600 dark:text-emerald-400" />
@@ -236,7 +233,9 @@
 		<div transition:slide={{ duration: 160 }} class="mt-2 min-w-0 space-y-2">
 			<!-- Input section -->
 			<div>
-				<p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/50 mb-1">Input</p>
+				<p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/50 mb-1">
+					{t(locale, 'runlog.input-label')}
+				</p>
 				{#if isBashTool}
 					<div class="min-w-0 max-w-full overflow-x-auto rounded bg-muted/60 border border-border/50">
 						<pre class="font-mono text-xs whitespace-pre p-2 text-foreground/90 min-w-0">{command}</pre>
@@ -262,14 +261,16 @@
 						{/each}
 					</dl>
 				{:else}
-					<p class="text-xs text-muted-foreground/50 italic">No input parameters</p>
+					<p class="text-xs text-muted-foreground/50 italic">{t(locale, 'runlog.no-input-parameters')}</p>
 				{/if}
 			</div>
 
 			<!-- Output section (only if paired result is available) -->
 			{#if pr}
 				<div>
-					<p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/50 mb-1">Output</p>
+					<p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/50 mb-1">
+						{t(locale, 'runlog.output-label')}
+					</p>
 					{#if pr.isError}
 						<div class="rounded bg-destructive/10 border border-destructive/30 p-2 overflow-x-auto">
 							<pre class="font-mono text-xs whitespace-pre-wrap break-all text-destructive/90">{pr.text}</pre>
@@ -279,7 +280,7 @@
 						{#if env.ok}
 							{#if isTodoWrite}
 								<!-- TodoWrite result is trivial, de-emphasise it -->
-								<p class="text-xs text-muted-foreground/50 italic">Todos updated.</p>
+								<p class="text-xs text-muted-foreground/50 italic">{t(locale, 'runlog.todos-updated')}</p>
 							{:else}
 								<dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs min-w-0">
 									{#each Object.entries((env.data as Record<string, unknown>) ?? {}) as [k, v]}

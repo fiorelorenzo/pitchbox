@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Circle, Loader2, CheckCircle2 } from '@lucide/svelte';
+	import { page } from '$app/stores';
 	import { TONE_TEXT_CLASS } from '$lib/config/status-badges';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	let {
 		todos = [],
@@ -10,7 +12,9 @@
 		inline?: boolean;
 	} = $props();
 
-	let completed = $derived(todos.filter((t) => t.status === 'completed').length);
+	const locale = $derived($page.data.locale as Locale);
+
+	let completed = $derived(todos.filter((todo) => todo.status === 'completed').length);
 	let total = $derived(todos.length);
 	let pct = $derived(total > 0 ? Math.round((completed / total) * 100) : 0);
 </script>
@@ -18,14 +22,16 @@
 {#if inline}
 	<!-- Compact inline preview in header -->
 	<span class="text-muted-foreground/70 font-mono">
-		{completed}/{total} done
+		{t(locale, 'runlog.todos-inline', { completed, total })}
 	</span>
 {:else}
 	<!-- Full card in expanded body -->
 	<div class="space-y-2 min-w-0">
 		<!-- Header: N/M counter + progress bar -->
 		<div class="flex items-center gap-2">
-			<span class="text-xs text-muted-foreground tabular-nums shrink-0">{completed}/{total} completed</span>
+			<span class="text-xs text-muted-foreground tabular-nums shrink-0"
+				>{t(locale, 'runlog.todos-completed', { completed, total })}</span
+			>
 			{#if total > 0}
 				<div class="flex-1 h-1 rounded-full bg-muted/60 overflow-hidden">
 					<div

@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { Brain } from '@lucide/svelte';
 	import { slide } from 'svelte/transition';
+	import { page } from '$app/stores';
 	import Markdown from '$lib/components/Markdown.svelte';
-	import { resolveTone, TONE_TEXT_CLASS } from '$lib/config/status-badges';
+	import { resolveTone, TONE_TEXT_CLASS, badgeLabel } from '$lib/config/status-badges';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	const thinkingTone = resolveTone('event-kind', 'thinking');
 
@@ -11,6 +13,8 @@
 		collapsed,
 		ontoggle,
 	}: { data: { text: string }; collapsed: boolean; ontoggle: () => void } = $props();
+
+	const locale = $derived($page.data.locale as Locale);
 
 	let preview = $derived(
 		data.text.replace(/\s+/g, ' ').trim().slice(0, 80) +
@@ -25,12 +29,14 @@
 		aria-expanded={!collapsed}
 	>
 		<Brain class="size-3.5 {TONE_TEXT_CLASS[thinkingTone]} shrink-0" />
-		<span class="text-xs font-medium text-muted-foreground">Thinking</span>
+		<span class="text-xs font-medium text-muted-foreground"
+			>{badgeLabel(locale, 'event-kind', 'thinking')}</span
+		>
 		{#if collapsed && preview}
 			<span class="text-xs text-muted-foreground/60 italic truncate min-w-0 flex-1">{preview}</span>
 		{/if}
 		<span class="text-xs text-muted-foreground/50 ml-auto shrink-0 group-hover:text-muted-foreground">
-			{collapsed ? 'expand' : 'collapse'}
+			{collapsed ? t(locale, 'runlog.expand') : t(locale, 'runlog.collapse')}
 		</span>
 	</button>
 

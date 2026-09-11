@@ -2,10 +2,12 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { Loader, ChevronsDown, AlertTriangle } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
+	import { page } from '$app/stores';
 	import { getSseManager, type SseStatus } from '$lib/realtime/sse';
 	import {
 		resolveBadge,
 		resolveTone,
+		badgeLabel,
 		PULSE_DOT_CLASS,
 		TONE_BANNER_CLASS,
 	} from '$lib/config/status-badges';
@@ -13,6 +15,7 @@
 	import { relativeTimeFine } from '$lib/utils/time';
 	import { resetParser, dbEventToTimeline, pairToolEvents } from './runlog/parse';
 	import type { TimelineEvent } from './runlog/types';
+	import { t, tn, type Locale } from '$lib/i18n/index.js';
 
 	import EventRow from './runlog/EventRow.svelte';
 	import SessionEvent from './runlog/SessionEvent.svelte';
@@ -25,6 +28,8 @@
 	import UnknownEvent from './runlog/UnknownEvent.svelte';
 
 	let { runId = null }: { runId?: number | null } = $props();
+
+	const locale = $derived($page.data.locale as Locale);
 
 	let events = $state<TimelineEvent[]>([]);
 	let start = $state<number | null>(null);
@@ -79,8 +84,8 @@
 	);
 	const streamBannerText = $derived(
 		connectionKey === 'down'
-			? 'Live updates disconnected. Refresh the page to resume.'
-			: 'Live updates interrupted, reconnecting… new events may be delayed.',
+			? t(locale, 'runlog.stream-disconnected')
+			: t(locale, 'runlog.stream-reconnecting'),
 	);
 	const streamBannerClass = $derived(TONE_BANNER_CLASS[resolveTone('connection-status', connectionKey)]);
 	const streamDotClass = $derived.by(() => {
@@ -124,8 +129,8 @@
 				const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
 				const message =
 					res.status >= 500
-						? 'Could not load the run log. Please try again.'
-						: (body.error ?? body.message ?? 'Could not load the run log.');
+						? t(locale, 'runlog.load-error-server')
+						: (body.error ?? body.message ?? t(locale, 'runlog.load-error-generic'));
 				if (res.status >= 500) console.error('failed to load run events', rid, res.status, body);
 				loadError = message;
 				toast.error(message);
@@ -164,7 +169,7 @@
 			await tick();
 			if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
 		} catch {
-			const message = 'Could not load the run log, check your connection.';
+			const message = t(locale, 'runlog.load-error-network');
 			loadError = message;
 			toast.error(message);
 		}
@@ -321,13 +326,13 @@
 	<!-- Status bar -->
 	<div class="flex items-center gap-2 text-xs text-muted-foreground px-1">
 		<span class="inline-block size-2 rounded-full shrink-0 {statusDotClass}"></span>
-		<span class="font-medium text-foreground">{status}</span>
+		<span class="font-medium text-foreground">{badgeLabel(locale, 'run-live-status', status)}</span>
 		{#if runId != null}
 			<span class="bg-muted rounded px-1.5 py-0.5 font-mono">#{runId}</span>
 		{:else}
-			<span class="italic">Listening for runs…</span>
+			<span class="italic">{t(locale, 'runlog.listening')}</span>
 		{/if}
-		<span class="ml-auto shrink-0">{events.length} events</span>
+		<span class="ml-auto shrink-0">{tn(locale, 'runlog.events-count', events.length)}</span>
 	</div>
 
 	{#if showStreamBanner}
@@ -337,7 +342,7 @@
 		</div>
 	{:else if justReconnected}
 		<div class="px-1 text-xs text-muted-foreground">
-			Reconnected. Log refreshed in case any events were missed.
+			{t(locale, 'runlog.reconnected')}
 		</div>
 	{/if}
 
@@ -362,7 +367,7 @@
 								onclick={() => runId != null && loadHistory(runId)}
 								class="mt-1 underline underline-offset-2 hover:no-underline"
 							>
-								Retry
+								{t(locale, 'inbox.retry')}
 							</button>
 						</div>
 					</div>
@@ -371,18 +376,20 @@
 						class="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground/50"
 					>
 						<Loader class="size-4 animate-spin" />
-						<span class="text-xs">Waiting for the first event…</span>
+						<span class="text-xs">{t(locale, 'runlog.waiting-first-event')}</span>
 					</div>
 				{:else if runId != null}
 					<div class="flex flex-col items-center justify-center gap-1 py-10 text-center">
-						<p class="text-xs text-muted-foreground/60">No events recorded for run #{runId}.</p>
+						<p class="text-xs text-muted-foreground/60">
+							{t(locale, 'runlog.no-events-for-run', { runId })}
+						</p>
 						<p class="text-[10px] text-muted-foreground/40 italic">
-							This run may pre-date event persistence.
+							{t(locale, 'runlog.predates-persistence')}
 						</p>
 					</div>
 				{:else}
 					<p class="text-xs text-muted-foreground/50 text-center py-10 italic">
-						Idle - start a run to see events here.
+						{t(locale, 'runlog.idle-hint')}
 					</p>
 				{/if}
 			{:else}
@@ -390,7 +397,7 @@
 					{#each events as ev, i (ev.id)}
 						{@const isFirst = i === 0}
 						{@const isLast = i === events.length - 1}
-						{@const offset = relativeTimeFine(new Date(ev.ts))}
+						{@const offset = relativeTimeFine(new Date(ev.ts), locale)}
 						{@const isError = ev.result ? !ev.result.success : (ev.toolResult?.isError ?? false)}
 
 						<EventRow kind={ev.kind} {isFirst} {isLast} {offset} {isError}>
@@ -436,7 +443,7 @@
 				class="absolute bottom-2 right-2 z-10 flex items-center gap-1 text-xs bg-primary text-primary-foreground rounded-full px-3 py-1 shadow-md hover:bg-primary/90 transition-colors"
 			>
 				<ChevronsDown class="size-3" />
-				Jump to latest
+				{t(locale, 'runlog.jump-to-latest')}
 			</button>
 		{/if}
 	</div>

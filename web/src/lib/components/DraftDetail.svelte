@@ -14,7 +14,7 @@
 	import { relativeTime } from '$lib/utils/time';
 	import Markdown from '$lib/components/Markdown.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import { TONE_CLASS, TONE_BANNER_CLASS } from '$lib/config/status-badges';
+	import { TONE_CLASS, TONE_BANNER_CLASS, badgeLabel } from '$lib/config/status-badges';
 	import { replyUrl } from '$lib/utils/reply-url';
 	import { getPresenter, isExtensionAutomated } from '$lib/platforms/presenter';
 	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
@@ -27,7 +27,7 @@
 		DETERMINISTIC_QUALITY_MODEL,
 		type QualityRubric,
 	} from '@pitchbox/shared/quality-bands';
-	import { t, type Locale } from '$lib/i18n/index.js';
+	import { t, tn, type Locale } from '$lib/i18n/index.js';
 
 	// scoreBand's band names are a shared-package contract (not the design
 	// registry's Tone names) - mirrors DraftListItem's own translation table.
@@ -161,7 +161,7 @@
 		const outcome = await interpretDraftPatchResponse(res);
 		if (outcome.kind === 'version_conflict') {
 			await invalidateAll();
-			toast.info('This draft changed elsewhere, reloaded.');
+			toast.info(t(locale, 'inbox.toast-version-conflict'));
 			throw new DraftVersionConflictError();
 		}
 		if (outcome.kind === 'error') throw new Error(outcome.message);
@@ -172,10 +172,12 @@
 		approving = true;
 		try {
 			await patch({ state: 'approved' });
-			toast.success('Approved', { description: 'Open compose to send it.' });
+			toast.success(t(locale, 'inbox.state.approved'), {
+				description: t(locale, 'inbox.toast-approved-body'),
+			});
 		} catch (e) {
 			if (e instanceof DraftVersionConflictError) return;
-			toast.error('Action failed', { description: (e as Error).message });
+			toast.error(t(locale, 'inbox.toast-action-failed-title'), { description: (e as Error).message });
 		} finally {
 			approving = false;
 		}
@@ -185,10 +187,10 @@
 		rejecting = true;
 		try {
 			await patch({ state: 'rejected' });
-			toast.success('Rejected');
+			toast.success(t(locale, 'inbox.state.rejected'));
 		} catch (e) {
 			if (e instanceof DraftVersionConflictError) return;
-			toast.error('Action failed', { description: (e as Error).message });
+			toast.error(t(locale, 'inbox.toast-action-failed-title'), { description: (e as Error).message });
 		} finally {
 			rejecting = false;
 		}
@@ -228,11 +230,11 @@
 				const msg = await res.text();
 				throw new Error(msg || `HTTP ${res.status}`);
 			}
-			toast.success('Draft updated');
+			toast.success(t(locale, 'draft-detail.toast-draft-updated'));
 			editing = false;
 			await invalidateAll();
 		} catch (e) {
-			toast.error('Could not save edit', { description: (e as Error).message });
+			toast.error(t(locale, 'draft-detail.error-save-edit-title'), { description: (e as Error).message });
 		} finally {
 			savingEdit = false;
 		}
@@ -251,12 +253,12 @@
 				const msg = await res.text();
 				throw new Error(msg || `HTTP ${res.status}`);
 			}
-			toast.success('Regeneration requested');
+			toast.success(t(locale, 'draft-detail.toast-regen-requested'));
 			regenerateOpen = false;
 			regenerateHint = '';
 			await invalidateAll();
 		} catch (e) {
-			toast.error('Could not regenerate', { description: (e as Error).message });
+			toast.error(t(locale, 'draft-detail.error-regen-title'), { description: (e as Error).message });
 		} finally {
 			regenerating = false;
 		}
@@ -286,10 +288,10 @@
 		try {
 			const res = await fetch(`/api/drafts/${draft.id}/reply-draft/retry`, { method: 'POST' });
 			if (!res.ok) throw new Error(await res.text());
-			toast.success('Drafting the reply again');
+			toast.success(t(locale, 'draft-detail.toast-retry-reply'));
 			await invalidateAll();
 		} catch (e) {
-			toast.error('Could not retry', { description: (e as Error).message });
+			toast.error(t(locale, 'draft-detail.error-retry-title'), { description: (e as Error).message });
 		}
 	}
 
@@ -298,10 +300,10 @@
 		try {
 			const res = await fetch(`/api/drafts/${draft.id}/reply-draft/cancel`, { method: 'POST' });
 			if (!res.ok) throw new Error(await res.text());
-			toast.success('Drafting cancelled');
+			toast.success(t(locale, 'draft-detail.toast-cancel-drafting'));
 			await invalidateAll();
 		} catch (e) {
-			toast.error('Could not cancel', { description: (e as Error).message });
+			toast.error(t(locale, 'draft-detail.error-cancel-title'), { description: (e as Error).message });
 		}
 	}
 
@@ -310,10 +312,10 @@
 		try {
 			const res = await fetch(`/api/drafts/${draft.id}/regenerate/cancel`, { method: 'POST' });
 			if (!res.ok) throw new Error(await res.text());
-			toast.success('Regeneration cancelled');
+			toast.success(t(locale, 'draft-detail.toast-regen-cancelled'));
 			await invalidateAll();
 		} catch (e) {
-			toast.error('Could not cancel', { description: (e as Error).message });
+			toast.error(t(locale, 'draft-detail.error-cancel-title'), { description: (e as Error).message });
 		}
 	}
 
@@ -322,10 +324,10 @@
 		try {
 			const res = await fetch(`/api/drafts/${draft.id}/regenerate/undo`, { method: 'POST' });
 			if (!res.ok) throw new Error(await res.text());
-			toast.success('Reverted to the previous version');
+			toast.success(t(locale, 'draft-detail.toast-reverted'));
 			await invalidateAll();
 		} catch (e) {
-			toast.error('Could not undo', { description: (e as Error).message });
+			toast.error(t(locale, 'draft-detail.error-undo-title'), { description: (e as Error).message });
 		}
 	}
 
@@ -339,11 +341,11 @@
 		sendingNow = true;
 		try {
 			await patch({ state: 'sent', sentContent: sentDraftText });
-			toast.success('Marked as sent');
+			toast.success(t(locale, 'draft-detail.toast-marked-sent'));
 			sendDialogOpen = false;
 		} catch (e) {
 			if (e instanceof DraftVersionConflictError) return;
-			toast.error('Action failed', { description: (e as Error).message });
+			toast.error(t(locale, 'inbox.toast-action-failed-title'), { description: (e as Error).message });
 		} finally {
 			sendingNow = false;
 		}
@@ -353,7 +355,7 @@
 		if (!draft) return;
 		await navigator.clipboard.writeText(draft.body);
 		copied = true;
-		toast.success('Copied to clipboard');
+		toast.success(t(locale, 'draft-detail.toast-copied'));
 		setTimeout(() => (copied = false), 2000);
 	}
 
@@ -368,19 +370,18 @@
 	// the human to open the link, send it themselves, and click "Mark as sent".
 	const extensionAutomated = $derived(isExtensionAutomated(draft?.platformSlug ?? null));
 
-	const GENERIC_EVENT_LABEL: Record<string, string> = {
-		created: 'Created',
-		approved: 'Approved',
-		rejected: 'Rejected',
-		sent: 'Sent',
-		edited: 'Edited',
-		replied: 'Replied',
-		undeliverable: 'Undeliverable',
-	};
-
+	// A platform presenter's own eventLabel wins when it has one; failing
+	// that, "created"/"edited" are draft-detail's own (part one never gave
+	// them a badge-domain equivalent) and everything else - approved,
+	// rejected, sent, replied, undeliverable - already has a translated
+	// label in the draft-state badge registry, so reuse it rather than
+	// keeping a second, parallel copy of the same five words.
 	function eventLabel(event: string): string {
 		const fromPresenter = getPresenter(draft?.platformSlug ?? null).eventLabel(locale, event);
-		return fromPresenter ?? GENERIC_EVENT_LABEL[event] ?? event;
+		if (fromPresenter) return fromPresenter;
+		if (event === 'created') return t(locale, 'draft-detail.event.created');
+		if (event === 'edited') return t(locale, 'draft-detail.event.edited');
+		return badgeLabel(locale, 'draft-state', event);
 	}
 
 	let editedFromDraft = $derived(draft != null && sentDraftText !== draft.body);
@@ -402,7 +403,7 @@
 	const overQuota = $derived(overDay || overWeek);
 
 	function labelFor(qk: 'dm' | 'comment' | 'post'): string {
-		return { dm: 'DMs', comment: 'comments', post: 'posts' }[qk];
+		return t(locale, `draft-detail.quota-label.${qk}`);
 	}
 
 	// D44: the style checker's structural findings that survived
@@ -420,26 +421,40 @@
 	const isJudged = $derived(
 		!!draft && draft.qualityModel != null && draft.qualityModel !== DETERMINISTIC_QUALITY_MODEL,
 	);
+	// Mirrors DraftListItem's own qualityTitle: the translated lead-in plus
+	// the raw reason (never translated - it's the checker's/judge's own
+	// diagnostic text, not UI copy), or a bare period when there is none.
+	const qualityDescription = $derived.by(() => {
+		if (!draft) return '';
+		const base = isJudged
+			? t(locale, 'draft-detail.scored-by', { model: draft.qualityModel ?? '' })
+			: t(locale, 'draft-detail.computed-from');
+		return base + (draft.qualityReason ? `: ${draft.qualityReason}` : '.');
+	});
 </script>
 
 {#if draft}
 	{@const primary = getPresenter(draft.platformSlug).primaryLabel(locale, draft)}
 	{@const metaSegments = [
-		...(draft.fitScore != null ? [{ key: 'fit', text: `fit ${draft.fitScore}/5`, href: undefined }] : []),
-		{ key: 'run', text: `run #${draft.runId}`, href: `/inbox?run=${draft.runId}` },
-		...(draft.createdAt ? [{ key: 'created', text: relativeTime(draft.createdAt), href: undefined }] : []),
-		...(draft.sentAt ? [{ key: 'sent', text: `sent ${relativeTime(draft.sentAt)}`, href: undefined }] : []),
+		...(draft.fitScore != null
+			? [{ key: 'fit', text: t(locale, 'draft-list-item.fit-score', { score: draft.fitScore }), href: undefined }]
+			: []),
+		{ key: 'run', text: t(locale, 'draft-detail.meta-run', { run: draft.runId }), href: `/inbox?run=${draft.runId}` },
+		...(draft.createdAt
+			? [{ key: 'created', text: relativeTime(draft.createdAt, locale), href: undefined }]
+			: []),
+		...(draft.sentAt
+			? [{ key: 'sent', text: t(locale, 'draft-detail.meta-sent', { when: relativeTime(draft.sentAt, locale) }), href: undefined }]
+			: []),
 	]}
 	{@const openLabel = extensionAutomated
 		? draft.kind === 'dm'
-			? 'Open compose ↗'
+			? t(locale, 'draft-detail.open-label.dm')
 			: draft.kind === 'post'
-				? 'Open submit ↗'
-				: 'Open post ↗'
-		: 'Open to send (manual) ↗'}
-	{@const openTooltip = extensionAutomated
-		? undefined
-		: 'Pitchbox does not automate sending on this platform - open the link, send it yourself, then click "Mark as sent".'}
+				? t(locale, 'draft-detail.open-label.post')
+				: t(locale, 'draft-detail.open-label.default')
+		: t(locale, 'draft-detail.open-label.manual')}
+	{@const openTooltip = extensionAutomated ? undefined : t(locale, 'draft-detail.open-tooltip')}
 
 	<article class="h-full flex flex-col min-h-0">
 		<!-- Header: borderless, generous spacing -->
@@ -467,15 +482,15 @@
 					<div class="text-xs">
 						<span
 							class="inline-flex items-center gap-1 rounded-sm ring-1 ring-inset {TONE_CLASS.amber} px-1.5 py-0.5 text-[10px] font-medium"
-							title="This draft will not be sendable until {scheduledUntil.toLocaleString()}"
+							title={t(locale, 'draft-detail.scheduled-tooltip', { when: scheduledUntil.toLocaleString() })}
 						>
-							Scheduled until {scheduledUntil.toLocaleString()}
+							{t(locale, 'draft-list-item.scheduled-title', { when: scheduledUntil.toLocaleString() })}
 						</span>
 					</div>
 				{/if}
 				{#if draft.state === 'undeliverable' && draft.undeliverableReason}
 					<div class="rounded-md border px-3 py-2 text-sm {TONE_BANNER_CLASS.slate}">
-						<strong>Undeliverable.</strong>
+						<strong>{t(locale, 'draft-detail.undeliverable-label')}</strong>
 						{draft.undeliverableReason}
 					</div>
 				{/if}
@@ -483,19 +498,19 @@
 					{@const u = usage[quotaKind]}
 					{@const l = limits[quotaKind]}
 					{@const overLimit = u.day > l.perDay || u.week > l.perWeek}
-					{@const label = { dm: 'DMs', comment: 'comments', post: 'posts' }[quotaKind]}
+					{@const label = labelFor(quotaKind)}
 					<div class="text-xs text-muted-foreground">
-						Account quota:
+						{t(locale, 'draft-detail.account-quota-label')}
 						<span class={overLimit ? 'font-medium text-foreground' : ''}
-							>{u.day}/{l.perDay} {label} today</span
+							>{t(locale, 'draft-detail.quota-today', { day: u.day, limit: l.perDay, label })}</span
 						>
-						· {u.week}/{l.perWeek} this week
-						{#if overLimit}<span aria-hidden="true" title="Over limit">⚠</span>{/if}
+						· {t(locale, 'draft-detail.quota-week', { week: u.week, limit: l.perWeek })}
+						{#if overLimit}<span aria-hidden="true" title={t(locale, 'draft-detail.over-limit-title')}>⚠</span>{/if}
 					</div>
 				{/if}
 			</div>
 			<div class="flex gap-2 flex-wrap justify-end shrink-0">
-				<Button onclick={copyBody} variant="outline" size="sm" aria-label="Copy body to clipboard">
+				<Button onclick={copyBody} variant="outline" size="sm" aria-label={t(locale, 'draft-detail.aria-copy')}>
 					{#if copied}
 						<Check class="size-3.5" />
 					{:else}
@@ -508,27 +523,27 @@
 							<span
 								class="border-muted-foreground/40 border-t-foreground h-3 w-3 animate-spin rounded-full border-2"
 							></span>
-							Drafting reply…
+							{t(locale, 'draft-detail.drafting-reply')}
 						</span>
-						<Button onclick={cancelReplyDraft} variant="outline" size="sm">Cancel</Button>
+						<Button onclick={cancelReplyDraft} variant="outline" size="sm">{t(locale, 'inbox.cancel')}</Button>
 					{:else if draftingFailed}
-						<span class="text-destructive text-sm">Reply drafting failed</span>
-						<Button onclick={retryReplyDraft} variant="outline" size="sm">Retry</Button>
+						<span class="text-destructive text-sm">{t(locale, 'draft-detail.reply-drafting-failed')}</span>
+						<Button onclick={retryReplyDraft} variant="outline" size="sm">{t(locale, 'inbox.retry')}</Button>
 					{:else if isRegenerating}
 						<span class="text-muted-foreground inline-flex items-center gap-2 text-sm">
 							<span
 								class="border-muted-foreground/40 border-t-foreground h-3 w-3 animate-spin rounded-full border-2"
 							></span>
-							Regenerating…
+							{t(locale, 'draft-detail.regenerating')}
 						</span>
-						<Button onclick={cancelRegenerate} variant="outline" size="sm">Cancel</Button>
+						<Button onclick={cancelRegenerate} variant="outline" size="sm">{t(locale, 'inbox.cancel')}</Button>
 					{:else if !editing}
-						<Button onclick={startEdit} variant="outline" size="sm">Edit</Button>
+						<Button onclick={startEdit} variant="outline" size="sm">{t(locale, 'draft-detail.edit-button')}</Button>
 						<Button onclick={() => (regenerateOpen = true)} variant="outline" size="sm">
-							Regenerate
+							{t(locale, 'draft-detail.regenerate-button')}
 						</Button>
 						{#if (draft.regenerationCount ?? 0) > 0}
-							<Button onclick={undoRegenerate} variant="ghost" size="sm">Undo</Button>
+							<Button onclick={undoRegenerate} variant="ghost" size="sm">{t(locale, 'draft-detail.undo-button')}</Button>
 						{/if}
 					{/if}
 					<Button
@@ -538,9 +553,9 @@
 						variant="outline"
 						size="sm"
 						class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
-						aria-label="Reject draft"
+						aria-label={t(locale, 'draft-detail.aria-reject')}
 					>
-						Reject
+						{t(locale, 'inbox.reject-button')}
 					</Button>
 					<Button
 						onclick={approve}
@@ -548,9 +563,9 @@
 						disabled={approving || rejecting || isRegenerating || isDrafting || draftingFailed}
 						variant="default"
 						size="sm"
-						aria-label="Approve draft"
+						aria-label={t(locale, 'draft-detail.aria-approve')}
 					>
-						Approve
+						{t(locale, 'draft-detail.approve-button')}
 					</Button>
 				{/if}
 				{#if draft.state === 'approved' && draft.composeUrl}
@@ -566,13 +581,13 @@
 						size="sm"
 					>
 						<ExternalLink class="size-3.5" />
-						{openLabel.replace(' ↗', '')}
+						{openLabel}
 					</Button>
 				{/if}
 				{#if draft.state === 'approved'}
 					<Button onclick={openSendDialog} variant="outline" size="sm">
 						<Send class="size-3.5" />
-						Mark as sent
+						{t(locale, 'draft-detail.mark-as-sent')}
 					</Button>
 				{/if}
 			</div>
@@ -583,8 +598,8 @@
 			{#if hasSentVariant}
 				<Tabs.Root value="drafted" class="flex-1 flex flex-col min-h-0">
 					<Tabs.List class="w-fit">
-						<Tabs.Trigger value="drafted">Drafted</Tabs.Trigger>
-						<Tabs.Trigger value="sent">Sent</Tabs.Trigger>
+						<Tabs.Trigger value="drafted">{t(locale, 'draft-detail.tab-drafted')}</Tabs.Trigger>
+						<Tabs.Trigger value="sent">{t(locale, 'draft-detail.tab-sent')}</Tabs.Trigger>
 					</Tabs.List>
 					<Tabs.Content value="drafted" class="flex-1 min-h-0 mt-2">
 						<ScrollArea class="h-full rounded-lg border border-border/60 bg-muted/20 p-4">
@@ -602,14 +617,14 @@
 					<Textarea
 						bind:value={editText}
 						class="flex-1 min-h-[200px] resize-none font-mono text-sm"
-						aria-label="Draft body"
+						aria-label={t(locale, 'draft-detail.aria-draft-body')}
 					/>
 					<div class="flex justify-end gap-2">
 						<Button onclick={cancelEdit} variant="outline" size="sm" disabled={savingEdit}>
-							Cancel
+							{t(locale, 'inbox.cancel')}
 						</Button>
 						<Button onclick={saveEdit} loading={savingEdit} variant="default" size="sm">
-							Save
+							{t(locale, 'draft-detail.save-button')}
 						</Button>
 					</div>
 				</div>
@@ -626,8 +641,7 @@
 					class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex flex-col gap-2"
 				>
 					<p class="text-xs font-medium text-destructive">
-						Style check flagged {styleFindings.length}
-						{styleFindings.length === 1 ? 'issue' : 'issues'}
+						{tn(locale, 'draft-detail.style-check-flagged', styleFindings.length)}
 					</p>
 					<ul class="flex flex-col gap-1.5">
 						{#each styleFindings as finding (finding.ruleId + finding.span)}
@@ -657,17 +671,11 @@
 							BAND_TONE[qualityBand as 'red' | 'amber' | 'green']
 						]}"
 					>
-						{isJudged ? 'Judged' : 'Measured'}
+						{isJudged ? t(locale, 'draft-detail.judged-word') : t(locale, 'draft-detail.measured-word')}
 						{draft.qualityScore}
 					</span>
 					<span class="text-foreground/80">
-						{#if isJudged}
-							Scored by {draft.qualityModel}{draft.qualityReason ? `: ${draft.qualityReason}` : '.'}
-						{:else}
-							Computed from the style checker and the operator's own voice - no model call{draft.qualityReason
-								? `: ${draft.qualityReason}`
-								: '.'}
-						{/if}
+						{qualityDescription}
 					</span>
 				</div>
 			{/if}
@@ -676,7 +684,7 @@
 				<div
 					class="rounded-lg bg-muted/10 border-l-2 border-primary/40 px-3 py-2 text-xs text-muted-foreground"
 				>
-					<span class="font-medium text-foreground/70">Why it fits. </span>
+					<span class="font-medium text-foreground/70">{t(locale, 'draft-detail.why-it-fits')}</span>
 					{draft.reasoning}
 				</div>
 			{/if}
@@ -685,7 +693,7 @@
 				<div class="rounded-lg border-l-2 border-violet-400/60 bg-muted/40 p-3">
 					<div class="flex items-start justify-between gap-3">
 						<p class="text-[10px] uppercase tracking-wide text-muted-foreground">
-							Reply from u/{latestReply.author}
+							{t(locale, 'draft-detail.reply-from', { author: latestReply.author })}
 						</p>
 						<Button
 							href={replyUrl({
@@ -715,7 +723,7 @@
 			{#if events.length > 0}
 				<div class="pt-3 border-t border-border">
 					<p class="text-[10px] font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
-						Timeline
+						{t(locale, 'draft-detail.timeline-label')}
 					</p>
 					<ol class="flex flex-col gap-3">
 						{#each events as ev, i (ev.id)}
@@ -732,9 +740,9 @@
 								</div>
 								<div class="flex-1 min-w-0 flex items-baseline gap-2 flex-wrap">
 									<span class="text-xs font-medium">{eventLabel(ev.event)}</span>
-									<span class="text-[10px] text-muted-foreground">by {ev.actor}</span>
+									<span class="text-[10px] text-muted-foreground">{t(locale, 'draft-detail.by-actor', { actor: ev.actor })}</span>
 									<span class="text-[10px] text-muted-foreground ml-auto tabular-nums">
-										{relativeTime(ev.createdAt)}
+										{relativeTime(ev.createdAt, locale)}
 									</span>
 								</div>
 							</li>
@@ -742,45 +750,51 @@
 					</ol>
 				</div>
 			{:else if loadingEvents}
-				<div class="text-xs text-muted-foreground/60 italic">Loading timeline…</div>
+				<div class="text-xs text-muted-foreground/60 italic">{t(locale, 'draft-detail.loading-timeline')}</div>
 			{/if}
 		</div>
 	</article>
 {:else}
 	<div class="h-full flex items-center justify-center text-muted-foreground text-sm">
-		Select a draft
+		{t(locale, 'draft-detail.select-a-draft')}
 	</div>
 {/if}
 
 <Dialog.Root bind:open={sendDialogOpen}>
 	<Dialog.Content class="max-w-2xl">
 		<Dialog.Header>
-			<Dialog.Title>Mark as sent</Dialog.Title>
+			<Dialog.Title>{t(locale, 'draft-detail.dialog.mark-sent-title')}</Dialog.Title>
 			<Dialog.Description>
-				Paste or edit what you actually sent. Saved on the draft for future reference{draft?.targetUser
-					? ' and logged to contact history.'
-					: '. This draft has no recipient, so nothing is written to contact history.'}
+				{draft?.targetUser
+					? t(locale, 'draft-detail.dialog.mark-sent-desc-with-recipient')
+					: t(locale, 'draft-detail.dialog.mark-sent-desc-no-recipient')}
 			</Dialog.Description>
 		</Dialog.Header>
 		{#if overQuota && quotaKind && usage && limits}
 			<div class="rounded-md border px-3 py-2 text-sm {TONE_BANNER_CLASS.rose}">
-				<strong>Quota reached.</strong>
-				You've already sent {usage[quotaKind].day}/{limits[quotaKind].perDay} {labelFor(quotaKind)} today
-				{#if overWeek}and {usage[quotaKind].week}/{limits[quotaKind].perWeek} this week{/if}
-				from this account. The platform may rate-limit or suspend the account if you continue.
-				Proceed only if necessary.
+				<strong>{t(locale, 'draft-detail.quota-reached-title')}</strong>
+				{t(locale, 'draft-detail.quota-reached-sent', {
+					day: usage[quotaKind].day,
+					dayLimit: limits[quotaKind].perDay,
+					label: labelFor(quotaKind),
+				})}
+				{#if overWeek}{t(locale, 'draft-detail.quota-reached-and-week', {
+						week: usage[quotaKind].week,
+						weekLimit: limits[quotaKind].perWeek,
+					})}{/if}
+				{t(locale, 'draft-detail.quota-reached-warning')}
 			</div>
 		{/if}
 		<Textarea bind:value={sentDraftText} rows={12} class="font-mono text-xs" />
 		<div class="flex items-center justify-between text-xs text-muted-foreground">
 			<span>
 				{#if editedFromDraft}
-					<Badge variant="secondary" class="text-[10px]">Edited from draft</Badge>
+					<Badge variant="secondary" class="text-[10px]">{t(locale, 'draft-detail.edited-from-draft')}</Badge>
 				{:else}
-					<span>Identical to draft</span>
+					<span>{t(locale, 'draft-detail.identical-to-draft')}</span>
 				{/if}
 			</span>
-			<span>{sentDraftText.length} chars</span>
+			<span>{t(locale, 'draft-detail.chars-count', { n: sentDraftText.length })}</span>
 		</div>
 		<Dialog.Footer>
 			<Button
@@ -788,9 +802,9 @@
 				onclick={() => (sendDialogOpen = false)}
 				disabled={sendingNow}
 			>
-				Cancel
+				{t(locale, 'inbox.cancel')}
 			</Button>
-			<Button onclick={confirmSent} loading={sendingNow}>Confirm sent</Button>
+			<Button onclick={confirmSent} loading={sendingNow}>{t(locale, 'draft-detail.confirm-sent-button')}</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
@@ -799,15 +813,15 @@
 <Dialog.Root bind:open={regenerateOpen}>
 	<Dialog.Content class="max-w-lg">
 		<Dialog.Header>
-			<Dialog.Title>Regenerate draft</Dialog.Title>
+			<Dialog.Title>{t(locale, 'draft-detail.dialog.regenerate-title')}</Dialog.Title>
 			<Dialog.Description>
-				Optional hint for the agent: what should it change in the next pass?
+				{t(locale, 'draft-detail.dialog.regenerate-desc')}
 			</Dialog.Description>
 		</Dialog.Header>
 		<Textarea
 			bind:value={regenerateHint}
 			rows={5}
-			placeholder="e.g. Make it shorter and reference the latest comment."
+			placeholder={t(locale, 'draft-detail.regenerate-hint-placeholder')}
 		/>
 		<Dialog.Footer>
 			<Button
@@ -815,9 +829,9 @@
 				onclick={() => (regenerateOpen = false)}
 				disabled={regenerating}
 			>
-				Cancel
+				{t(locale, 'inbox.cancel')}
 			</Button>
-			<Button onclick={regenerate} loading={regenerating}>Regenerate</Button>
+			<Button onclick={regenerate} loading={regenerating}>{t(locale, 'draft-detail.regenerate-button')}</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

@@ -1,7 +1,11 @@
 <script lang="ts">
+	import { page } from '$app/stores';
 	import Markdown from '$lib/components/Markdown.svelte';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	let { data }: { data: { text: string } } = $props();
+
+	const locale = $derived($page.data.locale as Locale);
 
 	const TRUNCATE_AT = 400;
 
@@ -19,7 +23,7 @@
 			onclick={() => (expanded = !expanded)}
 			class="mt-1 text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline cursor-pointer"
 		>
-			{expanded ? 'Show less' : 'Show more'}
+			{expanded ? t(locale, 'runlog.show-less') : t(locale, 'runlog.show-more')}
 		</button>
 	{/if}
 </div>
