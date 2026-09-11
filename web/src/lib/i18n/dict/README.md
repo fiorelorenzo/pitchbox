@@ -22,7 +22,7 @@ Then register it once in each dictionary, as a spread:
 ```ts
 // dict-en.ts
 import { campaignsEn } from './dict/campaigns.js';
-export const en = { ...campaignsEn, /* existing keys */ } satisfies Dict;
+export const en = { ...campaignsEn /* existing keys */ } satisfies Dict;
 ```
 
 Two reasons, both learned the hard way in this repo.
