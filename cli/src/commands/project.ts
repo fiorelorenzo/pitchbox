@@ -89,11 +89,18 @@ async function loadRunContext(run: typeof schema.runs.$inferSelect): Promise<{
  * repositories keeps them apart and a second `files`/`read` call on the
  * same source costs nothing. `folder`/`upload` are already paths.
  *
+ * The cache holds the in-flight promise, not the resolved path, and that is
+ * the point: an agent can call `project_extract_read` on two files of the
+ * same repository in one turn, and a cache of resolved paths would let both
+ * calls miss, both `rm -rf` the target and both clone into it at once. A
+ * rejected clone is evicted so the next call retries rather than inheriting
+ * the failure forever.
+ *
  * A clone failure is thrown, not swallowed: the caller is a tool call the
  * agent made about this specific source, and it has other sources to fall
  * back on.
  */
-const clonedRoots = new Map<string, string>();
+const clonedRoots = new Map<string, Promise<string>>();
 
 async function resolveTreeSourcePath(
   run: typeof schema.runs.$inferSelect,
@@ -108,10 +115,12 @@ async function resolveTreeSourcePath(
     const cached = clonedRoots.get(key);
     if (cached) return cached;
     const path = `/tmp/pitchbox-extract-${run.id}-${source.id}`;
-    await rm(path, { recursive: true, force: true });
-    await shallowClone(value, path);
-    clonedRoots.set(key, path);
-    return path;
+    const cloning = rm(path, { recursive: true, force: true })
+      .then(() => shallowClone(value, path))
+      .then(() => path);
+    clonedRoots.set(key, cloning);
+    cloning.catch(() => clonedRoots.delete(key));
+    return cloning;
   }
 
   if (!isAbsolute(value)) throw new Error(`${source.kind} path must be absolute`);

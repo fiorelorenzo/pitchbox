@@ -51,7 +51,9 @@ export type ProjectSourceKind = (typeof PROJECT_SOURCE_KINDS)[number];
 export type ProjectSourceRow = typeof schema.projectSources.$inferSelect;
 
 /** Kind-specific input: e.g. `{ value: '/path/to/folder' }` for `folder`/`git`/
- * `upload`, `{ owner, repo, url }` for `github`, `{ url }` for `website`. */
+ * `upload`, `{ url }` for `website`, `{ instanceUrl, acct }` for
+ * `mastodon_account`. A `git` row created by migration 0018 also carries the
+ * `{ owner, repo, url }` its `github_sources` origin had. */
 export type ProjectSourceConfig = Record<string, unknown>;
 
 /** Kind-specific cached read: what the last successful fetch produced. */
