@@ -74,17 +74,6 @@
 			<Menu class="size-4" />
 		</button>
 
-		<!--
-		  Mobile connection indicator: the sidebar (and SystemStatusCard inside it)
-		  is off-canvas below md, so without this there is no way to see stream
-		  health on a phone short of opening the drawer.
-		-->
-		<div
-			class="md:hidden fixed top-3 right-3 z-40 rounded-md border border-border bg-background/90 backdrop-blur shadow-sm px-2 py-1.5"
-		>
-			<SseIndicator />
-		</div>
-
 		<!-- Backdrop for mobile drawer -->
 		{#if sidebarOpen}
 			<button
@@ -122,6 +111,20 @@
 		</div>
 
 		<main class="flex-1 overflow-auto p-4 sm:p-6 pt-14 md:pt-6 min-w-0">
+			<!--
+			  Mobile connection indicator: the sidebar (and SystemStatusCard inside
+			  it) is off-canvas below md, so without this there is no way to see
+			  stream health on a phone short of opening the drawer. Fixed-position,
+			  so nesting it inside <main> (a landmark axe requires all content sit
+			  in) does not change where it renders on screen; <main> and its
+			  ancestors carry no transform, so the fixed positioning stays relative
+			  to the viewport.
+			-->
+			<div
+				class="md:hidden fixed top-3 right-3 z-40 rounded-md border border-border bg-background/90 backdrop-blur shadow-sm px-2 py-1.5"
+			>
+				<SseIndicator />
+			</div>
 			<BillingGraceBanner billing={data.billing} />
 			{@render children()}
 		</main>
