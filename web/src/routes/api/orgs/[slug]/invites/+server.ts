@@ -74,6 +74,16 @@ export async function POST(event: import('@sveltejs/kit').RequestEvent) {
   let emailSent = false;
   if (parsed.data.email) {
     const transport = createMailTransport(loadMailEnv());
+    // Locale source (LOR-264, docs/design/DECISIONS.md D47): the
+    // *inviter's* own `event.locals.locale`, not the invitee's - the
+    // invitee has no account and no request of their own yet for the
+    // server to negotiate a language from, so there is nothing else to
+    // read. This is a real default, not a placeholder: an org's invites
+    // are typically sent within one language community (a company, a
+    // team), so the person who is already using the dashboard in a given
+    // language is the best available signal for the one being invited
+    // into it. If that stops holding (e.g. a multi-language org), the fix
+    // is a locale field on the invite form itself, not a guess here.
     await transport.send(
       inviteMail(event.locals.locale, {
         to: parsed.data.email,
