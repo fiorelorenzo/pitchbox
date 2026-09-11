@@ -1,16 +1,21 @@
 <script lang="ts">
+  import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
+
   type Props = {
     value: string[];
     placeholder?: string;
     disabled?: boolean;
     onChange?: (v: string[]) => void;
   };
-  let {
-    value = $bindable(),
-    placeholder = 'Add and press Enter',
-    disabled = false,
-    onChange,
-  }: Props = $props();
+  let { value = $bindable(), placeholder, disabled = false, onChange }: Props = $props();
+
+  const locale = $derived($page.data.locale as Locale);
+  // Callers that don't pass their own placeholder (e.g. this input used
+  // stand-alone rather than from a translated caller) still get one from
+  // the catalogue rather than a hardcoded English default.
+  const effectivePlaceholder = $derived(placeholder ?? t(locale, 'projects.tag-input-placeholder'));
+
   let draft = $state('');
 
   function update(next: string[]) {
@@ -44,11 +49,11 @@
     ? 'opacity-60 pointer-events-none'
     : ''}"
 >
-  {#each value as t, i (t)}
+  {#each value as item, i (item)}
     <span
       class="bg-secondary text-secondary-foreground text-xs rounded px-2 py-0.5 inline-flex items-center gap-1"
     >
-      {t}
+      {item}
       <button
         type="button"
         class="text-muted-foreground hover:text-foreground"
@@ -63,7 +68,7 @@
     bind:value={draft}
     onkeydown={onKey}
     onblur={add}
-    {placeholder}
+    placeholder={effectivePlaceholder}
     {disabled}
   />
 </div>

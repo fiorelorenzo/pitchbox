@@ -21,6 +21,7 @@
   // deliberately left out of `ADD_KIND_OPTIONS` below - the selector work to
   // fill one hasn't shipped, so offering the button would create a row that
   // can only ever say "waiting for you to open it", forever.
+  import { page } from '$app/stores';
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import * as AlertDialog from '$lib/components/ui/alert-dialog';
@@ -32,6 +33,7 @@
   import { toast } from 'svelte-sonner';
   import { Trash2, RefreshCw, Play } from '@lucide/svelte';
   import type { ProjectSourceKind } from '@pitchbox/shared/project-sources';
+  import { t, type Locale } from '$lib/i18n/index.js';
 
   // Re-exported so a consumer (the project page's load function/props) can
   // still name this type off the panel, without this panel keeping its own
@@ -60,29 +62,31 @@
   };
   let { projectId, sources, isAdmin, onExtractionLaunched }: Props = $props();
 
+  const locale = $derived($page.data.locale as Locale);
+
   // svelte-ignore state_referenced_locally
   let sourcesState = $state(sources);
   $effect(() => {
     sourcesState = sources;
   });
 
-  const KIND_LABEL: Record<ProjectSourceKind, string> = {
-    folder: 'Local folder',
-    git: 'Git repository',
-    upload: 'Uploaded folder',
-    github: 'GitHub repository',
-    website: 'Website',
-    linkedin_company: 'LinkedIn company page',
-    linkedin_profile: 'LinkedIn profile',
-    linkedin_post: 'LinkedIn post',
-    mastodon_account: 'Mastodon account',
-    hackernews_author: 'Hacker News author',
-  };
+  const KIND_LABEL = $derived<Record<ProjectSourceKind, string>>({
+    folder: t(locale, 'projects.source-kind.folder'),
+    git: t(locale, 'projects.source-kind.git'),
+    upload: t(locale, 'projects.source-kind.upload'),
+    github: t(locale, 'projects.source-kind.github'),
+    website: t(locale, 'projects.source-kind.website'),
+    linkedin_company: t(locale, 'projects.source-kind.linkedin_company'),
+    linkedin_profile: t(locale, 'projects.source-kind.linkedin_profile'),
+    linkedin_post: t(locale, 'projects.source-kind.linkedin_post'),
+    mastodon_account: t(locale, 'projects.source-kind.mastodon_account'),
+    hackernews_author: t(locale, 'projects.source-kind.hackernews_author'),
+  });
 
   // Kinds this panel's Add form can create directly: value-only sources.
   // `folder`/`upload` are excluded - see the file header comment.
   // `linkedin_company` is excluded too, on purpose - see the same comment.
-  const ADD_KIND_OPTIONS: Array<{ value: ProjectSourceKind; label: string }> = [
+  const ADD_KIND_OPTIONS = $derived<Array<{ value: ProjectSourceKind; label: string }>>([
     { value: 'git', label: KIND_LABEL.git },
     { value: 'github', label: KIND_LABEL.github },
     { value: 'website', label: KIND_LABEL.website },
@@ -90,7 +94,7 @@
     { value: 'hackernews_author', label: KIND_LABEL.hackernews_author },
     { value: 'linkedin_profile', label: KIND_LABEL.linkedin_profile },
     { value: 'linkedin_post', label: KIND_LABEL.linkedin_post },
-  ];
+  ]);
 
   const VALUE_PLACEHOLDER: Partial<Record<ProjectSourceKind, string>> = {
     git: 'https://github.com/owner/repo.git or git@host:owner/repo.git',
@@ -150,7 +154,7 @@
   async function addSource() {
     const value = addValue.trim();
     if (!value) {
-      toast.error('Enter a value first');
+      toast.error(t(locale, 'projects.error-enter-value-first'));
       return;
     }
     adding = true;
@@ -162,17 +166,21 @@
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(res.status === 403 ? 'You need admin access for that' : (body?.message ?? 'Failed to add source'));
+        toast.error(
+          res.status === 403
+            ? t(locale, 'projects.error-admin-required')
+            : (body?.message ?? t(locale, 'projects.error-add-source-failed')),
+        );
         return;
       }
       sourcesState = [...sourcesState, body.source as ProjectSource];
       addValue = '';
       if (isPassivelyFilledLinkedInSource(body.source?.kind)) {
-        toast.info('Waiting for you to open that page on linkedin.com.');
+        toast.info(t(locale, 'projects.toast-linkedin-waiting'));
       } else if (body.source?.fetchError) {
-        toast.warning(`Added, but the first sync failed: ${body.source.fetchError}`);
+        toast.warning(t(locale, 'projects.toast-added-sync-failed', { error: body.source.fetchError }));
       } else {
-        toast.success('Source added');
+        toast.success(t(locale, 'projects.toast-source-added'));
       }
     } finally {
       adding = false;
@@ -187,18 +195,22 @@
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(res.status === 403 ? 'You need admin access for that' : (body?.message ?? 'Sync failed'));
+        toast.error(
+          res.status === 403
+            ? t(locale, 'projects.error-admin-required')
+            : (body?.message ?? t(locale, 'projects.error-sync-failed')),
+        );
         return;
       }
       sourcesState = sourcesState.map((s) => (s.id === source.id ? (body.source as ProjectSource) : s));
       if (body.ok) {
-        toast.success('Synced');
+        toast.success(t(locale, 'projects.toast-synced'));
       } else if (body.source?.fetchError) {
         toast.warning(body.source.fetchError);
       } else if (isPassivelyFilledLinkedInSource(source.kind)) {
-        toast.info('Flipped back to pending - open that page on linkedin.com again to refill it.');
+        toast.info(t(locale, 'projects.toast-linkedin-flip-pending'));
       } else {
-        toast.warning('Sync failed');
+        toast.warning(t(locale, 'projects.error-sync-failed'));
       }
     } finally {
       syncingId = null;
@@ -215,14 +227,14 @@
       });
       const body = await res.json().catch(() => ({}));
       if (res.status === 409) {
-        toast.error('An extraction is already running for this project');
+        toast.error(t(locale, 'projects.error-extraction-already-running'));
         return;
       }
       if (!res.ok) {
-        toast.error(body?.message ?? 'Failed to start extraction');
+        toast.error(body?.message ?? t(locale, 'projects.error-extraction-start-failed'));
         return;
       }
-      toast.success(`Extraction run #${body.runId} started`);
+      toast.success(t(locale, 'projects.toast-extraction-started', { runId: body.runId }));
       onExtractionLaunched(body.runId);
     } finally {
       runningFromId = null;
@@ -237,11 +249,15 @@
         method: 'DELETE',
       });
       if (!res.ok) {
-        toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to remove source');
+        toast.error(
+          res.status === 403
+            ? t(locale, 'projects.error-admin-required')
+            : t(locale, 'projects.error-remove-source-failed'),
+        );
         return;
       }
       sourcesState = sourcesState.filter((s) => s.id !== removeTarget!.id);
-      toast.success('Source removed');
+      toast.success(t(locale, 'projects.toast-source-removed'));
       removeTarget = null;
     } finally {
       removing = false;
@@ -251,17 +267,16 @@
 
 <Card.Root size="sm">
   <Card.Header>
-    <Card.Title class="text-base">Sources</Card.Title>
+    <Card.Title class="text-base">{t(locale, 'projects.sources-panel-title')}</Card.Title>
     <Card.Description class="text-xs">
-      What the description is grounded in. Add a source, see when it was last fetched, re-sync it,
-      or remove it - a removed source is never used again.
+      {t(locale, 'projects.sources-panel-description')}
     </Card.Description>
   </Card.Header>
   <Card.Content class="flex flex-col gap-4">
     {#if isAdmin}
       <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
         <label class="flex flex-col gap-1 text-xs sm:w-56">
-          Kind
+          {t(locale, 'projects.source-kind-label')}
           <SelectField
             value={addKind}
             onValueChange={(v) => (addKind = v as ProjectSourceKind)}
@@ -270,30 +285,32 @@
           />
         </label>
         <label class="flex flex-1 flex-col gap-1 text-xs">
-          Value
+          {t(locale, 'projects.source-value-label')}
           <Input
             bind:value={addValue}
             placeholder={VALUE_PLACEHOLDER[addKind]}
             onkeydown={(e) => e.key === 'Enter' && addSource()}
           />
         </label>
-        <Button type="button" onclick={addSource} loading={adding}>Add source</Button>
+        <Button type="button" onclick={addSource} loading={adding}
+          >{t(locale, 'projects.add-source-button')}</Button
+        >
       </div>
     {/if}
 
     {#if sourcesState.length === 0}
       <p class="text-xs text-muted-foreground">
-        No sources yet. Add a URL above, or start an extraction from a local folder.
+        {t(locale, 'projects.sources-empty')}
       </p>
     {:else}
       <Table.Root>
         <Table.Header>
           <Table.Row>
-            <Table.Head>Kind</Table.Head>
-            <Table.Head>Value</Table.Head>
-            <Table.Head>Status</Table.Head>
-            <Table.Head>Last fetched</Table.Head>
-            <Table.Head class="text-right">Actions</Table.Head>
+            <Table.Head>{t(locale, 'projects.source-kind-label')}</Table.Head>
+            <Table.Head>{t(locale, 'projects.source-value-label')}</Table.Head>
+            <Table.Head>{t(locale, 'projects.status-label')}</Table.Head>
+            <Table.Head>{t(locale, 'projects.last-fetched-label')}</Table.Head>
+            <Table.Head class="text-right">{t(locale, 'projects.actions-label')}</Table.Head>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -312,13 +329,13 @@
                     </span>
                   {:else if status(s) === 'pending' && isPassivelyFilledLinkedInSource(s.kind)}
                     <span class="max-w-64 text-[11px] text-muted-foreground">
-                      Waiting for you to open that page on linkedin.com.
+                      {t(locale, 'projects.toast-linkedin-waiting')}
                     </span>
                   {/if}
                 </div>
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground">
-                {s.fetchedAt ? relativeTime(s.fetchedAt) : 'never'}
+                {s.fetchedAt ? relativeTime(s.fetchedAt) : t(locale, 'projects.never-label')}
               </Table.Cell>
               <Table.Cell class="text-right">
                 {#if isAdmin}
@@ -327,8 +344,8 @@
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label="Run extraction with this source"
-                        title="Run extraction with this source"
+                        aria-label={t(locale, 'projects.run-extraction-aria')}
+                        title={t(locale, 'projects.run-extraction-aria')}
                         onclick={() => runExtraction(s)}
                         disabled={runningFromId === s.id}
                       >
@@ -338,8 +355,8 @@
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label="Re-sync"
-                      title="Re-sync"
+                      aria-label={t(locale, 'projects.resync-aria')}
+                      title={t(locale, 'projects.resync-aria')}
                       onclick={() => resync(s)}
                       disabled={syncingId === s.id}
                     >
@@ -348,8 +365,8 @@
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label="Remove"
-                      title="Remove"
+                      aria-label={t(locale, 'projects.remove-aria')}
+                      title={t(locale, 'projects.remove-aria')}
                       class="text-muted-foreground hover:text-destructive"
                       onclick={() => (removeTarget = s)}
                     >
@@ -370,17 +387,22 @@
   <AlertDialog.Content>
     <AlertDialog.Header>
       <AlertDialog.Title>
-        Remove this {removeTarget ? KIND_LABEL[removeTarget.kind] : 'source'}?
+        {t(locale, 'projects.remove-source-title', {
+          kind: removeTarget ? KIND_LABEL[removeTarget.kind] : t(locale, 'projects.remove-source-generic'),
+        })}
       </AlertDialog.Title>
       <AlertDialog.Description>
-        {removeTarget ? sourceValue(removeTarget) : ''} will no longer be used for this project's
-        description. There is no undo.
+        {t(locale, 'projects.remove-source-body', {
+          value: removeTarget ? sourceValue(removeTarget) : '',
+        })}
       </AlertDialog.Description>
     </AlertDialog.Header>
     <AlertDialog.Footer>
-      <AlertDialog.Cancel onclick={() => (removeTarget = null)}>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Cancel onclick={() => (removeTarget = null)}
+        >{t(locale, 'projects.cancel-button')}</AlertDialog.Cancel
+      >
       <AlertDialog.Action onclick={confirmRemove} disabled={removing}>
-        {removing ? 'Removing…' : 'Remove'}
+        {removing ? t(locale, 'projects.removing-button') : t(locale, 'projects.remove-button')}
       </AlertDialog.Action>
     </AlertDialog.Footer>
   </AlertDialog.Content>

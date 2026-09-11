@@ -8,9 +8,13 @@
 </script>
 
 <script lang="ts">
+  import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import * as Card from '$lib/components/ui/card';
+  import { t, type Locale } from '$lib/i18n/index.js';
+
+  const locale = $derived($page.data.locale as Locale);
 
   type Props = {
     recommendations: Recommendation[];
@@ -33,7 +37,9 @@
           <p class="text-xs text-muted-foreground line-clamp-3">{rec.objective}</p>
         </Card.Content>
         <Card.Footer class="justify-end">
-          <Button size="sm" variant="outline" onclick={() => onUse(rec)}>Use this →</Button>
+          <Button size="sm" variant="outline" onclick={() => onUse(rec)}
+            >{t(locale, 'projects.recommendation-use-button')}</Button
+          >
         </Card.Footer>
       </Card.Root>
     {/each}

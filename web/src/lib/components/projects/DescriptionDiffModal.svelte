@@ -1,7 +1,11 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import * as Dialog from '$lib/components/ui/dialog';
   import { Button } from '$lib/components/ui/button';
   import { diffLines, type Change } from 'diff';
+  import { t, type Locale } from '$lib/i18n/index.js';
+
+  const locale = $derived($page.data.locale as Locale);
 
   type Props = {
     open: boolean;
@@ -43,7 +47,7 @@
 
 <Dialog.Root {open} {onOpenChange}>
   <Dialog.Content class="max-w-3xl">
-    <Dialog.Header><Dialog.Title>Description diff</Dialog.Title></Dialog.Header>
+    <Dialog.Header><Dialog.Title>{t(locale, 'projects.description-diff-title')}</Dialog.Title></Dialog.Header>
     <pre class="text-xs font-mono whitespace-pre-wrap max-h-[60vh] overflow-auto">
       {#each parts as p, i (i)}
         <span
@@ -58,9 +62,11 @@
     {#if onAccept || onDecline}
       <Dialog.Footer>
         <Button variant="ghost" onclick={decline} loading={deciding === 'decline'} disabled={!!deciding}>
-          Decline
+          {t(locale, 'projects.decline-button')}
         </Button>
-        <Button onclick={accept} loading={deciding === 'accept'} disabled={!!deciding}>Accept</Button>
+        <Button onclick={accept} loading={deciding === 'accept'} disabled={!!deciding}
+          >{t(locale, 'projects.accept-button')}</Button
+        >
       </Dialog.Footer>
     {/if}
   </Dialog.Content>

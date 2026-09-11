@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { tick } from 'svelte';
   import { AlertTriangle, ChevronDown, ChevronUp } from '@lucide/svelte';
   import { toast } from 'svelte-sonner';
@@ -11,6 +12,7 @@
   import { slide } from 'svelte/transition';
   import RunLog from '$lib/components/RunLog.svelte';
   import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
+  import { t, type Locale } from '$lib/i18n/index.js';
 
   type Run = {
     id: number;
@@ -32,6 +34,8 @@
     highlightRunId?: number | null;
   };
   let { runs, totalCount, nextCursor, projectId, highlightRunId = null }: Props = $props();
+
+  const locale = $derived($page.data.locale as Locale);
 
   let expandedRunId = $state<number | null>(null);
   function toggle(id: number) {
@@ -96,8 +100,8 @@
         const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
         const message =
           res.status >= 500
-            ? 'Could not load more extractions. Please try again.'
-            : (body.error ?? body.message ?? 'Could not load more extractions.');
+            ? t(locale, 'projects.error-load-more-extractions-generic')
+            : (body.error ?? body.message ?? t(locale, 'projects.error-load-more-extractions'));
         if (res.status >= 500) console.error('failed to load more extraction runs', res.status, body);
         loadMoreError = message;
         toast.error(message);
@@ -112,7 +116,7 @@
       appended = [...appended, ...nextPage.runs.filter((r) => !existingIds.has(r.id))];
       appendedCursor = nextPage.nextCursor;
     } catch {
-      loadMoreError = 'Could not reach the server. Check your connection and try again.';
+      loadMoreError = t(locale, 'inbox.error-network');
       toast.error(loadMoreError);
     } finally {
       loadingMore = false;
@@ -123,7 +127,7 @@
     const s = p?.source;
     if (!s) return { kind: '-', detail: null };
     // Upload paths are internal tmp dirs (e.g. /tmp/pitchbox-upload-<uuid>) - useless to expose.
-    if (s.kind === 'upload') return { kind: 'uploaded folder', detail: null };
+    if (s.kind === 'upload') return { kind: t(locale, 'projects.source-badge-uploaded-folder'), detail: null };
     const v = s.value ?? '';
     const max = 64;
     const short = v.length > max ? '…' + v.slice(v.length - max) : v;
@@ -133,14 +137,19 @@
 
 <Card.Root size="sm">
   <Card.Header>
-    <Card.Title class="text-base">Extraction history</Card.Title>
-    <Card.Description class="text-xs">Showing {items.length} of {totalCount} extractions</Card.Description>
+    <Card.Title class="text-base">{t(locale, 'projects.extraction-history-title')}</Card.Title>
+    <Card.Description class="text-xs"
+      >{t(locale, 'projects.extraction-history-count', {
+        shown: items.length,
+        total: totalCount,
+      })}</Card.Description
+    >
   </Card.Header>
   <Card.Content class="p-0">
     {#if items.length === 0}
       <div class="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
-        <p class="text-sm">No extractions yet</p>
-        <p class="text-xs">Add a source below and run an extraction to start one.</p>
+        <p class="text-sm">{t(locale, 'projects.no-extractions-title')}</p>
+        <p class="text-xs">{t(locale, 'projects.no-extractions-body')}</p>
       </div>
     {:else}
       <!--
@@ -156,14 +165,14 @@
       <Table.Root class="table-fixed w-full">
         <Table.Header>
           <Table.Row>
-            <Table.Head class="w-16">ID</Table.Head>
-            <Table.Head class="w-24">Status</Table.Head>
-            <Table.Head class="w-24">Trigger</Table.Head>
-            <Table.Head class="w-32">Runner</Table.Head>
-            <Table.Head>Source</Table.Head>
-            <Table.Head class="w-28">Started</Table.Head>
-            <Table.Head class="w-24">Duration</Table.Head>
-            <Table.Head class="w-20">Tokens</Table.Head>
+            <Table.Head class="w-16">{t(locale, 'projects.col-id')}</Table.Head>
+            <Table.Head class="w-24">{t(locale, 'projects.status-label')}</Table.Head>
+            <Table.Head class="w-24">{t(locale, 'projects.col-trigger')}</Table.Head>
+            <Table.Head class="w-32">{t(locale, 'projects.col-runner')}</Table.Head>
+            <Table.Head>{t(locale, 'projects.col-source')}</Table.Head>
+            <Table.Head class="w-28">{t(locale, 'projects.col-started')}</Table.Head>
+            <Table.Head class="w-24">{t(locale, 'projects.col-duration')}</Table.Head>
+            <Table.Head class="w-20">{t(locale, 'projects.col-tokens')}</Table.Head>
             <Table.Head class="w-8"></Table.Head>
           </Table.Row>
         </Table.Header>
@@ -182,7 +191,7 @@
               tabindex={0}
               role="button"
               aria-expanded={expanded}
-              aria-label="Toggle run #{run.id} log"
+              aria-label={t(locale, 'projects.toggle-run-log-aria', { id: run.id })}
               class="hover:bg-muted/40 transition-colors border-b cursor-pointer {expanded
                 ? 'bg-muted/30'
                 : ''}"
@@ -259,7 +268,7 @@
       {#if itemsNextCursor}
         <div class="flex flex-col items-center gap-2 py-3">
           <Button variant="outline" size="sm" onclick={loadMore} loading={loadingMore}>
-            Load more
+            {t(locale, 'inbox.load-more')}
           </Button>
           {#if loadMoreError}
             <div
@@ -274,7 +283,7 @@
                   onclick={loadMore}
                   class="mt-1 underline underline-offset-2 hover:no-underline"
                 >
-                  Retry
+                  {t(locale, 'inbox.retry')}
                 </button>
               </div>
             </div>

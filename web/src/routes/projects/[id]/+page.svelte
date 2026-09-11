@@ -7,9 +7,11 @@
   import ProjectTemplatesTab from '$lib/components/projects/ProjectTemplatesTab.svelte';
   import ProjectInsightsTab from '$lib/components/projects/ProjectInsightsTab.svelte';
   import PageContainer from '$lib/components/PageContainer.svelte';
+  import { t, type Locale } from '$lib/i18n/index.js';
 
   let { data }: { data: PageData } = $props();
   const isAdmin = $derived(data.isAdmin ?? true);
+  const locale = $derived($page.data.locale as Locale);
   const tabParam = $page.url.searchParams.get('tab');
   const initialTab =
     tabParam === 'accounts'
@@ -21,12 +23,12 @@
           : 'overview';
   let tab = $state<'overview' | 'accounts' | 'templates' | 'insights'>(initialTab);
 
-  const tabs = [
-    { k: 'overview' as const, label: 'Overview' },
-    { k: 'accounts' as const, label: 'Accounts' },
-    { k: 'templates' as const, label: 'Templates' },
-    { k: 'insights' as const, label: 'Insights' },
-  ];
+  const tabs = $derived([
+    { k: 'overview' as const, label: t(locale, 'projects.tab-overview') },
+    { k: 'accounts' as const, label: t(locale, 'projects.tab-accounts') },
+    { k: 'templates' as const, label: t(locale, 'projects.tab-templates') },
+    { k: 'insights' as const, label: t(locale, 'projects.tab-insights') },
+  ]);
 
   // `?run=<id>` (from the Audit log, or a redirect off /campaigns for a
   // project-scoped run) targets one extraction run on the Overview tab:
@@ -53,8 +55,8 @@
     if (raw && highlightRunId == null) {
       if (warnedInvalidRun !== raw) {
         warnedInvalidRun = raw;
-        toast.warning('Run link ignored', {
-          description: `"${raw}" is not a valid run id - showing the project overview instead.`,
+        toast.warning(t(locale, 'projects.run-link-ignored-title'), {
+          description: t(locale, 'projects.run-link-ignored-body', { raw }),
         });
       }
     } else {
@@ -70,13 +72,13 @@
 </div>
 
 <div class="flex gap-2 border-b border-border mb-4">
-  {#each tabs as t (t.k)}
+  {#each tabs as tabItem (tabItem.k)}
     <button
       type="button"
-      class={`px-3 py-2 text-sm border-b-2 ${tab === t.k ? 'border-foreground' : 'border-transparent text-muted-foreground'}`}
-      onclick={() => (tab = t.k)}
+      class={`px-3 py-2 text-sm border-b-2 ${tab === tabItem.k ? 'border-foreground' : 'border-transparent text-muted-foreground'}`}
+      onclick={() => (tab = tabItem.k)}
     >
-      {t.label}
+      {tabItem.label}
     </button>
   {/each}
 </div>

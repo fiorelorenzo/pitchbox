@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { invalidateAll } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { SelectField } from '$lib/components/ui/select-field';
   import * as AlertDialog from '$lib/components/ui/alert-dialog';
   import { toast } from 'svelte-sonner';
+  import { t, type Locale } from '$lib/i18n/index.js';
 
   type Template = {
     id: number;
@@ -17,21 +19,23 @@
   type Props = { projectId: number; templates: Template[]; isAdmin: boolean };
   let { projectId, templates, isAdmin }: Props = $props();
 
+  const locale = $derived($page.data.locale as Locale);
+
   let addOpen = $state(false);
   let newKind = $state<'dm' | 'comment' | 'post'>('comment');
   let newTitle = $state('');
   let newBody = $state('');
   let busy = $state(false);
 
-  const kindOptions = [
-    { value: 'dm', label: 'DM' },
-    { value: 'comment', label: 'Comment' },
-    { value: 'post', label: 'Post' },
-  ];
+  const kindOptions = $derived([
+    { value: 'dm', label: t(locale, 'projects.template-kind.dm') },
+    { value: 'comment', label: t(locale, 'projects.template-kind.comment') },
+    { value: 'post', label: t(locale, 'projects.template-kind.post') },
+  ]);
 
   async function add() {
     if (!newTitle.trim() || !newBody.trim()) {
-      toast.error('Title and body are required');
+      toast.error(t(locale, 'projects.error-template-fields-required'));
       return;
     }
     busy = true;
@@ -42,7 +46,7 @@
         body: JSON.stringify({ kind: newKind, title: newTitle, body: newBody }),
       });
       if (!res.ok) {
-        toast.error('Failed to create template');
+        toast.error(t(locale, 'projects.error-template-create-failed'));
         return;
       }
       newTitle = '';
@@ -54,13 +58,13 @@
     }
   }
 
-  async function toggleActive(t: Template) {
-    const res = await fetch(`/api/projects/${projectId}/templates/${t.id}`, {
+  async function toggleActive(tpl: Template) {
+    const res = await fetch(`/api/projects/${projectId}/templates/${tpl.id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ isActive: !t.isActive }),
+      body: JSON.stringify({ isActive: !tpl.isActive }),
     });
-    if (!res.ok) toast.error('Failed to update');
+    if (!res.ok) toast.error(t(locale, 'projects.error-update-failed'));
     else await invalidateAll();
   }
 
@@ -68,8 +72,8 @@
   let deleteTarget = $state<Template | null>(null);
   let deleting = $state(false);
 
-  function openDeleteDialog(t: Template) {
-    deleteTarget = t;
+  function openDeleteDialog(tpl: Template) {
+    deleteTarget = tpl;
     deleteDialogOpen = true;
   }
 
@@ -81,7 +85,11 @@
         method: 'DELETE',
       });
       if (!res.ok) {
-        toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
+        toast.error(
+          res.status === 403
+            ? t(locale, 'projects.error-admin-required')
+            : t(locale, 'projects.error-delete-failed'),
+        );
         return;
       }
       deleteDialogOpen = false;
@@ -95,62 +103,75 @@
 
 <div class="flex items-center justify-between mb-4">
   <p class="text-sm text-muted-foreground">
-    Few-shot examples grounded in this project's voice. Active templates are surfaced to the agent
-    on every run.
+    {t(locale, 'projects.templates-intro')}
   </p>
-  <Button onclick={() => (addOpen = !addOpen)}>{addOpen ? 'Cancel' : 'New template'}</Button>
+  <Button onclick={() => (addOpen = !addOpen)}
+    >{addOpen ? t(locale, 'projects.cancel-button') : t(locale, 'projects.new-template-button')}</Button
+  >
 </div>
 
 {#if addOpen}
   <div class="border border-border rounded p-4 mb-4 space-y-3">
     <div class="grid grid-cols-2 gap-3">
       <div>
-        <label class="text-sm font-medium block mb-1" for="tpl-kind">Kind</label>
+        <label class="text-sm font-medium block mb-1" for="tpl-kind"
+          >{t(locale, 'projects.template-kind-label')}</label
+        >
         <SelectField id="tpl-kind" bind:value={newKind} options={kindOptions} fullWidth />
       </div>
       <div>
-        <label class="text-sm font-medium block mb-1" for="tpl-title">Title</label>
-        <Input id="tpl-title" bind:value={newTitle} placeholder="e.g. Friendly intro" />
+        <label class="text-sm font-medium block mb-1" for="tpl-title"
+          >{t(locale, 'projects.template-title-label')}</label
+        >
+        <Input
+          id="tpl-title"
+          bind:value={newTitle}
+          placeholder={t(locale, 'projects.template-title-placeholder')}
+        />
       </div>
     </div>
     <div>
-      <label class="text-sm font-medium block mb-1" for="tpl-body">Body</label>
+      <label class="text-sm font-medium block mb-1" for="tpl-body"
+        >{t(locale, 'projects.template-body-label')}</label
+      >
       <textarea
         id="tpl-body"
         bind:value={newBody}
         rows="6"
         class="w-full rounded border border-input bg-background px-3 py-2 text-sm"
-        placeholder="Example reply or DM body…"
+        placeholder={t(locale, 'projects.template-body-placeholder')}
       ></textarea>
     </div>
-    <Button onclick={add} disabled={busy}>Save</Button>
+    <Button onclick={add} disabled={busy}>{t(locale, 'projects.save-button')}</Button>
   </div>
 {/if}
 
 {#if templates.length === 0}
-  <p class="text-sm text-muted-foreground">No templates yet.</p>
+  <p class="text-sm text-muted-foreground">{t(locale, 'projects.templates-empty')}</p>
 {:else}
   <div class="space-y-2">
-    {#each templates as t (t.id)}
+    {#each templates as tpl (tpl.id)}
       <div class="border border-border rounded p-3">
         <div class="flex items-center justify-between mb-1">
           <div class="flex items-center gap-2">
-            <span class="text-xs uppercase px-2 py-0.5 rounded bg-muted">{t.kind}</span>
-            <span class="font-medium">{t.title}</span>
-            {#if !t.isActive}
-              <span class="text-xs text-muted-foreground">(archived)</span>
+            <span class="text-xs uppercase px-2 py-0.5 rounded bg-muted">{tpl.kind}</span>
+            <span class="font-medium">{tpl.title}</span>
+            {#if !tpl.isActive}
+              <span class="text-xs text-muted-foreground">{t(locale, 'projects.template-archived-badge')}</span>
             {/if}
           </div>
           <div class="flex gap-2">
-            <Button variant="outline" size="sm" onclick={() => toggleActive(t)}>
-              {t.isActive ? 'Archive' : 'Restore'}
+            <Button variant="outline" size="sm" onclick={() => toggleActive(tpl)}>
+              {tpl.isActive ? t(locale, 'projects.archive-button') : t(locale, 'projects.restore-button')}
             </Button>
             {#if isAdmin}
-              <Button variant="outline" size="sm" onclick={() => openDeleteDialog(t)}>Delete</Button>
+              <Button variant="outline" size="sm" onclick={() => openDeleteDialog(tpl)}
+                >{t(locale, 'projects.delete-button')}</Button
+              >
             {/if}
           </div>
         </div>
-        <pre class="text-sm whitespace-pre-wrap text-muted-foreground">{t.body}</pre>
+        <pre class="text-sm whitespace-pre-wrap text-muted-foreground">{tpl.body}</pre>
       </div>
     {/each}
   </div>
@@ -159,16 +180,19 @@
 <AlertDialog.Root bind:open={deleteDialogOpen}>
   <AlertDialog.Content>
     <AlertDialog.Header>
-      <AlertDialog.Title>Delete template "{deleteTarget?.title}"?</AlertDialog.Title>
+      <AlertDialog.Title
+        >{t(locale, 'projects.delete-template-title', { title: deleteTarget?.title ?? '' })}</AlertDialog.Title
+      >
       <AlertDialog.Description>
-        This removes the template from the project. It will no longer be surfaced to the agent on
-        future runs.
+        {t(locale, 'projects.delete-template-body')}
       </AlertDialog.Description>
     </AlertDialog.Header>
     <AlertDialog.Footer>
-      <AlertDialog.Cancel onclick={() => (deleteDialogOpen = false)}>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Cancel onclick={() => (deleteDialogOpen = false)}
+        >{t(locale, 'projects.cancel-button')}</AlertDialog.Cancel
+      >
       <AlertDialog.Action onclick={confirmRemove} disabled={deleting}>
-        {deleting ? 'Deleting…' : 'Delete template'}
+        {deleting ? t(locale, 'projects.deleting-button') : t(locale, 'projects.delete-template-button')}
       </AlertDialog.Action>
     </AlertDialog.Footer>
   </AlertDialog.Content>
