@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterAll } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { getDb, getPool } from '../src/db/client.js';
-import { users, projects } from '../src/db/schema.js';
+import { users, projects, organizations } from '../src/db/schema.js';
 import {
   hashPassword,
   verifyPassword,
@@ -220,5 +220,19 @@ describe('shared/auth', () => {
 });
 
 afterAll(async () => {
+  // This file's reset() truncates `organizations` wholesale (not the
+  // suite's usual scoped `DELETE ... WHERE slug != 'default'`) because
+  // "createUser bootstraps the default org membership" needs the seeded
+  // `slug = 'default'` row absent to exercise createUser's fresh-install
+  // branch (shared/src/auth.ts): it only creates that org when none exists.
+  // Leaving the hole open after this file finishes would silently break
+  // every later file that falls back to it (LOR-282) - restore the seeded
+  // placeholder explicitly, matching seed-core's own values, rather than
+  // relying on it being recreated as a side effect of whichever test in
+  // this file happens to run last.
+  await getDb()
+    .insert(organizations)
+    .values({ slug: 'default', name: 'My Organization' })
+    .onConflictDoNothing();
   await getPool().end();
 });
