@@ -244,7 +244,7 @@ describe('pitchbox drafts:create', () => {
     expect(eventPayload.findingsCount).toBe(0);
   });
 
-  it('persists an inline quality score supplied at creation (issue #41)', async () => {
+  it('ignores an inline qualityScore/qualityReason in the payload - scoring is computed server-side, never accepted from the caller (LOR-229)', async () => {
     const db = getDb();
     const [platform] = await db
       .select()
@@ -298,9 +298,70 @@ describe('pitchbox drafts:create', () => {
 
     const drafts = await db.select().from(schema.drafts);
     expect(drafts).toHaveLength(1);
-    expect(drafts[0].qualityScore).toBe(82);
-    expect(drafts[0].qualityReason).toBe('specific and personal');
-    expect(drafts[0].qualityModel).toBe(run.agentRunner);
+    // A clean, short body with no operator voice corpus in this fixture has
+    // nothing for the deterministic scorer to measure - it reports "not
+    // scored", never the 82/"specific and personal" the payload asked for.
+    expect(drafts[0].qualityScore).toBeNull();
+    expect(drafts[0].qualityReason).toBeNull();
+    expect(drafts[0].qualityModel).toBeNull();
+  });
+
+  it('computes a deterministic quality score at creation, capped below green when the body carries a style finding (LOR-229)', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'demo3b', name: 'D3b' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({ projectId: project.id, platformId: platform.id, handle: 'erin', role: 'personal' })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c3b',
+        skillSlug: 'reddit-scout',
+        config: {},
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    const payload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'dm',
+        targetUser: 'frank',
+        body: "In today's fast-paced world, it's worth noting the update shipped.",
+        sourceRef: {},
+        metadata: {},
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, payload);
+    const res = JSON.parse(out.trim().split('\n').at(-1)!);
+    expect(res.ok).toBe(true);
+    expect(res.data.inserted).toBe(1);
+
+    const [draft] = await db
+      .select()
+      .from(schema.drafts)
+      .where(eq(schema.drafts.accountId, account.id));
+    expect(draft.qualityModel).toBe('deterministic');
+    expect(draft.qualityScore).not.toBeNull();
+    expect(draft.qualityScore).toBeLessThan(75);
   });
 
   it('skips blocklisted targets and reports them in the response', async () => {

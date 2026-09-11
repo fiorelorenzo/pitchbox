@@ -21,8 +21,12 @@ import {
 } from '@pitchbox/shared/comment-target';
 import { notify } from '@pitchbox/shared/notifications';
 import { getProjectOrgId } from '@pitchbox/shared/orgs';
-import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
-import { enforceHouseStyle, type StyleFinding } from '@pitchbox/shared/style-check';
+import {
+  loadQualityRubric,
+  resolveOperatorCorpusProfile,
+  scoreDraftQuality,
+} from '@pitchbox/shared/quality-judge';
+import { checkStyle, enforceHouseStyle, type StyleFinding } from '@pitchbox/shared/style-check';
 import { buildRedditComposeUrl } from '@pitchbox/shared/platforms/reddit';
 import { buildHackernewsComposeUrl } from '@pitchbox/shared/platforms/hackernews';
 import { buildMastodonComposeUrl } from '@pitchbox/shared/platforms/mastodon';
@@ -109,10 +113,14 @@ export const DraftInput = z.object({
   // as the primary (variant A) and `variants` supplies B, C, ... Each entry
   // produces a sibling draft sharing a `variant_group_id`.
   variants: absentOrNull(z.array(z.string().min(1))),
-  // Inline LLM-judge quality score (issue #41), supplied by the creating agent.
-  // Lenient here (clamped at persistence) so one bad score never fails the batch.
-  qualityScore: absentOrNull(z.number()),
-  qualityReason: absentOrNull(z.string()),
+  // `qualityScore`/`qualityReason` used to be accepted here as the drafting
+  // agent's own self-report (issue #41). LOR-229 drops that: the score is
+  // now computed server-side in `createDrafts` (`scoreDraftQuality`,
+  // `@pitchbox/shared/quality-judge`) from the style checker and the
+  // operator's own measured voice, never from what the model that wrote the
+  // draft says about itself. An older payload that still sends these two
+  // keys is silently accepted and ignored - zod strips unrecognized keys by
+  // default - rather than failing the whole batch on a stale playbook.
 });
 
 export const Payload = z.array(DraftInput).min(1).max(200);
@@ -144,6 +152,13 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
   if (orgId == null) {
     throw new Error(`project ${campaign.projectId} has no organization`);
   }
+
+  // Loaded once per batch, not per draft: the rubric and the operator's own
+  // corpus profile are both org-level facts every draft in this run shares
+  // (LOR-229's deterministic quality score reads both - see the `styled`
+  // map below).
+  const qualityRubric = await loadQualityRubric(db);
+  const corpusProfile = await resolveOperatorCorpusProfile(db, orgId);
 
   // Validate that every referenced accountId actually belongs to the
   // campaign's project. The accounts FK only requires the account to exist,
@@ -343,13 +358,42 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
       const variantResults = d.variants
         ? await Promise.all(d.variants.map((v) => enforceHouseStyle(v)))
         : null;
+      const styledTitle = titleResult ? titleResult.text : (d.title ?? null);
+      const styleFindings = [...bodyResult.findings, ...(titleResult?.findings ?? [])];
+      // LOR-229: the deterministic (+ optional judged) score for the
+      // primary body, and independently for each A/B variant - each is a
+      // genuinely different piece of text and gets its own measurement,
+      // never one self-report copied across every sibling the way the old
+      // agent-reported score was.
+      const quality = await scoreDraftQuality(db, {
+        body: bodyResult.text,
+        title: styledTitle,
+        styleFindings,
+        corpus: corpusProfile,
+        rubric: qualityRubric,
+      });
+      const variantQuality = variantResults
+        ? await Promise.all(
+            variantResults.map((r) =>
+              scoreDraftQuality(db, {
+                body: r.text,
+                title: styledTitle,
+                styleFindings: r.findings,
+                corpus: corpusProfile,
+                rubric: qualityRubric,
+              }),
+            ),
+          )
+        : null;
       return {
         ...d,
         styledBody: bodyResult.text,
-        styledTitle: titleResult ? titleResult.text : (d.title ?? null),
-        styleFindings: [...bodyResult.findings, ...(titleResult?.findings ?? [])],
+        styledTitle,
+        styleFindings,
         styledVariants: variantResults ? variantResults.map((r) => r.text) : null,
         variantStyleFindings: variantResults ? variantResults.map((r) => r.findings) : null,
+        quality,
+        variantQuality,
       };
     }),
   );
@@ -382,27 +426,29 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
           }),
           reasoning: d.reasoning ?? null,
           sourceRef: d.sourceRef,
-          metadata:
-            d.styleFindings.length > 0
+          metadata: {
+            ...baseMeta,
+            ...(d.styleFindings.length > 0
               ? {
-                  ...baseMeta,
                   styleFindings: d.styleFindings.map((f: StyleFinding) => ({
                     ruleId: f.ruleId,
                     message: f.message,
                     span: f.span,
                   })),
                 }
-              : baseMeta,
+              : {}),
+            qualityDetail: d.quality.qualityDetail,
+          },
           dedupWarning: d.dedupWarning ?? null,
           variantGroupId: null as string | null,
           variantLabel: null as string | null,
-          qualityScore:
-            d.qualityScore != null ? Math.max(0, Math.min(100, Math.round(d.qualityScore))) : null,
-          qualityReason: d.qualityScore != null ? (d.qualityReason ?? null) : null,
-          qualityModel: d.qualityScore != null ? run.agentRunner : null,
+          qualityScore: d.quality.qualityScore,
+          qualityReason: d.quality.qualityReason,
+          qualityModel: d.quality.qualityModel,
         },
       ];
     }
+    const qualityResults = [d.quality, ...(d.variantQuality ?? [])];
     const seeds = [d.styledBody, ...d.styledVariants].map((body, i) => {
       const findings: StyleFinding[] =
         i === 0 ? d.styleFindings : (d.variantStyleFindings?.[i - 1] ?? []);
@@ -421,7 +467,7 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
       };
     });
     const grouped = groupVariants(seeds);
-    return grouped.rows.map((r) => ({
+    return grouped.rows.map((r, i) => ({
       runId,
       projectId: campaign.projectId,
       platformId: campaign.platformId,
@@ -445,14 +491,17 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
       }),
       reasoning: d.reasoning ?? null,
       sourceRef: d.sourceRef,
-      metadata: { ...baseMeta, ...(r.metadata ?? {}) },
+      metadata: {
+        ...baseMeta,
+        ...(r.metadata ?? {}),
+        qualityDetail: qualityResults[i].qualityDetail,
+      },
       dedupWarning: d.dedupWarning ?? null,
       variantGroupId: r.variantGroupId,
       variantLabel: r.variantLabel,
-      qualityScore:
-        d.qualityScore != null ? Math.max(0, Math.min(100, Math.round(d.qualityScore))) : null,
-      qualityReason: d.qualityScore != null ? (d.qualityReason ?? null) : null,
-      qualityModel: d.qualityScore != null ? run.agentRunner : null,
+      qualityScore: qualityResults[i].qualityScore,
+      qualityReason: qualityResults[i].qualityReason,
+      qualityModel: qualityResults[i].qualityModel,
     }));
   });
 
@@ -598,8 +647,6 @@ export async function draftRegenStart(runId: number) {
     }
   }
 
-  const rubric = await loadQualityRubric(db);
-
   return {
     runId,
     draftId,
@@ -614,17 +661,10 @@ export async function draftRegenStart(runId: number) {
       sourceRef: draft.sourceRef,
     },
     persona,
-    rubricTemplate: rubric.rubric_template,
   };
 }
 
-export async function draftRegenFinish(
-  runId: number,
-  body: string,
-  title?: string | null,
-  qualityScore?: number | null,
-  qualityReason?: string | null,
-) {
+export async function draftRegenFinish(runId: number, body: string, title?: string | null) {
   if (!Number.isInteger(runId)) throw new Error('invalid run id');
   if (!body || !body.trim()) throw new Error('body is empty');
   const db = getDb();
@@ -641,14 +681,37 @@ export async function draftRegenFinish(
   if (!draft) throw new Error(`draft ${draftId} not found`);
 
   const newCount = draft.regenerationCount + 1;
-  const qualitySet =
-    qualityScore != null
-      ? {
-          qualityScore: Math.max(0, Math.min(100, Math.round(qualityScore))),
-          qualityReason: qualityReason ?? null,
-          qualityModel: run.agentRunner,
-        }
-      : {};
+  const newTitle = title ?? draft.title;
+  // LOR-229: `draft_regen_finish` still has no live model to send a
+  // targeted style-rewrite instruction back to (the playbook calls
+  // `check_style` itself, mid-turn, for that) - but `checkStyle` is pure
+  // and cheap, so the quality score below measures the rewritten body fresh
+  // rather than trusting the agent already ran the check.
+  const styleFindings = [...checkStyle(body), ...(newTitle ? checkStyle(newTitle) : [])];
+  const orgId = await getProjectOrgId(db, draft.projectId);
+  const [corpusProfile, rubric] = await Promise.all([
+    orgId != null ? resolveOperatorCorpusProfile(db, orgId) : Promise.resolve(null),
+    loadQualityRubric(db),
+  ]);
+  const quality = await scoreDraftQuality(db, {
+    body,
+    title: newTitle,
+    styleFindings,
+    corpus: corpusProfile,
+    rubric,
+  });
+  const priorMeta = (draft.metadata ?? {}) as Record<string, unknown>;
+  const newMeta: Record<string, unknown> = { ...priorMeta, qualityDetail: quality.qualityDetail };
+  if (styleFindings.length > 0) {
+    newMeta.styleFindings = styleFindings.map((f) => ({
+      ruleId: f.ruleId,
+      message: f.message,
+      span: f.span,
+    }));
+  } else {
+    delete newMeta.styleFindings;
+  }
+
   await db.transaction(async (tx) => {
     await tx.insert(schema.draftEvents).values({
       draftId,
@@ -665,11 +728,14 @@ export async function draftRegenFinish(
       .update(schema.drafts)
       .set({
         body,
-        title: title ?? draft.title,
+        title: newTitle,
         version: sql`${schema.drafts.version} + 1`,
         regenerationCount: sql`${schema.drafts.regenerationCount} + 1`,
         regeneratingRunId: null,
-        ...qualitySet,
+        metadata: newMeta,
+        qualityScore: quality.qualityScore,
+        qualityReason: quality.qualityReason,
+        qualityModel: quality.qualityModel,
       })
       .where(eq(schema.drafts.id, draftId));
     await tx
@@ -726,8 +792,6 @@ export async function replyDraftStart(runId: number) {
       .orderBy(schema.messages.createdAtPlatform);
   }
 
-  const rubric = await loadQualityRubric(db);
-
   return {
     runId,
     replyDraftId,
@@ -742,16 +806,10 @@ export async function replyDraftStart(runId: number) {
     parent,
     thread,
     platform: platform?.slug ?? null,
-    rubricTemplate: rubric.rubric_template,
   };
 }
 
-export async function replyDraftFinish(
-  runId: number,
-  body: string,
-  qualityScore?: number | null,
-  qualityReason?: string | null,
-) {
+export async function replyDraftFinish(runId: number, body: string) {
   if (!Number.isInteger(runId)) throw new Error('invalid run id');
   if (!body || !body.trim()) throw new Error('body is empty');
   const db = getDb();
@@ -766,14 +824,32 @@ export async function replyDraftFinish(
   const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, replyDraftId));
   if (!draft) throw new Error(`reply draft ${replyDraftId} not found`);
 
-  const qualitySet =
-    qualityScore != null
-      ? {
-          qualityScore: Math.max(0, Math.min(100, Math.round(qualityScore))),
-          qualityReason: qualityReason ?? null,
-          qualityModel: run.agentRunner,
-        }
-      : {};
+  // LOR-229: same discipline as `draftRegenFinish` - no live model to send a
+  // rewrite back to here, but the score still measures the real body fresh.
+  const styleFindings = checkStyle(body);
+  const orgId = await getProjectOrgId(db, draft.projectId);
+  const [corpusProfile, rubric] = await Promise.all([
+    orgId != null ? resolveOperatorCorpusProfile(db, orgId) : Promise.resolve(null),
+    loadQualityRubric(db),
+  ]);
+  const quality = await scoreDraftQuality(db, {
+    body,
+    styleFindings,
+    corpus: corpusProfile,
+    rubric,
+  });
+  const priorMeta = (draft.metadata ?? {}) as Record<string, unknown>;
+  const newMeta: Record<string, unknown> = { ...priorMeta, qualityDetail: quality.qualityDetail };
+  if (styleFindings.length > 0) {
+    newMeta.styleFindings = styleFindings.map((f) => ({
+      ruleId: f.ruleId,
+      message: f.message,
+      span: f.span,
+    }));
+  } else {
+    delete newMeta.styleFindings;
+  }
+
   await db.transaction(async (tx) => {
     await tx
       .update(schema.drafts)
@@ -781,7 +857,10 @@ export async function replyDraftFinish(
         body,
         draftingRunId: null,
         version: sql`${schema.drafts.version} + 1`,
-        ...qualitySet,
+        metadata: newMeta,
+        qualityScore: quality.qualityScore,
+        qualityReason: quality.qualityReason,
+        qualityModel: quality.qualityModel,
       })
       .where(eq(schema.drafts.id, replyDraftId));
     await tx.insert(schema.draftEvents).values({
@@ -878,12 +957,7 @@ export function registerDraftCommands(program: Command) {
     .action(async (opts: { run: string }) => {
       const raw = await readStdin();
       if (!raw || !raw.trim()) return fail('empty payload on stdin');
-      let payload: {
-        body?: unknown;
-        title?: unknown;
-        qualityScore?: unknown;
-        qualityReason?: unknown;
-      };
+      let payload: { body?: unknown; title?: unknown };
       try {
         payload = JSON.parse(raw);
       } catch {
@@ -891,12 +965,8 @@ export function registerDraftCommands(program: Command) {
       }
       const body = typeof payload.body === 'string' ? payload.body : '';
       const title = typeof payload.title === 'string' ? payload.title : undefined;
-      const qualityScore =
-        typeof payload.qualityScore === 'number' ? payload.qualityScore : undefined;
-      const qualityReason =
-        typeof payload.qualityReason === 'string' ? payload.qualityReason : undefined;
       try {
-        ok(await draftRegenFinish(Number(opts.run), body, title, qualityScore, qualityReason));
+        ok(await draftRegenFinish(Number(opts.run), body, title));
       } catch (err) {
         fail(String(err instanceof Error ? err.message : err));
       }
@@ -919,19 +989,15 @@ export function registerDraftCommands(program: Command) {
     .action(async (opts: { run: string }) => {
       const raw = await readStdin();
       if (!raw || !raw.trim()) return fail('empty payload on stdin');
-      let payload: { body?: unknown; qualityScore?: unknown; qualityReason?: unknown };
+      let payload: { body?: unknown };
       try {
         payload = JSON.parse(raw);
       } catch {
         return fail('payload is not valid JSON');
       }
       const body = typeof payload.body === 'string' ? payload.body : '';
-      const qualityScore =
-        typeof payload.qualityScore === 'number' ? payload.qualityScore : undefined;
-      const qualityReason =
-        typeof payload.qualityReason === 'string' ? payload.qualityReason : undefined;
       try {
-        ok(await replyDraftFinish(Number(opts.run), body, qualityScore, qualityReason));
+        ok(await replyDraftFinish(Number(opts.run), body));
       } catch (err) {
         fail(String(err instanceof Error ? err.message : err));
       }

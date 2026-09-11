@@ -20,6 +20,20 @@
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 	import { interpretDraftPatchResponse, DraftVersionConflictError } from '$lib/utils/draft-patch-response';
 	import { parseStyleFindings, highlightStyleFindingSpans, STYLE_FINDING_SPAN_CLASS } from '$lib/utils/style-findings';
+	import {
+		scoreBand,
+		DEFAULT_QUALITY_RUBRIC,
+		DETERMINISTIC_QUALITY_MODEL,
+		type QualityRubric,
+	} from '@pitchbox/shared/quality-judge';
+
+	// scoreBand's band names are a shared-package contract (not the design
+	// registry's Tone names) - mirrors DraftListItem's own translation table.
+	const BAND_TONE: Record<'red' | 'amber' | 'green', 'rose' | 'amber' | 'emerald'> = {
+		red: 'rose',
+		amber: 'amber',
+		green: 'emerald',
+	};
 
 	type DraftEvent = {
 		id: number;
@@ -45,6 +59,9 @@
 		sentAt: string | Date | null;
 		sentContent: string | null;
 		undeliverableReason?: string | null;
+		qualityScore?: number | null;
+		qualityReason?: string | null;
+		qualityModel?: string | null;
 		regeneratingRunId?: number | null;
 		regenerationCount?: number;
 		draftingRunId?: number | null;
@@ -57,11 +74,13 @@
 		draft,
 		usage,
 		limits,
+		rubric = DEFAULT_QUALITY_RUBRIC,
 		editRequestId = $bindable(null),
 	}: {
 		draft: Draft | null;
 		usage?: UsageByKind;
 		limits?: QuotaLimits | null;
+		rubric?: QualityRubric;
 		// Set by the parent (the inbox `e` shortcut) to the id of the draft that
 		// should open its inline editor. Consumed and reset to null below.
 		editRequestId?: number | null;
@@ -390,6 +409,13 @@
 			? highlightStyleFindingSpans(draft.body, styleFindings)
 			: (draft?.body ?? ''),
 	);
+	// LOR-229: the quality score's band and provenance - a measured
+	// (deterministic) score and a judged one are different claims and never
+	// render the same way.
+	const qualityBand = $derived(draft ? scoreBand(draft.qualityScore, rubric) : 'none');
+	const isJudged = $derived(
+		!!draft && draft.qualityModel != null && draft.qualityModel !== DETERMINISTIC_QUALITY_MODEL,
+	);
 </script>
 
 {#if draft}
@@ -609,6 +635,36 @@
 							</li>
 						{/each}
 					</ul>
+				</div>
+			{/if}
+
+			<!-- LOR-229: the quality score, always distinguishing measured
+			(deterministic, no model call) from judged (a real, separate model
+			call) - these are different claims about the same draft and must
+			never look the same. -->
+			{#if qualityBand !== 'none'}
+				<div
+					class="rounded-lg border p-3 flex items-start gap-2 text-xs {TONE_BANNER_CLASS[
+						BAND_TONE[qualityBand as 'red' | 'amber' | 'green']
+					]}"
+				>
+					<span
+						class="inline-flex shrink-0 items-center rounded-sm px-1 py-0.5 text-[10px] font-semibold {TONE_CLASS[
+							BAND_TONE[qualityBand as 'red' | 'amber' | 'green']
+						]}"
+					>
+						{isJudged ? 'Judged' : 'Measured'}
+						{draft.qualityScore}
+					</span>
+					<span class="text-foreground/80">
+						{#if isJudged}
+							Scored by {draft.qualityModel}{draft.qualityReason ? `: ${draft.qualityReason}` : '.'}
+						{:else}
+							Computed from the style checker and the operator's own voice - no model call{draft.qualityReason
+								? `: ${draft.qualityReason}`
+								: '.'}
+						{/if}
+					</span>
 				</div>
 			{/if}
 

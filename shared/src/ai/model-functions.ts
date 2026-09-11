@@ -10,11 +10,15 @@ import { loadGatewayCatalogue } from './gateway-catalogue.js';
 //
 // The functions are the jobs the product actually runs, not the playbooks:
 // several playbooks draft a message and want the same model, and a job with no
-// model call of its own does not get a knob. Judging quality is the deliberate
-// omission: the rubric is evaluated inside the drafting run rather than by a
-// call of its own (`shared/src/quality-judge.ts` loads a rubric and never
-// reaches a model), so a `quality_judge` entry would be a setting nobody reads.
-// It earns one when it earns a model call.
+// model call of its own does not get a knob. `quality_judge` (LOR-229) is the
+// opposite of the deliberate omission this comment used to describe: judging
+// a draft's quality now DOES earn a model call, but only when an admin has
+// explicitly configured one here - `shared/src/quality-judge.ts` checks
+// `loadModelFunctionConfig` directly (never `resolveFunctionModel`, which
+// would fall back to `defaultModelId` below) so an unconfigured deployment
+// never dials out on a path metered by draft volume. The deterministic part
+// of the score (style findings + the operator's own measured voice profile)
+// still needs no model at all.
 
 export const MODEL_FUNCTIONS = [
   'campaign_draft',
@@ -23,6 +27,7 @@ export const MODEL_FUNCTIONS = [
   'project_extract',
   'project_insights',
   'skill_generate',
+  'quality_judge',
 ] as const;
 
 export type ModelFunction = (typeof MODEL_FUNCTIONS)[number];
@@ -84,6 +89,13 @@ export const MODEL_FUNCTION_META: readonly ModelFunctionMeta[] = [
     label: 'Generating a campaign profile',
     description:
       'Writing a campaign profile from a project and a scenario, which then has to validate against that scenario schema.',
+    defaultModelId: FAST_DEFAULT,
+  },
+  {
+    fn: 'quality_judge',
+    label: 'Judging a draft\u2019s quality',
+    description:
+      'An optional second opinion on a drafted reply: a real model reads it against the quality rubric and returns its own score, alongside (never instead of) the deterministic score every draft already gets from the style checker and the operator\u2019s own measured voice. Off by default - it only runs once a model is set here, since it is a per-draft cost on a path billed by volume.',
     defaultModelId: FAST_DEFAULT,
   },
 ];

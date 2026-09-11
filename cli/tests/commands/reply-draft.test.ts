@@ -131,7 +131,7 @@ afterAll(async () => {
 });
 
 describe('pitchbox drafts:reply:*', () => {
-  it('start returns the placeholder, parent voice, chronological thread, and rubric template', () => {
+  it('start returns the placeholder, parent voice, and chronological thread - no rubric template, since scoring is no longer self-reported', () => {
     const parsed = lastJson(cli(`drafts:reply:start --run=${runId}`));
     expect(parsed.ok).toBe(true);
     expect(parsed.data.replyDraftId).toBe(replyDraftId);
@@ -140,18 +140,13 @@ describe('pitchbox drafts:reply:*', () => {
     expect(parsed.data.thread.length).toBe(1);
     expect(parsed.data.thread[0].body).toBe('tell me more');
     expect(parsed.data.parentMessageId).toBe(inboundId);
-    expect(typeof parsed.data.rubricTemplate).toBe('string');
-    expect(parsed.data.rubricTemplate.length).toBeGreaterThan(0);
+    expect(parsed.data.rubricTemplate).toBeUndefined();
   });
 
-  it('finish sets the body, clears the flag, finalizes the run, and scores the reply', async () => {
+  it('finish sets the body, clears the flag, finalizes the run, and computes the quality score server-side', async () => {
     const out = cliWithStdin(
       `drafts:reply:finish --run=${runId}`,
-      JSON.stringify({
-        body: 'Happy to help - here is more.',
-        qualityScore: 64,
-        qualityReason: 'on tone',
-      }),
+      JSON.stringify({ body: 'Happy to help - here is more.' }),
     );
     expect(lastJson(out).ok).toBe(true);
     const db = getDb();
@@ -159,9 +154,12 @@ describe('pitchbox drafts:reply:*', () => {
     expect(d.body).toBe('Happy to help - here is more.');
     expect(d.draftingRunId).toBeNull();
     expect(d.state).toBe('pending_review');
-    expect(d.qualityScore).toBe(64);
-    expect(d.qualityReason).toBe('on tone');
-    expect(d.qualityModel).toBe('codex');
+    // No style findings and no operator voice corpus in this fixture - the
+    // deterministic scorer has nothing to measure, so it reports "not
+    // scored" rather than guessing a number, and never the drafting run's
+    // own agentRunner the way the old self-report used to.
+    expect(d.qualityScore).toBeNull();
+    expect(d.qualityModel).toBeNull();
     const [r] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
     expect(r.status).toBe('success');
     const [evt] = await db
@@ -169,6 +167,21 @@ describe('pitchbox drafts:reply:*', () => {
       .from(schema.draftEvents)
       .where(eq(schema.draftEvents.draftId, replyDraftId));
     expect(evt.event).toBe('reply_drafted');
+  });
+
+  it('finish caps the score below green when the reply carries a style finding, never trusting a self-report', async () => {
+    const out = cliWithStdin(
+      `drafts:reply:finish --run=${runId}`,
+      JSON.stringify({
+        body: "In today's fast-paced world, it's worth noting the update shipped.",
+      }),
+    );
+    expect(lastJson(out).ok).toBe(true);
+    const db = getDb();
+    const [d] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, replyDraftId));
+    expect(d.qualityModel).toBe('deterministic');
+    expect(d.qualityScore).not.toBeNull();
+    expect(d.qualityScore).toBeLessThan(75);
   });
 
   it('finish rejects an empty body', () => {

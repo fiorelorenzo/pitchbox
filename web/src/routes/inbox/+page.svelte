@@ -43,6 +43,8 @@
 		targetUser: string | null;
 		fitScore: number | null;
 		qualityScore?: number | null;
+		qualityReason?: string | null;
+		qualityModel?: string | null;
 		state: string;
 		body: string;
 		composeUrl: string | null;
@@ -820,6 +822,7 @@
 			draft={selected}
 			usage={selected != null ? itemsUsage[selected.accountId] : undefined}
 			limits={selected ? (itemsQuota[selected.platformId] ?? null) : null}
+			rubric={data.qualityRubric}
 			bind:editRequestId
 		/>
 	</section>

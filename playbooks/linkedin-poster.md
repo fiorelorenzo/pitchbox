@@ -55,7 +55,7 @@ Write like this instead:
 
 1. **Start the run.** Call `run_start` (no arguments needed).
 
-   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform` (should be `linkedin`), `campaign.config` (`postAngle`, optional `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `rubricTemplate`.
+   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform` (should be `linkedin`), `campaign.config` (`postAngle`, optional `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`.
 
 2. **Study what's currently active in the network.** Call `linkedin_candidates` with `{ "runId": <runId> }`, then `staging_candidates` with `{ "run": <runId> }`, to see what the human's own browsing has already surfaced. Each candidate is split like the Mastodon candidates are: `author` (`handle`, `name`) and `post` (`externalId`, `url`, `text`, `observedAt`). Read `post.text` for recurring themes, tone, and whether the same angle has already been said recently by someone else. You are not reading these to reply to any of them, and you must never treat one of them as a target - only to calibrate the new post so it doesn't repeat or clash with what's already circulating.
 
@@ -81,13 +81,11 @@ Write like this instead:
    - Step 2's survey shows the same angle was posted very recently by this project (avoid duplicate or near-duplicate posts).
    - The post reads as engagement bait (a question with no real content behind it, a "controversial take" manufactured purely to draw comments).
 
-7. **Score each draft.** Using `rubricTemplate` from the run context, score the post 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, well-timed posts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+7. **Pick the account.** Use the first account with `role === 'personal'`. Record `accountId`.
 
-8. **Pick the account.** Use the first account with `role === 'personal'`. Record `accountId`.
+8. **Check your own style before persisting.** Call `check_style` with the exact post body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
 
-9. **Check your own style before persisting.** Call `check_style` with the exact post body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
-
-10. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+9. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
 Each draft (the human reviews it in the Inbox and posts it themselves - there is no auto-post path for LinkedIn):
 
@@ -100,13 +98,11 @@ Each draft (the human reviews it in the Inbox and posts it themselves - there is
   "body": "<plain-text post, including disclosure if the product is named>",
   "reasoning": "<one sentence: which angle + why now>",
   "sourceRef": { "postAngle": "<angle>" },
-  "metadata": { "hashtags": ["buildinpublic"] },
-  "qualityScore": 72,
-  "qualityReason": "genuine lesson-learned angle, not a pitch"
+  "metadata": { "hashtags": ["buildinpublic"] }
 }
 ```
 
-11. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
+10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
 
 ## Hard constraints
 

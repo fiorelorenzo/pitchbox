@@ -52,7 +52,7 @@ Write like this instead:
 
 1. **Start the run and load context.** Call `run_start` (no arguments; it defaults to this session's campaign).
 
-   From the result extract: `runId`, `project` (includes `description` - the project's markdown briefing), `platform`, `campaign.config` (`targetHashtags`, optional `keywords`, `perTagLimit`, `maxAgeHours`, `sinceId`, plus `fitScoreThreshold`, `voice`, `offer`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`, `rubricTemplate`. Remember `runId` for every later call.
+   From the result extract: `runId`, `project` (includes `description` - the project's markdown briefing), `platform`, `campaign.config` (`targetHashtags`, optional `keywords`, `perTagLimit`, `maxAgeHours`, `sinceId`, plus `fitScoreThreshold`, `voice`, `offer`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`. Remember `runId` for every later call.
 
 2. **Fetch raw candidates.** Call `mastodon_scout` with `{ "runId": <runId> }`.
 
@@ -89,33 +89,29 @@ Write like this instead:
 
 8. **Pick the account.** Use the first account from `accounts` whose `role === 'personal'`. Record its `id` as `accountId`.
 
-9. **Score each draft.** Using `rubricTemplate` from the run context, score the DM 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, well-justified mentions and give low scores to anything that reads generic or pitchy. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+9. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`, one draft object per candidate that survived step 6.
 
-10. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`, one draft object per candidate that survived step 6.
+   > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
 
-    > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
+   Each draft object:
 
-    Each draft object:
+   ```json
+   {
+     "accountId": 1,
+     "kind": "dm",
+     "fitScore": 4,
+     "targetUser": "alice@mastodon.social",
+     "body": "@alice@mastodon.social <mention body>",
+     "reasoning": "Why this candidate cleared the outreach gate in step 6, plus the visibility reminder from step 7.",
+     "sourceRef": {
+       "statusUrl": "https://mastodon.social/@alice/109...",
+       "matchedHashtag": "selfhosted"
+     },
+     "metadata": { "matchedHashtag": "selfhosted", "matchedKeyword": "self-hosted" }
+   }
+   ```
 
-    ```json
-    {
-      "accountId": 1,
-      "kind": "dm",
-      "fitScore": 4,
-      "targetUser": "alice@mastodon.social",
-      "body": "@alice@mastodon.social <mention body>",
-      "reasoning": "Why this candidate cleared the outreach gate in step 6, plus the visibility reminder from step 7.",
-      "sourceRef": {
-        "statusUrl": "https://mastodon.social/@alice/109...",
-        "matchedHashtag": "selfhosted"
-      },
-      "metadata": { "matchedHashtag": "selfhosted", "matchedKeyword": "self-hosted" },
-      "qualityScore": 72,
-      "qualityReason": "genuine reply-worthy signal, concrete reference, short and non-pitchy"
-    }
-    ```
-
-11. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 

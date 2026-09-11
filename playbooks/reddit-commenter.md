@@ -53,7 +53,7 @@ Write like this instead:
 
 1. **Start the run.** Call `run_start` (no arguments needed; it defaults to this session's campaign).
 
-   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (the strict-validated commenter profile - `targetSubreddits`, `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`, `rubricTemplate`.
+   From the result extract `runId`, `project` (incl. `description` markdown for high-level context), `platform`, `campaign.config` (the strict-validated commenter profile - `targetSubreddits`, `topicKeywords`, `avoidKeywords`, `voice`, `valuePropositions`, `productUrl`, `systemInstructions`), `accounts`, `blocklist`, `contactedRecently`.
 
    Treat `campaign.config.systemInstructions` as additional voice & content guidance - it overrides defaults.
 
@@ -90,11 +90,9 @@ Write like this instead:
 
 7. **Pick the account.** Comments almost always use the `personal` account (brand accounts commenting on other people's posts comes off as marketing spam). Use the first account with `role === 'personal'`. Record `accountId`.
 
-8. **Score each draft.** Using `rubricTemplate` from the run context, score the comment 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted comments and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+8. **Check your own style before persisting.** Call `check_style` with the exact comment body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
 
-9. **Check your own style before persisting.** Call `check_style` with the exact comment body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
-
-10. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+9. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
 > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
 
@@ -110,15 +108,13 @@ Each draft:
   "body": "<comment markdown>",
   "reasoning": "2-3 sentences on why this post, what angle, what value you're adding.",
   "sourceRef": { "permalink": "/r/Solo_Roleplaying/comments/abc/.../", "postTitle": "..." },
-  "metadata": { "matchedBy": "search", "postAgeHours": 8 },
-  "qualityScore": 78,
-  "qualityReason": "specific reference to their post, clear ask"
+  "metadata": { "matchedBy": "search", "postAgeHours": 8 }
 }
 ```
 
 `targetUser` is the author of the post you are replying to. Commenting on someone's post counts as contacting them, so it feeds the blocklist, the dedup window and contact history. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.permalink` points at.
 
-11. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 

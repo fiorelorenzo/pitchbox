@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import { getDb, schema } from '@pitchbox/shared/db';
 import { getSchema, SCENARIO_META, type ScenarioSlug } from '@pitchbox/shared/campaigns';
 import { loadActiveTemplates, type TemplateKind } from '@pitchbox/shared/templates';
-import { loadQualityRubric } from '@pitchbox/shared/quality-judge';
 import { eq } from 'drizzle-orm';
 import { ok, fail } from '../lib/output.js';
 
@@ -89,8 +88,6 @@ export async function startRun(campaignId: number, runId?: number | null) {
       .returning();
   }
 
-  const rubric = await loadQualityRubric(db);
-
   return {
     runId: run.id,
     campaign: {
@@ -108,7 +105,6 @@ export async function startRun(campaignId: number, runId?: number | null) {
     blocklist: blocks.map((b) => ({ kind: b.kind, value: b.value })),
     contactedRecently: contacted.map((c) => c.target),
     templates: templates.map((t) => ({ id: t.id, kind: t.kind, title: t.title, body: t.body })),
-    rubricTemplate: rubric.rubric_template,
   };
 }
 
