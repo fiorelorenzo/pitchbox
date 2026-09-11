@@ -480,6 +480,38 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
       },
       orgId,
     );
+
+    // LOR-224: this is the measurement of whether the in-run check works.
+    // The playbook is now expected to call the `check_style` MCP tool on
+    // each body before ever calling `drafts_create`, and fix what it finds
+    // while the model is still in the loop - the one place a structural
+    // finding can actually be repaired (see the comment on `styled` above:
+    // this backstop has no live model to send a rewrite back to). A run
+    // event, not just an in-memory count, is what lets that number be
+    // compared across runs after the fact instead of trusted on faith.
+    // Written as an `unknown`-kind event (the client's `EventKind` union
+    // already renders it via `UnknownEvent`) rather than a new kind, so no
+    // client-side type needs to grow for one counter.
+    const findingsAtCreate = styled.reduce(
+      (sum, d) => sum + d.styleFindings.length + (d.variantStyleFindings?.flat().length ?? 0),
+      0,
+    );
+    const [{ maxSeq }] = await db
+      .select({ maxSeq: sql<number>`coalesce(max(${schema.runEvents.seq}), 0)` })
+      .from(schema.runEvents)
+      .where(eq(schema.runEvents.runId, runId));
+    const rawPayload = JSON.stringify({
+      runId,
+      draftCount: styled.length,
+      findingsCount: findingsAtCreate,
+    });
+    await db.insert(schema.runEvents).values({
+      runId,
+      seq: maxSeq + 1,
+      kind: 'unknown',
+      payload: { type: 'unknown', eventType: 'style-findings-at-create', raw: rawPayload },
+      raw: rawPayload,
+    });
   }
 
   return { runId, inserted: inserted.length, skipped, dedupSkipped };

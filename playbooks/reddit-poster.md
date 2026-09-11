@@ -17,6 +17,9 @@ The run is already bound to a campaign and run through the environment. Step 1 r
 
 - `run_start` - create/resume the run and load campaign context.
 - `subreddit_snapshot` - fetch a subreddit's recent top posts + about/rules.
+- `operator_voice` - your own persona and derived writing voice for this organization.
+- `my_prior_takes` - excerpts of what you have already written, matched against a query.
+- `check_style` - the deterministic house-style checker; run it on a body before persisting it.
 - `drafts_create` - write the drafts back.
 - `run_finish` - close the run.
 
@@ -56,7 +59,8 @@ Write like this instead:
    - Note recurring formats (e.g. "Show & tell", weekly threads, AMA cadence).
    - Read `rules` and `about` for moderation / self-promo constraints.
 
-3. **Draft one or more posts per subreddit.** Aim for 1-3 distinct posts per subreddit (not more) for this run. For each draft:
+3. **Read how you actually write.** Call `operator_voice` (no arguments) for your persona and derived writing voice, and `my_prior_takes` with a short query naming the angle or subject you are about to write about, for what you have already said on it. Draft in this voice rather than a generic house tone - it is measured from your own past posts, so its length and register are a reasonable starting point here (unlike a short comment reply). Either tool can come back with `{ ok: false, reason }` instead of inventing something when there is nothing on file yet - draft from the campaign voice alone when that happens.
+4. **Draft one or more posts per subreddit.** Aim for 1-3 distinct posts per subreddit (not more) for this run. For each draft:
    - **Pick the format** that fits the subreddit and the `postAngle`. Acceptable formats: launch / show-and-tell, lessons-learned story, question-led discussion, comparison or teardown. Avoid pure announcements without a substantive body.
    - **Title** - concrete, specific, no clickbait. 30-120 chars. Avoid all-caps. Avoid leading `[Show]` / `[Help]` prefixes unless the subreddit conventionally uses them.
    - **Body** - markdown. 200-600 words usually. Open with the hook (not "Hey everyone!"). Mid-section: substance - show your work, share data, explain trade-offs. Close with a concrete question that invites discussion (not "what do you think?").
@@ -66,14 +70,16 @@ Write like this instead:
    - **Link policy** - at most one product URL (`campaign.config.productUrl`), placed in context rather than at the top. Subreddits with strict self-promo rules: skip the link, mention the project name only.
    - **Disclosure** - include `campaign.config.voice.disclosure` once near the bottom, before the closing question.
 
-4. **Apply hard skips.** Drop any draft if:
+5. **Apply hard skips.** Drop any draft if:
    - The subreddit appears in `blocklist` with `kind=subreddit` (global or project scope).
    - The title or body contains any term from `campaign.config.avoidKeywords`.
    - The subreddit's `rules` show explicit "no self-promotion" / "no AI-generated content" rules and the draft can't reasonably claim to be human-authored substantive content.
 
-5. **Score each draft.** Using `rubricTemplate` from the run context, score the post 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted posts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+6. **Score each draft.** Using `rubricTemplate` from the run context, score the post 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted posts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
 
-6. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+7. **Check your own style before persisting.** Call `check_style` with the exact title and body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
+
+8. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft:
 
@@ -96,7 +102,7 @@ Write like this instead:
    }
    ```
 
-7. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
+9. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
 
 ## Hard rules
 

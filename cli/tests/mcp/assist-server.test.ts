@@ -58,7 +58,7 @@ function parse(res: CallResult): unknown {
 describe('cli/src/mcp/assist-server', () => {
   beforeEach(reset);
 
-  it('advertises exactly the seven assist tools and none of the campaign server\u2019s', async () => {
+  it('advertises exactly the seven assist tools; the campaign server reuses three by name (LOR-224) and none of the other four', async () => {
     const orgId = await defaultOrgId();
     const assistClient = await connectAssistClient({ organizationId: orgId });
     const { tools } = await assistClient.listTools();
@@ -80,8 +80,27 @@ describe('cli/src/mcp/assist-server', () => {
     await campaignClient.connect(campaignClientT);
     const { tools: campaignTools } = await campaignClient.listTools();
     const campaignNames = new Set(campaignTools.map((t) => t.name));
-    expect(campaignTools.length).toBe(26);
-    for (const name of names) expect(campaignNames.has(name)).toBe(false);
+
+    // LOR-224 deliberately reuses three read-only assist tools on the
+    // campaign server, by name and by handler - this is the one intentional
+    // overlap, and it is read-only (see the comment on their registration
+    // in src/mcp/server.ts). The other four assist tools (observed-target
+    // reads with no meaning on the campaign plane) must never appear there.
+    const reused = ['operator_voice', 'my_prior_takes', 'check_style'];
+    const assistOnly = names.filter((n) => !reused.includes(n));
+    expect(assistOnly).toEqual([
+      'author_history',
+      'look_at_image',
+      'project_knowledge',
+      'read_thread',
+    ]);
+    for (const name of reused) expect(campaignNames.has(name)).toBe(true);
+    for (const name of assistOnly) expect(campaignNames.has(name)).toBe(false);
+
+    // And the reverse never happened either: no campaign write tool leaked
+    // onto the assist server.
+    expect(names).not.toContain('drafts_create');
+    expect(names).not.toContain('run_finish');
   });
 
   it('refuses every tool call when the session has no bound organization', async () => {

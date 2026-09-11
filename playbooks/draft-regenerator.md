@@ -16,6 +16,9 @@ The run is bound to this session through the environment, so the tools default t
 ## Tools
 
 - `draft_regen_start` - load the draft, its target, the reviewer hint, and the originating persona.
+- `operator_voice` - your own persona and derived writing voice for this organization.
+- `my_prior_takes` - excerpts of what you have already written, matched against a query.
+- `check_style` - the deterministic house-style checker; run it on a body before persisting it.
 - `draft_regen_finish` - submit the rewritten body (and title, for posts).
 
 ## House style: write like a human
@@ -47,7 +50,11 @@ Write like this instead:
 
 1. **Load context.** Call `draft_regen_start` (no arguments needed). From the result read: `hint`, `platform`, `persona`, `rubricTemplate`, and `draft` (`kind`, `title`, `body`, `targetUser`, `reasoning`, `sourceRef`).
 
-2. **Rewrite the draft.** Produce ONE improved version of the draft body.
+2. **Read how you actually write.** Call `operator_voice` (no arguments) for your persona and derived writing voice, and `my_prior_takes` with a short query naming the subject of `draft.body`, for what you have already said about it elsewhere. `persona` already carries the voice this specific draft was written in - these two keep the rewrite consistent with how you actually write in general, not just with that one draft.
+
+   `operator_voice`'s derived summary describes your writing in aggregate (word count, sentence length, closers, hashtag habits), measured mostly from longer posts - it is not a target length for this particular rewrite. Keep whatever length `draft.kind`, `hint` and the platform constraints below call for. Either tool can come back with `{ ok: false, reason }` instead of inventing something when there is nothing on file - keep `persona`'s voice alone when that happens.
+
+3. **Rewrite the draft.** Produce ONE improved version of the draft body.
    - If `hint` is non-empty, treat it as the primary instruction (e.g. "shorter", "less salesy", "reference their last comment"). Satisfy it.
    - Keep the voice and rules from `persona` (the playbook that produced this draft). Do not drift into a different tone.
    - Keep it addressed to the same `targetUser` / thread implied by `sourceRef`. Do not change the target.
@@ -57,9 +64,11 @@ Write like this instead:
    - No placeholders, no "TBD", no meta commentary. Output the message text a human would send.
    - Apply the House style section above literally: it outranks every default here and holds even when the campaign voice says nothing about it.
 
-3. **Score the rewritten draft.** Using `rubricTemplate`, score the rewrite 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted drafts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason`.
+4. **Score the rewritten draft.** Using `rubricTemplate`, score the rewrite 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted drafts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason`.
 
-4. **Submit.** Call `draft_regen_finish` with:
+5. **Check your own style before persisting.** Call `check_style` with the exact rewritten body (and title, if you changed it) you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `draft_regen_finish` has no live model to send a rewrite back to.
+
+6. **Submit.** Call `draft_regen_finish` with:
 
    ```json
    {
@@ -72,7 +81,7 @@ Write like this instead:
 
    The tool overwrites the draft body, bumps its version, records the previous body for undo, and finalizes the run. **If the tool returns an error**, read the message, fix the payload, and try again. **Maximum two retries.**
 
-5. **On failure.** If `draft_regen_start` reports the draft is gone or no longer pending review, or you genuinely cannot improve it, call `run_finish` with `{ "status": "failed", "error": "<short reason>" }` and stop. The draft keeps its current body.
+7. **On failure.** If `draft_regen_start` reports the draft is gone or no longer pending review, or you genuinely cannot improve it, call `run_finish` with `{ "status": "failed", "error": "<short reason>" }` and stop. The draft keeps its current body.
 
 ## What this playbook must never do
 

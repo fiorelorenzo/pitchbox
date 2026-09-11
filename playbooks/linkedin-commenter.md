@@ -20,6 +20,9 @@ The run is already bound to a campaign and run through the environment, so the t
 - `run_start` - create/resume the run and load campaign context.
 - `linkedin_candidates` - drain the browser's observation buffer into staging for this run. This tool fetches nothing over the network: LinkedIn has no discovery API, so the only candidates that exist are posts the human's own browser already rendered while they were signed in and browsing. Applies blocklist and contact-history filters server-side before staging.
 - `staging_candidates` - read the staged candidates.
+- `operator_voice` - your own persona and derived writing voice for this organization.
+- `my_prior_takes` - excerpts of what you have already written, matched against a query.
+- `check_style` - the deterministic house-style checker; run it on a body before persisting it.
 - `drafts_create` - write the drafts back.
 - `run_finish` - close the run.
 
@@ -74,7 +77,11 @@ Write like this instead:
 
    Drop candidates below 4. LinkedIn punishes visible volume more than the other platforms - a handful of genuinely sharp replies beats a comment on every candidate that clears a low bar.
 
-6. **Draft the reply.** The voice rules are in `campaign.config.voice` (`tone`, `hardBans`, `dos`, `disclosure`). LinkedIn-specific guidance:
+6. **Read how you actually write.** Call `operator_voice` (no arguments) for your persona and derived writing voice, and `my_prior_takes` with a short query naming the post's subject (not the whole post) for what you have already said about it. Write the reply in this voice, not a generic house tone.
+
+   `operator_voice`'s derived summary describes your writing in aggregate (word count, sentence length, closers, hashtag habits) - it is measured mostly from longer posts, not comments, so it tells you how you sound, not how long this reply should be. The length and register called for below still win. Either tool can come back with `{ ok: false, reason }` instead of inventing something when there is nothing on file - draft from the campaign voice alone when that happens.
+
+7. **Draft the reply.** The voice rules are in `campaign.config.voice` (`tone`, `hardBans`, `dos`, `disclosure`). LinkedIn-specific guidance:
    - Honour every entry in `campaign.config.voice.hardBans` literally - exact substrings to never emit.
    - Apply the House style section above literally: it outranks every default here and holds even when the campaign voice says nothing about it.
    - Plain text, natural paragraph breaks, no markdown headings, no bullet-point lists dressed up as a comment - LinkedIn comments read as a reply to a person, not a slide.
@@ -84,37 +91,39 @@ Write like this instead:
    - **Link policy.** Default = no link. Include `campaign.config.productUrl` only if it is genuinely the answer to what the post is asking - the author is directly asking for a tool, a resource, or a recommendation and the product is a truthful fit. Otherwise the comment stands on its own with nothing to click.
    - **Disclosure.** If you name the product or include its link, also include `campaign.config.voice.disclosure` in the same comment so the relationship is not hidden.
 
-7. **Pick the account.** Use the first account with `role === 'personal'`. Record `accountId`.
+8. **Pick the account.** Use the first account with `role === 'personal'`. Record `accountId`.
 
-8. **Score each draft.** Using `rubricTemplate` from the run context, score the reply 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, contextual replies and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+9. **Score each draft.** Using `rubricTemplate` from the run context, score the reply 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, contextual replies and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
 
-9. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+10. **Check your own style before persisting.** Call `check_style` with the exact reply body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
 
-   > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
+11. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
-   Each draft (the human opens the real post from the Inbox and pastes this in themselves - Pitchbox never posts it):
+> Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
 
-   ```json
-   {
-     "accountId": 1,
-     "kind": "post_comment",
-     "fitScore": 4,
-     "targetUser": "<the post author's profile slug, the candidate's author.handle>",
-     "body": "<reply text>",
-     "reasoning": "2-3 sentences on why this post, what angle, what value you're adding.",
-     "sourceRef": {
-       "externalId": "urn:li:activity:1234567890",
-       "url": "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/"
-     },
-     "metadata": { "authorHandle": "jane-doe" },
-     "qualityScore": 76,
-     "qualityReason": "concrete reference to their post, adds a real point"
-   }
-   ```
+Each draft (the human opens the real post from the Inbox and pastes this in themselves - Pitchbox never posts it):
 
-   `targetUser` is the author of the post you are replying to, and it is their profile slug (`author.handle`), never their display name: a name cannot be blocklisted or deduped. Commenting on someone's post counts as contacting them, so it feeds the blocklist, the dedup window and contact history, exactly as the in-page assist already does. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.externalId` points at; an observation captured without a slug has no target, and null is the right answer there.
+```json
+{
+  "accountId": 1,
+  "kind": "post_comment",
+  "fitScore": 4,
+  "targetUser": "<the post author's profile slug, the candidate's author.handle>",
+  "body": "<reply text>",
+  "reasoning": "2-3 sentences on why this post, what angle, what value you're adding.",
+  "sourceRef": {
+    "externalId": "urn:li:activity:1234567890",
+    "url": "https://www.linkedin.com/feed/update/urn:li:activity:1234567890/"
+  },
+  "metadata": { "authorHandle": "jane-doe" },
+  "qualityScore": 76,
+  "qualityReason": "concrete reference to their post, adds a real point"
+}
+```
 
-10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+`targetUser` is the author of the post you are replying to, and it is their profile slug (`author.handle`), never their display name: a name cannot be blocklisted or deduped. Commenting on someone's post counts as contacting them, so it feeds the blocklist, the dedup window and contact history, exactly as the in-page assist already does. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.externalId` points at; an observation captured without a slug has no target, and null is the right answer there.
+
+12. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 
