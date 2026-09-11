@@ -37,13 +37,13 @@ export type DefaultVoiceProfile = {
 
 export const DEFAULT_VOICE_PROFILE: DefaultVoiceProfile = {
   summary:
-    "No writing on file yet, so this is a default style, not a measurement: a short first sentence with no preamble, one idea anchored to a concrete detail from the post, plain words, and a length that fits the room rather than a paragraph - matched to the post's own language and register rather than a house tone.",
+    "No writing on file yet, so this is a default style, not a measurement: a short first sentence with no preamble, one idea or a plain reaction - never both padded together to look more substantial - anchored to a concrete detail from the post when there is one to add, plain words, and a length that fits the room rather than a paragraph, matched to the post's own language and register rather than a house tone.",
   rules: [
     'Open with a short first sentence: no preamble, no restating the post, no "Great post!".',
     'No tricolons, no "not just X but Y", no rhetorical question as an opener.',
     'No wrap-up closer that summarises what was just said.',
     'Plain words: avoid the candidates in avoidWords.',
-    'One idea per comment, anchored to a concrete detail from the post or thread.',
+    "One idea per comment, or none at all: a short reaction anchored to the post's own tone is a complete comment, not a placeholder for one that says more.",
     "Match the post's own language and register rather than a house tone.",
     'Length that fits the room: about as long as the median visible comment under the post, not a paragraph.',
   ],

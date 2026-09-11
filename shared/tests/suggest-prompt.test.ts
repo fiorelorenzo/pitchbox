@@ -64,6 +64,7 @@ const voiceProfile: VoiceProfileSummary = {
     'Based on 12 pieces of their own writing (640 words). Usually writes with short sentences, close to speech, first person, speaking as themselves, about 11 words per sentence. Often opens with "Shipped the". Reuses these words often: shipped, team, campaign.',
   commentSummary: null,
   editSignature: null,
+  medianCommentWords: null,
 };
 
 const projects: ProjectBrief[] = [
@@ -261,6 +262,7 @@ describe('buildSuggestionPrompt', () => {
         commentSummary:
           'Based on 27 of their own comments (190 words). Usually writes one short sentence.',
         editSignature: null,
+        medianCommentWords: 7,
       };
       const commentPrompt = buildSuggestionPrompt({
         kind: 'post_comment',
@@ -406,7 +408,12 @@ describe('buildSuggestionPrompt', () => {
         kind: 'post_comment',
         post,
         persona: null,
-        voiceProfile: { summary: justOver, commentSummary: null, editSignature: null },
+        voiceProfile: {
+          summary: justOver,
+          commentSummary: null,
+          editSignature: null,
+          medianCommentWords: null,
+        },
         projects: [],
         repos: [],
       });
@@ -414,7 +421,12 @@ describe('buildSuggestionPrompt', () => {
         kind: 'post_comment',
         post,
         persona: null,
-        voiceProfile: { summary: wayOver, commentSummary: null, editSignature: null },
+        voiceProfile: {
+          summary: wayOver,
+          commentSummary: null,
+          editSignature: null,
+          medianCommentWords: null,
+        },
         projects: [],
         repos: [],
       });
@@ -450,6 +462,149 @@ describe('buildSuggestionPrompt', () => {
       expect(promptJustOver).not.toContain(marker);
       expect(promptWayOver).not.toContain(marker);
       expect(promptJustOver.length).toBe(promptWayOver.length);
+    });
+  });
+
+  // LOR-233: the old task text made "add something" the only legitimate
+  // outcome for a comment, which contradicted a voice profile that
+  // separately says "about 7 words" - a model given both always resolved
+  // toward the explicit task instruction and wrote a paragraph anyway. The
+  // fix is a task that states a real length target and names a short
+  // reaction as a complete answer, not a second rule bolted on top of the
+  // old one.
+  describe('length target and short reactions (LOR-233)', () => {
+    it('names a short reaction as a complete answer, not only a fallback for having nothing to add', () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        ...noContext,
+      });
+      expect(prompt).toMatch(/short reaction.*is a complete answer/);
+      // The old contradiction: a comment was required to "add something" or
+      // apologise for not doing so. Neither framing survives.
+      expect(prompt).not.toMatch(/has to add something/);
+      expect(prompt).not.toMatch(/say so in one sentence instead of padding/);
+    });
+
+    it('says the same about a reply to one specific comment', () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post: { ...post, replyToCommentId: 'c1' },
+        ...noContext,
+      });
+      expect(prompt).toMatch(/short reaction.*is a complete answer/);
+    });
+
+    it("names the operator's own comment-genre median as the length target when no thread was captured", () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        persona: null,
+        voiceProfile: {
+          summary: 'irrelevant',
+          commentSummary: null,
+          editSignature: null,
+          medianCommentWords: 7,
+        },
+        projects: [],
+        repos: [],
+      });
+      expect(prompt).toMatch(/Length target: the operator's own comments run about 7 words/);
+      expect(prompt).toMatch(/not a ceiling/);
+      // Deliberately not phrased as a hard cap: a median describes the
+      // typical case, and a comment earned by something real to say is
+      // explicitly not the thing being discouraged.
+      expect(prompt).toMatch(/a longer comment earned by something real to say is not/);
+    });
+
+    it("prefers the room's own median over the operator's habit when the page sent a thread", () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post: {
+          ...post,
+          thread: {
+            comments: [
+              { body: Array(28).fill('word').join(' ') },
+              { body: Array(30).fill('word').join(' ') },
+              { body: Array(32).fill('word').join(' ') },
+            ],
+            renderedCount: 3,
+            truncated: false,
+          },
+        },
+        persona: null,
+        voiceProfile: {
+          summary: 'irrelevant',
+          commentSummary: null,
+          editSignature: null,
+          medianCommentWords: 7,
+        },
+        projects: [],
+        repos: [],
+      });
+      expect(prompt).toMatch(/Length target: this thread's own comments run about 30 words/);
+      expect(prompt).not.toContain('about 7 words');
+    });
+
+    it("falls back to the operator's own habit when the thread rendered no comments at all", () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post: { ...post, thread: { comments: [], renderedCount: 0, truncated: false } },
+        persona: null,
+        voiceProfile: {
+          summary: 'irrelevant',
+          commentSummary: null,
+          editSignature: null,
+          medianCommentWords: 12,
+        },
+        projects: [],
+        repos: [],
+      });
+      expect(prompt).toMatch(/Length target: the operator's own comments run about 12 words/);
+    });
+
+    it('says nothing about length when neither the corpus nor the thread has anything to measure - never a fixed number', () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        ...noContext,
+      });
+      expect(prompt).not.toMatch(/Length target/);
+    });
+
+    it('never names a length target for a standalone post, which has no room and no comment-genre habit to read one off', () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post',
+        post,
+        persona: null,
+        voiceProfile: {
+          summary: 'irrelevant',
+          commentSummary: null,
+          editSignature: null,
+          medianCommentWords: 7,
+        },
+        projects: [],
+        repos: [],
+      });
+      expect(prompt).not.toMatch(/Length target/);
+    });
+
+    it('gets the singular right for a one-word target', () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        persona: null,
+        voiceProfile: {
+          summary: 'irrelevant',
+          commentSummary: null,
+          editSignature: null,
+          medianCommentWords: 1,
+        },
+        projects: [],
+        repos: [],
+      });
+      expect(prompt).toMatch(/about 1 word\b/);
+      expect(prompt).not.toContain('about 1 words');
     });
   });
 });
