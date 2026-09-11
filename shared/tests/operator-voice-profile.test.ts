@@ -383,6 +383,60 @@ describe('shared/src/operator-voice-profile', () => {
     const refreshed = await refreshVoiceProfile(getDb(), orgId);
     expect(refreshed.evidence.version).toBe(1);
   });
+
+  it('reads a genres object written before LOR-227 added medianItemWords/itemWordsSpread as 0, never undefined', async () => {
+    const orgId = await ensureOrg('vp-org-legacy-genres');
+    // The exact per-genre shape refreshVoiceProfile wrote before LOR-227:
+    // summary/itemCount/measurable only, no medianItemWords/itemWordsSpread,
+    // and `reply` entirely absent (a row derived before every genre had ever
+    // been seen would look like this too).
+    const legacyEvidence = {
+      voiceSampleIds: [],
+      messageIds: [],
+      draftIds: [],
+      templateIds: [],
+      counts: { voiceSamples: 8, messages: 0, drafts: 0, templates: 0 },
+      version: 3,
+      genres: {
+        post: { summary: 'Usually writes long posts.', itemCount: 8, measurable: true },
+        comment: { summary: null, itemCount: 1, measurable: false },
+      },
+    };
+    await getDb().insert(schema.operatorVoiceProfiles).values({
+      organizationId: orgId,
+      summary: 'placeholder',
+      itemCount: 8,
+      wordCount: 100,
+      evidence: legacyEvidence,
+      source: 'derived',
+      derivedAt: new Date(),
+    });
+
+    const row = await loadVoiceProfile(getDb(), orgId);
+    expect(row).not.toBeNull();
+    // Present in the stored blob, missing only the two new fields: read back
+    // as 0, not undefined - the exact bug a `r.genres ?? EMPTY_GENRE_SUMMARIES`
+    // simplification would reintroduce, since that line only guards a wholly
+    // absent `genres`, not a stale per-genre shape inside one that is present.
+    expect(row!.evidence.genres.post).toEqual({
+      summary: 'Usually writes long posts.',
+      itemCount: 8,
+      measurable: true,
+      medianItemWords: 0,
+      itemWordsSpread: 0,
+    });
+    expect(row!.evidence.genres.comment.medianItemWords).toBe(0);
+    expect(row!.evidence.genres.comment.itemWordsSpread).toBe(0);
+    // Absent from the stored blob entirely - still a full, valid empty
+    // summary rather than undefined.
+    expect(row!.evidence.genres.reply).toEqual({
+      summary: null,
+      itemCount: 0,
+      measurable: false,
+      medianItemWords: 0,
+      itemWordsSpread: 0,
+    });
+  });
 });
 
 describe('per-genre derivation (LOR-223)', () => {
