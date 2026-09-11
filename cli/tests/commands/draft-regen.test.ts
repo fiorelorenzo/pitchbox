@@ -151,6 +151,41 @@ describe('pitchbox drafts:regen:*', () => {
     expect(d.qualityScore).toBeLessThan(75);
   });
 
+  it('finish measures echo and language match against the source text the original draft carried, when present (LOR-251)', async () => {
+    const db = getDb();
+    const postText =
+      'We just shipped the new expense reconciliation workflow after months of testing and everyone on the team is relieved it finally works end to end.';
+    await db
+      .update(schema.drafts)
+      .set({ sourceRef: { permalink: '/r/x/1', sourceText: postText } })
+      .where(eq(schema.drafts.id, draftId));
+
+    // The "in today's fast-paced world" clause is a known style finding,
+    // which caps the score at an integer regardless of the axis average -
+    // this test is about the echo/language-match axes, not about
+    // exercising every score value the deterministic scorer can reach.
+    const out = cliWithStdin(
+      `drafts:regen:finish --run=${regenRunId}`,
+      JSON.stringify({
+        body: "In today's fast-paced world, congrats on shipping the new expense reconciliation workflow for the whole team.",
+      }),
+    );
+    expect(lastJson(out).ok).toBe(true);
+
+    const [d] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, draftId));
+    const detail = (d.metadata as Record<string, unknown>).qualityDetail as {
+      deterministic: {
+        sourceMeasured: boolean;
+        languageMatch: boolean | null;
+        distance: { echo: number | null };
+      };
+    };
+    expect(detail.deterministic.sourceMeasured).toBe(true);
+    expect(detail.deterministic.distance.echo).not.toBeNull();
+    expect(detail.deterministic.distance.echo as number).toBeGreaterThan(0);
+    expect(detail.deterministic.languageMatch).toBe(true);
+  });
+
   it('finish rejects an empty body', () => {
     expect(() =>
       cliWithStdin(`drafts:regen:finish --run=${regenRunId}`, JSON.stringify({ body: '  ' })),

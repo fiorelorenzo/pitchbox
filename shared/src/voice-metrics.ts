@@ -266,6 +266,25 @@ function contentWords(text: string): Set<string> {
   return new Set(words);
 }
 
+/** How much of `candidate`'s own content words already appear in `post` -
+ * `0` means no shared wording, `1` means the candidate is built entirely
+ * out of the post's own words, `null` when the candidate has no content
+ * words of its own to measure. Exported (LOR-251) for the same reason the
+ * distance functions above are: `computeDeterministicQuality` (quality-
+ * judge.ts) needs this exact echo math for a campaign draft against the
+ * post it answers, and duplicating a Unicode-aware content-word extraction
+ * is exactly the kind of thing that drifts into two disagreeing copies. */
+export function echoScore(candidate: string, post: string): AxisScore {
+  const candidateContentWords = contentWords(candidate);
+  const postContentWords = contentWords(post);
+  return candidateContentWords.size > 0
+    ? round2(
+        [...candidateContentWords].filter((w) => postContentWords.has(w)).length /
+          candidateContentWords.size,
+      )
+    : null;
+}
+
 /**
  * Scores one candidate reply against the post it answers and the operator's
  * own real reply to that same post. Pure and synchronous - no model, no I/O.
@@ -290,15 +309,7 @@ export function scoreCandidate(args: ScoreCandidateArgs): VoiceCandidateScore {
     lengthComparisonBasis = 'actual-reply';
   }
 
-  const candidateContentWords = contentWords(candidate);
-  const postContentWords = contentWords(post);
-  const echo: AxisScore =
-    candidateContentWords.size > 0
-      ? round2(
-          [...candidateContentWords].filter((w) => postContentWords.has(w)).length /
-            candidateContentWords.size,
-        )
-      : null;
+  const echo = echoScore(candidate, post);
 
   const languageMatch =
     candidateM.language !== 'unknown' && postM.language !== 'unknown'

@@ -364,6 +364,152 @@ describe('pitchbox drafts:create', () => {
     expect(draft.qualityScore).toBeLessThan(75);
   });
 
+  it('carries sourceRef.sourceText through to persistence and populates the echo/language-match axes a source-less draft leaves null (LOR-251)', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'demo-lor251a', name: 'D251a' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({ projectId: project.id, platformId: platform.id, handle: 'grace', role: 'personal' })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c251a',
+        skillSlug: 'reddit-scout',
+        config: {},
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    const postText =
+      'We just shipped the new expense reconciliation workflow after months of testing and everyone on the team is relieved it finally works end to end.';
+    const payload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'post_comment',
+        subreddit: 'smallbusiness',
+        targetUser: 'opuser',
+        // The "in today's fast-paced world" clause is a known style
+        // finding, which caps the score at an integer regardless of the
+        // axis average - this test is about the echo axis, not about
+        // exercising every score value the deterministic scorer can reach.
+        body: "In today's fast-paced world, congrats on shipping the new expense reconciliation workflow for the whole team.",
+        sourceRef: { permalink: '/r/smallbusiness/comments/abc/x/', sourceText: postText },
+        metadata: {},
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, payload);
+    const res = JSON.parse(out.trim().split('\n').at(-1)!);
+    expect(res.ok).toBe(true);
+    expect(res.data.inserted).toBe(1);
+
+    const [draft] = await db
+      .select()
+      .from(schema.drafts)
+      .where(eq(schema.drafts.accountId, account.id));
+    expect((draft.sourceRef as Record<string, unknown>).sourceText).toBe(postText);
+    const detail = (draft.metadata as Record<string, unknown>).qualityDetail as {
+      deterministic: {
+        sourceMeasured: boolean;
+        languageMatch: boolean | null;
+        distance: { echo: number | null; languageMatch: number | null };
+      };
+    };
+    expect(detail.deterministic.sourceMeasured).toBe(true);
+    expect(detail.deterministic.distance.echo).not.toBeNull();
+    expect(detail.deterministic.distance.echo as number).toBeGreaterThan(0);
+    expect(detail.deterministic.languageMatch).toBe(true);
+    expect(detail.deterministic.distance.languageMatch).toBe(0);
+  });
+
+  it('reports the echo and language-match axes as not measurable, never a guessed zero, on a proactive post with no source (LOR-251)', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'demo-lor251b', name: 'D251b' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({ projectId: project.id, platformId: platform.id, handle: 'henry', role: 'personal' })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c251b',
+        skillSlug: 'reddit-scout',
+        config: {},
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    const payload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'post',
+        subreddit: 'smallbusiness',
+        title: 'Launch day',
+        // A known style finding ("in today's fast-paced world") so the score
+        // is guaranteed non-null via the style cap regardless of corpus
+        // state - the point of this test is the source axes, not the cap.
+        body: "In today's fast-paced world, it's worth noting the update shipped.",
+        sourceRef: { postAngle: 'launch' },
+        metadata: {},
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, payload);
+    const res = JSON.parse(out.trim().split('\n').at(-1)!);
+    expect(res.ok).toBe(true);
+    expect(res.data.inserted).toBe(1);
+
+    const [draft] = await db
+      .select()
+      .from(schema.drafts)
+      .where(eq(schema.drafts.accountId, account.id));
+    expect(draft.qualityScore).not.toBeNull();
+    const detail = (draft.metadata as Record<string, unknown>).qualityDetail as {
+      deterministic: {
+        sourceMeasured: boolean;
+        languageMatch: boolean | null;
+        distance: { echo: number | null; languageMatch: number | null };
+      };
+    };
+    expect(detail.deterministic.sourceMeasured).toBe(false);
+    expect(detail.deterministic.distance.echo).toBeNull();
+    expect(detail.deterministic.languageMatch).toBeNull();
+    expect(detail.deterministic.distance.languageMatch).toBeNull();
+  });
+
   it('skips blocklisted targets and reports them in the response', async () => {
     const db = getDb();
     const [platform] = await db

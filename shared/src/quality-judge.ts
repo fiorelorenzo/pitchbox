@@ -36,6 +36,22 @@
 // still subject to the style-finding cap. `qualityModel` records which kind
 // of number it is - the literal string `DETERMINISTIC_QUALITY_MODEL` or the
 // judge's real model id - so a caller (the Inbox badge) can always tell.
+//
+// 2026-09-11 (LOR-251): the deterministic component gained two more axes,
+// echo and language match, measured against the post the draft answers
+// rather than the operator's own corpus. A campaign draft never carried
+// that text at all before this, so both axes were structurally dead outside
+// the offline voice-eval harness - `createDrafts`
+// (cli/src/commands/drafts.ts) now reads it off
+// `sourceRef.sourceText`/`sourceRef.sourceComments`, clamped to the same
+// MAX_POST_CHARS/MAX_THREAD_COMMENTS/MAX_COMMENT_CHARS/MAX_THREAD_CHARS
+// ceilings the assist plane already enforces (`assist/suggest-prompt.ts`).
+// The length axis now prefers the visible thread's median over the
+// operator's own corpus median when a playbook supplied one - the same
+// preference order `voice-metrics.ts`'s own header documents for
+// `scoreCandidate`. Absent source text (a proactive post) leaves
+// echo/languageMatch/thread-length `null`, the same refuse-rather-than-
+// guess discipline the rest of this file already applies.
 import { eq } from 'drizzle-orm';
 import { generateText } from 'ai';
 import { createGateway } from '@ai-sdk/gateway';
@@ -59,6 +75,8 @@ import {
   shapeDistance,
   voiceMarkersDistance,
   lexiconDistance,
+  echoScore,
+  type VoiceMetricsLanguage,
 } from './voice-metrics.js';
 import type { StyleFinding } from './style-check.js';
 
@@ -153,40 +171,88 @@ export interface DeterministicQualityAxes {
   /** Distance derived from `lengthRatio`: `min(1, abs(ratio - 1))`, the same
    * capped-at-1 idiom every other numeric axis in `voice-metrics.ts` uses. */
   length: QualityAxisScore;
+  /** `voice-metrics.ts`'s `echoScore`, against the post this draft answers
+   * (LOR-251) - `null` when there is no source post to compare against, or
+   * the candidate has no content words of its own to measure. */
+  echo: QualityAxisScore;
+  /** `0` when the candidate answers in the source post's own language, `1`
+   * when it does not, `null` when there is no source post or either side's
+   * language could not be classified. Distance-shaped (0 = good) so it
+   * folds into the same average as every other axis here; `languageMatch`
+   * on `DeterministicQualityDetail` below carries the raw boolean. */
+  languageMatch: QualityAxisScore;
 }
 
 export interface DeterministicQualityDetail {
   /** `null` only when literally nothing was measurable: no style findings
-   * and no axis cleared its own floor (a thin or absent operator corpus).
-   * Never a guessed number standing in for "unmeasured". */
+   * and no axis cleared its own floor (a thin or absent operator corpus,
+   * and no source post to answer). Never a guessed number standing in for
+   * "unmeasured". */
   score: number | null;
   styleFindingCount: number;
   distance: DeterministicQualityAxes;
-  /** Candidate word count divided by the operator's own corpus median item
-   * length (`rhythm.medianItemWords`, LOR-232) - `null` when the corpus is
-   * not measured or has never derived a length. */
+  /** Candidate word count divided by the comparator named in
+   * `lengthComparisonBasis` - `null` when neither comparator is available. */
   lengthRatio: number | null;
+  /** Which comparator `lengthRatio` used: the visible thread's median word
+   * count when a playbook supplied one (LOR-251, preferred - it is the
+   * room the reply is actually read in), else the operator's own corpus
+   * median item length, else `null` when neither is available. */
+  lengthComparisonBasis: 'thread-median' | 'operator-corpus' | null;
   candidateWordCount: number;
-  /** How many of the 6 axes above actually contributed to `score`. */
+  /** How many of the 8 axes above actually contributed to `score`. */
   measuredAxisCount: number;
   corpusMeasured: boolean;
+  /** Whether a source post was supplied at all (LOR-251) - distinct from
+   * `corpusMeasured`, since a proactive post has no source to answer and
+   * that is a normal, honest outcome, not a thin corpus. */
+  sourceMeasured: boolean;
+  /** Raw form of `distance.languageMatch` - `null` when `sourceMeasured` is
+   * false or either side's language could not be classified. */
+  languageMatch: boolean | null;
+  candidateLanguage: VoiceMetricsLanguage;
+  /** `null` when `sourceMeasured` is false. */
+  postLanguage: VoiceMetricsLanguage | null;
+}
+
+/** 3-line copy of `voice-metrics.ts`'s own private `median`, on purpose -
+ * the same call that file's header already makes for its small numeric
+ * helpers: not specific to either module, and not worth a new import
+ * surface for three lines. */
+function median(nums: number[]): number {
+  if (nums.length === 0) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
 }
 
 /**
  * The deterministic half of a draft's quality score: style findings (a hard
- * cap, never averaged away) plus per-axis stylometric distance and length
- * against the operator's own measured voice corpus. Pure and synchronous -
- * no model, no I/O - so it is reproducible across two runs on the same body
- * and the same corpus, and unit-testable without a database.
+ * cap, never averaged away), per-axis stylometric distance and length
+ * against the operator's own measured voice corpus, and - when the draft
+ * answers a source post - echo and language match against that post, plus
+ * a length comparison against the visible thread when one was supplied.
+ * Pure and synchronous - no model, no I/O - so it is reproducible across two
+ * runs on the same inputs, and unit-testable without a database.
  */
 export function computeDeterministicQuality(args: {
   body: string;
   styleFindings: StyleFinding[];
   corpus: OperatorCorpusProfile | null;
   rubric: QualityRubric;
+  /** The post/story/status this draft answers (LOR-251) - absent or empty
+   * for a proactive post, which has nothing to echo or match language
+   * against. */
+  post?: string | null;
+  /** Word counts of the visible thread's other comments (LOR-251), when a
+   * playbook supplied any - the length axis's preferred comparator over the
+   * operator's own corpus median. */
+  threadCommentWordCounts?: number[];
 }): DeterministicQualityDetail {
-  const { body, styleFindings, corpus, rubric } = args;
+  const { body, styleFindings, corpus, rubric, threadCommentWordCounts } = args;
+  const post = args.post && args.post.trim() !== '' ? args.post : null;
   const candidateM = measureOneText(body);
+  const postM = post !== null ? measureOneText(post) : null;
 
   // Rhythm/punctuation/shape/voiceMarkers all need the candidate to
   // individually clear register.ts's own floor - the same gate
@@ -194,6 +260,11 @@ export function computeDeterministicQuality(args: {
   // comparison, applied here to a candidate-vs-corpus one instead.
   const structuralMeasurable = corpus !== null && candidateM.register !== null;
   const lexiconMeasurable = corpus !== null && candidateM.wordCount >= AVOIDED_WORDS_MIN_WORDS;
+
+  const languageMatch =
+    postM !== null && candidateM.language !== 'unknown' && postM.language !== 'unknown'
+      ? candidateM.language === postM.language
+      : null;
 
   const distance: DeterministicQualityAxes = {
     rhythm: structuralMeasurable ? rhythmDistance(candidateM.rhythm, corpus.rhythm) : null,
@@ -206,13 +277,24 @@ export function computeDeterministicQuality(args: {
       : null,
     lexicon: lexiconMeasurable ? lexiconDistance(candidateM.lexicon, corpus!.lexicon) : null,
     length: null,
+    echo: postM !== null ? echoScore(body, post!) : null,
+    languageMatch: languageMatch === null ? null : languageMatch ? 0 : 1,
   };
 
   let lengthRatio: number | null = null;
-  if (corpus !== null && corpus.rhythm.medianItemWords > 0) {
-    lengthRatio = Math.round((candidateM.wordCount / corpus.rhythm.medianItemWords) * 100) / 100;
-    distance.length = Math.min(1, Math.abs(lengthRatio - 1));
+  let lengthComparisonBasis: 'thread-median' | 'operator-corpus' | null = null;
+  if (threadCommentWordCounts && threadCommentWordCounts.length > 0) {
+    const basis = median(threadCommentWordCounts);
+    if (basis > 0) {
+      lengthRatio = Math.round((candidateM.wordCount / basis) * 100) / 100;
+      lengthComparisonBasis = 'thread-median';
+    }
   }
+  if (lengthComparisonBasis === null && corpus !== null && corpus.rhythm.medianItemWords > 0) {
+    lengthRatio = Math.round((candidateM.wordCount / corpus.rhythm.medianItemWords) * 100) / 100;
+    lengthComparisonBasis = 'operator-corpus';
+  }
+  if (lengthRatio !== null) distance.length = Math.min(1, Math.abs(lengthRatio - 1));
 
   const measured = Object.values(distance).filter((d): d is number => d !== null);
   const axisScore =
@@ -236,9 +318,14 @@ export function computeDeterministicQuality(args: {
     styleFindingCount: styleFindings.length,
     distance,
     lengthRatio,
+    lengthComparisonBasis,
     candidateWordCount: candidateM.wordCount,
     measuredAxisCount: measured.length,
     corpusMeasured: corpus !== null,
+    sourceMeasured: postM !== null,
+    languageMatch,
+    candidateLanguage: candidateM.language,
+    postLanguage: postM !== null ? postM.language : null,
   };
 }
 
@@ -251,11 +338,28 @@ function describeDeterministic(d: DeterministicQualityDetail): string | null {
     );
   }
   if (d.lengthRatio != null) {
-    parts.push(`${d.lengthRatio}x the operator's typical length`);
+    const basisLabel =
+      d.lengthComparisonBasis === 'thread-median'
+        ? "the visible thread's length"
+        : "the operator's typical length";
+    parts.push(`${d.lengthRatio}x ${basisLabel}`);
   }
-  if (d.measuredAxisCount > 0) {
+  if (d.distance.echo != null) {
+    parts.push(`${Math.round(d.distance.echo * 100)}% echo of the source post`);
+  }
+  if (d.languageMatch === false) {
+    parts.push('answered in a different language than the source post');
+  }
+  const corpusAxisCount = [
+    d.distance.rhythm,
+    d.distance.punctuation,
+    d.distance.shape,
+    d.distance.voiceMarkers,
+    d.distance.lexicon,
+  ].filter((v) => v !== null).length;
+  if (corpusAxisCount > 0) {
     parts.push(
-      `${d.measuredAxisCount} voice ${d.measuredAxisCount === 1 ? 'axis' : 'axes'} measured against their own writing`,
+      `${corpusAxisCount} voice ${corpusAxisCount === 1 ? 'axis' : 'axes'} measured against their own writing`,
     );
   }
   return parts.length > 0 ? parts.join('; ') : 'No comparable operator voice profile yet.';
@@ -367,6 +471,8 @@ export async function scoreDraftQuality(
     styleFindings: StyleFinding[];
     corpus: OperatorCorpusProfile | null;
     rubric: QualityRubric;
+    post?: string | null;
+    threadCommentWordCounts?: number[];
   },
 ): Promise<DraftQualityResult> {
   const deterministic = computeDeterministicQuality({
@@ -374,6 +480,8 @@ export async function scoreDraftQuality(
     styleFindings: args.styleFindings,
     corpus: args.corpus,
     rubric: args.rubric,
+    post: args.post,
+    threadCommentWordCounts: args.threadCommentWordCounts,
   });
   const judged = await judgeQuality(db, {
     body: args.body,
@@ -386,6 +494,18 @@ export async function scoreDraftQuality(
     const cap = args.rubric.threshold_green - 1;
     qualityScore = qualityScore == null ? cap : Math.min(qualityScore, cap);
   }
+  // `drafts.quality_score` is a `smallint` column. `judged.score` is
+  // already a whole number (`judgeQuality` rounds it); the deterministic
+  // score keeps 2-decimal precision inside `qualityDetail.deterministic`
+  // for anything that wants the finer number, but LOR-251 is the first
+  // caller that regularly reaches this function with echo/language-match
+  // in the axis average and no style-finding cap to round it away for
+  // free (`computeDeterministicQuality`'s own axes needed a measured
+  // operator corpus before that; a source post alone is now enough) - a
+  // fractional value here fails the write outright rather than truncating,
+  // so round once, at the boundary, rather than changing what
+  // `deterministic.score` itself reports.
+  qualityScore = qualityScore == null ? null : Math.round(qualityScore);
 
   const qualityReason = judged ? judged.reason : describeDeterministic(deterministic);
   const qualityModel = judged

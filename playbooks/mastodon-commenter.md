@@ -108,12 +108,18 @@ Each draft (sent later as a reply status via `in_reply_to_id`, on human approval
   "targetUser": "<the status author's fully qualified handle, the candidate's author.acct>",
   "body": "<reply text>",
   "reasoning": "2-3 sentences on why this status, what angle, what value you're adding.",
-  "sourceRef": { "statusId": "109...", "statusUrl": "https://mastodon.social/@alice/109..." },
+  "sourceRef": {
+    "statusId": "109...",
+    "statusUrl": "https://mastodon.social/@alice/109...",
+    "sourceText": "<status.content with the HTML tags stripped out, plain text only>"
+  },
   "metadata": { "matchedHashtag": "selfhosted", "matchedKeyword": "self-hosted" }
 }
 ```
 
 `targetUser` is the author of the status you are replying to, as the fully qualified `author.acct` handle. Replying to someone counts as contacting them, so it feeds the blocklist, the dedup window and contact history. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.statusId` points at.
+
+`sourceRef.sourceText` is the status you are actually answering - strip `status.content`'s HTML tags yourself and send the plain text, never a paraphrase. The server measures how much of your reply echoes the status's own wording and whether you answered in its language, and both checks need the real text; it also clamps the length, so send it in full.
 
 11. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 

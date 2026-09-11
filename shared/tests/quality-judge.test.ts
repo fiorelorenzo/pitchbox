@@ -194,6 +194,101 @@ describe('quality-judge', () => {
       const second = computeDeterministicQuality(args);
       expect(second).toEqual(first);
     });
+
+    it('measures echo against the source post the draft answers, null without one (LOR-251)', () => {
+      const post =
+        'We just shipped the new expense reconciliation workflow after months of testing.';
+      const withSource = computeDeterministicQuality({
+        body: 'Congrats on shipping the new expense reconciliation workflow!',
+        styleFindings: [],
+        corpus: null,
+        rubric: DEFAULT_QUALITY_RUBRIC,
+        post,
+      });
+      expect(withSource.sourceMeasured).toBe(true);
+      expect(withSource.distance.echo).not.toBeNull();
+      expect(withSource.distance.echo!).toBeGreaterThan(0);
+
+      const withoutSource = computeDeterministicQuality({
+        body: 'Congrats on shipping the new expense reconciliation workflow!',
+        styleFindings: [],
+        corpus: null,
+        rubric: DEFAULT_QUALITY_RUBRIC,
+      });
+      expect(withoutSource.sourceMeasured).toBe(false);
+      expect(withoutSource.distance.echo).toBeNull();
+      expect(withoutSource.languageMatch).toBeNull();
+      expect(withoutSource.distance.languageMatch).toBeNull();
+    });
+
+    it('measures language match against the source post, never a guessed true/false when either side is too short to classify (LOR-251)', () => {
+      const matching = computeDeterministicQuality({
+        body: 'This is a great update and I am glad the team shipped it this week.',
+        styleFindings: [],
+        corpus: null,
+        rubric: DEFAULT_QUALITY_RUBRIC,
+        post: 'We shipped a big update to the product this week after a long sprint.',
+      });
+      expect(matching.languageMatch).toBe(true);
+      expect(matching.distance.languageMatch).toBe(0);
+
+      const mismatched = computeDeterministicQuality({
+        body: 'Questo aggiornamento e fantastico, complimenti a tutto il team per il lavoro.',
+        styleFindings: [],
+        corpus: null,
+        rubric: DEFAULT_QUALITY_RUBRIC,
+        post: 'We shipped a big update to the product this week after a long sprint.',
+      });
+      expect(mismatched.languageMatch).toBe(false);
+      expect(mismatched.distance.languageMatch).toBe(1);
+
+      const unclassifiable = computeDeterministicQuality({
+        body: 'Grande!',
+        styleFindings: [],
+        corpus: null,
+        rubric: DEFAULT_QUALITY_RUBRIC,
+        post: 'Ok.',
+      });
+      expect(unclassifiable.languageMatch).toBeNull();
+      expect(unclassifiable.distance.languageMatch).toBeNull();
+    });
+
+    it('prefers the visible thread median over the operator corpus median for the length axis (LOR-251)', () => {
+      const corpus = corpusFrom(LONG_OPERATOR_SAMPLE);
+      const body = 'One two three four five six seven eight nine ten.';
+      const withThread = computeDeterministicQuality({
+        body,
+        styleFindings: [],
+        corpus,
+        rubric: DEFAULT_QUALITY_RUBRIC,
+        threadCommentWordCounts: [4, 5, 6],
+      });
+      expect(withThread.lengthComparisonBasis).toBe('thread-median');
+      expect(withThread.lengthRatio).toBe(2); // 10 candidate words / median 5
+
+      const withoutThread = computeDeterministicQuality({
+        body,
+        styleFindings: [],
+        corpus,
+        rubric: DEFAULT_QUALITY_RUBRIC,
+      });
+      expect(withoutThread.lengthComparisonBasis).toBe('operator-corpus');
+    });
+
+    it('a proactive post with no source still scores from style and corpus alone, source axes null rather than a guessed zero (LOR-251)', () => {
+      const corpus = corpusFrom(LONG_OPERATOR_SAMPLE);
+      const result = computeDeterministicQuality({
+        body: LONG_OPERATOR_SAMPLE,
+        styleFindings: [],
+        corpus,
+        rubric: DEFAULT_QUALITY_RUBRIC,
+      });
+      expect(result.score).not.toBeNull();
+      expect(result.sourceMeasured).toBe(false);
+      expect(result.distance.echo).toBeNull();
+      expect(result.distance.languageMatch).toBeNull();
+      expect(result.languageMatch).toBeNull();
+    });
   });
 
   describe('DETERMINISTIC_QUALITY_MODEL', () => {

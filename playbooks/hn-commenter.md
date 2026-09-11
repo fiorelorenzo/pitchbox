@@ -93,12 +93,18 @@ Write like this instead:
      "targetUser": "<the story's author, the candidate's `by` field>",
      "body": "<comment text>",
      "reasoning": "Why this story, what angle, what value you're adding.",
-     "sourceRef": { "itemUrl": "https://news.ycombinator.com/item?id=12345", "title": "..." },
+     "sourceRef": {
+       "itemUrl": "https://news.ycombinator.com/item?id=12345",
+       "title": "...",
+       "sourceText": "<the story's title and self-post text (item.text), verbatim - title alone for a link post>"
+     },
      "metadata": { "itemId": 12345, "listing": "top", "score": 142 }
    }
    ```
 
    `targetUser` is the author of the story you are replying to (`by` on the item you scored). Commenting on someone's story counts as contacting them, so it feeds the blocklist, the dedup window and contact history. Hacker News has no scout staging candidates for the run, so nothing can recover this handle if you omit it: copy it across for every draft.
+
+   `sourceRef.sourceText` is the story you are actually answering - copy the candidate's real `title`/`text`, never a paraphrase. The server measures how much of your comment echoes the story's own wording and whether you answered in its language, and both checks need the real text; it also clamps the length, so send it in full.
 
 9. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 

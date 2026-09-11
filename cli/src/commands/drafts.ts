@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { z } from 'zod';
-import { getDb, schema } from '@pitchbox/shared/db';
+import { getDb, schema, type Db } from '@pitchbox/shared/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   isBlocklisted,
@@ -31,6 +31,12 @@ import { buildRedditComposeUrl } from '@pitchbox/shared/platforms/reddit';
 import { buildHackernewsComposeUrl } from '@pitchbox/shared/platforms/hackernews';
 import { buildMastodonComposeUrl } from '@pitchbox/shared/platforms/mastodon';
 import type { DraftKind } from '@pitchbox/shared/quota-types';
+import {
+  MAX_POST_CHARS,
+  MAX_THREAD_COMMENTS,
+  MAX_COMMENT_CHARS,
+  MAX_THREAD_CHARS,
+} from '@pitchbox/shared/assist/suggest-prompt';
 import { ok, fail } from '../lib/output.js';
 
 // The compose URL is built here, server-side, from fields the caller already
@@ -75,6 +81,78 @@ function extractOfferSubject(config: unknown): string | null {
   if (offer == null || typeof offer !== 'object') return null;
   const subject = (offer as Record<string, unknown>).subject;
   return typeof subject === 'string' && subject.trim() !== '' ? subject : null;
+}
+
+/** Word count the same simple way every other length axis in this codebase
+ * does (voice-metrics.ts's own scorer, suggest-prompt.ts's `wordCount`) -
+ * split on whitespace, drop empties. Reused below for both a draft's own
+ * clamped source comments and a reply thread's messages. */
+function wordCount(text: string): number {
+  const trimmed = text.trim();
+  return trimmed === '' ? 0 : trimmed.split(/\s+/).length;
+}
+
+/**
+ * `sourceRef.sourceText` (the post/story/status this draft answers) and
+ * `sourceRef.sourceComments` (its visible comments, where a playbook has
+ * them) are what LOR-251 adds so `voice-metrics.ts`'s echo, language-match
+ * and thread-length axes stop being structurally dead on a real campaign
+ * draft - `sourceRef` never carried the actual text before this, only
+ * identifiers and a title. Clamped here, server-side, to the assist plane's
+ * own ceilings (`assist/suggest-prompt.ts`'s
+ * MAX_POST_CHARS/MAX_THREAD_COMMENTS/MAX_COMMENT_CHARS/MAX_THREAD_CHARS)
+ * regardless of what a playbook actually sent - the same "enforced where
+ * the effect happens" rule AGENTS.md already states for the LinkedIn assist
+ * switch and every plan limit, applied here to a draft row's storage
+ * footprint rather than to a model call. Returns the clamped `sourceRef`
+ * (what actually gets persisted, so the jsonb column stays bounded no
+ * matter how large a playbook's raw candidate was) alongside the two
+ * values the quality computation needs, ready to pass straight through.
+ * A draft with neither key (a proactive post, or one drafted before this
+ * shipped) comes back with `sourceText: null` - honestly not-measurable,
+ * never a guessed empty string.
+ */
+function clampSourceContext(sourceRef: Record<string, unknown>): {
+  sourceRef: Record<string, unknown>;
+  sourceText: string | null;
+  threadCommentWordCounts: number[] | undefined;
+} {
+  const clamped: Record<string, unknown> = { ...sourceRef };
+
+  const rawText = sourceRef.sourceText;
+  let sourceText: string | null = null;
+  if (typeof rawText === 'string' && rawText.trim() !== '') {
+    sourceText = rawText.length > MAX_POST_CHARS ? rawText.slice(0, MAX_POST_CHARS) : rawText;
+    clamped.sourceText = sourceText;
+  } else {
+    delete clamped.sourceText;
+  }
+
+  const rawComments = sourceRef.sourceComments;
+  let threadCommentWordCounts: number[] | undefined;
+  if (Array.isArray(rawComments)) {
+    const capped = rawComments
+      .filter((c): c is string => typeof c === 'string' && c.trim() !== '')
+      .slice(0, MAX_THREAD_COMMENTS);
+    const clampedComments: string[] = [];
+    let usedChars = 0;
+    for (const c of capped) {
+      const body = c.length > MAX_COMMENT_CHARS ? c.slice(0, MAX_COMMENT_CHARS) : c;
+      if (usedChars + body.length > MAX_THREAD_CHARS) break;
+      usedChars += body.length;
+      clampedComments.push(body);
+    }
+    if (clampedComments.length > 0) {
+      clamped.sourceComments = clampedComments;
+      threadCommentWordCounts = clampedComments.map(wordCount);
+    } else {
+      delete clamped.sourceComments;
+    }
+  } else {
+    delete clamped.sourceComments;
+  }
+
+  return { sourceRef: clamped, sourceText, threadCommentWordCounts };
 }
 
 // Playbooks document their `drafts_create` payloads with an explicit `null`
@@ -360,6 +438,12 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
         : null;
       const styledTitle = titleResult ? titleResult.text : (d.title ?? null);
       const styleFindings = [...bodyResult.findings, ...(titleResult?.findings ?? [])];
+      // LOR-251: the source post (and, where the playbook supplied them,
+      // its visible comments) this draft answers, clamped and persisted in
+      // place of the raw sourceRef so the echo/language-match/thread-length
+      // axes below - and a later regeneration, which reads this same
+      // sourceRef back - see the same bounded text.
+      const { sourceRef, sourceText, threadCommentWordCounts } = clampSourceContext(d.sourceRef);
       // LOR-229: the deterministic (+ optional judged) score for the
       // primary body, and independently for each A/B variant - each is a
       // genuinely different piece of text and gets its own measurement,
@@ -371,6 +455,8 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
         styleFindings,
         corpus: corpusProfile,
         rubric: qualityRubric,
+        post: sourceText,
+        threadCommentWordCounts,
       });
       const variantQuality = variantResults
         ? await Promise.all(
@@ -381,12 +467,15 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
                 styleFindings: r.findings,
                 corpus: corpusProfile,
                 rubric: qualityRubric,
+                post: sourceText,
+                threadCommentWordCounts,
               }),
             ),
           )
         : null;
       return {
         ...d,
+        sourceRef,
         styledBody: bodyResult.text,
         styledTitle,
         styleFindings,
@@ -693,12 +782,22 @@ export async function draftRegenFinish(runId: number, body: string, title?: stri
     orgId != null ? resolveOperatorCorpusProfile(db, orgId) : Promise.resolve(null),
     loadQualityRubric(db),
   ]);
+  // LOR-251: re-reads whatever source text/comments the original draft was
+  // created with (already clamped by `clampSourceContext` at creation time,
+  // re-clamped here anyway for defense in depth - a draft predating this
+  // feature simply has no `sourceText` key and comes back `null`, which is
+  // the correct, honest answer, not a guess).
+  const { sourceText, threadCommentWordCounts } = clampSourceContext(
+    (draft.sourceRef ?? {}) as Record<string, unknown>,
+  );
   const quality = await scoreDraftQuality(db, {
     body,
     title: newTitle,
     styleFindings,
     corpus: corpusProfile,
     rubric,
+    post: sourceText,
+    threadCommentWordCounts,
   });
   const priorMeta = (draft.metadata ?? {}) as Record<string, unknown>;
   const newMeta: Record<string, unknown> = { ...priorMeta, qualityDetail: quality.qualityDetail };
@@ -747,25 +846,25 @@ export async function draftRegenFinish(runId: number, body: string, title?: stri
   return { draftId, version: draft.version + 1, regenerationCount: newCount };
 }
 
-export async function replyDraftStart(runId: number) {
-  if (!Number.isInteger(runId)) throw new Error('invalid run id');
-  const db = getDb();
-  const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
-  if (!run) throw new Error(`run ${runId} not found`);
-  if (run.kind !== 'reply_drafting') throw new Error(`run ${runId} is not a reply_drafting run`);
-  const params = (run.params ?? {}) as { replyDraftId?: number; parentMessageId?: number };
-  const replyDraftId = params.replyDraftId;
-  if (!replyDraftId) throw new Error(`run ${runId} has no replyDraftId in params`);
-
-  const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, replyDraftId));
-  if (!draft) throw new Error(`reply draft ${replyDraftId} not found`);
-
-  const [platform] = await db
-    .select({ slug: schema.platforms.slug })
-    .from(schema.platforms)
-    .where(eq(schema.platforms.id, draft.platformId));
-
-  const sourceRef = (draft.sourceRef ?? {}) as { parentDraftId?: number };
+/** Thread context for a `reply_drafting` run: the parent outbound draft (for
+ * voice) and the full conversation, both attached to the parent draft, not
+ * the reply-placeholder draft itself. Shared by `replyDraftStart` (shown to
+ * the drafting agent) and `replyDraftFinish` (LOR-251: read again there to
+ * feed the quality computation's source-dependent axes) so the two never
+ * disagree about what the conversation actually was. */
+async function loadReplyThread(
+  db: Db,
+  sourceRefValue: unknown,
+): Promise<{
+  parent: { body: string; reasoning: string | null } | null;
+  thread: Array<{
+    id: number;
+    isFromUs: boolean;
+    body: string | null;
+    createdAtPlatform: Date | null;
+  }>;
+}> {
+  const sourceRef = (sourceRefValue ?? {}) as { parentDraftId?: number };
   let parent: { body: string; reasoning: string | null } | null = null;
   let thread: Array<{
     id: number;
@@ -791,6 +890,28 @@ export async function replyDraftStart(runId: number) {
       .where(eq(schema.messages.draftId, sourceRef.parentDraftId))
       .orderBy(schema.messages.createdAtPlatform);
   }
+  return { parent, thread };
+}
+
+export async function replyDraftStart(runId: number) {
+  if (!Number.isInteger(runId)) throw new Error('invalid run id');
+  const db = getDb();
+  const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+  if (!run) throw new Error(`run ${runId} not found`);
+  if (run.kind !== 'reply_drafting') throw new Error(`run ${runId} is not a reply_drafting run`);
+  const params = (run.params ?? {}) as { replyDraftId?: number; parentMessageId?: number };
+  const replyDraftId = params.replyDraftId;
+  if (!replyDraftId) throw new Error(`run ${runId} has no replyDraftId in params`);
+
+  const [draft] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, replyDraftId));
+  if (!draft) throw new Error(`reply draft ${replyDraftId} not found`);
+
+  const [platform] = await db
+    .select({ slug: schema.platforms.slug })
+    .from(schema.platforms)
+    .where(eq(schema.platforms.id, draft.platformId));
+
+  const { parent, thread } = await loadReplyThread(db, draft.sourceRef);
 
   return {
     runId,
@@ -828,15 +949,28 @@ export async function replyDraftFinish(runId: number, body: string) {
   // rewrite back to here, but the score still measures the real body fresh.
   const styleFindings = checkStyle(body);
   const orgId = await getProjectOrgId(db, draft.projectId);
-  const [corpusProfile, rubric] = await Promise.all([
+  const [corpusProfile, rubric, replyContext] = await Promise.all([
     orgId != null ? resolveOperatorCorpusProfile(db, orgId) : Promise.resolve(null),
     loadQualityRubric(db),
+    loadReplyThread(db, draft.sourceRef),
   ]);
+  // LOR-251: the message this reply actually answers is the most recent
+  // inbound turn, not the parent draft (which is OUR earlier outbound
+  // message, kept only for voice) - that feeds echo/language-match. The
+  // rest of the visible conversation feeds the length-vs-room axis, the
+  // same role a post's visible comment thread plays for a campaign draft.
+  const lastInbound = [...replyContext.thread].reverse().find((m) => !m.isFromUs);
+  const sourceText = lastInbound?.body ?? null;
+  const threadCommentWordCounts = replyContext.thread
+    .filter((m): m is (typeof replyContext.thread)[number] & { body: string } => m.body != null)
+    .map((m) => wordCount(m.body));
   const quality = await scoreDraftQuality(db, {
     body,
     styleFindings,
     corpus: corpusProfile,
     rubric,
+    post: sourceText,
+    threadCommentWordCounts,
   });
   const priorMeta = (draft.metadata ?? {}) as Record<string, unknown>;
   const newMeta: Record<string, unknown> = { ...priorMeta, qualityDetail: quality.qualityDetail };
