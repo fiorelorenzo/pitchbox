@@ -7,12 +7,19 @@
 	import Seo from '$lib/components/Seo.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import SettingsAppearanceCard from '$lib/components/SettingsAppearanceCard.svelte';
+	import SettingsLanguageCard from '$lib/components/settings/SettingsLanguageCard.svelte';
 	import { daemonStatus } from '$lib/stores/daemon';
 	import { PULSE_DOT_CLASS } from '$lib/config/status-badges';
-	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { t, type Locale } from '$lib/i18n/index.js';
 
 	const locale = $derived($page.data.locale as Locale);
+	// 2026-09-12: gates the folded-in language card the same way
+	// /settings/language's own loader used to gate the whole page - signed
+	// in is the whole requirement, no org role. Nobody signed in (auth
+	// off) means there is no account to save a locale preference for, so
+	// the card is skipped rather than shown with nowhere to write; the
+	// rest of the page renders exactly as it does today either way.
+	const signedIn = $derived($page.data.signedIn as boolean);
 
 	function formatAge(seconds: number): string {
 		if (seconds < 60) return t(locale, 'settings.general.daemon.age-seconds', { n: seconds });
@@ -27,13 +34,12 @@
 	description={t(locale, 'settings.general.seo-description')}
 />
 
-<PageContainer size="default">
-	<PageHeader
-		title={t(locale, 'settings.general.title')}
-		description={t(locale, 'settings.general.description')}
-	/>
+<PageHeader
+	title={t(locale, 'settings.general.title')}
+	description={t(locale, 'settings.general.description')}
+/>
 
-	<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-4xl">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
 		<Card.Root size="sm">
 			<Card.Header class="flex flex-row flex-nowrap items-center gap-2 space-y-0">
 				<Activity class="size-4 shrink-0 text-muted-foreground" />
@@ -103,6 +109,8 @@
 			</Card.Content>
 		</Card.Root>
 
-		<SettingsAppearanceCard />
-	</div>
-</PageContainer>
+	<SettingsAppearanceCard />
+	{#if signedIn}
+		<SettingsLanguageCard />
+	{/if}
+</div>

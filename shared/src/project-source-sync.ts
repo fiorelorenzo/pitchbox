@@ -1,7 +1,7 @@
 // Fetches (or explains why it can't fetch) one project source's content
 // (#432). A project source's `config`/`output`/`fetch_error` shape is
 // generic across all `PROJECT_SOURCE_KINDS` (project-sources.ts). Real
-// fetchers are wired up for `github`, `website` (#472), `mastodon_account`
+// fetchers are wired up for `git`, `website` (#472), `mastodon_account`
 // and `hackernews_author` (#437). `linkedin_company` has none yet (#435's
 // spike - the selector work is unstarted). `linkedin_post`/`linkedin_profile`
 // have no fetcher here either, on purpose and permanently: docs/linkedin-integration-design.md's
@@ -12,13 +12,17 @@
 // is rule 4 of the compliance boundary. A re-sync click on one of those two
 // kinds can therefore only flip an already-filled row back to pending, never
 // fetch anything itself - see `resetLinkedInSourceToPending` below.
-// `folder`/`git`/`upload` are populated by starting an extraction run
-// (cli/src/commands/project.ts's recordExtractionSource), not by a
-// standalone sync, since their `config.value` is a local path or an
-// ephemeral upload with nothing to re-fetch from here.
+// `folder`/`upload` name a path on the machine running Pitchbox: a
+// description run reads them directly, so there is nothing for a sync to
+// fetch and the re-sync says so instead of failing.
+//
+// `git` is the one kind whose sync picks its own mechanism (`syncGit`): the
+// GitHub API for a GitHub URL, `git ls-remote` for any other host. It used
+// to be two kinds, `git` and `github`, which was one thing wearing two
+// names - see `PROJECT_SOURCE_KINDS`.
 //
 // Every branch below writes back through `updateProjectSource` (directly,
-// for `github`) or through the kind's own `refresh*Source` (which does its
+// for `git`) or through the kind's own `refresh*Source` (which does its
 // own `updateProjectSource` internally, for `website`/`mastodon_account`/
 // `hackernews_author`) with either a successful `output`/`fetchedAt` or a
 // `fetchError` explaining in words why it didn't - never throws, so a
@@ -27,6 +31,7 @@
 import type { Db } from './db/client.js';
 import { getProjectSource, updateProjectSource, type ProjectSourceRow } from './project-sources.js';
 import { parseRepoUrl, README_EXCERPT_MAX_CHARS, type GithubFetch } from './github-sources.js';
+import { lsRemoteBranches, type GitLsRemote } from './project-extraction/git-remote.js';
 import { refreshWebsiteSource, type WebsiteFetch } from './website-source.js';
 import { refreshMastodonAccountSource } from './mastodon-source.js';
 import type { MastodonPublicFetch } from './platforms/mastodon/client.js';
@@ -36,9 +41,12 @@ export type SyncProjectSourceResult =
   { ok: true; source: ProjectSourceRow } | { ok: false; source: ProjectSourceRow };
 
 export type SyncOptions = {
-  /** Injectable fetch for `github` - tests substitute a mock so this never
-   * actually reaches GitHub. */
+  /** Injectable fetch for a GitHub-hosted `git` source - tests substitute a
+   * mock so this never actually reaches GitHub. */
   fetchImpl?: GithubFetch;
+  /** Injectable `git ls-remote` for a `git` source on any other host, so a
+   * suite never spawns git or reaches a real remote. */
+  gitLsRemoteImpl?: GitLsRemote;
   /** Injectable fetch for `website` - see `WebsiteCrawlOptions.fetchImpl`. */
   websiteFetchImpl?: WebsiteFetch;
   /** Injectable fetch for `mastodon_account` - see
@@ -73,29 +81,82 @@ function excerptReadme(raw: string): string {
     .trim();
 }
 
-async function syncGithub(
+/**
+ * A repository source's URL. `config.value` is what the sources panel and
+ * the CLI write; `config.url` is what migration 0018 wrote for the rows it
+ * built out of `github_sources`, so both are read here rather than trusting
+ * one era's shape.
+ */
+function readRepoUrl(source: ProjectSourceRow): string {
+  const config = source.config;
+  if (!config || typeof config !== 'object') return '';
+  const record = config as Record<string, unknown>;
+  for (const key of ['value', 'url']) {
+    const candidate = record[key];
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return '';
+}
+
+/**
+ * A repository source. There used to be two kinds for this - `git` (a clone
+ * URL) and `github` (the same repository through the API) - and a person
+ * adding "my repo" had to guess which one the product would read. One kind
+ * now, with the mechanism chosen from the URL: GitHub gets the API read,
+ * which costs no clone and leaves a README excerpt on the row for a
+ * description run that cannot clone the tree, and every other host gets a
+ * `git ls-remote`, which is the only thing a re-sync can honestly assert
+ * where we have no API. Either way the tree itself is read by cloning,
+ * during a description run.
+ */
+async function syncGit(
   db: Db,
   organizationId: number,
   source: ProjectSourceRow,
+  opts: SyncOptions,
+): Promise<SyncProjectSourceResult> {
+  const value = readRepoUrl(source);
+  if (!value) {
+    return markUnfetchable(db, organizationId, source, 'This source carries no repository URL.');
+  }
+  const parsed = parseRepoUrl(value);
+  if (parsed.ok) {
+    return syncGithubRepo(db, organizationId, source, parsed, opts.fetchImpl ?? fetch);
+  }
+  return syncGitRemote(db, organizationId, source, value, opts.gitLsRemoteImpl ?? lsRemoteBranches);
+}
+
+/** Proves a non-GitHub remote is readable and records what it advertises.
+ * `ls-remote` transfers no objects, so this stays cheap enough for a button
+ * a person clicks while watching. */
+async function syncGitRemote(
+  db: Db,
+  organizationId: number,
+  source: ProjectSourceRow,
+  url: string,
+  lsRemote: GitLsRemote,
+): Promise<SyncProjectSourceResult> {
+  let branches: string[];
+  try {
+    branches = (await lsRemote(url)).branches;
+  } catch (err) {
+    return markUnfetchable(db, organizationId, source, (err as Error).message);
+  }
+  const updated = await updateProjectSource(db, organizationId, source.id, {
+    output: { url, branchCount: branches.length, branches: branches.slice(0, 20) },
+    fetchedAt: new Date(),
+    fetchError: null,
+  });
+  return { ok: true, source: updated ?? source };
+}
+
+async function syncGithubRepo(
+  db: Db,
+  organizationId: number,
+  source: ProjectSourceRow,
+  parsed: { owner: string; repo: string; url: string },
   fetchImpl: GithubFetch,
 ): Promise<SyncProjectSourceResult> {
-  const rawConfig = source.config;
-  const value =
-    rawConfig &&
-    typeof rawConfig === 'object' &&
-    'value' in rawConfig &&
-    typeof rawConfig.value === 'string'
-      ? rawConfig.value
-      : '';
-  const parsed = parseRepoUrl(value);
-  if (!parsed.ok) {
-    const updated = await updateProjectSource(db, organizationId, source.id, {
-      fetchedAt: new Date(),
-      fetchError: parsed.reason,
-    });
-    return { ok: false, source: updated ?? source };
-  }
-
   const base = `${GITHUB_API_BASE}/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}`;
   const headers = { Accept: 'application/vnd.github+json' };
 
@@ -225,8 +286,8 @@ export async function syncProjectSource(
   if (!source) return null;
 
   switch (source.kind) {
-    case 'github':
-      return syncGithub(db, organizationId, source, opts.fetchImpl ?? fetch);
+    case 'git':
+      return syncGit(db, organizationId, source, opts);
     case 'website':
       return syncViaRefresh(db, organizationId, source, () =>
         refreshWebsiteSource(db, source.id, { fetchImpl: opts.websiteFetchImpl }),
@@ -250,13 +311,12 @@ export async function syncProjectSource(
     case 'linkedin_profile':
       return resetLinkedInSourceToPending(db, organizationId, source);
     case 'folder':
-    case 'git':
     case 'upload':
       return markUnfetchable(
         db,
         organizationId,
         source,
-        'This source is populated by running an extraction with it, not by re-syncing here - use "Run extraction" on this source instead.',
+        'This source is a path on the machine running Pitchbox, so there is nothing to re-fetch from here: it is read again the next time the description is regenerated.',
       );
     default:
       return markUnfetchable(db, organizationId, source, `Unknown source kind "${source.kind}".`);

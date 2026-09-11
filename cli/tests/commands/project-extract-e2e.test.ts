@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
+import { createProjectSource } from '@pitchbox/shared/project-sources';
 import { eq, sql } from 'drizzle-orm';
 
 function cli(args: string, input?: string): string {
@@ -35,6 +36,7 @@ describe('project_extraction end-to-end (no real agent)', () => {
       .insert(schema.projects)
       .values({ organizationId: org.id, slug: 'p', name: 'P' })
       .returning();
+    const source = await createProjectSource(db, org.id, project.id, 'folder', { value: folder });
     const [run] = await db
       .insert(schema.runs)
       .values({
@@ -42,7 +44,7 @@ describe('project_extraction end-to-end (no real agent)', () => {
         projectId: project.id,
         trigger: 'manual',
         status: 'running',
-        params: { source: { kind: 'folder', value: folder } },
+        params: { sourceIds: [source!.id] },
       })
       .returning();
 
@@ -50,7 +52,8 @@ describe('project_extraction end-to-end (no real agent)', () => {
       cli(`project:extract:start --run=${run.id}`).trim().split('\n').at(-1)!,
     );
     expect(startOut.ok).toBe(true);
-    expect(startOut.data.sourcePath).toBe(folder);
+    expect(startOut.data.sources).toHaveLength(1);
+    expect(startOut.data.sources[0]).toMatchObject({ kind: 'folder', label: folder });
 
     const md = `## Product\n\nDemo product.\n\n## Target audience\n\nDevs.\n`;
     const finishOut = JSON.parse(

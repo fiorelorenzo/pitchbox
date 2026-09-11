@@ -90,7 +90,7 @@
     "./instance-audit": "./src/instance-audit.ts",
     "./mastodon-source": "./src/mastodon-source.ts",
     "./hackernews-source": "./src/hackernews-source.ts",
-    "./project-description-refresh": "./src/project-description-refresh.ts",
+    "./project-source-content": "./src/project-source-content.ts",
     "./mail": "./src/mail/base.ts",
     "./mail/registry": "./src/mail/registry.ts",
     "./mail/template": "./src/mail/template.ts",

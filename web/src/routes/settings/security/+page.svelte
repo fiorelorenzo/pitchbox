@@ -10,7 +10,6 @@
 	import { toast } from 'svelte-sonner';
 	import { invalidateAll } from '$app/navigation';
 	import { ShieldAlert } from '@lucide/svelte';
-	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { t, tn, type Locale } from '$lib/i18n/index.js';
 
 	type Failure = { id: number; identifier: string; failedAt: string; kind: string };
@@ -64,7 +63,6 @@
 	}
 </script>
 
-<PageContainer size="default">
 <Seo
 	title={t(locale, 'settings.security.seo-title')}
 	description={t(locale, 'settings.security.seo-description')}
@@ -75,7 +73,7 @@
 	description={t(locale, 'settings.security.description')}
 />
 
-<div class="mt-4 grid gap-4">
+<div class="grid gap-4">
 	<Card.Root>
 		<Card.Header>
 			<Card.Title>{t(locale, 'settings.security.policy.title')}</Card.Title>
@@ -152,4 +150,3 @@
 		</Card.Content>
 	</Card.Root>
 </div>
-</PageContainer>

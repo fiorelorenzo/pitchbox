@@ -2,11 +2,13 @@ import type { Dict } from '../types.js';
 
 /**
  * LOR-263 part two: the settings area (rail + its ten flat routes,
- * `settings/billing`, `settings/language`, and the instance-admin subtree).
+ * `settings/billing`, and the instance-admin subtree).
  * `settings.onboarding.*` stays in `dict-en.ts`/`dict-it.ts` - part one's
  * keys, still read by `settings/onboarding/+page.svelte`, which nobody else
  * in this wave owns either but which shipped before this per-area
- * convention existed.
+ * convention existed. 2026-09-12's UI/UX defects batch folded
+ * `settings/language`'s keys into `settings.general.language.*` when its
+ * picker became a card on General instead of its own route.
  */
 export const settingsEn = {
   'settings.rail.aria-label': 'Settings sections',
@@ -18,7 +20,6 @@ export const settingsEn = {
   'settings.nav.extension': 'Browser extension',
   'settings.nav.quota': 'Quota',
   'settings.nav.password': 'Password',
-  'settings.nav.language': 'Language',
   'settings.nav.linkedin-assist': 'LinkedIn assist',
   'settings.nav.organization': 'Organization',
   'settings.nav.billing': 'Billing',
@@ -51,6 +52,11 @@ export const settingsEn = {
   'settings.general.appearance.theme-system': 'System',
   'settings.general.appearance.theme-light': 'Light',
   'settings.general.appearance.theme-dark': 'Dark',
+  'settings.general.language.title': 'Language',
+  'settings.general.language.description':
+    'Applies to the dashboard and, on its next handshake, the browser extension - one account setting, not one per surface.',
+  'settings.general.language.success-saved': 'Language saved',
+  'settings.general.language.error-save-failed': 'Could not save the language',
 
   'settings.runners.seo-title': 'Settings - Agent runners',
   'settings.runners.seo-description': 'Agent runner detection and configuration.',
@@ -452,17 +458,6 @@ export const settingsEn = {
   'settings.organization.leave-dialog-description-tail': 'to confirm.',
   'settings.organization.org-name-label': 'Organization name',
 
-  'settings.language.seo-title': 'Settings - Language',
-  'settings.language.seo-description': "Choose the dashboard's display language.",
-  'settings.language.title': 'Language',
-  'settings.language.description':
-    'Applies to the dashboard and, on its next handshake, the browser extension - one account setting, not one per surface.',
-  'settings.language.display-language-title': 'Display language',
-  'settings.language.display-language-description':
-    "Signed-out pages keep using your browser's language until you sign in.",
-  'settings.language.success-saved': 'Language saved',
-  'settings.language.error-save-failed': 'Could not save the language',
-
   'settings.billing.seo-title': 'Settings - Billing',
   'settings.billing.seo-description':
     'Your plan, what of it is used this period, and how to change it.',
@@ -683,7 +678,6 @@ export const settingsIt = {
   'settings.nav.extension': 'Estensione browser',
   'settings.nav.quota': 'Quota',
   'settings.nav.password': 'Password',
-  'settings.nav.language': 'Lingua',
   'settings.nav.linkedin-assist': 'Assistente LinkedIn',
   'settings.nav.organization': 'Organizzazione',
   'settings.nav.billing': 'Fatturazione',
@@ -717,6 +711,11 @@ export const settingsIt = {
   'settings.general.appearance.theme-system': 'Sistema',
   'settings.general.appearance.theme-light': 'Chiaro',
   'settings.general.appearance.theme-dark': 'Scuro',
+  'settings.general.language.title': 'Lingua',
+  'settings.general.language.description':
+    "Si applica alla dashboard e, al prossimo aggancio, all'estensione browser: è un'unica impostazione dell'account, non una per ogni superficie.",
+  'settings.general.language.success-saved': 'Lingua salvata',
+  'settings.general.language.error-save-failed': 'Impossibile salvare la lingua',
 
   'settings.runners.seo-title': 'Impostazioni - Runner degli agenti',
   'settings.runners.seo-description': 'Rilevamento e configurazione dei runner degli agenti.',
@@ -1132,17 +1131,6 @@ export const settingsIt = {
     "e a tutto ciò che contiene: progetti, campagne e bozze. Ti servirà un nuovo invito per rientrare. Digita il nome dell'organizzazione",
   'settings.organization.leave-dialog-description-tail': 'per confermare.',
   'settings.organization.org-name-label': "Nome dell'organizzazione",
-
-  'settings.language.seo-title': 'Impostazioni - Lingua',
-  'settings.language.seo-description': 'Scegli la lingua di visualizzazione della dashboard.',
-  'settings.language.title': 'Lingua',
-  'settings.language.description':
-    "Si applica alla dashboard e, al prossimo aggancio, all'estensione browser: è un'unica impostazione dell'account, non una per ogni superficie.",
-  'settings.language.display-language-title': 'Lingua di visualizzazione',
-  'settings.language.display-language-description':
-    'Le pagine da disconnesso continuano a usare la lingua del tuo browser finché non accedi.',
-  'settings.language.success-saved': 'Lingua salvata',
-  'settings.language.error-save-failed': 'Impossibile salvare la lingua',
 
   'settings.billing.seo-title': 'Impostazioni - Fatturazione',
   'settings.billing.seo-description':

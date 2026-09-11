@@ -6,7 +6,6 @@
 	import { page } from '$app/stores';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
-	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { toast } from 'svelte-sonner';
 	import { t, type Locale } from '$lib/i18n/index.js';
 
@@ -99,7 +98,6 @@
 	}
 </script>
 
-<PageContainer size="default">
 <Seo
 	title={t(locale, 'settings.password.seo-title')}
 	description={t(locale, 'settings.password.seo-description')}
@@ -110,7 +108,7 @@
 	description={t(locale, 'settings.password.description', { username: data.username })}
 />
 
-<div class="mt-4 grid gap-4">
+<div class="grid gap-4">
 	{#if data.email}
 		<Card.Root>
 			<Card.Header>
@@ -181,4 +179,3 @@
 		</Card.Content>
 	</Card.Root>
 </div>
-</PageContainer>

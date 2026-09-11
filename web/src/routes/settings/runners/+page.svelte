@@ -5,7 +5,6 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import SettingsRunnersCard from '$lib/components/SettingsRunnersCard.svelte';
-	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { t, type Locale } from '$lib/i18n/index.js';
 	import { untrack } from 'svelte';
 
@@ -39,13 +38,12 @@
 	description={t(locale, 'settings.runners.seo-description')}
 />
 
-<PageContainer size="default">
-	<PageHeader
-		title={t(locale, 'settings.runners.title')}
-		description={t(locale, 'settings.runners.description')}
-	/>
+<PageHeader
+	title={t(locale, 'settings.runners.title')}
+	description={t(locale, 'settings.runners.description')}
+/>
 
-	<div class="max-w-3xl">
+<div>
 		{#if isAdmin}
 			<SettingsRunnersCard bind:runners bind:defaultRunner {isAdmin} />
 		{:else}
@@ -58,4 +56,3 @@
 			</Alert.Root>
 		{/if}
 	</div>
-</PageContainer>

@@ -51,19 +51,12 @@
     durationMs: number | null;
     tokensUsed: number | null;
     error: string | null;
-    params: { source?: { kind: string; value: string } } | null;
+    /** The source ids the run was started over. `source` is the old
+     * one-source-per-run shape, still on historical rows. */
+    params: { sourceIds?: number[]; source?: { kind: string; value: string } } | null;
   };
   type ProjectSource = import('./ProjectSourcesPanel.svelte').ProjectSource;
 
-  /** #434: a proposed re-derivation of the description from the current
-   * source set, computed on demand by the loader - never applied until the
-   * operator accepts it. Null when the live description already matches
-   * what the sources would produce, or the same text was already declined. */
-  type DescriptionProposal = {
-    proposedDescription: string;
-    previousDescription: string;
-    sourceIds: number[];
-  };
   type Props = {
     project: Project;
     extractionRuns: ExtractionRun[];
@@ -74,7 +67,6 @@
     highlightRunId?: number | null;
     runners: RunnerMeta[];
     sources: ProjectSource[];
-    descriptionProposal: DescriptionProposal | null;
   };
   let {
     project,
@@ -86,7 +78,6 @@
     highlightRunId = null,
     runners,
     sources,
-    descriptionProposal,
   }: Props = $props();
 
   const locale = $derived($page.data.locale as Locale);
@@ -186,14 +177,21 @@
     extractionRunsState = extractionRuns;
   });
 
-  // Bubbled up from ProjectSourcesPanel's "Run extraction with this source"
-  // (git sources only) - same handling ExtractDescriptionDialog's onLaunched
-  // used to do before the dialog was replaced by the sources panel (#432).
+  // Bubbled up from ProjectSourcesPanel's "Write from sources" - the same
+  // handling ExtractDescriptionDialog's onLaunched used to do before the
+  // dialog was replaced by the sources panel (#432).
   async function onExtractionLaunched(runId: number) {
     runningRunId = runId;
     descriptionAtLaunch = description;
     await invalidateAll();
     extractionRunsState = extractionRuns;
+  }
+
+  /** The source set changed, so reload the page data the panel and this
+   * band both read. Without this, adding a source left the rest of the
+   * page describing the set as it was a moment ago. */
+  async function refreshSources() {
+    await invalidateAll();
   }
 
   async function save() {
@@ -247,57 +245,6 @@
     await goto('/projects');
   }
 
-  let proposalDiffOpen = $state(false);
-
-  /**
-   * Applies the current proposal (#434). Re-posts the exact text the
-   * operator saw in the diff; the server re-verifies it against a fresh
-   * computation before writing, so a source change landing mid-review
-   * surfaces as a 409 rather than applying stale text.
-   */
-  async function acceptDescriptionProposal() {
-    if (!descriptionProposal) return;
-    const res = await fetch(`/api/projects/${project.id}/description-proposal/accept`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ proposedDescription: descriptionProposal.proposedDescription }),
-    });
-    if (!res.ok) {
-      toast.error(
-        res.status === 409
-          ? t(locale, 'projects.error-proposal-conflict')
-          : t(locale, 'projects.error-proposal-apply-failed'),
-      );
-      return;
-    }
-    proposalDiffOpen = false;
-    toast.success(t(locale, 'projects.toast-description-updated'));
-    await invalidateAll();
-    await tick();
-    description = project.description ?? '';
-  }
-
-  /** Discards the current proposal (#434): the description is never
-   * touched, and this exact text will not be proposed again until the
-   * active source set changes. */
-  async function declineDescriptionProposal() {
-    if (!descriptionProposal) return;
-    const res = await fetch(`/api/projects/${project.id}/description-proposal/decline`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ proposedDescription: descriptionProposal.proposedDescription }),
-    });
-    if (!res.ok) {
-      toast.error(
-        res.status === 409
-          ? t(locale, 'projects.error-proposal-already-changed')
-          : t(locale, 'projects.error-proposal-decline-failed'),
-      );
-      return;
-    }
-    proposalDiffOpen = false;
-    await invalidateAll();
-  }
 
   const unsubs: Array<() => void> = [];
 
@@ -446,22 +393,6 @@
         </div>
       {/if}
     </div>
-    {#if descriptionProposal}
-      <div
-        class="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs {TONE_BANNER_CLASS.sky}"
-      >
-        <span>{t(locale, 'projects.proposal-ready-body')}</span>
-        <Button
-          type="button"
-          size="sm"
-          class={TONE_TEXT_CLASS.sky}
-          variant="outline"
-          onclick={() => (proposalDiffOpen = true)}
-        >
-          {t(locale, 'projects.review-button')}
-        </Button>
-      </div>
-    {/if}
     {#if extractionRunning}
       <div
         class="flex items-center gap-2 rounded-md border px-3 py-2 text-xs {TONE_BANNER_CLASS.amber}"
@@ -492,7 +423,10 @@
         class="flex flex-col items-center justify-center gap-4 rounded-md border border-dashed border-border bg-muted/30 px-6 py-16 text-center"
       >
         <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-medium">{t(locale, 'projects.no-description-title')}</h3>
+          <!-- Not an <h3>: the band's own label is not a heading, so an h3
+               here jumps two levels from the page's h1 and axe flags the
+               order. It is the empty state's title, styled, not structure. -->
+          <p class="text-sm font-medium">{t(locale, 'projects.no-description-title')}</p>
           <p class="text-xs text-muted-foreground max-w-md">
             {t(locale, 'projects.no-description-body')}
           </p>
@@ -526,7 +460,9 @@
       projectId={project.id}
       {sources}
       {isAdmin}
+      {extractionRunning}
       {onExtractionLaunched}
+      onSourcesChanged={refreshSources}
     />
   </div>
 
@@ -540,7 +476,7 @@
 
   {#if recommendations.length > 0}
     <div class="flex flex-col gap-2">
-      <h3 class="text-sm font-medium">{t(locale, 'projects.suggested-campaigns-title')}</h3>
+      <h2 class="text-sm font-medium">{t(locale, 'projects.suggested-campaigns-title')}</h2>
       <p class="text-xs text-muted-foreground">
         {t(locale, 'projects.suggested-campaigns-body')}
       </p>
@@ -562,7 +498,7 @@
       class="mt-10 rounded-md border border-destructive/40 bg-destructive/5 p-4 flex items-start justify-between gap-4"
     >
       <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-medium text-destructive">{t(locale, 'projects.danger-zone-title')}</h3>
+        <h2 class="text-sm font-medium text-destructive">{t(locale, 'projects.danger-zone-title')}</h2>
         <p class="text-xs text-muted-foreground">
           {t(locale, 'projects.danger-zone-body')}
         </p>
@@ -593,13 +529,3 @@
   after={description}
 />
 
-{#if descriptionProposal}
-  <DescriptionDiffModal
-    open={proposalDiffOpen}
-    onOpenChange={(v) => (proposalDiffOpen = v)}
-    before={descriptionProposal.previousDescription}
-    after={descriptionProposal.proposedDescription}
-    onAccept={acceptDescriptionProposal}
-    onDecline={declineDescriptionProposal}
-  />
-{/if}

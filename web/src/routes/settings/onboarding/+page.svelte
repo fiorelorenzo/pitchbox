@@ -3,7 +3,6 @@
 	import { page } from '$app/stores';
 	import { invalidateAll } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import PageContainer from '$lib/components/PageContainer.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
@@ -44,18 +43,17 @@
 	}
 </script>
 
-<PageContainer size="default">
-	<Seo
-		title={t(locale, 'settings.onboarding.seo-title')}
-		description={t(locale, 'settings.onboarding.seo-description')}
-	/>
+<Seo
+	title={t(locale, 'settings.onboarding.seo-title')}
+	description={t(locale, 'settings.onboarding.seo-description')}
+/>
 
-	<PageHeader
-		title={t(locale, 'settings.onboarding.title')}
-		description={t(locale, 'settings.onboarding.description')}
-	/>
+<PageHeader
+	title={t(locale, 'settings.onboarding.title')}
+	description={t(locale, 'settings.onboarding.description')}
+/>
 
-	<div class="mt-4 flex flex-col gap-4">
+<div class="flex flex-col gap-4">
 		<Card.Root>
 			<Card.Header>
 				<div class="flex items-center justify-between gap-3">
@@ -90,4 +88,3 @@
 			</Card.Footer>
 		</Card.Root>
 	</div>
-</PageContainer>

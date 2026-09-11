@@ -24,7 +24,7 @@ The full tool surface (`cli/src/mcp/server.ts`), grouped by what calls it:
 - `drafts_create`, `drafts_get`, `drafts_update` - the draft CRUD surface every playbook writes through.
 - `draft_regen_start` / `draft_regen_finish` - the draft-regenerator playbook's contract.
 - `reply_draft_start` / `reply_draft_finish` - the reply-drafter playbook's contract.
-- `project_extract_start` / `project_extract_files` / `project_extract_read` / `project_extract_finish` - the project-extractor playbook's contract. The source tree is read through `files` / `read` rather than the agent's own file tools: under the cloud runner the agent runs on managed compute and the sources exist only on the client (#220).
+- `project_extract_start` / `project_extract_sources` / `project_extract_files` / `project_extract_read` / `project_extract_finish` - the project-extractor playbook's contract. A run reads the project's whole active source set: `sources` hands over the text every non-tree source last fetched (a crawled website, a Mastodon account, a Hacker News profile, a captured LinkedIn post or profile), while a file tree (`folder`, `git`, `upload`) is navigated through `files` / `read` with an optional `sourceId` - not through the agent's own file tools, since under the cloud runner the agent runs on managed compute and the sources exist only on the client (#220).
 - `project_insights_context` / `project_insights` - the project-insighter playbook's contract.
 - `skill_generate_start` / `skill_generate_finish` - the campaign-skill-generator playbook's contract.
 

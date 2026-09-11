@@ -4,7 +4,8 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
-import { eq, sql } from 'drizzle-orm';
+import { createProjectSource } from '@pitchbox/shared/project-sources';
+import { sql } from 'drizzle-orm';
 
 function cli(args: string): string {
   return execSync(`pnpm -s -F @pitchbox/cli dev ${args}`, {
@@ -37,6 +38,7 @@ describe('pitchbox project:extract:start', () => {
       .values({ organizationId: org.id, slug: 'p1', name: 'P1' })
       .returning();
     projectId = project.id;
+    const source = await createProjectSource(db, org.id, projectId, 'folder', { value: folder });
     const [run] = await db
       .insert(schema.runs)
       .values({
@@ -44,30 +46,27 @@ describe('pitchbox project:extract:start', () => {
         projectId,
         trigger: 'manual',
         status: 'running',
-        params: { source: { kind: 'folder', value: folder } },
+        params: { sourceIds: [source!.id] },
       })
       .returning();
     runId = run.id;
   });
 
-  it('returns sourcePath, scaffoldTemplate, currentDescription, projectId', async () => {
+  it('returns the project source, scaffoldTemplate, currentDescription, projectId', async () => {
     const out = cli(`project:extract:start --run=${runId}`);
     const last = out.trim().split('\n').at(-1)!;
     const parsed = JSON.parse(last);
     expect(parsed.ok).toBe(true);
     expect(parsed.data.projectId).toBe(projectId);
-    expect(parsed.data.sourcePath).toBe(folder);
+    expect(parsed.data.sources).toHaveLength(1);
+    expect(parsed.data.sources[0]).toMatchObject({
+      kind: 'folder',
+      label: folder,
+      readsAsTree: true,
+      hasContent: false,
+    });
     expect(parsed.data.scaffoldTemplate).toMatch(/## Product/);
     expect(parsed.data.currentDescription).toBe('');
-  });
-
-  it('rejects a folder path that does not exist', async () => {
-    const db = getDb();
-    await db
-      .update(schema.runs)
-      .set({ params: { source: { kind: 'folder', value: '/nope/never' } } })
-      .where(eq(schema.runs.id, runId));
-    expect(() => cli(`project:extract:start --run=${runId}`)).toThrow();
   });
 });
 

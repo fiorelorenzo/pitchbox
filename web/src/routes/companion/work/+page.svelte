@@ -210,7 +210,7 @@
 	description={t(locale, 'companion.work.seo-description')}
 />
 
-<PageContainer size="default">
+<PageContainer size="default" class="max-w-5xl">
 	<PageHeader
 		title={t(locale, 'companion.work.title')}
 		description={t(locale, 'companion.work.description')}
@@ -252,50 +252,52 @@
 						size="sm"
 					/>
 				{:else}
-					<div class="flex flex-col divide-y divide-border">
-						{#each repos as source (source.id)}
-							<div class="flex items-start justify-between gap-3 py-3">
-								<div class="min-w-0 flex-1">
-									<a
-										href={source.url}
-										target="_blank"
-										rel="noopener noreferrer"
-										class="text-sm font-medium text-foreground hover:underline"
-									>
-										{source.owner}/{source.repo}
-									</a>
-									{#if source.description}
-										<p class="mt-0.5 text-xs text-muted-foreground">{source.description}</p>
-									{/if}
-									<div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-										{#if source.primaryLanguage}
-											<Badge variant="outline">{source.primaryLanguage}</Badge>
+					<div class="max-h-96 overflow-y-auto pr-1">
+						<div class="flex flex-col divide-y divide-border">
+							{#each repos as source (source.id)}
+								<div class="flex items-start justify-between gap-3 py-3">
+									<div class="min-w-0 flex-1">
+										<a
+											href={source.url}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="text-sm font-medium text-foreground hover:underline"
+										>
+											{source.owner}/{source.repo}
+										</a>
+										{#if source.description}
+											<p class="mt-0.5 text-xs text-muted-foreground">{source.description}</p>
 										{/if}
-									<span>
-										{source.fetchedAt
-											? t(locale, 'companion.work.fetched-label', { when: relativeTime(source.fetchedAt, locale) })
-											: t(locale, 'companion.work.not-fetched-yet')}
-									</span>
+										<div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+											{#if source.primaryLanguage}
+												<Badge variant="outline">{source.primaryLanguage}</Badge>
+											{/if}
+										<span>
+											{source.fetchedAt
+												? t(locale, 'companion.work.fetched-label', { when: relativeTime(source.fetchedAt, locale) })
+												: t(locale, 'companion.work.not-fetched-yet')}
+										</span>
+										</div>
+										{#if source.fetchError}
+											<Alert.Root variant="destructive" class="mt-2">
+												<Info class="size-4" />
+												<Alert.Description>{source.fetchError}</Alert.Description>
+											</Alert.Root>
+										{/if}
 									</div>
-									{#if source.fetchError}
-										<Alert.Root variant="destructive" class="mt-2">
-											<Info class="size-4" />
-											<Alert.Description>{source.fetchError}</Alert.Description>
-										</Alert.Root>
-									{/if}
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon-sm"
+										disabled={removingRepoId === source.id}
+										onclick={() => removeRepo(source.id)}
+									aria-label={t(locale, 'companion.work.remove-repo-aria')}
+									>
+										<Trash2 class="size-4" />
+									</Button>
 								</div>
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon-sm"
-									disabled={removingRepoId === source.id}
-									onclick={() => removeRepo(source.id)}
-								aria-label={t(locale, 'companion.work.remove-repo-aria')}
-								>
-									<Trash2 class="size-4" />
-								</Button>
-							</div>
-						{/each}
+							{/each}
+						</div>
 					</div>
 				{/if}
 			</Card.Content>

@@ -1,8 +1,11 @@
 // Exercises shared/src/project-source-sync.ts: the per-kind fetch dispatcher
-// behind a project source's "re-sync" (#432). `github`, `website` (#472) and
-// `mastodon_account`/`hackernews_author` (#437) each have a real fetcher;
-// `linkedin_company` (not implemented yet - #435) and `folder`/`git`/`upload`
-// (populated by running an extraction, not by syncing) must each come back
+// behind a project source's "re-sync" (#432). `git`, `website` (#472) and
+// `mastodon_account`/`hackernews_author` (#437) each have a real fetcher,
+// and `git` picks between two of them from the URL (the GitHub API for a
+// GitHub URL, `git ls-remote` for any other host, which is what collapsing
+// the old `git`/`github` pair into one kind left behind);
+// `linkedin_company` (not implemented yet - #435) and `folder`/`upload`
+// (paths a description run reads directly) must each come back
 // with a human-readable fetch_error instead of throwing, so an unimplemented
 // kind renders as a source you can add and see rather than a crash. The
 // website/mastodon/hackernews cases here use a mocked fetchImpl (proving the
@@ -80,11 +83,11 @@ function successfulFetch(readme = 'What this project does.'): GithubFetch {
   };
 }
 
-describe('syncProjectSource: github', () => {
-  it('a successful fetch stores output and clears fetch_error', async () => {
+describe('syncProjectSource: git', () => {
+  it('a GitHub URL is read through the API, storing output and clearing fetch_error', async () => {
     const { orgId, projectId } = await setupOrgAndProject();
     const db = getDb();
-    const created = await createProjectSource(db, orgId, projectId, 'github', {
+    const created = await createProjectSource(db, orgId, projectId, 'git', {
       value: 'https://github.com/acme/widget',
     });
     const result = await syncProjectSource(db, orgId, created!.id, {
@@ -100,10 +103,30 @@ describe('syncProjectSource: github', () => {
     });
   });
 
+  it('reads the url a row migrated from the old github kind carries instead of value', async () => {
+    // Migration 0018 wrote `{ owner, repo, url }` for the rows it built out
+    // of `github_sources`, with no `value` at all, and `syncGithub` only
+    // ever read `value`: every one of those rows failed its re-sync with
+    // "not a github url". 0038 backfills `value`, and this covers the row
+    // shape itself so the reader cannot regress to one key.
+    const { orgId, projectId } = await setupOrgAndProject();
+    const db = getDb();
+    const created = await createProjectSource(db, orgId, projectId, 'git', {
+      owner: 'acme',
+      repo: 'widget',
+      url: 'https://github.com/acme/widget',
+    });
+    const result = await syncProjectSource(db, orgId, created!.id, {
+      fetchImpl: successfulFetch(),
+    });
+    expect(result?.ok).toBe(true);
+    expect(result?.source.output).toMatchObject({ primaryLanguage: 'TypeScript' });
+  });
+
   it('a 404 sets a fetch_error explaining the repo was not found, in words', async () => {
     const { orgId, projectId } = await setupOrgAndProject();
     const db = getDb();
-    const created = await createProjectSource(db, orgId, projectId, 'github', {
+    const created = await createProjectSource(db, orgId, projectId, 'git', {
       value: 'https://github.com/acme/missing',
     });
     const fetchImpl: GithubFetch = async () => fakeResponse(404, {});
@@ -112,11 +135,46 @@ describe('syncProjectSource: github', () => {
     expect(result?.source.fetchError).toMatch(/not found/i);
   });
 
-  it('an unparseable value sets a fetch_error instead of throwing', async () => {
+  it('a non-GitHub host is proved reachable with ls-remote, never the GitHub API', async () => {
     const { orgId, projectId } = await setupOrgAndProject();
     const db = getDb();
-    const created = await createProjectSource(db, orgId, projectId, 'github', {
-      value: 'not a github url at all!!',
+    const created = await createProjectSource(db, orgId, projectId, 'git', {
+      value: 'https://git.example.com/acme/widget.git',
+    });
+    const githubCalls: string[] = [];
+    const result = await syncProjectSource(db, orgId, created!.id, {
+      fetchImpl: async (url: string) => {
+        githubCalls.push(url);
+        return fakeResponse(200, REPO_JSON);
+      },
+      gitLsRemoteImpl: async () => ({ branches: ['main', 'next'] }),
+    });
+    expect(githubCalls).toEqual([]);
+    expect(result?.ok).toBe(true);
+    expect(result?.source.fetchError).toBeNull();
+    expect(result?.source.output).toMatchObject({ branchCount: 2, branches: ['main', 'next'] });
+  });
+
+  it('an unreachable remote sets the git error as the fetch_error, not a throw', async () => {
+    const { orgId, projectId } = await setupOrgAndProject();
+    const db = getDb();
+    const created = await createProjectSource(db, orgId, projectId, 'git', {
+      value: 'https://git.example.com/acme/private.git',
+    });
+    const result = await syncProjectSource(db, orgId, created!.id, {
+      gitLsRemoteImpl: async () => {
+        throw new Error('git ls-remote failed (exit 128): Authentication failed');
+      },
+    });
+    expect(result?.ok).toBe(false);
+    expect(result?.source.fetchError).toMatch(/Authentication failed/);
+  });
+
+  it('a value that is no kind of repository URL sets a fetch_error instead of throwing', async () => {
+    const { orgId, projectId } = await setupOrgAndProject();
+    const db = getDb();
+    const created = await createProjectSource(db, orgId, projectId, 'git', {
+      value: 'not a git url at all!!',
     });
     const result = await syncProjectSource(db, orgId, created!.id, {
       fetchImpl: successfulFetch(),
@@ -335,16 +393,16 @@ describe('syncProjectSource: linkedin_post/linkedin_profile flip back to pending
   );
 });
 
-describe('syncProjectSource: extraction-only kinds', () => {
-  it.each(['folder', 'git', 'upload'] as const)(
-    '%s sets a fetch_error explaining it needs an extraction run',
+describe('syncProjectSource: path kinds have nothing to re-fetch', () => {
+  it.each(['folder', 'upload'] as const)(
+    '%s says it is read again by the next description run, rather than failing',
     async (kind) => {
       const { orgId, projectId } = await setupOrgAndProject();
       const db = getDb();
       const created = await createProjectSource(db, orgId, projectId, kind, { value: '/tmp/x' });
       const result = await syncProjectSource(db, orgId, created!.id);
       expect(result?.ok).toBe(false);
-      expect(result?.source.fetchError).toMatch(/extraction/i);
+      expect(result?.source.fetchError).toMatch(/regenerated/i);
     },
   );
 });
@@ -354,7 +412,7 @@ describe('syncProjectSource: organization scoping', () => {
     const { orgId: ownerOrgId, projectId } = await setupOrgAndProject();
     const { orgId: otherOrgId } = await setupOrgAndProject();
     const db = getDb();
-    const created = await createProjectSource(db, ownerOrgId, projectId, 'github', {
+    const created = await createProjectSource(db, ownerOrgId, projectId, 'git', {
       value: 'https://github.com/acme/widget',
     });
     const result = await syncProjectSource(db, otherOrgId, created!.id);

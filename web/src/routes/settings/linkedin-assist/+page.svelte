@@ -9,7 +9,6 @@
 	import { page } from '$app/stores';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
-	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { toast } from 'svelte-sonner';
 	import { fly } from 'svelte/transition';
 	import { untrack } from 'svelte';
@@ -127,11 +126,10 @@
 	description={t(locale, 'settings.linkedin-assist.seo-description')}
 />
 
-<PageContainer size="default">
-	<PageHeader
-		title={t(locale, 'settings.linkedin-assist.title')}
-		description={t(locale, 'settings.linkedin-assist.description')}
-	/>
+<PageHeader
+	title={t(locale, 'settings.linkedin-assist.title')}
+	description={t(locale, 'settings.linkedin-assist.description')}
+/>
 
 	{#if s.killSwitch}
 		<Alert.Root variant="destructive" class="mb-4">
@@ -143,7 +141,7 @@
 		</Alert.Root>
 	{/if}
 
-	<div class="max-w-2xl flex flex-col gap-4">
+<div class="flex flex-col gap-4">
 		<Card.Root>
 			<Card.Header>
 				<Card.Title>{t(locale, 'settings.linkedin-assist.assist.title')}</Card.Title>
@@ -299,8 +297,7 @@
 				</Alert.Root>
 			</Card.Content>
 		</Card.Root>
-	</div>
-</PageContainer>
+</div>
 
 {#if dirty}
 	<div

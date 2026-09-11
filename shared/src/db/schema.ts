@@ -465,20 +465,18 @@ export const campaignRecommendations = pgTable(
   }),
 );
 
-// `project_description_refresh` (#434): a proposed re-derivation of a
-// project's description after its sources changed, or the decision on one.
-// No dedicated table - `params` carries `{ decision: 'accepted'|'declined',
-// proposedDescription, previousDescription, sourceIds }` and `status` is
-// always 'success' (the derivation itself is synchronous and deterministic,
-// never a model call - see shared/src/project-description-refresh.ts). Only
-// a decision is ever persisted; the proposal shown to an operator is
-// computed on demand and never written until accepted or declined.
+// A `project_extraction` run's `params` carries `{ sourceIds: number[] }`:
+// the project's active source set when the operator started it, for the run
+// log only, since the agent re-resolves the set at tool-call time. A
+// historical row may still carry the older `{ source: { kind, value } }`
+// from when a run was bound to one source, and the extraction history table
+// renders both.
 
 export const runs = pgTable(
   'runs',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
-    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction' | 'campaign_skill_generation' | 'draft_regeneration' | 'reply_drafting' | 'project_insights' | 'project_description_refresh' - 'assist' retired #521, accepting a suggestion no longer writes a runs row
+    kind: text('kind').notNull().default('campaign'), // 'campaign' | 'project_extraction' | 'campaign_skill_generation' | 'draft_regeneration' | 'reply_drafting' | 'project_insights' - 'assist' retired #521 (accepting a suggestion no longer writes a runs row), 'project_description_refresh' retired with the deterministic appendix it recorded a decision on
     campaignId: integer('campaign_id').references(() => campaigns.id, { onDelete: 'cascade' }),
     projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     params: jsonb('params').notNull().default({}),
@@ -1411,7 +1409,7 @@ export const operatorVoiceProfiles = pgTable(
 // `project_id`, but nothing ever set it - every real caller
 // (`/companion/work`, `assist/context.ts`) reads across the whole org,
 // never one project. A repo a project itself cites as a source is a
-// `project_sources` row of kind 'github' instead (see below), so there is
+// `project_sources` row of kind 'git' instead (see below), so there is
 // exactly one place that answers "what are this project's sources".
 export const githubSources = pgTable(
   'github_sources',
@@ -1504,8 +1502,9 @@ export const githubInstallations = pgTable(
 // reason to duplicate the pattern here.
 //
 // `kind` is `ProjectSourceKind` (shared/src/project-sources.ts): today's
-// extraction inputs (`folder`, `git`, `upload`) and the GitHub cache
-// (`github`), plus `website` (#433), the LinkedIn kinds #435 is spiking
+// extraction inputs (`folder`, `git`, `upload`), where `git` is the one
+// repository kind and covers what `github` used to read shallowly through
+// the API, plus `website` (#433), the LinkedIn kinds #435 is spiking
 // (`linkedin_company`, `linkedin_profile`, `linkedin_post`), and two
 // read-only social adapters (#437: `mastodon_account`, `hackernews_author`)
 // - a value nobody implements yet is fine, a second copy of this list
@@ -1521,7 +1520,7 @@ export const projectSources = pgTable(
     projectId: integer('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
-    kind: text('kind').notNull(), // 'folder' | 'git' | 'upload' | 'github' | 'website' | 'linkedin_company' | 'linkedin_profile' | 'linkedin_post' | 'mastodon_account' | 'hackernews_author'
+    kind: text('kind').notNull(), // 'folder' | 'git' | 'upload' | 'website' | 'linkedin_company' | 'linkedin_profile' | 'linkedin_post' | 'mastodon_account' | 'hackernews_author'
     config: jsonb('config').notNull().default({}),
     output: jsonb('output'),
     active: boolean('active').notNull().default(true),

@@ -36,6 +36,7 @@ import { searchHn, HN_LISTINGS } from '../commands/hn.js';
 import type { HnListing } from '@pitchbox/shared/platforms/hackernews';
 import {
   projectExtractStart,
+  projectExtractSources,
   projectExtractListFiles,
   projectExtractReadFile,
   projectExtractFinish,
@@ -766,7 +767,7 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     {
       title: 'Start a project extraction',
       description:
-        'Load the project-extraction context: projectId, sourcePath to inspect, scaffold template, current description, available scenarios, and existing campaigns. Defaults to this session run.',
+        'Load the project-extraction context: projectId, the project source set to read, scaffold template, current description, available scenarios, and existing campaigns. Defaults to this session run.',
       inputSchema: {
         runId: z
           .number()
@@ -790,11 +791,11 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
   );
 
   server.registerTool(
-    'project_extract_files',
+    'project_extract_sources',
     {
-      title: 'List the extraction source files',
+      title: "Read what this project's sources fetched",
       description:
-        "List every file in this run's source tree, as paths relative to the source root, with their size in bytes. Build output, node_modules and VCS internals are skipped. Use this instead of your own shell/glob tools: the source lives on the Pitchbox client, not on the machine you run on.",
+        "Every source on this project that is not a file tree, with the text its last fetch cached: a crawled website, a Mastodon account's posts, a Hacker News profile, a captured LinkedIn post or profile. This is the grounding for the description of a project that has no repository. A source nothing has filled yet comes back with `content: null` and a `fetchError` explaining why - write around the gap, never over it.",
       inputSchema: {
         runId: z
           .number()
@@ -810,7 +811,41 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       try {
         const ownershipErr = await checkOwnership('run', rid);
         if (ownershipErr) return errorResult(ownershipErr);
-        return jsonResult(await projectExtractListFiles(rid));
+        return jsonResult(await projectExtractSources(rid));
+      } catch (err) {
+        return errorResult(String(err instanceof Error ? err.message : err));
+      }
+    },
+  );
+
+  server.registerTool(
+    'project_extract_files',
+    {
+      title: 'List the extraction source files',
+      description:
+        "List every file in one of this project's file-tree sources (a folder, a cloned repository, an upload), as paths relative to that source's root, with their size in bytes. Build output, node_modules and VCS internals are skipped. `sourceId` is required only when the project has several file-tree sources. Use this instead of your own shell/glob tools: the source lives on the Pitchbox client, not on the machine you run on.",
+      inputSchema: {
+        sourceId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('project source id (from project_extract_start)'),
+        runId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('run id (defaults to PITCHBOX_RUN_ID)'),
+      },
+    },
+    async ({ sourceId, runId }) => {
+      const rid = runId ?? defaultRunId();
+      if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
+      try {
+        const ownershipErr = await checkOwnership('run', rid);
+        if (ownershipErr) return errorResult(ownershipErr);
+        return jsonResult(await projectExtractListFiles(rid, sourceId));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }
@@ -822,9 +857,15 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     {
       title: 'Read one extraction source file',
       description:
-        "Read a file from this run's source tree. `path` is relative to the source root (as returned by project_extract_files); anything resolving outside it is refused. Long files come back truncated with `truncated: true`. Use this instead of your own file-reading tools: the source lives on the Pitchbox client, not on the machine you run on.",
+        "Read a file from one of this project's file-tree sources. `path` is relative to that source's root (as returned by project_extract_files); anything resolving outside it is refused. `sourceId` is required only when the project has several file-tree sources. Long files come back truncated with `truncated: true`. Use this instead of your own file-reading tools: the source lives on the Pitchbox client, not on the machine you run on.",
       inputSchema: {
         path: z.string().min(1).describe('file path relative to the source root'),
+        sourceId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('project source id (from project_extract_start)'),
         runId: z
           .number()
           .int()
@@ -833,13 +874,13 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
           .describe('run id (defaults to PITCHBOX_RUN_ID)'),
       },
     },
-    async ({ path, runId }) => {
+    async ({ path, sourceId, runId }) => {
       const rid = runId ?? defaultRunId();
       if (rid == null) return errorResult('runId required (or set PITCHBOX_RUN_ID)');
       try {
         const ownershipErr = await checkOwnership('run', rid);
         if (ownershipErr) return errorResult(ownershipErr);
-        return jsonResult(await projectExtractReadFile(rid, path));
+        return jsonResult(await projectExtractReadFile(rid, path, sourceId));
       } catch (err) {
         return errorResult(String(err instanceof Error ? err.message : err));
       }

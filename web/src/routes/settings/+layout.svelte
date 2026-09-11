@@ -3,13 +3,12 @@
   import type { LayoutData } from './$types';
   import { page } from '$app/stores';
   import {
-    Activity,
+    Settings,
     ListChecks,
     Bot,
     Puzzle,
     Gauge,
     KeyRound,
-    Languages,
     Building2,
     CreditCard,
     Archive,
@@ -23,39 +22,34 @@
 
   const locale = $derived($page.data.locale as Locale);
 
-  // Flat rail of twelve (#254 shipped seven; LI-19/#316 added LinkedIn assist;
+  // Flat rail of eleven (#254 shipped seven; LI-19/#316 added LinkedIn assist;
   // 2026-09-07's companion decisions added Companion, moved to its own
   // top-level /companion sidebar group by LOR-178/179 (see
   // web/src/lib/components/Sidebar.svelte); #506 added Password;
-  // #516 added Onboarding; #555 added Billing). General/Browser extension
-  // never 403 - their loaders gate their own data set (member sees an
-  // "Admin access required" card instead of a thrown error) - so they're
-  // always shown. Password and Onboarding are self-service (gated on being
-  // signed in / having an org context at all, not an org role -
-  // docs/permissions.md) rather than admin-only. Organization needs an org
-  // context (auth on); Retention, Security and LinkedIn assist loaders call
-  // requireRole(event, 'admin') and do throw, so those
-  // stay role-filtered here too. Billing additionally needs `data.isCloud`:
-  // self-host has no plan concept at all (shared/src/plans.ts's
-  // resolveEntitlements is unlimited there before it ever looks at a
-  // plan), so the link does not exist rather than opening onto a page with
-  // nothing to show. The server loaders enforce the real rule; this only
-  // hides links that would otherwise 403 or land on a dead page.
-  //
-  // Agent runners, Quota and Retention are edition-gated the same way
-  // Billing is, but the other direction (#183): on cloud they describe the
-  // whole deployment (binary path, model id, retention policy), not any
-  // one tenant, so their loaders narrow the read to `isInstanceAdmin`
-  // there and the rail drops all three entries outright - they stay
-  // reachable to the instance admin from `/settings/admin` instead. On
-  // self-host the org-role gate is unchanged, so they stay in the rail
-  // exactly as before.
+  // #516 added Onboarding; #555 added Billing; 2026-09-12's UI/UX defects
+  // batch folded Language into General - the display-language picker is
+  // now a card on /settings/general instead of its own rail entry, and
+  // /settings/language is a redirect-only stub kept for deep links).
+  // General/Browser extension never 403 - their loaders gate their own
+  // data set (member sees an "Admin access required" card instead of a
+  // thrown error) - so they're always shown. Password and Onboarding are
+  // self-service (gated on being signed in / having an org context at
+  // all, not an org role - docs/permissions.md) rather than admin-only.
+  // Organization needs an org context (auth on); Retention, Security and
+  // LinkedIn assist loaders call requireRole(event, 'admin') and do
+  // throw, so those stay role-filtered here too. Billing additionally
+  // needs `data.isCloud`: self-host has no plan concept at all
+  // (shared/src/plans.ts's resolveEntitlements is unlimited there before
+  // it ever looks at a plan), so the link does not exist rather than
+  // opening onto a page with nothing to show. The server loaders enforce
+  // the real rule; this only hides links that would otherwise 403 or
+  // land on a dead page.
   const items = $derived(
     [
       {
         href: '/settings/general',
         label: t(locale, 'settings.nav.general'),
-        icon: Activity,
+        icon: Settings,
         show: true,
       },
       {
@@ -86,12 +80,6 @@
         href: '/settings/password',
         label: t(locale, 'settings.nav.password'),
         icon: KeyRound,
-        show: data.signedIn,
-      },
-      {
-        href: '/settings/language',
-        label: t(locale, 'settings.nav.language'),
-        icon: Languages,
         show: data.signedIn,
       },
       {
@@ -193,7 +181,7 @@
       </a>
     {/if}
   </nav>
-  <div class="min-w-0 flex-1">
+  <div class="min-w-0 max-w-5xl w-full flex-1">
     {@render children()}
   </div>
 </div>

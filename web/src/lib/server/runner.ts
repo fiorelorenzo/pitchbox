@@ -22,6 +22,7 @@ import {
 } from '@pitchbox/shared/draft-regenerate';
 import { startReplyDrafting } from '@pitchbox/shared/reply-drafter';
 import { getRunOrgId } from '@pitchbox/shared/orgs';
+import { listProjectSources } from '@pitchbox/shared/project-sources';
 import {
   getOrgQuotaSnapshot,
   assertOrgConcurrencyAdmitted,
@@ -35,7 +36,7 @@ import { getDb, schema } from './db.js';
 import { and, desc, eq } from 'drizzle-orm';
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { emit } from './events.js';
 
 // Derive repo root from this module's location (web/src/lib/server/runner.ts → ../../../..).
@@ -605,22 +606,14 @@ async function dispatchRun(
     .finally(async () => {
       runCancels.delete(run.id);
       try {
-        const params = run.params as { source?: { kind?: string; value?: string } } | null;
-        if (
-          run.kind === 'project_extraction' &&
-          params?.source?.kind === 'upload' &&
-          typeof params.source.value === 'string'
-        ) {
-          // Re-read the run row to check terminal status - the CLI's `extract:finish`
-          // handles cleanup on success; we only own the failure/cancellation path.
-          const [latest] = await db
-            .select({ status: schema.runs.status })
-            .from(schema.runs)
-            .where(eq(schema.runs.id, run.id));
-          if (latest && latest.status !== 'success') {
-            await rm(params.source.value, { recursive: true, force: true }).catch(() => {});
-          }
-        }
+        // An `upload` source's directory is deliberately never deleted here
+        // any more: it used to be one run's ephemeral input, named in
+        // `runs.params.source`, and it is now the content of a
+        // `project_sources` row that outlives the run and is read again by
+        // the next description run. Nothing constructs `params.source` for a
+        // `project_extraction` run, so the check that used to live here
+        // could only ever match a historical row and delete a live source's
+        // files.
         // On success draft_regen_finish already cleared the flag; this covers
         // the failed/cancelled paths so the inbox stops showing "regenerating".
         await clearRegenFlag(db, run, orgId);
@@ -770,14 +763,26 @@ export async function runCampaign(
   return { runId: run.id };
 }
 
+/**
+ * Starts a description run over the project's whole active source set.
+ *
+ * It used to take one source per run, picked in the dashboard, which is why
+ * the sources panel grew a play button per row. The set is the unit now:
+ * the human curates it, the agent reads all of it
+ * (cli/src/commands/project.ts's `projectExtractStart` resolves it from the
+ * project, so nothing about the choice lives in `runs.params`), and a
+ * project with a repository plus a website gets one description grounded in
+ * both instead of two runs fighting over the same column.
+ *
+ * Returns `noSources: true` without inserting a run when the project has
+ * nothing active to read - the caller turns that into a refusal the
+ * operator can act on, since an agent asked to describe nothing would
+ * either invent a product or fail on its first tool call.
+ */
 export async function runProjectExtraction(
   projectId: number,
-  source:
-    | { kind: 'folder'; value: string }
-    | { kind: 'git'; value: string }
-    | { kind: 'upload'; value: string },
   trigger: string = 'manual',
-): Promise<{ runId: number; alreadyRunning?: boolean }> {
+): Promise<{ runId?: number; alreadyRunning?: boolean; noSources?: boolean }> {
   const db = getDb();
   const [project] = await db
     .select()
@@ -800,6 +805,10 @@ export async function runProjectExtraction(
     .limit(1);
   if (existing) return { runId: existing.id, alreadyRunning: true };
 
+  const sources = await listProjectSources(db, project.organizationId, projectId);
+  const activeSourceIds = sources.filter((s) => s.active).map((s) => s.id);
+  if (activeSourceIds.length === 0) return { noSources: true };
+
   const [run] = await db
     .insert(schema.runs)
     .values({
@@ -808,7 +817,11 @@ export async function runProjectExtraction(
       agentRunner: project.defaultAgentRunner,
       trigger,
       status: 'running',
-      params: { source },
+      // Which sources existed when the run started, for the run log only.
+      // The agent resolves the set itself at tool-call time, so a source
+      // added mid-run is read rather than ignored; this is the record of
+      // what the operator was looking at when they pressed the button.
+      params: { sourceIds: activeSourceIds },
     })
     .returning();
 

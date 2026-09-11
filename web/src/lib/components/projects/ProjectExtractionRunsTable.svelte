@@ -23,7 +23,7 @@
     finishedAt: string | null;
     durationMs: number | null;
     tokensUsed: number | null;
-    params: { source?: { kind: string; value: string } } | null;
+    params: { sourceIds?: number[]; source?: { kind: string; value: string } } | null;
   };
   type RunsCursor = { startedAt: string; id: string } | null;
   type Props = {
@@ -123,7 +123,19 @@
     }
   }
 
+  /**
+   * What a run read. A current run reads the project's whole active source
+   * set and records their ids (`sourceIds`), so the honest label is a
+   * count; a historical row predating that carries the single
+   * `{ kind, value }` it was started with, and still renders it.
+   */
   function sourceLabel(p: Run['params']): { kind: string; detail: string | null } {
+    if (p?.sourceIds) {
+      return {
+        kind: t(locale, 'projects.source-badge-count', { count: p.sourceIds.length }),
+        detail: null,
+      };
+    }
     const s = p?.source;
     if (!s) return { kind: '-', detail: null };
     // Upload paths are internal tmp dirs (e.g. /tmp/pitchbox-upload-<uuid>) - useless to expose.
