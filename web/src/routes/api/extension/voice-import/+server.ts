@@ -40,9 +40,10 @@ import {
 // **Body is the raw archive, not a multipart form.** An automating caller
 // posts the file's bytes directly; `Content-Type` says which shape they
 // are (`application/zip` / `application/x-zip-compressed` for the export
-// zip, `text/csv` for an already-extracted `Shares.csv`/`Comments.csv`),
-// since `parseLinkedinExportBuffer`'s own dispatch needs a filename
-// extension and there is no multipart field name to read one from here.
+// zip, `text/csv` for an already-extracted `Shares.csv`/`Comments.csv`/
+// `messages.csv`), since `parseLinkedinExportBufferWithStats`'s own
+// dispatch needs a filename extension and there is no multipart field
+// name to read one from here.
 //
 // **Size cap enforced before buffering, not after.** Same
 // `MAX_VOICE_IMPORT_BYTES` the companion form applies (now shared from
@@ -60,6 +61,14 @@ import {
 // not an error - `noop`/`message` make that an explicit, readable outcome
 // rather than an ambiguous 200.
 //
+// **The "Basic" archive succeeds (LOR-267).** LinkedIn answers a data
+// request with two archives - a small one within minutes carrying only
+// `messages.csv`, and a second with `Shares.csv`/`Comments.csv` up to 24
+// hours later. The first email used to be rejected outright; it now
+// imports the operator's own sent DMs (`VoiceImportOutcome.messages`) and
+// reports zero posts/comments rather than erroring, since that's exactly
+// what that archive is expected to carry.
+//
 // **No plan-limit gate.** Unlike `/api/extension/observations` and
 // `/suggest`, an import doesn't spend the org's suggestion budget or touch
 // billing-gated output - it only fills the operator's own voice corpus -
@@ -69,8 +78,9 @@ import {
 const perDevice = new RateLimiter(10, 60_000);
 
 /** Static lookup: an accepted `Content-Type` to the synthetic filename
- * `parseLinkedinExportBuffer`'s own extension-based dispatch needs, since
- * there's no multipart field name to read a real one from here. */
+ * `parseLinkedinExportBufferWithStats`'s own extension-based dispatch
+ * needs, since there's no multipart field name to read a real one from
+ * here. */
 const FILENAME_BY_CONTENT_TYPE: Record<string, string> = {
   'application/zip': 'export.zip',
   'application/x-zip-compressed': 'export.zip',
@@ -122,7 +132,7 @@ export async function POST({ request }: { request: Request }) {
   if (!filename) {
     throw error(
       400,
-      'Set Content-Type to application/zip (a LinkedIn export archive) or text/csv (a single Shares.csv/Comments.csv).',
+      'Set Content-Type to application/zip (a LinkedIn export archive) or text/csv (a single Shares.csv/Comments.csv/messages.csv).',
     );
   }
 
@@ -145,10 +155,10 @@ export async function POST({ request }: { request: Request }) {
   try {
     outcome = await importLinkedinVoiceExport(db, orgId, platformId, buffer, filename);
   } catch (err) {
-    // Everything parseLinkedinExportBuffer itself throws - not an archive,
-    // or an archive with neither Shares.csv nor Comments.csv - is a bad
-    // request with a message already written to be read, never a stack
-    // trace or a bare 500.
+    // Everything parseLinkedinExportBufferWithStats itself throws - not an
+    // archive, or an archive with none of Shares.csv, Comments.csv or
+    // messages.csv - is a bad request with a message already written to
+    // be read, never a stack trace or a bare 500.
     throw error(400, err instanceof Error ? err.message : 'Could not read that file.');
   }
 

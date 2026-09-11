@@ -16,7 +16,7 @@
 import { eq } from 'drizzle-orm';
 import { schema, type Db } from './db.js';
 import { parseLinkedinExportBufferWithStats } from '@pitchbox/shared/voice-import-archive';
-import { importVoiceSamples } from '@pitchbox/shared/operator-profile';
+import { importVoiceSamples, importVoiceMessages } from '@pitchbox/shared/operator-profile';
 import {
   loadVoiceProfile,
   refreshVoiceProfile,
@@ -30,6 +30,15 @@ export const MAX_VOICE_IMPORT_BYTES = 20 * 1024 * 1024;
 
 type GenreCounts = { post: number; comment: number };
 type GenreProfile = { itemCount: number; measurable: boolean };
+/** Same shape as `GenreCounts`, but for `messages.csv` (LOR-267) - kept
+ * separate rather than widened into `GenreCounts` since a message has no
+ * genre (see `voice-import.ts`'s own comment on `ImportedVoiceMessage`). */
+type MessageCounts = {
+  imported: number;
+  duplicates: number;
+  skippedNoText: number;
+  totalRows: number;
+};
 
 export type VoiceImportOutcome = {
   /** New rows actually written, per genre. Zero across the board on a
@@ -44,6 +53,13 @@ export type VoiceImportOutcome = {
   /** Every row the file actually had, per genre, whatever happened to it:
    * `imported + duplicates + skippedNoText`, genre by genre. */
   totalRows: GenreCounts;
+  /** The operator's own sent DMs from `messages.csv` (LOR-267) - zero
+   * across the board when the archive carries no messages.csv.
+   * `skippedNoText` here also covers a row from someone else and a draft
+   * row, not only an empty body - see `voice-import.ts`'s
+   * `parseMessagesCsv` for why those are indistinguishable from the
+   * outside: all three are "not this operator's own sent writing". */
+  messages: MessageCounts;
   /** True when nothing new landed - the normal outcome of re-posting the
    * same archive, not a failure. */
   noop: boolean;
@@ -97,8 +113,11 @@ export async function importLinkedinVoiceExport(
   buffer: Buffer,
   filename: string,
 ): Promise<VoiceImportOutcome> {
-  const { items, stats } = parseLinkedinExportBufferWithStats(buffer, filename);
-  const persisted = await importVoiceSamples(db, organizationId, platformId, items);
+  const { items, messages, stats } = parseLinkedinExportBufferWithStats(buffer, filename);
+  const [persisted, persistedMessages] = await Promise.all([
+    importVoiceSamples(db, organizationId, platformId, items),
+    importVoiceMessages(db, organizationId, platformId, messages),
+  ]);
 
   const totalRows: GenreCounts = { post: stats.post.totalRows, comment: stats.comment.totalRows };
   const skippedNoText: GenreCounts = { post: stats.post.skipped, comment: stats.comment.skipped };
@@ -106,30 +125,38 @@ export async function importLinkedinVoiceExport(
     post: stats.post.imported - persisted.byGenre.post,
     comment: stats.comment.imported - persisted.byGenre.comment,
   };
+  const messageCounts: MessageCounts = {
+    imported: persistedMessages.inserted,
+    duplicates: stats.message.imported - persistedMessages.inserted,
+    skippedNoText: stats.message.skipped,
+    totalRows: stats.message.totalRows,
+  };
 
   // Onboarding in one step, same as the CLI's own voiceImportRun: a fresh
   // import is exactly the case where the corpus just crossed
   // MIN_ITEMS_TO_DERIVE, so the caller shouldn't have to separately
-  // remember to refresh. A pure re-post (inserted === 0) skips the
-  // derivation entirely and just reports the profile's current state.
+  // remember to refresh. A pure re-post (nothing inserted anywhere) skips
+  // the derivation entirely and just reports the profile's current state.
+  const totalInserted = persisted.inserted + persistedMessages.inserted;
   const profileRow =
-    persisted.inserted > 0
+    totalInserted > 0
       ? await refreshVoiceProfile(db, organizationId)
       : await loadVoiceProfile(db, organizationId);
 
-  const noop = persisted.inserted === 0;
-  const totalParsed = stats.post.imported + stats.comment.imported;
+  const noop = totalInserted === 0;
+  const totalParsed = stats.post.imported + stats.comment.imported + stats.message.imported;
   const message = noop
     ? totalParsed === 0
-      ? 'Nothing to import: no post or comment in this file had any text.'
+      ? 'Nothing to import: no post, comment or message in this file had any usable text.'
       : `Imported nothing new: all ${totalParsed} parsed item(s) were already on file.`
-    : `Imported ${persisted.inserted} new item(s) (${persisted.byGenre.post} post(s), ${persisted.byGenre.comment} comment(s)).`;
+    : `Imported ${totalInserted} new item(s) (${persisted.byGenre.post} post(s), ${persisted.byGenre.comment} comment(s), ${persistedMessages.inserted} message(s)).`;
 
   return {
     imported: persisted.byGenre,
     duplicates,
     skippedNoText,
     totalRows,
+    messages: messageCounts,
     noop,
     message,
     profile: {

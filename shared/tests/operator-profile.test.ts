@@ -8,6 +8,7 @@ import {
   setVoiceSampleExcluded,
   recordVoiceSamples,
   importVoiceSamples,
+  importVoiceMessages,
 } from '../src/operator-profile.js';
 
 async function platformId(slug: string): Promise<number> {
@@ -33,7 +34,7 @@ describe('shared/src/operator-profile', () => {
 
   beforeEach(async () => {
     await getDb().execute(
-      sql`TRUNCATE operator_profiles, operator_voice_samples, accounts, projects RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE operator_profiles, operator_voice_samples, operator_voice_messages, accounts, projects RESTART IDENTITY CASCADE`,
     );
     await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
     linkedinId = await platformId('linkedin');
@@ -233,6 +234,57 @@ describe('shared/src/operator-profile', () => {
     it('returns zero for an empty batch without touching the database', async () => {
       const result = await importVoiceSamples(getDb(), orgAId, linkedinId, []);
       expect(result).toEqual({ inserted: 0, byGenre: { post: 0, comment: 0 } });
+    });
+  });
+
+  describe('importVoiceMessages (LOR-267)', () => {
+    it('inserts every message into its own table, separate from operator_voice_samples', async () => {
+      const result = await importVoiceMessages(getDb(), orgAId, linkedinId, [
+        { externalId: 'li-import-message:1', text: 'Great to hear from you.', postedAt: null },
+        { externalId: 'li-import-message:2', text: 'Sounds good, talk soon.', postedAt: null },
+      ]);
+      expect(result).toEqual({ inserted: 2 });
+
+      const rows = await getDb()
+        .select()
+        .from(schema.operatorVoiceMessages)
+        .where(eq(schema.operatorVoiceMessages.organizationId, orgAId));
+      expect(rows.map((r) => r.text).sort()).toEqual([
+        'Great to hear from you.',
+        'Sounds good, talk soon.',
+      ]);
+
+      // Never lands in operator_voice_samples - a DM has no post/comment
+      // genre and must not show up alongside those in the Voice page's own
+      // sample list.
+      const samples = await listVoiceSamples(getDb(), orgAId);
+      expect(samples).toHaveLength(0);
+    });
+
+    it('dedupes on (organization_id, external_id) - a re-import of the same archive is a no-op', async () => {
+      const item = { externalId: 'li-import-message:dup', text: 'Same message.', postedAt: null };
+      const first = await importVoiceMessages(getDb(), orgAId, linkedinId, [item]);
+      expect(first.inserted).toBe(1);
+      const second = await importVoiceMessages(getDb(), orgAId, linkedinId, [item]);
+      expect(second.inserted).toBe(0);
+
+      const rows = await getDb()
+        .select()
+        .from(schema.operatorVoiceMessages)
+        .where(eq(schema.operatorVoiceMessages.organizationId, orgAId));
+      expect(rows).toHaveLength(1);
+    });
+
+    it('scopes dedup per organization - the same external id in two orgs is not a collision', async () => {
+      const item = { externalId: 'li-import-message:shared', text: 'Same text.', postedAt: null };
+      await importVoiceMessages(getDb(), orgAId, linkedinId, [item]);
+      const second = await importVoiceMessages(getDb(), orgBId, linkedinId, [item]);
+      expect(second.inserted).toBe(1);
+    });
+
+    it('returns zero for an empty batch without touching the database', async () => {
+      const result = await importVoiceMessages(getDb(), orgAId, linkedinId, []);
+      expect(result).toEqual({ inserted: 0 });
     });
   });
 

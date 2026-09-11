@@ -5,8 +5,8 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
 import type { Db } from '@pitchbox/shared/db';
 import { findOrgBySlug } from '@pitchbox/shared/orgs';
-import { parseLinkedinExportBuffer } from '@pitchbox/shared/voice-import-archive';
-import { importVoiceSamples } from '@pitchbox/shared/operator-profile';
+import { parseLinkedinExportBufferWithStats } from '@pitchbox/shared/voice-import-archive';
+import { importVoiceSamples, importVoiceMessages } from '@pitchbox/shared/operator-profile';
 import { refreshVoiceProfile } from '@pitchbox/shared/operator-voice-profile';
 import { ok, fail } from '../lib/output.js';
 
@@ -20,6 +20,14 @@ import { ok, fail } from '../lib/output.js';
 // `importVoice` action is the same import for an operator without a
 // terminal - both call `parseLinkedinExportBuffer`/`importVoiceSamples` so
 // the two paths cannot drift.
+//
+// LOR-267: also imports `messages.csv` - the only corpus the "Basic"
+// archive LinkedIn emails within minutes actually carries, unlike
+// Shares.csv/Comments.csv which arrive up to 24 hours later in a second
+// email. `parseLinkedinExportBufferWithStats`'s `.messages` and
+// `importVoiceMessages` are this command's own addition; the companion
+// page still calls `parseLinkedinExportBuffer`/`importVoiceSamples`
+// directly and is unaffected by it.
 
 async function linkedinPlatformId(db: Db): Promise<number> {
   const [row] = await db
@@ -65,29 +73,43 @@ export interface VoiceImportResult {
   /** New rows actually written. 0 on a re-import of the same export. */
   inserted: number;
   byGenre: { post: number; comment: number };
+  /** The operator's own sent DMs read from `messages.csv` (LOR-267) - zero
+   * `parsed`/`inserted` when the archive carries no messages.csv, which is
+   * the normal shape of a re-import as well as of the "posts and comments"
+   * archive that arrives later. */
+  messages: { parsed: number; inserted: number };
 }
 
 export async function voiceImportRun(input: VoiceImportInput): Promise<VoiceImportResult> {
   const db = getDb();
   const organizationId = await resolveImportOrgId(db, input.org);
   const buffer = await readFile(input.path);
-  const items = parseLinkedinExportBuffer(buffer, basename(input.path));
+  const { items, messages } = parseLinkedinExportBufferWithStats(buffer, basename(input.path));
   const platformId = await linkedinPlatformId(db);
-  const { inserted, byGenre } = await importVoiceSamples(db, organizationId, platformId, items);
+  const [{ inserted, byGenre }, { inserted: messagesInserted }] = await Promise.all([
+    importVoiceSamples(db, organizationId, platformId, items),
+    importVoiceMessages(db, organizationId, platformId, messages),
+  ]);
   // Onboarding in one step: a fresh import is exactly the case where the
   // corpus just crossed MIN_ITEMS_TO_DERIVE, and the whole point is that
   // the operator does not have to separately remember to refresh.
-  if (inserted > 0) {
+  if (inserted > 0 || messagesInserted > 0) {
     await refreshVoiceProfile(db, organizationId);
   }
-  return { organizationId, parsed: items.length, inserted, byGenre };
+  return {
+    organizationId,
+    parsed: items.length,
+    inserted,
+    byGenre,
+    messages: { parsed: messages.length, inserted: messagesInserted },
+  };
 }
 
 export function registerVoiceCommands(program: Command) {
   program
     .command('voice:import')
     .description(
-      'Import voice-corpus samples from a LinkedIn "Get a copy of your data" export (zip or a single Shares.csv/Comments.csv)',
+      'Import voice-corpus samples from a LinkedIn "Get a copy of your data" export (zip, or a single Shares.csv/Comments.csv/messages.csv)',
     )
     .argument('<path>', 'path to the export zip or CSV')
     .option(

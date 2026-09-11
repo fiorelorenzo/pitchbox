@@ -1267,6 +1267,58 @@ export const operatorVoiceSamples = pgTable(
   }),
 );
 
+// LinkedIn DM import (LOR-267): a message the operator sent, read from a
+// data export's messages.csv. Its own table, on the merits, not as a
+// wave-scheduling workaround: `operator_voice_samples.genre` is a
+// genre-CARRYING axis - post/comment/reply are each independently
+// measured by `assist/voice-profile.ts`'s `measureVoiceCorpusByGenre`,
+// and every row in that table has an opinion on the axis. A DM does not;
+// it is architecturally identical to the two genre-LESS kinds this
+// codebase already keeps in their own dedicated tables rather than
+// folding them into operator_voice_samples - `drafts` and `templates`,
+// neither of which carries a `genre` column either, both read back by
+// `gatherVoiceCorpus` below with no `genre` field on their corpus items.
+// A sent Reddit/HN DM (`messages`/`contact_history`) is the third: that
+// table is not operator_voice_samples either, for the same reason. Folding
+// a message in here would force a `message` value onto `genre` with no
+// real per-genre measurement behind it - `measureVoiceCorpusByGenre`
+// deliberately never sees `kind: 'message'` items at all, so they never
+// dilute the comment genre (the bug LOR-223 already fixed once) - and
+// every consumer of this table's `genre` column that expects exactly
+// post/comment/reply (Settings' own genre badges, `VoiceSampleGenre`)
+// would need a fourth case that measures nothing. Read back by
+// `operator-voice-profile.ts`'s `gatherVoiceCorpus` as `kind: 'message'`
+// corpus items, merged with a sent Reddit/HN DM into one undifferentiated
+// pool - a DM is a DM regardless of which platform it went out on. Same
+// dedup shape as `operator_voice_samples`: `external_id` is deterministic
+// per row (`voice-import.ts`'s `deriveMessageExternalId`), so re-importing
+// the same archive writes nothing new. No automated retention policy
+// applies to either table (`shared/src/retention.ts`'s own list is
+// drafts/run_events/draft_events/webhook_deliveries/observed_targets) -
+// not a point of difference between them.
+export const operatorVoiceMessages = pgTable(
+  'operator_voice_messages',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    externalId: text('external_id').notNull(),
+    platformId: integer('platform_id')
+      .notNull()
+      .references(() => platforms.id),
+    text: text('text').notNull(),
+    postedAt: timestamp('posted_at', { withTimezone: true }),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byOrgExternal: uniqueIndex('operator_voice_messages_org_external_unique').on(
+      t.organizationId,
+      t.externalId,
+    ),
+  }),
+);
+
 // The operator's voice, derived from what they have actually written
 // (#407): the same voice samples above, the messages and sent drafts that
 // went out, and the project templates - a measurement, not a model call,

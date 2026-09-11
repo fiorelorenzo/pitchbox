@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { parseSharesCsv, parseCommentsCsv } from '@pitchbox/shared/voice-import';
+import { parseSharesCsv, parseCommentsCsv, parseMessagesCsv } from '@pitchbox/shared/voice-import';
 // `pitchbox voice:import` (LOR-223): fills the voice corpus from a
 // LinkedIn "Get a copy of your data" export headlessly. This exercises the
 // real command function against Postgres - `voice-import.test.ts` in
@@ -19,7 +19,8 @@ import { parseSharesCsv, parseCommentsCsv } from '@pitchbox/shared/voice-import'
 // against `parseSharesCsv`/`parseCommentsCsv` directly (the same functions
 // `voiceImportRun` and the `importVoice` action both call under the hood),
 // which is what actually proves the two paths cannot drift, rather than a
-// literal string comparison across processes.
+// literal string comparison across processes. `MESSAGES_CSV` (LOR-267) has
+// no web equivalent - the companion page does not import messages.csv.
 export const SHARES_CSV = [
   'Date,ShareLink,ShareCommentary',
   '2026-03-01,https://www.linkedin.com/feed/update/urn:li:activity:cli-1,Shipped the new export importer today.',
@@ -34,10 +35,21 @@ export const COMMENTS_CSV = [
   '2026-03-03,https://www.linkedin.com/feed/update/urn:li:activity:cli-12,So true.',
 ].join('\n');
 
+// Two conversations so the operator (party to both) is decisively
+// distinguishable from either correspondent (party to only their own) -
+// see shared/tests/voice-import.test.ts's own fixture comment.
+export const MESSAGES_CSV = [
+  'CONVERSATION ID,SENDER PROFILE URL,CONTENT,IS MESSAGE DRAFT',
+  'cli-conv-1,https://www.linkedin.com/in/cli-other,Hi there,No',
+  'cli-conv-1,https://www.linkedin.com/in/cli-operator,Good to hear from you,No',
+  'cli-conv-2,https://www.linkedin.com/in/cli-operator,Following up on our chat,No',
+  'cli-conv-2,https://www.linkedin.com/in/cli-operator,Draft I never sent,Yes',
+].join('\n');
+
 async function reset() {
   const db = getDb();
   await db.execute(
-    sql`TRUNCATE operator_voice_samples, operator_voice_profiles RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE operator_voice_samples, operator_voice_messages, operator_voice_profiles RESTART IDENTITY CASCADE`,
   );
   await db.execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
 }
@@ -100,6 +112,54 @@ describe('voiceImportRun', () => {
       expect(row.genre).toBe('comment');
       expect(row.context).not.toBeNull();
     }
+  });
+
+  it("imports messages.csv, keeping only the operator's own non-draft rows", async () => {
+    const { voiceImportRun } = await import('../../src/commands/voice.js');
+    const orgId = await ensureOrg('voice-cli-messages');
+    const path = join(dir, 'messages.csv');
+    await writeFile(path, MESSAGES_CSV, 'utf8');
+
+    const result = await voiceImportRun({ path, org: 'voice-cli-messages' });
+    const expected = parseMessagesCsv(MESSAGES_CSV);
+    expect(expected).toHaveLength(2);
+    expect(result.messages.parsed).toBe(2);
+    expect(result.messages.inserted).toBe(2);
+    // Nothing lands as a post/comment voice sample from this file.
+    expect(result.inserted).toBe(0);
+    expect(result.byGenre).toEqual({ post: 0, comment: 0 });
+
+    const rows = await getDb()
+      .select()
+      .from(schema.operatorVoiceMessages)
+      .where(eq(schema.operatorVoiceMessages.organizationId, orgId));
+    expect(rows.map((r) => r.text).sort()).toEqual(expected.map((i) => i.text).sort());
+    // Never touches operator_voice_samples - a DM has no post/comment genre.
+    const samples = await getDb()
+      .select()
+      .from(schema.operatorVoiceSamples)
+      .where(eq(schema.operatorVoiceSamples.organizationId, orgId));
+    expect(samples).toHaveLength(0);
+  });
+
+  it('running the same messages.csv import twice inserts nothing the second time', async () => {
+    const { voiceImportRun } = await import('../../src/commands/voice.js');
+    const orgId = await ensureOrg('voice-cli-messages-dedup');
+    const path = join(dir, 'messages.csv');
+    await writeFile(path, MESSAGES_CSV, 'utf8');
+
+    const first = await voiceImportRun({ path, org: 'voice-cli-messages-dedup' });
+    expect(first.messages.inserted).toBe(2);
+
+    const second = await voiceImportRun({ path, org: 'voice-cli-messages-dedup' });
+    expect(second.messages.parsed).toBe(first.messages.parsed);
+    expect(second.messages.inserted).toBe(0);
+
+    const rows = await getDb()
+      .select()
+      .from(schema.operatorVoiceMessages)
+      .where(eq(schema.operatorVoiceMessages.organizationId, orgId));
+    expect(rows).toHaveLength(2);
   });
 
   it('running the same import twice inserts nothing the second time', async () => {

@@ -10,7 +10,7 @@
 
 import { and, desc, eq } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
-import type { ImportedVoiceItem } from './voice-import.js';
+import type { ImportedVoiceItem, ImportedVoiceMessage } from './voice-import.js';
 
 export type OperatorProfileSource = 'linkedin_capture' | 'manual';
 
@@ -275,4 +275,50 @@ export async function importVoiceSamples(
     if (row.genre === 'post' || row.genre === 'comment') byGenre[row.genre] += 1;
   }
   return { inserted: inserted.length, byGenre };
+}
+
+export type ImportedMessagesResult = {
+  /** New rows actually written - a re-import of the same archive returns
+   * 0, since `voice-import.ts`'s `deriveMessageExternalId` is
+   * deterministic and the unique index does the rest. */
+  inserted: number;
+};
+
+/**
+ * Persists parsed LinkedIn DMs (`voice-import.ts`'s
+ * `ImportedVoiceMessage[]`, from `messages.csv`) into their own table,
+ * deduped on `(organization_id, external_id)` the same way
+ * `importVoiceSamples` dedupes posts/comments - but deliberately NOT into
+ * `operator_voice_samples` itself. See `schema.ts`'s own comment on
+ * `operator_voice_messages` for the full argument: a DM is a genre-LESS
+ * corpus kind, the same architectural category `drafts` and `templates`
+ * already occupy in their own tables rather than in this one, not merely
+ * a value this table's `genre` column happens to lack yet.
+ */
+export async function importVoiceMessages(
+  db: Db,
+  organizationId: number,
+  platformId: number,
+  items: ImportedVoiceMessage[],
+): Promise<ImportedMessagesResult> {
+  if (items.length === 0) return { inserted: 0 };
+  const inserted = await db
+    .insert(schema.operatorVoiceMessages)
+    .values(
+      items.map((item) => ({
+        organizationId,
+        platformId,
+        externalId: item.externalId,
+        text: item.text,
+        postedAt: item.postedAt ? new Date(item.postedAt) : null,
+      })),
+    )
+    .onConflictDoNothing({
+      target: [
+        schema.operatorVoiceMessages.organizationId,
+        schema.operatorVoiceMessages.externalId,
+      ],
+    })
+    .returning({ id: schema.operatorVoiceMessages.id });
+  return { inserted: inserted.length };
 }
