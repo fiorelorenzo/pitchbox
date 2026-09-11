@@ -218,10 +218,10 @@
                 </div>
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3"
-                >{relativeTime(run.startedAt)}</Table.Cell
+                >{relativeTime(run.startedAt, locale)}</Table.Cell
               >
               <Table.Cell class="text-xs text-muted-foreground py-3"
-                >{formatDuration(run.durationMs)}</Table.Cell
+                >{formatDuration(run.durationMs, locale)}</Table.Cell
               >
               <Table.Cell class="text-xs text-muted-foreground py-3">
                 {run.tokensUsed != null ? run.tokensUsed.toLocaleString() : '-'}

@@ -273,7 +273,7 @@
 										{/if}
 									<span>
 										{source.fetchedAt
-											? t(locale, 'companion.work.fetched-label', { when: relativeTime(source.fetchedAt) })
+											? t(locale, 'companion.work.fetched-label', { when: relativeTime(source.fetchedAt, locale) })
 											: t(locale, 'companion.work.not-fetched-yet')}
 									</span>
 									</div>

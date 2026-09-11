@@ -335,7 +335,7 @@
                 </div>
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground">
-                {s.fetchedAt ? relativeTime(s.fetchedAt) : t(locale, 'projects.never-label')}
+                {s.fetchedAt ? relativeTime(s.fetchedAt, locale) : t(locale, 'projects.never-label')}
               </Table.Cell>
               <Table.Cell class="text-right">
                 {#if isAdmin}

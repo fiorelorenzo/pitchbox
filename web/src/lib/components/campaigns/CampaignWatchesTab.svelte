@@ -301,7 +301,7 @@
                 </Table.Cell>
                 <Table.Cell class="text-xs text-muted-foreground">{w.cooldownMinutes}m</Table.Cell>
                 <Table.Cell class="text-xs text-muted-foreground" title={w.lastSeenAt ?? undefined}>
-                  {w.lastSeenAt ? relativeTime(w.lastSeenAt) : t(locale, 'campaigns.watches-tab.never-label')}
+                  {w.lastSeenAt ? relativeTime(w.lastSeenAt, locale) : t(locale, 'campaigns.watches-tab.never-label')}
                 </Table.Cell>
                 <Table.Cell>
                   <div class="flex justify-end gap-1">

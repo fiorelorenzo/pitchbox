@@ -338,7 +338,7 @@
 							>
 								<Clock class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
 								<span class="flex-1">
-									{t(locale, 'companion.voice.requested-note', { when: relativeTime(exportRequestedAt) })}
+									{t(locale, 'companion.voice.requested-note', { when: relativeTime(exportRequestedAt, locale) })}
 								</span>
 								<button
 									type="button"
@@ -492,7 +492,7 @@
 								messages: tn(locale, 'companion.voice.count-message', voiceProfile.evidenceCounts.messages),
 								drafts: tn(locale, 'companion.voice.count-sent-draft', voiceProfile.evidenceCounts.drafts),
 								templates: tn(locale, 'companion.voice.count-template', voiceProfile.evidenceCounts.templates),
-							})}{#if voiceProfile.derivedAt}{t(locale, 'companion.voice.last-derived', { when: relativeTime(voiceProfile.derivedAt) })}{/if}
+							})}{#if voiceProfile.derivedAt}{t(locale, 'companion.voice.last-derived', { when: relativeTime(voiceProfile.derivedAt, locale) })}{/if}
 						</p>
 					{/if}
 
@@ -596,7 +596,7 @@
 									{/if}
 									<p class="text-sm whitespace-pre-wrap">{sample.text}</p>
 									<div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-										<span>{relativeTime(sample.postedAt ?? sample.capturedAt)}</span>
+										<span>{relativeTime(sample.postedAt ?? sample.capturedAt, locale)}</span>
 										<Badge variant="outline">{GENRE_LABEL[sample.genre]}</Badge>
 										<Badge variant="outline">{SOURCE_LABEL[sample.source]}</Badge>
 										{#if sample.excluded}

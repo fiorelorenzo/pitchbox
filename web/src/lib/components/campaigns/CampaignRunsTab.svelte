@@ -245,10 +245,10 @@
                 </Badge>
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3">
-                {relativeTime(run.startedAt)}
+                {relativeTime(run.startedAt, locale)}
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3">
-                {formatDuration(run.durationMs)}
+                {formatDuration(run.durationMs, locale)}
               </Table.Cell>
               <Table.Cell class="py-3">
                 {#if run.kind === 'campaign' && run.draftCount > 0}

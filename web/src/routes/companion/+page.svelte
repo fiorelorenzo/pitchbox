@@ -137,7 +137,7 @@
 									? t(locale, 'companion.persona.source-manual')
 									: t(locale, 'companion.persona.source-captured')}
 							</Badge>
-							<span>{t(locale, 'companion.persona.captured-label', { when: relativeTime(data.profile.capturedAt) })}</span>
+							<span>{t(locale, 'companion.persona.captured-label', { when: relativeTime(data.profile.capturedAt, locale) })}</span>
 							{#if staleCapture}
 								<Badge variant="destructive">{t(locale, 'companion.persona.stale-badge')}</Badge>
 							{/if}

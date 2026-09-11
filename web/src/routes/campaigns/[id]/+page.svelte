@@ -514,7 +514,7 @@
 									? TONE_TEXT_CLASS.rose
 									: undefined}
 							>
-								{relativeTimeUntil(data.campaign.nextRunAt)}
+								{relativeTimeUntil(data.campaign.nextRunAt, locale)}
 							</span>
 						</p>
 					{:else}
@@ -582,7 +582,7 @@
 					</div>
 					<div>
 						<dt class="text-xs text-muted-foreground">{t(locale, 'campaigns.detail.stat-avg-duration')}</dt>
-						<dd class="text-2xl font-semibold">{formatDuration(stats.avgDuration)}</dd>
+						<dd class="text-2xl font-semibold">{formatDuration(stats.avgDuration, locale)}</dd>
 					</div>
 				</dl>
 			</Card.Content>

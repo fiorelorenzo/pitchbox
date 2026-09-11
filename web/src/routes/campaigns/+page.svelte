@@ -303,10 +303,10 @@
 			{#if c.lastRunStatus}
 				<StatusBadge domain="run-status" value={c.lastRunStatus} />
 			{/if}
-			<span class="tabular-nums">{relativeTime(c.lastRunFinishedAt)}</span>
+			<span class="tabular-nums">{relativeTime(c.lastRunFinishedAt, locale)}</span>
 			{#if c.lastRunDurationMs != null}
 				<span class="text-muted-foreground/60">·</span>
-				<span class="tabular-nums">{formatDuration(c.lastRunDurationMs)}</span>
+				<span class="tabular-nums">{formatDuration(c.lastRunDurationMs, locale)}</span>
 			{/if}
 		</div>
 	{:else}
@@ -318,7 +318,7 @@
 	{#if c.nextRunAt}
 		{@const overdue = new Date(c.nextRunAt).getTime() < Date.now()}
 		<span class="tabular-nums {overdue ? TONE_TEXT_CLASS.rose : 'text-muted-foreground'}">
-			{relativeTimeUntil(c.nextRunAt)}
+			{relativeTimeUntil(c.nextRunAt, locale)}
 		</span>
 	{:else}
 		<span class="text-muted-foreground/50">-</span>

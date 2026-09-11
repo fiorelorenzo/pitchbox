@@ -223,7 +223,7 @@
 								</div>
 							</div>
 							<span class="text-[11px] text-muted-foreground whitespace-nowrap tabular-nums">
-								{relativeTime(run.startedAt)}
+								{relativeTime(run.startedAt, locale)}
 							</span>
 						</li>
 					{/each}
@@ -270,7 +270,7 @@
 							>
 								{#if c.lastRunStartedAt}
 									<Clock class="size-3" />
-									{relativeTime(c.lastRunStartedAt)}
+									{relativeTime(c.lastRunStartedAt, locale)}
 								{:else}
 									<span class="italic">{t(locale, 'home.never-run')}</span>
 								{/if}
