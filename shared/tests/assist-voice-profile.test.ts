@@ -8,6 +8,7 @@ import {
   describeVoiceProfileForGenre,
   measureOneText,
   classifyLanguage,
+  IT_STOPWORDS_GLOBAL,
   measureEditSignature,
   describeEditSignature,
   hasEditSignatureContent,
@@ -670,6 +671,22 @@ describe('classifyLanguage (exported for style-check.ts and voice-metrics.ts)', 
     expect(classifyLanguage('This is the plan for the week and it is going well.')).toBe('en');
     expect(classifyLanguage("che bello, non vedo l'ora!")).toBe('it');
     expect(classifyLanguage('Grande!')).toBe('unknown');
+  });
+});
+
+// LOR-234: `\b` is defined against the ASCII word-character class, so it
+// never treats an accented letter like `è` as a word character - `\bè\b`
+// could never match, making that stopword (and any other accented entry)
+// dead code. Asserted at the regex itself, not only through
+// classifyLanguage, so a regression here is caught at the level it
+// happened rather than through a downstream classification.
+describe('IT_STOPWORDS_GLOBAL word boundary (LOR-234)', () => {
+  it('matches an accented stopword as a standalone word', () => {
+    expect('questo è tutto'.match(IT_STOPWORDS_GLOBAL)).toEqual(['questo', 'è']);
+  });
+
+  it('does not match an accented stopword inside a longer word', () => {
+    expect('cioè'.match(IT_STOPWORDS_GLOBAL)).toBeNull();
   });
 });
 
