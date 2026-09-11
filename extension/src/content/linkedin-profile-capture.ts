@@ -2,10 +2,12 @@ import { claimDocument } from './shared/claim-document.js';
 import {
   readOwnProfile,
   readOwnPosts,
+  readOwnComments,
   readOwnProfilePageHandle,
   resetSelectorHealth,
   selectorHealthActivityEvents,
   type OwnPost,
+  type OwnComment,
   type OwnProfileCapture,
 } from './shared/linkedin-dom.js';
 import { logFromContent } from '../lib/log-from-content.js';
@@ -13,12 +15,13 @@ import { getSettings, type Pairing } from '../lib/storage.js';
 
 /**
  * The operator persona capture (LI-21, 2026-09-07): reads the signed-in
- * member's own `/in/<slug>` page - and its `recent-activity` sibling - and
- * posts what it found to `POST /api/extension/operator-profile`, once per
- * page view per pairing, so the in-page companion can write as this person
+ * member's own `/in/<slug>` page - and its `recent-activity` siblings, the
+ * default posts tab and, since LOR-228, its `/comments` tab - and posts
+ * what it found to `POST /api/extension/operator-profile`, once per page
+ * view per pairing, so the in-page companion can write as this person
  * (docs/linkedin-integration-design.md, "Epic B"). Registered on
  * `https://www.linkedin.com/in/*` (linkedin-profile-capture-registration.ts),
- * which covers both pages with one match pattern.
+ * which covers all three pages with one match pattern.
  *
  * ## Passive only, and the server is the actual authority
  *
@@ -67,6 +70,7 @@ type CapturePayload = {
   about?: string;
   experiences?: OwnProfileCapture['experiences'];
   posts?: OwnPost[];
+  comments?: OwnComment[];
 };
 
 type CaptureResponse =
@@ -74,14 +78,17 @@ type CaptureResponse =
 
 /**
  * Reads whatever the currently rendered page offers: the profile card (name,
- * headline, about, experience) when a top card is present, plus any posts
- * `readOwnPosts` finds (only present on the `recent-activity` page). Returns
- * `null` when there is no handle at all - the one field every capture must
- * carry, since it is what the server's persona guard keys on.
+ * headline, about, experience) when a top card is present, any posts
+ * `readOwnPosts` finds (only present on the `recent-activity` page), and any
+ * comments `readOwnComments` finds (only present on its `/comments` tab,
+ * LOR-228). Returns `null` when there is no handle at all - the one field
+ * every capture must carry, since it is what the server's persona guard
+ * keys on.
  */
 function collect(): CapturePayload | null {
   const profile = readOwnProfile(document);
   const posts = readOwnPosts(document);
+  const comments = readOwnComments(document);
   const handle = profile?.handle ?? readOwnProfilePageHandle(document);
   if (!handle) return null;
 
@@ -91,6 +98,7 @@ function collect(): CapturePayload | null {
   if (profile?.about) payload.about = profile.about;
   if (profile && profile.experiences.length > 0) payload.experiences = profile.experiences;
   if (posts.length > 0) payload.posts = posts;
+  if (comments.length > 0) payload.comments = comments;
 
   // A handle with nothing else attached is what a topcard selector miss
   // looks like from here - readOwnProfile returns null the moment its own
@@ -105,7 +113,8 @@ function collect(): CapturePayload | null {
     payload.headline !== undefined ||
     payload.about !== undefined ||
     payload.experiences !== undefined ||
-    payload.posts !== undefined;
+    payload.posts !== undefined ||
+    payload.comments !== undefined;
   if (!hasContent) return null;
 
   return payload;

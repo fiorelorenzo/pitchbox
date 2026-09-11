@@ -312,7 +312,11 @@
 								<div class="min-w-0 flex-1">
 									{#if sample.genre === 'comment' && sample.context}
 										<p class="mb-1 truncate text-xs text-muted-foreground">
-											Replying to <a href={sample.context} target="_blank" rel="noreferrer" class="underline">{sample.context}</a>
+											{#if sample.context.startsWith('http')}
+												Replying to <a href={sample.context} target="_blank" rel="noreferrer" class="underline">{sample.context}</a>
+											{:else}
+												Replying to: "{sample.context}"
+											{/if}
 										</p>
 									{/if}
 									<p class="text-sm whitespace-pre-wrap">{sample.text}</p>
