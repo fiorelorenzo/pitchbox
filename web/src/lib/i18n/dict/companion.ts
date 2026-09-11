@@ -3,10 +3,14 @@ import type { Dict } from '../types.js';
 // Companion area (LOR-178/LOR-179/LOR-263): the layout nav plus its three
 // pages (Persona, Voice, Work), and the dashboard home right next to it.
 // `voiceProfile.summary`/`.editSignatureDescription` and each genre's
-// `.summary` shown on /companion/voice are NOT here: they are English prose
-// composed by `describeVoiceProfile`/`describeEditSignature`
-// (shared/src/assist/voice-profile.ts) from measurements, not fixed
-// templates - see the LOR-263 PR body for the follow-up this needs.
+// `.summary` shown on /companion/voice are NOT here: they are prose
+// composed by `describeVoiceProfile`/`describeVoiceProfileForGenre`/
+// `describeEditSignature` (shared/src/assist/voice-profile.ts) from
+// measurements, not fixed templates - LOR-296 parameterised that composer
+// by locale, so the paragraph now renders in the reader's own locale too
+// (web/src/routes/companion/voice/+page.server.ts composes it fresh from
+// the stored measurement on every load/action, rather than trusting a
+// baked English string).
 export const companionEn = {
   'companion.nav.aria-label': 'Companion sections',
   'companion.nav.heading': 'Companion',

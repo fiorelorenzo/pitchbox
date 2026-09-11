@@ -28,6 +28,7 @@
 // follow, not a number this module claims to have measured.
 
 import { readPostRegister, type PostRegister, type RegisterTrait } from './register.js';
+import { DEFAULT_LOCALE, type Locale } from '../messages/types.js';
 
 export type VoiceCorpusItemKind =
   'voice_sample' | 'message' | 'draft' | 'template' | 'accepted_suggestion';
@@ -1539,20 +1540,43 @@ export function measureOneText(text: string): OneTextMeasurement {
   };
 }
 
-const TRAIT_PROSE: Record<RegisterTrait, string> = {
-  'long-sentences': 'long, built-up sentences',
-  'short-sentences': 'short sentences, close to speech',
-  'first-person': 'first person, speaking as themselves',
-  impersonal: 'impersonal, no first person',
-  contractions: 'contractions, informal',
-  'formal-wording': 'formal connectives',
-  exclamations: 'exclamation marks',
-  questions: 'asks questions of the reader',
-  emoji: 'emoji',
-  hashtags: 'hashtags',
-  'list-layout': 'laid out as a list',
-  numbers: 'argues with numbers',
-  'code-or-jargon': 'technical terms and identifiers',
+const TRAIT_PROSE: Record<Locale, Record<RegisterTrait, string>> = {
+  en: {
+    'long-sentences': 'long, built-up sentences',
+    'short-sentences': 'short sentences, close to speech',
+    'first-person': 'first person, speaking as themselves',
+    impersonal: 'impersonal, no first person',
+    contractions: 'contractions, informal',
+    'formal-wording': 'formal connectives',
+    exclamations: 'exclamation marks',
+    questions: 'asks questions of the reader',
+    emoji: 'emoji',
+    hashtags: 'hashtags',
+    'list-layout': 'laid out as a list',
+    numbers: 'argues with numbers',
+    'code-or-jargon': 'technical terms and identifiers',
+  },
+  // LOR-296: not the English fragments run through a translator - Italian
+  // groups these traits differently (a grammatical mode next to a
+  // typographic habit reads fine in a loose English list, less so in
+  // Italian), so each entry is worded the way it would actually come up in
+  // a note about someone's writing, not as a gloss of the English noun
+  // phrase next to it.
+  it: {
+    'long-sentences': 'frasi lunghe e articolate',
+    'short-sentences': 'frasi brevi, quasi parlate',
+    'first-person': 'la prima persona, in modo diretto',
+    impersonal: 'un tono impersonale, senza prima persona',
+    contractions: 'un registro colloquiale, con troncamenti',
+    'formal-wording': 'connettivi formali',
+    exclamations: 'punti esclamativi',
+    questions: 'domande rivolte a chi legge',
+    emoji: 'emoji',
+    hashtags: 'hashtag',
+    'list-layout': 'un elenco puntato',
+    numbers: 'numeri a sostegno del discorso',
+    'code-or-jargon': 'termini tecnici e nomi in codice',
+  },
 };
 
 // Whole sentences rather than noun phrases, because no single phrase works
@@ -1562,38 +1586,41 @@ const TRAIT_PROSE: Record<RegisterTrait, string> = {
 // profile (LOR-284). This paragraph is read by a customer and composed into
 // the suggestion prompt, so a sentence that reads as generated filler is a
 // defect in the one description whose job is to not read like one.
-const ENDING_SENTENCE: Record<PostEnding, string> = {
-  question: 'Tends to end on a question.',
-  claim: 'Tends to end on a claim.',
-  none: 'Tends to trail off rather than land on a question or a claim.',
+const ENDING_SENTENCE: Record<Locale, Record<PostEnding, string>> = {
+  en: {
+    question: 'Tends to end on a question.',
+    claim: 'Tends to end on a claim.',
+    none: 'Tends to trail off rather than land on a question or a claim.',
+  },
+  it: {
+    question: 'Tende a chiudere con una domanda.',
+    claim: "Tende a chiudere con un'affermazione.",
+    none: "Tende a lasciare la frase in sospeso, invece di chiudere con una domanda o un'affermazione.",
+  },
 };
 
-const LANGUAGE_PROSE: Record<Exclude<LanguageMix['primary'], null>, string> = {
-  en: 'English',
-  it: 'Italian',
-  mixed: 'both English and Italian',
+const LANGUAGE_PROSE: Record<Locale, Record<Exclude<LanguageMix['primary'], null>, string>> = {
+  en: { en: 'English', it: 'Italian', mixed: 'both English and Italian' },
+  it: { en: 'inglese', it: 'italiano', mixed: 'inglese e italiano' },
 };
 
-/**
- * The measurement as prose, for the prompt and for Settings. Separate from
- * the measurement itself so the numbers can be asserted without pinning the
- * English (register.ts's own reasoning for the same split). Returns null
- * when the corpus said nothing worth reporting - too small, or measurable
- * but with no dominant trait, phrase or reused word - which the prompt
- * renders as no voice-profile section at all rather than an empty one.
- *
- * `noun` names what was counted in the leading sentence - "pieces of their
- * own writing" for the pooled corpus, "of their own posts"/"comments" for
- * a genre-scoped one (LOR-223's `describeVoiceProfileForGenre`) - so the
- * same renderer works for both without the caller reaching into the
- * string afterward.
- */
-export function describeVoiceProfile(
-  m: VoiceMeasurement,
-  noun = 'pieces of their own writing',
-): string | null {
-  if (!m.measurable) return null;
+/** The pooled leading sentence's own noun when a caller passes none - "12
+ * pieces of their own writing"/"12 testi propri". `describeVoiceProfileForGenre`
+ * below supplies its own per-genre, per-locale noun instead (`GENRE_NOUN`). */
+const DEFAULT_NOUN: Record<Locale, string> = {
+  en: 'pieces of their own writing',
+  it: 'testi propri',
+};
 
+// LOR-296: assembly happens once per locale, not by swapping a fragment
+// into one shared English-shaped template - Italian orders these clauses
+// differently (the trait list reads as its own clause here, not tacked
+// onto "writes with"), and a coordinated list gets its own "e" before the
+// last item the way Italian actually reads, which English's plain comma
+// join never needed. Both branches gate on the exact same `m` fields, so a
+// corpus that says nothing produces `null` in either language rather than
+// a translated empty sentence.
+function composeEnglishSentences(m: VoiceMeasurement): string[] {
   const sentences: string[] = [];
   // Length of a whole piece comes first, because it is the axis a draft
   // misses by the widest margin and the one a reader notices before any
@@ -1618,7 +1645,7 @@ export function describeVoiceProfile(
     const sentenceLength =
       m.wordsPerSentence > 0 ? `, about ${m.wordsPerSentence} words per sentence` : '';
     sentences.push(
-      `Usually writes with ${m.traits.map((t) => TRAIT_PROSE[t]).join(', ')}${sentenceLength}.`,
+      `Usually writes with ${m.traits.map((t) => TRAIT_PROSE.en[t]).join(', ')}${sentenceLength}.`,
     );
   } else if (m.wordsPerSentence > 0) {
     sentences.push(`About ${m.wordsPerSentence} words per sentence on average.`);
@@ -1633,7 +1660,7 @@ export function describeVoiceProfile(
     sentences.push(`Reuses these words often: ${m.commonWords.join(', ')}.`);
   }
   if (m.shape.ending) {
-    sentences.push(ENDING_SENTENCE[m.shape.ending]);
+    sentences.push(ENDING_SENTENCE.en[m.shape.ending]);
   }
   if (m.shape.emoji.length > 0) {
     sentences.push(`Uses these emoji: ${m.shape.emoji.join(' ')}.`);
@@ -1645,11 +1672,93 @@ export function describeVoiceProfile(
     sentences.push(`Never uses: ${m.lexicon.avoidedWords.join(', ')}.`);
   }
   if (m.language.primary) {
-    sentences.push(`Writes primarily in ${LANGUAGE_PROSE[m.language.primary]}.`);
+    sentences.push(`Writes primarily in ${LANGUAGE_PROSE.en[m.language.primary]}.`);
   }
+  return sentences;
+}
 
+/** `composeEnglishSentences`, written the way Lorenzo would actually put
+ * this in Italian rather than as a gloss of the English above: the trait
+ * list and its sentence-length clause split differently, the ending
+ * sentences and the "give or take" aside use idioms English does not have
+ * ("più o meno" is not used here, "di scarto" and "a frase" are the
+ * natural Italian instead), and none of the data this reports - the words,
+ * emoji and hashtags a corpus actually contains - is ever translated, only
+ * the sentences around them. */
+function composeItalianSentences(m: VoiceMeasurement): string[] {
+  const sentences: string[] = [];
+  if (m.rhythm.medianItemWords > 0) {
+    const scarto =
+      m.rhythm.itemWordsSpread > 0 ? `, con uno scarto di circa ${m.rhythm.itemWordsSpread}` : '';
+    sentences.push(`Un testo tipico è lungo circa ${m.rhythm.medianItemWords} parole${scarto}.`);
+  }
+  if (m.traits.length > 0) {
+    const perFrase =
+      m.wordsPerSentence > 0 ? `, in media ${m.wordsPerSentence} parole a frase` : '';
+    sentences.push(
+      `Scrive di solito con ${m.traits.map((t) => TRAIT_PROSE.it[t]).join(', ')}${perFrase}.`,
+    );
+  } else if (m.wordsPerSentence > 0) {
+    sentences.push(`In media ${m.wordsPerSentence} parole a frase.`);
+  }
+  if (m.openings.length > 0) {
+    sentences.push(`Apre spesso con "${m.openings.join('", "')}".`);
+  }
+  if (m.closings.length > 0) {
+    sentences.push(`Chiude spesso con "${m.closings.join('", "')}".`);
+  }
+  if (m.commonWords.length > 0) {
+    sentences.push(`Ripete spesso queste parole: ${m.commonWords.join(', ')}.`);
+  }
+  if (m.shape.ending) {
+    sentences.push(ENDING_SENTENCE.it[m.shape.ending]);
+  }
+  if (m.shape.emoji.length > 0) {
+    sentences.push(`Usa queste emoji: ${m.shape.emoji.join(' ')}.`);
+  }
+  if (m.shape.hashtags.length > 0) {
+    sentences.push(`Usa questi hashtag: ${m.shape.hashtags.join(', ')}.`);
+  }
+  if (m.lexicon.avoidedWords.length > 0) {
+    sentences.push(`Non usa mai: ${m.lexicon.avoidedWords.join(', ')}.`);
+  }
+  if (m.language.primary) {
+    sentences.push(`Scrive soprattutto in ${LANGUAGE_PROSE.it[m.language.primary]}.`);
+  }
+  return sentences;
+}
+
+/**
+ * The measurement as prose, for the prompt and for Settings. Separate from
+ * the measurement itself so the numbers can be asserted without pinning the
+ * English (register.ts's own reasoning for the same split). Returns null
+ * when the corpus said nothing worth reporting - too small, or measurable
+ * but with no dominant trait, phrase or reused word - which the prompt
+ * renders as no voice-profile section at all rather than an empty one.
+ *
+ * `locale` picks which of `composeEnglishSentences`/`composeItalianSentences`
+ * assembles the body (LOR-296) - defaulted to English so every existing
+ * caller (the model prompt, a row derived before this locale existed) keeps
+ * its exact current text with no argument change.
+ *
+ * `noun` names what was counted in the leading sentence - "pieces of their
+ * own writing"/"testi propri" for the pooled corpus, a per-genre,
+ * per-locale one for `describeVoiceProfileForGenre` - so the same renderer
+ * works for both without the caller reaching into the string afterward.
+ */
+export function describeVoiceProfile(
+  m: VoiceMeasurement,
+  locale: Locale = DEFAULT_LOCALE,
+  noun: string = DEFAULT_NOUN[locale],
+): string | null {
+  if (!m.measurable) return null;
+
+  const sentences = locale === 'it' ? composeItalianSentences(m) : composeEnglishSentences(m);
   if (sentences.length === 0) return null;
-  return `Based on ${m.itemCount} ${noun} (${m.wordCount} words). ${sentences.join(' ')}`;
+
+  return locale === 'it'
+    ? `In base a ${m.itemCount} ${noun} (${m.wordCount} parole). ${sentences.join(' ')}`
+    : `Based on ${m.itemCount} ${noun} (${m.wordCount} words). ${sentences.join(' ')}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1661,10 +1770,10 @@ export function describeVoiceProfile(
 // replacement.
 // ---------------------------------------------------------------------------
 
-const GENRE_NOUN: Record<VoiceCorpusItemGenre, string> = {
-  post: 'of their own posts',
-  comment: 'of their own comments',
-  reply: 'of their own replies',
+const GENRE_NOUN: Record<VoiceCorpusItemGenre, Record<Locale, string>> = {
+  post: { en: 'of their own posts', it: 'post propri' },
+  comment: { en: 'of their own comments', it: 'commenti propri' },
+  reply: { en: 'of their own replies', it: 'risposte proprie' },
 };
 
 /**
@@ -1701,12 +1810,13 @@ export function measureVoiceCorpusByGenre(
 }
 
 /** `describeVoiceProfile`, worded for one genre ("Based on 12 of their own
- * comments" rather than "12 pieces of their own writing"). */
+ * comments"/"In base a 12 commenti propri" rather than the pooled noun). */
 export function describeVoiceProfileForGenre(
   genre: VoiceCorpusItemGenre,
   m: VoiceMeasurement,
+  locale: Locale = DEFAULT_LOCALE,
 ): string | null {
-  return describeVoiceProfile(m, GENRE_NOUN[genre]);
+  return describeVoiceProfile(m, locale, GENRE_NOUN[genre][locale]);
 }
 
 // ---------------------------------------------------------------------------
@@ -1916,31 +2026,85 @@ export function hasEditSignatureContent(s: EditSignature): boolean {
   );
 }
 
+// LOR-296: the same per-locale-assembly discipline `describeVoiceProfile`
+// follows, at the smaller scale this function needs it - a plain `, ` join
+// reads fine in English but not as a coordinated Italian list, which wants
+// "e" before the last item, so the join itself is a locale branch rather
+// than another swapped fragment.
+const EDIT_CUT_PROSE: Record<
+  Locale,
+  Record<
+    | 'shortensText'
+    | 'dropsOpening'
+    | 'dropsClosingSentence'
+    | 'cutsHedges'
+    | 'stripsEmoji'
+    | 'changesLanguage',
+    string
+  >
+> = {
+  en: {
+    shortensText: 'shortens it',
+    dropsOpening: 'drops the opening line',
+    dropsClosingSentence: 'drops the closing line',
+    cutsHedges: 'cuts hedging phrases',
+    stripsEmoji: 'strips emoji',
+    changesLanguage: 'rewrites it into a different language',
+  },
+  it: {
+    shortensText: 'lo accorcia',
+    dropsOpening: 'toglie la riga iniziale',
+    dropsClosingSentence: 'toglie la riga finale',
+    cutsHedges: 'taglia le frasi di cautela',
+    stripsEmoji: 'toglie le emoji',
+    changesLanguage: "lo riscrive in un'altra lingua",
+  },
+};
+
 /** The edit signature as prose, for the prompt and for Settings - same
  * split as `describeVoiceProfile` and for the same reason: the numbers can
  * be asserted without pinning the English. Null whenever
  * `hasEditSignatureContent` is false, which the caller renders as no
- * section at all. */
-export function describeEditSignature(s: EditSignature): string | null {
+ * section at all, in either language. `locale` defaults to English so
+ * every existing caller (the model prompt) keeps its exact current text. */
+export function describeEditSignature(
+  s: EditSignature,
+  locale: Locale = DEFAULT_LOCALE,
+): string | null {
   if (!hasEditSignatureContent(s)) return null;
 
+  const prose = EDIT_CUT_PROSE[locale];
   const cuts: string[] = [];
-  if (s.shortensText) cuts.push('shortens it');
-  if (s.dropsOpening) cuts.push('drops the opening line');
-  if (s.dropsClosingSentence) cuts.push('drops the closing line');
-  if (s.cutsHedges) cuts.push('cuts hedging phrases');
-  if (s.stripsEmoji) cuts.push('strips emoji');
-  if (s.changesLanguage) cuts.push('rewrites it into a different language');
+  if (s.shortensText) cuts.push(prose.shortensText);
+  if (s.dropsOpening) cuts.push(prose.dropsOpening);
+  if (s.dropsClosingSentence) cuts.push(prose.dropsClosingSentence);
+  if (s.cutsHedges) cuts.push(prose.cutsHedges);
+  if (s.stripsEmoji) cuts.push(prose.stripsEmoji);
+  if (s.changesLanguage) cuts.push(prose.changesLanguage);
 
   const sentences: string[] = [];
   if (cuts.length > 0) {
-    sentences.push(`Before posting a draft, this operator usually ${cuts.join(', ')}.`);
+    // Italian coordinates a list with "e" before the last item rather than
+    // English's plain comma join - a locale branch, not a swapped fragment.
+    const italianCuts =
+      cuts.length > 1
+        ? `${cuts.slice(0, -1).join(', ')} e ${cuts[cuts.length - 1]}`
+        : cuts.join(', ');
+    sentences.push(
+      locale === 'it'
+        ? `Prima di pubblicare una bozza, di solito ${italianCuts}.`
+        : `Before posting a draft, this operator usually ${cuts.join(', ')}.`,
+    );
   }
   if (s.bannedPhrases.length > 0) {
     sentences.push(
-      `Phrases they have deleted from a draft more than once: "${s.bannedPhrases.join('", "')}".`,
+      locale === 'it'
+        ? `Frasi che ha cancellato da una bozza più di una volta: "${s.bannedPhrases.join('", "')}".`
+        : `Phrases they have deleted from a draft more than once: "${s.bannedPhrases.join('", "')}".`,
     );
   }
 
-  return `Based on ${s.pairCount} edited suggestions. ${sentences.join(' ')}`;
+  return locale === 'it'
+    ? `In base a ${s.pairCount} suggerimenti modificati. ${sentences.join(' ')}`
+    : `Based on ${s.pairCount} edited suggestions. ${sentences.join(' ')}`;
 }

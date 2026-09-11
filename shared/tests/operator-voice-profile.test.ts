@@ -431,7 +431,7 @@ describe('shared/src/operator-voice-profile', () => {
     expect(refreshed.evidence.version).toBe(1);
   });
 
-  it('reads a genres object written before LOR-227 added medianItemWords/itemWordsSpread as 0, never undefined', async () => {
+  it('reads a genres object written before LOR-227/LOR-296 added medianItemWords/itemWordsSpread/measurement as 0/null, never undefined', async () => {
     const orgId = await ensureOrg('vp-org-legacy-genres');
     // The exact per-genre shape refreshVoiceProfile wrote before LOR-227:
     // summary/itemCount/measurable only, no medianItemWords/itemWordsSpread,
@@ -471,6 +471,7 @@ describe('shared/src/operator-voice-profile', () => {
       measurable: true,
       medianItemWords: 0,
       itemWordsSpread: 0,
+      measurement: null,
     });
     expect(row!.evidence.genres.comment.medianItemWords).toBe(0);
     expect(row!.evidence.genres.comment.itemWordsSpread).toBe(0);
@@ -482,6 +483,7 @@ describe('shared/src/operator-voice-profile', () => {
       measurable: false,
       medianItemWords: 0,
       itemWordsSpread: 0,
+      measurement: null,
     });
   });
 });
@@ -537,6 +539,13 @@ describe('per-genre derivation (LOR-223)', () => {
     expect(row.evidence.genres.post.summary).toMatch(/^Based on 3 of their own posts /);
     expect(row.evidence.genres.comment.summary).toMatch(/^Based on 3 of their own comments /);
     expect(row.evidence.genres.reply.measurable).toBe(false);
+    // LOR-296: a real refresh stores the full per-genre measurement
+    // alongside the baked English summary, so a reader-locale caller can
+    // compose the sentence fresh instead of trusting the English string.
+    expect(row.evidence.genres.post.measurement?.measurable).toBe(true);
+    expect(row.evidence.genres.post.measurement?.itemCount).toBe(3);
+    expect(row.evidence.genres.comment.measurement?.measurable).toBe(true);
+    expect(row.evidence.genres.reply.measurement?.measurable).toBe(false);
   });
 
   it('a genre with too few items stays unmeasurable even when the pooled corpus is measurable', async () => {

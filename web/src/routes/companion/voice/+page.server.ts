@@ -18,9 +18,17 @@ import {
   resetVoiceProfileToDerived,
   setEditSignatureExcluded,
   type OperatorVoiceProfileRow,
-  type VoiceGenreSummary,
 } from '@pitchbox/shared/operator-voice-profile';
-import { describeEditSignature, type EditSignature } from '@pitchbox/shared/assist/voice-profile';
+import {
+  describeEditSignature,
+  describeVoiceProfile,
+  describeVoiceProfileForGenre,
+  MIN_ITEMS_TO_DERIVE,
+  VOICE_CORPUS_ITEM_GENRES,
+  type EditSignature,
+  type VoiceMeasurement,
+} from '@pitchbox/shared/assist/voice-profile';
+import { DEFAULT_LOCALE, type Locale } from '$lib/i18n.js';
 
 // Companion -> Voice ("how you write"), split out of the old three-card
 // settings/companion page (LOR-178/LOR-179, docs/design/DECISIONS.md D35).
@@ -68,7 +76,7 @@ export type CompanionVoiceProfile = {
   /** Each genre's own description, alongside the pooled one above
    * (LOR-223) - a post and a comment are different genres of writing, so
    * "how you write" is worth reading per genre as well as pooled. */
-  genres: Record<VoiceSampleGenre, VoiceGenreSummary>;
+  genres: Record<VoiceSampleGenre, CompanionVoiceGenreSummary>;
   source: 'derived' | 'manual';
   derivedAt: string | null;
   updatedAt: string;
@@ -81,11 +89,75 @@ export type CompanionVoiceProfile = {
   editSignatureExcluded: boolean;
 };
 
+export type CompanionVoiceGenreSummary = {
+  summary: string | null;
+  itemCount: number;
+  measurable: boolean;
+};
+
 const MAX_VOICE_IMPORT_BYTES = 20 * 1024 * 1024;
 
-function toVoiceProfile(row: OperatorVoiceProfileRow): CompanionVoiceProfile {
+/** Reconstructs the pooled `VoiceMeasurement` this row's own columns and
+ * `evidence` were derived from (LOR-296) - every field lives in the row
+ * already, just spread across columns and `evidence` rather than as one
+ * object, so a caller can compose a fresh, locale-aware description instead
+ * of trusting the English `summary` baked in at the last refresh. */
+function toVoiceMeasurementFromRow(row: OperatorVoiceProfileRow): VoiceMeasurement {
   return {
-    summary: row.summary,
+    itemCount: row.itemCount,
+    wordCount: row.wordCount,
+    measurable: row.itemCount >= MIN_ITEMS_TO_DERIVE,
+    traits: row.traits,
+    wordsPerSentence: row.wordsPerSentence,
+    openings: row.openings,
+    closings: row.closings,
+    commonWords: row.commonWords,
+    rhythm: row.evidence.rhythm,
+    punctuation: row.evidence.punctuation,
+    shape: row.evidence.shape,
+    voiceMarkers: row.evidence.voiceMarkers,
+    lexicon: row.evidence.lexicon,
+    language: row.evidence.language,
+  };
+}
+
+/** LOR-296: `row.summary` and each genre's own stored `summary` are baked
+ * in English at the last refresh - `refreshVoiceProfile` never sees a
+ * reader's locale. The pooled row carries every field
+ * `describeVoiceProfile` needs to compose fresh, so a 'derived' row always
+ * recomposes at the reader's own locale here instead of trusting the
+ * stored string; a 'manual' row is the operator's own free text and is
+ * shown verbatim regardless of locale, the same way it always has been. A
+ * genre only carries its own full measurement once it has been refreshed
+ * since this shipped (`evidence.genres[genre].measurement`) - until then it
+ * falls back to the baked English string for the English locale and says
+ * nothing for another, rather than showing English prose inside a page
+ * rendered in Italian. */
+function toVoiceProfile(
+  row: OperatorVoiceProfileRow,
+  localeArg: Locale | null | undefined,
+): CompanionVoiceProfile {
+  const locale = localeArg ?? DEFAULT_LOCALE;
+  const genres = {} as Record<VoiceSampleGenre, CompanionVoiceGenreSummary>;
+  for (const genre of VOICE_CORPUS_ITEM_GENRES) {
+    const g = row.evidence.genres[genre];
+    genres[genre] = {
+      summary: g.measurement
+        ? describeVoiceProfileForGenre(genre, g.measurement, locale)
+        : locale === 'en'
+          ? g.summary
+          : null,
+      itemCount: g.itemCount,
+      measurable: g.measurable,
+    };
+  }
+
+  return {
+    summary:
+      row.source === 'manual'
+        ? row.summary
+        : (describeVoiceProfile(toVoiceMeasurementFromRow(row), locale) ??
+          (locale === 'en' ? row.summary : '')),
     traits: row.traits,
     openings: row.openings,
     closings: row.closings,
@@ -94,12 +166,12 @@ function toVoiceProfile(row: OperatorVoiceProfileRow): CompanionVoiceProfile {
     itemCount: row.itemCount,
     wordCount: row.wordCount,
     evidenceCounts: row.evidence.counts,
-    genres: row.evidence.genres,
+    genres,
     source: row.source,
     derivedAt: row.derivedAt ? row.derivedAt.toISOString() : null,
     updatedAt: row.updatedAt.toISOString(),
     editSignature: row.evidence.editSignature,
-    editSignatureDescription: describeEditSignature(row.evidence.editSignature),
+    editSignatureDescription: describeEditSignature(row.evidence.editSignature, locale),
     editSignatureExcluded: row.evidence.editSignatureExcluded,
   };
 }
@@ -125,7 +197,7 @@ export const load: PageServerLoad = async (event) => {
       context: s.context,
       capturedAt: s.capturedAt.toISOString(),
     })),
-    voiceProfile: voiceProfile ? toVoiceProfile(voiceProfile) : null,
+    voiceProfile: voiceProfile ? toVoiceProfile(voiceProfile, event.locals.locale) : null,
   };
 };
 
@@ -152,7 +224,10 @@ export const actions: Actions = {
     const excluded = form.get('excluded') === 'true';
     await setVoiceSampleExcluded(getDb(), orgId, sampleId, excluded);
     const voiceProfile = await refreshVoiceProfile(getDb(), orgId);
-    return { toggledSampleId: sampleId, voiceProfile: toVoiceProfile(voiceProfile) };
+    return {
+      toggledSampleId: sampleId,
+      voiceProfile: toVoiceProfile(voiceProfile, event.locals.locale),
+    };
   },
 
   // The edit signature's own exclude control (LOR-227) - the same "hide
@@ -168,7 +243,7 @@ export const actions: Actions = {
     const form = await event.request.formData();
     const excluded = form.get('excluded') === 'true';
     const voiceProfile = await setEditSignatureExcluded(getDb(), orgId, excluded);
-    return { voiceProfile: toVoiceProfile(voiceProfile) };
+    return { voiceProfile: toVoiceProfile(voiceProfile, event.locals.locale) };
   },
 
   // Re-derives from the current corpus. A no-op on a `source: 'manual'` row
@@ -179,7 +254,7 @@ export const actions: Actions = {
     requireRole(event, 'admin');
     const orgId = await requireOrgId(event);
     const voiceProfile = await refreshVoiceProfile(getDb(), orgId);
-    return { voiceProfile: toVoiceProfile(voiceProfile) };
+    return { voiceProfile: toVoiceProfile(voiceProfile, event.locals.locale) };
   },
 
   // A hand-edited voice description, same posture as saveProfile on the
@@ -191,7 +266,7 @@ export const actions: Actions = {
     const form = await event.request.formData();
     const summary = str(form, 'summary') ?? '';
     const voiceProfile = await saveVoiceProfileSummary(getDb(), orgId, summary);
-    return { voiceProfile: toVoiceProfile(voiceProfile) };
+    return { voiceProfile: toVoiceProfile(voiceProfile, event.locals.locale) };
   },
 
   // Discards a manual edit and forces a fresh derivation - the only way
@@ -200,7 +275,7 @@ export const actions: Actions = {
     requireRole(event, 'admin');
     const orgId = await requireOrgId(event);
     const voiceProfile = await resetVoiceProfileToDerived(getDb(), orgId);
-    return { voiceProfile: toVoiceProfile(voiceProfile) };
+    return { voiceProfile: toVoiceProfile(voiceProfile, event.locals.locale) };
   },
 
   // LOR-223: fills the corpus from a LinkedIn "Get a copy of your data"
@@ -267,7 +342,7 @@ export const actions: Actions = {
     const voiceProfile = await refreshVoiceProfile(db, orgId);
     return {
       imported: { inserted, byGenre },
-      voiceProfile: toVoiceProfile(voiceProfile),
+      voiceProfile: toVoiceProfile(voiceProfile, event.locals.locale),
     };
   },
 };
