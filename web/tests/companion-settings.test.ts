@@ -375,6 +375,92 @@ describe('companion/voice actions', () => {
       ),
     ).toBe(403);
   });
+
+  // FIXTURE NOTE: byte-identical to `cli/tests/commands/voice-import.test.ts`'s
+  // `SHARES_CSV` - kept in sync by hand since CLI and web are separate
+  // workspaces. Both suites assert their result against
+  // `parseSharesCsv`/`parseCommentsCsv` directly (the same functions
+  // `voiceImportRun` and this route's `importVoice` action both call
+  // under the hood), which is what actually proves the two paths cannot
+  // drift, rather than a literal string comparison across processes.
+  const IMPORT_SHARES_CSV = [
+    'Date,ShareLink,ShareCommentary',
+    '2026-03-01,https://www.linkedin.com/feed/update/urn:li:activity:cli-1,Shipped the new export importer today.',
+    '2026-03-02,https://www.linkedin.com/feed/update/urn:li:activity:cli-2,',
+    '2026-03-03,https://www.linkedin.com/feed/update/urn:li:activity:cli-3,Wrapped up a long week of onboarding fixes.',
+  ].join('\n');
+
+  function csvFile(text: string, name: string): File {
+    return new File([text], name, { type: 'text/csv' });
+  }
+
+  it('importVoice: a member is forbidden (403)', async () => {
+    const orgId = await seedOrg('comp-import-member');
+    const form = new FormData();
+    form.set('file', csvFile(IMPORT_SHARES_CSV, 'Shares.csv'));
+    expect(
+      await statusOf(() =>
+        voiceActions.importVoice(
+          actionEvent<VoiceActionEvent>(orgId, 'member', '/companion/voice', form),
+        ),
+      ),
+    ).toBe(403);
+  });
+
+  it('importVoice: refuses to run without a file, with a readable message rather than a stack trace', async () => {
+    const orgId = await seedOrg('comp-import-nofile');
+    const result = (await voiceActions.importVoice(
+      actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', new FormData()),
+    )) as { status: number; data: { importError: string } };
+    expect(result.status).toBe(400);
+    expect(result.data.importError).toMatch(/choose a linkedin export/i);
+  });
+
+  it('importVoice: refuses a file whose header matches neither known export shape', async () => {
+    const orgId = await seedOrg('comp-import-badheader');
+    const form = new FormData();
+    form.set('file', csvFile('Foo,Bar\n1,2', 'export.csv'));
+    const result = (await voiceActions.importVoice(
+      actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', form),
+    )) as { status: number; data: { importError: string } };
+    expect(result.status).toBe(400);
+    expect(result.data.importError).toBeTruthy();
+  });
+
+  it('importVoice: parses Shares.csv the same way the CLI does, dedups on re-upload, and re-derives the voice profile', async () => {
+    const orgId = await seedOrg('comp-import-shares');
+    const { parseSharesCsv } = await import('@pitchbox/shared/voice-import');
+    const expected = parseSharesCsv(IMPORT_SHARES_CSV);
+
+    const form = new FormData();
+    form.set('file', csvFile(IMPORT_SHARES_CSV, 'Shares.csv'));
+    const first = (await voiceActions.importVoice(
+      actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', form),
+    )) as { imported: { inserted: number; byGenre: { post: number; comment: number } } };
+    expect(first.imported.inserted).toBe(expected.length);
+    expect(first.imported.byGenre).toEqual({ post: expected.length, comment: 0 });
+
+    const rows = await getDb()
+      .select()
+      .from(schema.operatorVoiceSamples)
+      .where(eq(schema.operatorVoiceSamples.organizationId, orgId));
+    expect(rows.map((r) => r.text).sort()).toEqual(expected.map((i) => i.text).sort());
+    expect(rows.every((r) => r.genre === 'post' && r.source === 'import')).toBe(true);
+
+    const [profile] = await getDb()
+      .select()
+      .from(schema.operatorVoiceProfiles)
+      .where(eq(schema.operatorVoiceProfiles.organizationId, orgId));
+    expect(profile.source).toBe('derived');
+
+    // Re-uploading the same export is a no-op, the same dedup the CLI relies on.
+    const secondForm = new FormData();
+    secondForm.set('file', csvFile(IMPORT_SHARES_CSV, 'Shares.csv'));
+    const second = (await voiceActions.importVoice(
+      actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', secondForm),
+    )) as { imported: { inserted: number } };
+    expect(second.imported.inserted).toBe(0);
+  });
 });
 
 describe('companion/work load', () => {

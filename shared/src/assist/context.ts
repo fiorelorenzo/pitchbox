@@ -71,6 +71,15 @@ export type OperatorPersona = {
  * `operator-voice-profile.ts` for the full row (traits, evidence, source). */
 export type VoiceProfileSummary = {
   summary: string;
+  /** The comment-genre description alone (LOR-223), when the corpus has
+   * enough of the operator's own comments to say something honest about
+   * them specifically - null otherwise, including whenever `summary`
+   * itself is null-equivalent. A `post_comment` suggestion prefers this
+   * over `summary`: the pooled description is dominated by posts (they
+   * outnumber comments in most corpora and run far longer), so it tells
+   * the model the operator "usually writes with hashtags" and "closes
+   * with #BuildInPublic" when writing a comment neither is true of. */
+  commentSummary: string | null;
 };
 
 export type ProjectBrief = {
@@ -227,7 +236,12 @@ export async function loadCompanionContext(
     // A profile that has never derived anything honest (corpus too small,
     // or measurable but with no dominant trait/phrase/word) has an empty
     // summary - treated the same as no row at all.
-    voiceProfile: voiceProfileRow?.summary.trim() ? { summary: voiceProfileRow.summary } : null,
+    voiceProfile: voiceProfileRow?.summary.trim()
+      ? {
+          summary: voiceProfileRow.summary,
+          commentSummary: voiceProfileRow.evidence.genres.comment.summary,
+        }
+      : null,
     projects: projectRows.map((p) => ({
       id: p.id,
       name: p.name,

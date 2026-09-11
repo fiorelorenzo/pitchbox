@@ -1,14 +1,23 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
-import { getDb } from '$lib/server/db.js';
+import { eq } from 'drizzle-orm';
+import { getDb, schema } from '$lib/server/db.js';
 import { requireOrgId, requireRole } from '$lib/server/auth.js';
-import { listVoiceSamples, setVoiceSampleExcluded } from '@pitchbox/shared/operator-profile';
+import {
+  listVoiceSamples,
+  setVoiceSampleExcluded,
+  importVoiceSamples,
+  type VoiceSampleGenre,
+  type VoiceSampleSource,
+} from '@pitchbox/shared/operator-profile';
+import { parseLinkedinExportBuffer } from '@pitchbox/shared/voice-import-archive';
 import {
   loadVoiceProfile,
   refreshVoiceProfile,
   saveVoiceProfileSummary,
   resetVoiceProfileToDerived,
   type OperatorVoiceProfileRow,
+  type VoiceGenreSummary,
 } from '@pitchbox/shared/operator-voice-profile';
 
 // Companion -> Voice ("how you write"), split out of the old three-card
@@ -18,12 +27,23 @@ import {
 // every suggestion's prompt too - and the same reasoning for repeating
 // requireRole('admin') here rather than inheriting one: see that file's
 // comment.
+//
+// LOR-223: the `importVoice` action is the onboarding path this page was
+// missing - a LinkedIn export upload that fills the corpus with posts and,
+// for the first time, comments, in one step instead of weeks of passive
+// browsing. It calls the exact same `parseLinkedinExportBuffer` and
+// `importVoiceSamples` the `pitchbox voice:import` CLI command calls, so
+// the two paths cannot drift and a fixture run through both produces the
+// same rows.
 export type CompanionVoiceSample = {
   id: number;
   text: string;
   url: string | null;
   postedAt: string | null;
   excluded: boolean;
+  genre: VoiceSampleGenre;
+  source: VoiceSampleSource;
+  context: string | null;
   capturedAt: string;
 };
 
@@ -37,10 +57,16 @@ export type CompanionVoiceProfile = {
   itemCount: number;
   wordCount: number;
   evidenceCounts: { voiceSamples: number; messages: number; drafts: number; templates: number };
+  /** Each genre's own description, alongside the pooled one above
+   * (LOR-223) - a post and a comment are different genres of writing, so
+   * "how you write" is worth reading per genre as well as pooled. */
+  genres: Record<VoiceSampleGenre, VoiceGenreSummary>;
   source: 'derived' | 'manual';
   derivedAt: string | null;
   updatedAt: string;
 };
+
+const MAX_VOICE_IMPORT_BYTES = 20 * 1024 * 1024;
 
 function toVoiceProfile(row: OperatorVoiceProfileRow): CompanionVoiceProfile {
   return {
@@ -53,6 +79,7 @@ function toVoiceProfile(row: OperatorVoiceProfileRow): CompanionVoiceProfile {
     itemCount: row.itemCount,
     wordCount: row.wordCount,
     evidenceCounts: row.evidence.counts,
+    genres: row.evidence.genres,
     source: row.source,
     derivedAt: row.derivedAt ? row.derivedAt.toISOString() : null,
     updatedAt: row.updatedAt.toISOString(),
@@ -74,6 +101,9 @@ export const load: PageServerLoad = async (event) => {
       url: s.url,
       postedAt: s.postedAt ? s.postedAt.toISOString() : null,
       excluded: s.excluded,
+      genre: s.genre,
+      source: s.source,
+      context: s.context,
       capturedAt: s.capturedAt.toISOString(),
     })),
     voiceProfile: voiceProfile ? toVoiceProfile(voiceProfile) : null,
@@ -136,5 +166,56 @@ export const actions: Actions = {
     const orgId = await requireOrgId(event);
     const voiceProfile = await resetVoiceProfileToDerived(getDb(), orgId);
     return { voiceProfile: toVoiceProfile(voiceProfile) };
+  },
+
+  // LOR-223: fills the corpus from a LinkedIn "Get a copy of your data"
+  // export in one step - the onboarding path this page was missing,
+  // especially for comments, which passive capture barely reaches. Calls
+  // the same `parseLinkedinExportBuffer`/`importVoiceSamples` the
+  // `pitchbox voice:import` CLI command calls, so an upload and a CLI run
+  // against the same file produce the same rows. Refuses anything that is
+  // not a recognisable export with a readable message rather than a stack
+  // trace, and caps the upload size the same way other upload routes in
+  // this app cap theirs.
+  importVoice: async (event) => {
+    requireRole(event, 'admin');
+    const orgId = await requireOrgId(event);
+    const form = await event.request.formData();
+    const file = form.get('file');
+    if (!(file instanceof File) || file.size === 0) {
+      return fail(400, {
+        importError: 'Choose a LinkedIn export file (.zip) or a Shares.csv/Comments.csv first.',
+      });
+    }
+    if (file.size > MAX_VOICE_IMPORT_BYTES) {
+      return fail(413, {
+        importError: `File exceeds the ${Math.floor(MAX_VOICE_IMPORT_BYTES / (1024 * 1024))}MB limit.`,
+      });
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    let items;
+    try {
+      items = parseLinkedinExportBuffer(buffer, file.name);
+    } catch (err) {
+      return fail(400, {
+        importError: err instanceof Error ? err.message : 'Could not read that file.',
+      });
+    }
+
+    const db = getDb();
+    const [platform] = await db
+      .select({ id: schema.platforms.id })
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'linkedin'))
+      .limit(1);
+    if (!platform) return fail(500, { importError: 'LinkedIn platform is not configured.' });
+
+    const { inserted, byGenre } = await importVoiceSamples(db, orgId, platform.id, items);
+    const voiceProfile = await refreshVoiceProfile(db, orgId);
+    return {
+      imported: { inserted, byGenre },
+      voiceProfile: toVoiceProfile(voiceProfile),
+    };
   },
 };

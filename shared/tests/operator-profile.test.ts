@@ -7,6 +7,7 @@ import {
   listVoiceSamples,
   setVoiceSampleExcluded,
   recordVoiceSamples,
+  importVoiceSamples,
 } from '../src/operator-profile.js';
 
 async function platformId(slug: string): Promise<number> {
@@ -149,6 +150,89 @@ describe('shared/src/operator-profile', () => {
 
       const stillB = await listVoiceSamples(getDb(), orgBId);
       expect(stillB[0].excluded).toBe(false);
+    });
+  });
+
+  describe('genre/source (LOR-223)', () => {
+    it('recordVoiceSamples defaults to genre post and source capture when neither is given', async () => {
+      await recordVoiceSamples(getDb(), orgAId, linkedinId, [
+        { externalId: 'urn:li:activity:default-genre', text: 'A plain captured post.' },
+      ]);
+      const [sample] = await listVoiceSamples(getDb(), orgAId);
+      expect(sample.genre).toBe('post');
+      expect(sample.source).toBe('capture');
+      expect(sample.context).toBeNull();
+    });
+
+    it('recordVoiceSamples honors an explicit genre, source and context', async () => {
+      await recordVoiceSamples(getDb(), orgAId, linkedinId, [
+        {
+          externalId: 'urn:li:activity:explicit',
+          text: 'Nice work',
+          genre: 'comment',
+          source: 'manual',
+          context: 'https://www.linkedin.com/feed/update/urn:li:activity:stimulus',
+        },
+      ]);
+      const [sample] = await listVoiceSamples(getDb(), orgAId);
+      expect(sample.genre).toBe('comment');
+      expect(sample.source).toBe('manual');
+      expect(sample.context).toBe('https://www.linkedin.com/feed/update/urn:li:activity:stimulus');
+    });
+  });
+
+  describe('importVoiceSamples', () => {
+    it('inserts every item tagged source import, and reports how many landed per genre', async () => {
+      const result = await importVoiceSamples(getDb(), orgAId, linkedinId, [
+        {
+          externalId: 'li-import-post:1',
+          genre: 'post',
+          text: 'Shipped the importer today.',
+          url: 'https://www.linkedin.com/feed/update/urn:li:activity:import-1',
+          postedAt: null,
+          context: null,
+        },
+        {
+          externalId: 'li-import-comment:1',
+          genre: 'comment',
+          text: 'Nice work',
+          url: null,
+          postedAt: null,
+          context: 'https://www.linkedin.com/feed/update/urn:li:activity:import-1',
+        },
+      ]);
+      expect(result).toEqual({ inserted: 2, byGenre: { post: 1, comment: 1 } });
+
+      const samples = await listVoiceSamples(getDb(), orgAId);
+      expect(samples).toHaveLength(2);
+      expect(samples.every((s) => s.source === 'import')).toBe(true);
+      const comment = samples.find((s) => s.genre === 'comment');
+      expect(comment?.context).toBe(
+        'https://www.linkedin.com/feed/update/urn:li:activity:import-1',
+      );
+    });
+
+    it('dedupes on (organization_id, external_id) the same way recordVoiceSamples does - a re-import is a no-op', async () => {
+      const item = {
+        externalId: 'li-import-post:dup',
+        genre: 'post' as const,
+        text: 'Shipped the importer today.',
+        url: null,
+        postedAt: null,
+        context: null,
+      };
+      const first = await importVoiceSamples(getDb(), orgAId, linkedinId, [item]);
+      expect(first.inserted).toBe(1);
+      const second = await importVoiceSamples(getDb(), orgAId, linkedinId, [item]);
+      expect(second.inserted).toBe(0);
+
+      const samples = await listVoiceSamples(getDb(), orgAId);
+      expect(samples).toHaveLength(1);
+    });
+
+    it('returns zero for an empty batch without touching the database', async () => {
+      const result = await importVoiceSamples(getDb(), orgAId, linkedinId, []);
+      expect(result).toEqual({ inserted: 0, byGenre: { post: 0, comment: 0 } });
     });
   });
 

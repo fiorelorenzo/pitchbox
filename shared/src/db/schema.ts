@@ -1236,6 +1236,26 @@ export const operatorVoiceSamples = pgTable(
     url: text('url'),
     postedAt: timestamp('posted_at', { withTimezone: true }),
     excluded: boolean('excluded').notNull().default(false),
+    /** The writing's genre - `post` (a LinkedIn share), `comment` (a
+     * top-level comment) or `reply` (a reply to a comment). Defaults to
+     * `post` so every row written before this column existed (every
+     * passively captured sample, which was always a post) reads back
+     * correctly without a backfill (LOR-223). A post and a comment are
+     * different genres of writing - different length, different opening,
+     * different relationship to the reader - and pooling them is what
+     * made a comment suggestion come out sounding like a post. */
+    genre: text('genre').notNull().default('post'),
+    /** Where the row came from: `capture` (the extension's passive
+     * recent-activity read), `import` (a LinkedIn data-export upload) or
+     * `manual` (typed by hand). Defaults to `capture`, the only source
+     * that existed before this column (LOR-223). */
+    source: text('source').notNull().default('capture'),
+    /** For a comment, the post it was written under, as far as the export
+     * or capture knows it - the stimulus a comment reacts to, which is
+     * worth keeping alongside the comment itself for the eval set and for
+     * few-shot selection. Null for a post, and for a comment whose
+     * stimulus is unknown (LOR-223). */
+    context: text('context'),
     capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

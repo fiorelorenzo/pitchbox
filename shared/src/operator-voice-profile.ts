@@ -32,9 +32,13 @@ import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
 import {
   measureVoiceCorpus,
+  measureVoiceCorpusByGenre,
   describeVoiceProfile,
+  describeVoiceProfileForGenre,
   MIN_ITEMS_TO_DERIVE,
+  VOICE_CORPUS_ITEM_GENRES,
   type VoiceCorpusItem,
+  type VoiceCorpusItemGenre,
   type RhythmProfile,
   type PunctuationProfile,
   type ShapeProfile,
@@ -66,11 +70,25 @@ export type VoiceCorpusProvenance = {
   counts: { voiceSamples: number; messages: number; drafts: number; templates: number };
 };
 
+/** One genre's own share of the derivation, alongside the pooled one -
+ * "his comments run 2 sentences and open with a concrete noun; his posts
+ * run 5" needs its own prose per genre, not one description averaged
+ * across both (LOR-223). `measurable: false` and `summary: null` mean
+ * exactly what they mean on the pooled `VoiceMeasurement`: this genre has
+ * not cleared `MIN_ITEMS_TO_DERIVE` yet, so nothing here is a guess. */
+export type VoiceGenreSummary = {
+  summary: string | null;
+  itemCount: number;
+  measurable: boolean;
+};
+
 /** What a stored row carries about its own derivation: the provenance
- * above, the format version it was derived with (#570), and the six
- * extended measurement axes - stored here rather than in a new column
- * because `evidence` is already schemaless jsonb and nobody in this wave
- * holds the migration slot. */
+ * above, the format version it was derived with (#570), the six extended
+ * measurement axes, and (LOR-223) each genre's own summary - stored here
+ * rather than in a new column because `evidence` is already schemaless
+ * jsonb and nobody in this wave but LOR-223 holds the migration slot, and
+ * LOR-223's own slot went to the columns the genre itself is read from,
+ * not to a second jsonb shape. */
 export type VoiceProfileEvidence = VoiceCorpusProvenance & {
   version: number;
   rhythm: RhythmProfile;
@@ -79,6 +97,7 @@ export type VoiceProfileEvidence = VoiceCorpusProvenance & {
   voiceMarkers: VoiceMarkerProfile;
   lexicon: LexiconProfile;
   language: LanguageProfile;
+  genres: Record<VoiceCorpusItemGenre, VoiceGenreSummary>;
 };
 
 export type OperatorVoiceProfileRow = {
@@ -107,6 +126,14 @@ const EMPTY_PROVENANCE: VoiceCorpusProvenance = {
   counts: { voiceSamples: 0, messages: 0, drafts: 0, templates: 0 },
 };
 
+const EMPTY_GENRE_SUMMARY: VoiceGenreSummary = { summary: null, itemCount: 0, measurable: false };
+
+const EMPTY_GENRE_SUMMARIES: Record<VoiceCorpusItemGenre, VoiceGenreSummary> = {
+  post: EMPTY_GENRE_SUMMARY,
+  comment: EMPTY_GENRE_SUMMARY,
+  reply: EMPTY_GENRE_SUMMARY,
+};
+
 const EMPTY_EVIDENCE: VoiceProfileEvidence = {
   ...EMPTY_PROVENANCE,
   version: 0,
@@ -116,14 +143,15 @@ const EMPTY_EVIDENCE: VoiceProfileEvidence = {
   voiceMarkers: EMPTY_VOICE_MARKERS,
   lexicon: EMPTY_LEXICON,
   language: EMPTY_LANGUAGE,
+  genres: EMPTY_GENRE_SUMMARIES,
 };
 
 /** Reads a stored `evidence` blob back into the current full shape,
  * whichever version wrote it. A field absent from the stored JSON (a row
- * from before #570, or before #407 for `counts`/the id arrays) reads as
- * this axis's empty value rather than `undefined` - the loader never
- * throws on an older profile, and never invents a measurement for an axis
- * that was never derived. */
+ * from before #570, or before #407 for `counts`/the id arrays, or before
+ * LOR-223 for `genres`) reads as this axis's empty value rather than
+ * `undefined` - the loader never throws on an older profile, and never
+ * invents a measurement for an axis that was never derived. */
 function normalizeEvidence(raw: unknown): VoiceProfileEvidence {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<VoiceProfileEvidence>;
   return {
@@ -139,6 +167,7 @@ function normalizeEvidence(raw: unknown): VoiceProfileEvidence {
     voiceMarkers: r.voiceMarkers ?? EMPTY_VOICE_MARKERS,
     lexicon: r.lexicon ?? EMPTY_LEXICON,
     language: r.language ?? EMPTY_LANGUAGE,
+    genres: r.genres ?? EMPTY_GENRE_SUMMARIES,
   };
 }
 
@@ -179,7 +208,11 @@ async function gatherVoiceCorpus(
 ): Promise<{ corpus: VoiceCorpusItem[]; evidence: VoiceCorpusProvenance }> {
   const [sampleRows, messageRows, draftRows, templateRows] = await Promise.all([
     db
-      .select({ id: schema.operatorVoiceSamples.id, text: schema.operatorVoiceSamples.text })
+      .select({
+        id: schema.operatorVoiceSamples.id,
+        text: schema.operatorVoiceSamples.text,
+        genre: schema.operatorVoiceSamples.genre,
+      })
       .from(schema.operatorVoiceSamples)
       .where(
         and(
@@ -224,7 +257,12 @@ async function gatherVoiceCorpus(
   ]);
 
   const corpus: VoiceCorpusItem[] = [
-    ...sampleRows.map((r) => ({ id: r.id, kind: 'voice_sample' as const, text: r.text })),
+    ...sampleRows.map((r) => ({
+      id: r.id,
+      kind: 'voice_sample' as const,
+      genre: r.genre as VoiceCorpusItemGenre,
+      text: r.text,
+    })),
     ...messageRows.map((r) => ({ id: r.id, kind: 'message' as const, text: r.text })),
     ...draftRows.map((r) => ({ id: r.id, kind: 'draft' as const, text: r.sentContent ?? r.body })),
     ...templateRows.map((r) => ({ id: r.id, kind: 'template' as const, text: r.text })),
@@ -277,6 +315,22 @@ export async function refreshVoiceProfile(
   const measurement = measureVoiceCorpus(corpus);
   const summary = describeVoiceProfile(measurement) ?? '';
 
+  // LOR-223: each genre measured on its own, alongside the pooled corpus
+  // above - "his comments run 2 sentences and open with a concrete noun;
+  // his posts run 5" needs a per-genre description, not the pooled one
+  // repeated. A message/draft/template carries no genre and never enters
+  // any of these three buckets - see VoiceCorpusItemGenre's own comment.
+  const measurementByGenre = measureVoiceCorpusByGenre(corpus);
+  const genres = {} as VoiceProfileEvidence['genres'];
+  for (const genre of VOICE_CORPUS_ITEM_GENRES) {
+    const genreMeasurement = measurementByGenre[genre];
+    genres[genre] = {
+      summary: describeVoiceProfileForGenre(genre, genreMeasurement),
+      itemCount: genreMeasurement.itemCount,
+      measurable: genreMeasurement.measurable,
+    };
+  }
+
   const evidence: VoiceProfileEvidence = {
     ...provenance,
     version: (existing?.evidence.version ?? 0) + 1,
@@ -286,6 +340,7 @@ export async function refreshVoiceProfile(
     voiceMarkers: measurement.voiceMarkers,
     lexicon: measurement.lexicon,
     language: measurement.language,
+    genres,
   };
 
   const values = {

@@ -3,7 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   measureVoiceCorpus,
+  measureVoiceCorpusByGenre,
   describeVoiceProfile,
+  describeVoiceProfileForGenre,
   MIN_ITEMS_TO_DERIVE,
   EMPTY_RHYTHM,
   EMPTY_PUNCTUATION,
@@ -12,6 +14,7 @@ import {
   EMPTY_LEXICON,
   EMPTY_LANGUAGE,
   type VoiceCorpusItem,
+  type VoiceCorpusItemGenre,
   type VoiceMeasurement,
 } from '../src/assist/voice-profile.js';
 
@@ -438,6 +441,105 @@ describe('describeVoiceProfile', () => {
       commonWords: [],
     };
     expect(describeVoiceProfile(tooSmall)).toBeNull();
+  });
+});
+
+// LOR-223: a post and a comment are different genres of writing, not the
+// same voice at a different length - real evidence from Lorenzo's own
+// LinkedIn activity put his posts at a median 122 words against a median 7
+// words for his comments, sixteen of twenty-seven comments under ten
+// words. The fixtures below invent a corpus at the same order of
+// magnitude: three long posts (SHORT_FIRST_PERSON, ~17 words each) and
+// five one-to-three-word comments, well under register.ts's own
+// MIN_WORDS_TO_DESCRIBE floor for a single item to carry a register.
+function corpusOfGenre(
+  items: Array<{ text: string; genre: VoiceCorpusItemGenre }>,
+): VoiceCorpusItem[] {
+  return items.map((item, i) => ({
+    id: i + 1,
+    kind: 'voice_sample' as const,
+    genre: item.genre,
+    text: item.text,
+  }));
+}
+
+const SHORT_COMMENTS = ['🔥', 'Love this!', 'So true', 'Nice work', 'Well said'];
+
+const MIXED_GENRE_CORPUS = corpusOfGenre([
+  ...SHORT_FIRST_PERSON.map((text) => ({ text, genre: 'post' as const })),
+  ...SHORT_COMMENTS.map((text) => ({ text, genre: 'comment' as const })),
+]);
+
+describe('measureVoiceCorpusByGenre', () => {
+  it('always returns every genre as a key, even one entirely absent from the corpus', () => {
+    const byGenre = measureVoiceCorpusByGenre(MIXED_GENRE_CORPUS);
+    expect(Object.keys(byGenre).sort()).toEqual(['comment', 'post', 'reply']);
+    expect(byGenre.reply.measurable).toBe(false);
+    expect(byGenre.reply.itemCount).toBe(0);
+  });
+
+  it('measures a genre honestly once its own item count clears MIN_ITEMS_TO_DERIVE, independent of the other genre', () => {
+    const byGenre = measureVoiceCorpusByGenre(MIXED_GENRE_CORPUS);
+    expect(byGenre.post.measurable).toBe(true);
+    expect(byGenre.post.itemCount).toBe(SHORT_FIRST_PERSON.length);
+    expect(byGenre.comment.measurable).toBe(true);
+    expect(byGenre.comment.itemCount).toBe(SHORT_COMMENTS.length);
+  });
+
+  it('reports comments as far shorter than posts on the same corpus - the whole reason to split them', () => {
+    const byGenre = measureVoiceCorpusByGenre(MIXED_GENRE_CORPUS);
+    expect(byGenre.comment.rhythm.medianSentenceWords).toBeLessThan(
+      byGenre.post.rhythm.medianSentenceWords,
+    );
+    expect(byGenre.comment.rhythm.medianSentenceWords).toBeLessThanOrEqual(3);
+    expect(byGenre.post.rhythm.medianSentenceWords).toBeGreaterThanOrEqual(5);
+  });
+
+  it('measures rhythm/shape for a genre whose items are individually too short for register.ts to score, rather than reporting nothing', () => {
+    const byGenre = measureVoiceCorpusByGenre(MIXED_GENRE_CORPUS);
+    // None of the five comments clears register.ts's 12-word floor, so no
+    // register-derived trait or per-item sentence length is available -
+    // traits/wordsPerSentence say nothing, honestly - but the corpus as a
+    // whole (5 items) clears MIN_ITEMS_TO_DERIVE, so rhythm still measures
+    // real sentence-length numbers off the raw text.
+    expect(byGenre.comment.traits).toEqual([]);
+    expect(byGenre.comment.wordsPerSentence).toBe(0);
+    expect(byGenre.comment.measurable).toBe(true);
+    expect(byGenre.comment.rhythm.medianSentenceWords).toBeGreaterThan(0);
+  });
+
+  it('leaves a genre with too few items unmeasurable, the same floor the pooled corpus applies', () => {
+    const thin = corpusOfGenre([
+      { text: SHORT_COMMENTS[0], genre: 'comment' },
+      { text: SHORT_COMMENTS[1], genre: 'comment' },
+    ]);
+    const byGenre = measureVoiceCorpusByGenre(thin);
+    expect(byGenre.comment.measurable).toBe(false);
+    expect(byGenre.comment.itemCount).toBe(2);
+  });
+});
+
+describe('describeVoiceProfileForGenre', () => {
+  it('words the leading sentence per genre rather than reusing the pooled noun', () => {
+    const byGenre = measureVoiceCorpusByGenre(MIXED_GENRE_CORPUS);
+    const postDescription = describeVoiceProfileForGenre('post', byGenre.post);
+    const commentDescription = describeVoiceProfileForGenre('comment', byGenre.comment);
+    expect(postDescription).toMatch(/^Based on 3 of their own posts /);
+    expect(commentDescription).toMatch(/^Based on 5 of their own comments /);
+  });
+
+  it('a post and a comment description genuinely differ when the two genres differ', () => {
+    const byGenre = measureVoiceCorpusByGenre(MIXED_GENRE_CORPUS);
+    const postDescription = describeVoiceProfileForGenre('post', byGenre.post);
+    const commentDescription = describeVoiceProfileForGenre('comment', byGenre.comment);
+    expect(postDescription).not.toBeNull();
+    expect(commentDescription).not.toBeNull();
+    expect(postDescription).not.toBe(commentDescription);
+  });
+
+  it('returns null for a genre with nothing measurable, same as the pooled describeVoiceProfile', () => {
+    const byGenre = measureVoiceCorpusByGenre(MIXED_GENRE_CORPUS);
+    expect(describeVoiceProfileForGenre('reply', byGenre.reply)).toBeNull();
   });
 });
 
