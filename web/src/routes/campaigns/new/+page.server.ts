@@ -67,7 +67,9 @@ export const load: PageServerLoad = async (event) => {
     label: m.label,
     implemented: m.implemented,
     available: m.implemented && detections[m.slug].available,
-    error: m.implemented ? detections[m.slug].error : t(event.locals.locale, 'campaigns.new.runner-not-implemented'),
+    error: m.implemented
+      ? detections[m.slug].error
+      : t(event.locals.locale, 'campaigns.new.runner-not-implemented'),
   }));
 
   return { projects, platforms, preselected, recommendations, runners };

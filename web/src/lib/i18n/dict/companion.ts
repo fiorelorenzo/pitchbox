@@ -143,7 +143,8 @@ export const companionEn = {
   'companion.voice.import-found-onfile-count': '{count} on file{new}',
   'companion.voice.import-found-measurable': 'enough to describe how you write{summary}',
   'companion.voice.import-found-measurable-summary': ': {summary}',
-  'companion.voice.import-found-needs-more': '{n} more needed before this can measure your {genrePluralLower}',
+  'companion.voice.import-found-needs-more':
+    '{n} more needed before this can measure your {genrePluralLower}',
   'companion.voice.toast-nothing-new': 'Nothing new in that export - already imported',
   'companion.voice.count-post.one': '{n} post',
   'companion.voice.count-post.other': '{n} posts',
@@ -217,7 +218,8 @@ export const companionEn = {
   'companion.voice.exclude-label': 'Exclude',
 
   'home.seo-title': 'Home',
-  'home.seo-description': 'Outreach overview - drafts awaiting review, recent runs, campaign status.',
+  'home.seo-description':
+    'Outreach overview - drafts awaiting review, recent runs, campaign status.',
   'home.title': 'Home',
   'home.description': 'Outreach overview - drafts awaiting review, recent runs, campaign status.',
   'home.stat-drafts-pending-label': 'Drafts awaiting review',
@@ -350,13 +352,15 @@ export const companionIt = {
   'companion.work.github-not-configured': 'Questa installazione non ha una GitHub App configurata.',
   'companion.work.github-no-state':
     "Avvia l'installazione da questa pagina, così finisce sull'organizzazione giusta.",
-  'companion.work.github-wrong-org': "Quella installazione è stata avviata per un'altra organizzazione.",
+  'companion.work.github-wrong-org':
+    "Quella installazione è stata avviata per un'altra organizzazione.",
   'companion.work.github-forbidden': 'Serve accesso da amministratore per collegare GitHub.',
   'companion.work.github-unauthenticated': "Accedi di nuovo e riprova l'installazione.",
   'companion.work.github-claimed-by-other-org':
     "Quell'account GitHub è già collegato a un'altra organizzazione.",
   'companion.work.github-unverified': 'GitHub non ha confermato quella installazione.',
-  'companion.work.github-unverified-detail': 'GitHub non ha confermato quella installazione: {detail}',
+  'companion.work.github-unverified-detail':
+    'GitHub non ha confermato quella installazione: {detail}',
   'companion.work.github-bad-request': "GitHub ha risposto con un'installazione senza id.",
   'companion.work.github-install-incomplete': "L'installazione di GitHub non si è completata",
 
@@ -390,7 +394,8 @@ export const companionIt = {
   'companion.voice.import-found-onfile-count': '{count} presenti{new}',
   'companion.voice.import-found-measurable': 'abbastanza per descrivere come scrivi{summary}',
   'companion.voice.import-found-measurable-summary': ': {summary}',
-  'companion.voice.import-found-needs-more': 'servono altri {n} prima che questo possa misurare i tuoi {genrePluralLower}',
+  'companion.voice.import-found-needs-more':
+    'servono altri {n} prima che questo possa misurare i tuoi {genrePluralLower}',
   'companion.voice.toast-nothing-new': "Niente di nuovo in quell'export, era già stato importato",
   'companion.voice.count-post.one': '{n} post',
   'companion.voice.count-post.other': '{n} post',
@@ -431,7 +436,8 @@ export const companionIt = {
   'companion.voice.edit-signature-based-on.one': 'Basato su {n} suggerimento modificato',
   'companion.voice.edit-signature-based-on.other': 'Basato su {n} suggerimenti modificati',
   'companion.voice.edit-signature-excluded-badge': 'Escluso dal prompt',
-  'companion.voice.edit-signature-fallback': 'Niente di abbastanza ricorrente ancora da poter dare un nome.',
+  'companion.voice.edit-signature-fallback':
+    'Niente di abbastanza ricorrente ancora da poter dare un nome.',
   'companion.voice.exclude-from-prompt-label': 'Escludi dal prompt',
   'companion.voice.samples-card-title': 'Campioni di voce',
   'companion.voice.samples-card-description':
@@ -454,7 +460,8 @@ export const companionIt = {
   'companion.voice.import-error.file-too-large': 'Il file supera il limite di {maxMb}MB.',
   'companion.voice.import-error.missing-basic-archive':
     'Sembra il rapido archivio "Basic" che LinkedIn manda per primo: non contiene mai i tuoi post o commenti. Aspetta la seconda email (fino a 24 ore dopo la richiesta) e carica quell\'archivio.',
-  'companion.voice.import-error.platform-not-configured': 'La piattaforma LinkedIn non è configurata.',
+  'companion.voice.import-error.platform-not-configured':
+    'La piattaforma LinkedIn non è configurata.',
   'companion.voice.import-error.parse-failed': 'Impossibile leggere quel file: {detail}',
   'companion.voice.source.capture': 'Catturato',
   'companion.voice.source.import': 'Importato',
@@ -464,9 +471,11 @@ export const companionIt = {
   'companion.voice.exclude-label': 'Escludi',
 
   'home.seo-title': 'Home',
-  'home.seo-description': 'Riepilogo outreach: bozze in attesa di revisione, run recenti, stato campagne.',
+  'home.seo-description':
+    'Riepilogo outreach: bozze in attesa di revisione, run recenti, stato campagne.',
   'home.title': 'Home',
-  'home.description': 'Riepilogo outreach: bozze in attesa di revisione, run recenti, stato campagne.',
+  'home.description':
+    'Riepilogo outreach: bozze in attesa di revisione, run recenti, stato campagne.',
   'home.stat-drafts-pending-label': 'Bozze in attesa di revisione',
   'home.stat-drafts-pending-hint-new': '{n} nuove nelle ultime 24h',
   'home.stat-drafts-pending-hint-none': 'Niente di nuovo da approvare o rifiutare',

@@ -375,7 +375,8 @@ export const campaignsEn = {
   'projects.voice-tone.technical': 'Technical',
   'projects.voice-tone.custom': 'In my own words',
   'projects.voice-tone.inherit': 'Use organization default',
-  'projects.error-tone-notes-required': 'Describe the tone you want, or pick "Use organization default"',
+  'projects.error-tone-notes-required':
+    'Describe the tone you want, or pick "Use organization default"',
   'projects.error-save-failed': 'Failed to save',
   'projects.toast-saved': 'Saved',
   'projects.error-delete-failed': 'Failed to delete',
@@ -401,7 +402,8 @@ export const campaignsEn = {
   'projects.manage-sources-button': 'Manage sources',
   'projects.proposal-ready-body': 'Your sources changed - a new description is ready to review.',
   'projects.review-button': 'Review',
-  'projects.extraction-running-body': 'An extraction is running - editing is locked until it finishes.',
+  'projects.extraction-running-body':
+    'An extraction is running - editing is locked until it finishes.',
   'projects.no-description-title': 'No description yet',
   'projects.no-description-body':
     'The description grounds the agent during scouting and drafting. Add a source below and run an extraction, or start from a blank template.',
@@ -411,7 +413,8 @@ export const campaignsEn = {
     'From the latest project description extraction. Click "Use this" to start a campaign from a suggestion.',
   'projects.save-button': 'Save',
   'projects.danger-zone-title': 'Danger zone',
-  'projects.danger-zone-body': 'Permanently delete this project and all its data. This cannot be undone.',
+  'projects.danger-zone-body':
+    'Permanently delete this project and all its data. This cannot be undone.',
   'projects.delete-project-button': 'Delete project',
 
   // ProjectCard.svelte
@@ -536,7 +539,8 @@ export const campaignsEn = {
   'projects.source-kind-label': 'Kind',
   'projects.source-value-label': 'Value',
   'projects.add-source-button': 'Add source',
-  'projects.sources-empty': 'No sources yet. Add a URL above, or start an extraction from a local folder.',
+  'projects.sources-empty':
+    'No sources yet. Add a URL above, or start an extraction from a local folder.',
   'projects.status-label': 'Status',
   'projects.last-fetched-label': 'Last fetched',
   'projects.actions-label': 'Actions',
@@ -552,7 +556,8 @@ export const campaignsEn = {
   'projects.remove-button': 'Remove',
 
   // ProjectExtractionRunsTable.svelte
-  'projects.error-load-more-extractions-generic': 'Could not load more extractions. Please try again.',
+  'projects.error-load-more-extractions-generic':
+    'Could not load more extractions. Please try again.',
   'projects.error-load-more-extractions': 'Could not load more extractions.',
   'projects.source-badge-uploaded-folder': 'uploaded folder',
   'projects.extraction-history-title': 'Extraction history',
@@ -966,15 +971,17 @@ export const campaignsIt = {
   'projects.voice-hint':
     "Come deve suonare un suggerimento per questo progetto. Lasciato sul valore predefinito, segue il tono LinkedIn assist dell'organizzazione (Impostazioni > LinkedIn assist).",
   'projects.voice-custom-label': 'Nelle tue parole',
-  'projects.voice-custom-placeholder': 'Diretto, un po\' asciutto, senza entusiasmo che non userei a voce',
+  'projects.voice-custom-placeholder':
+    "Diretto, un po' asciutto, senza entusiasmo che non userei a voce",
   'projects.description-label': 'Descrizione',
   'projects.edit-button': 'Modifica',
   'projects.preview-button': 'Anteprima',
   'projects.manage-sources-button': 'Gestisci fonti',
-  'projects.proposal-ready-body': 'Le tue fonti sono cambiate: una nuova descrizione è pronta da rivedere.',
+  'projects.proposal-ready-body':
+    'Le tue fonti sono cambiate: una nuova descrizione è pronta da rivedere.',
   'projects.review-button': 'Rivedi',
   'projects.extraction-running-body':
-    'Un\'estrazione è in corso, la modifica è bloccata finché non finisce.',
+    "Un'estrazione è in corso, la modifica è bloccata finché non finisce.",
   'projects.no-description-title': 'Ancora nessuna descrizione',
   'projects.no-description-body':
     "La descrizione fornisce il contesto all'agente durante la ricerca e la scrittura. Aggiungi una fonte qui sotto e avvia un'estrazione, oppure parti da un modello vuoto.",
@@ -1018,7 +1025,8 @@ export const campaignsIt = {
   // ProjectAccountsTab.svelte
   'projects.role-personal': 'personale',
   'projects.role-brand': 'brand',
-  'projects.error-mastodon-verify-failed': "Non è stato possibile verificare il token con quell'istanza",
+  'projects.error-mastodon-verify-failed':
+    "Non è stato possibile verificare il token con quell'istanza",
   'projects.error-add-account-failed': "Aggiunta dell'account non riuscita",
   'projects.error-update-failed': 'Aggiornamento non riuscito',
   'projects.error-set-default-failed': 'Impostazione come predefinito non riuscita',
@@ -1075,7 +1083,7 @@ export const campaignsIt = {
     'Non è stato possibile rigenerare gli insight, controlla la connessione e riprova.',
   'projects.insights-title': 'Insight del progetto',
   'projects.insights-description':
-    "Pattern riassunti da un LLM a partire dallo storico di contatto di questo progetto.",
+    'Pattern riassunti da un LLM a partire dallo storico di contatto di questo progetto.',
   'projects.regenerate-now-button': 'Rigenera ora',
   'projects.insights-generated-at': 'Generato il {when}',
   'projects.insights-empty':
@@ -1095,7 +1103,8 @@ export const campaignsIt = {
   'projects.error-enter-value-first': 'Inserisci prima un valore',
   'projects.error-add-source-failed': 'Aggiunta della fonte non riuscita',
   'projects.toast-linkedin-waiting': 'In attesa che tu apra quella pagina su linkedin.com.',
-  'projects.toast-added-sync-failed': 'Aggiunta, ma la prima sincronizzazione non è riuscita: {error}',
+  'projects.toast-added-sync-failed':
+    'Aggiunta, ma la prima sincronizzazione non è riuscita: {error}',
   'projects.toast-source-added': 'Fonte aggiunta',
   'projects.error-sync-failed': 'Sincronizzazione non riuscita',
   'projects.toast-synced': 'Sincronizzato',
@@ -1136,7 +1145,8 @@ export const campaignsIt = {
   'projects.extraction-history-title': 'Cronologia estrazioni',
   'projects.extraction-history-count': 'Mostrate {shown} di {total} estrazioni',
   'projects.no-extractions-title': 'Ancora nessuna estrazione',
-  'projects.no-extractions-body': "Aggiungi una fonte qui sotto e avvia un'estrazione per iniziare.",
+  'projects.no-extractions-body':
+    "Aggiungi una fonte qui sotto e avvia un'estrazione per iniziare.",
   'projects.col-id': 'ID',
   'projects.col-trigger': 'Avvio',
   'projects.col-runner': 'Agente',
