@@ -17,6 +17,9 @@ The run is already bound to a campaign and run through the environment, so the t
 
 - `run_start` - create/resume the run and load campaign context.
 - `hn_search` - fetch Hacker News stories from a listing.
+- `operator_voice` - your own persona and derived writing voice for this organization.
+- `my_prior_takes` - excerpts of what you have already written, matched against a query.
+- `check_style` - the deterministic house-style checker; run it on a body before persisting it.
 - `drafts_create` - write the drafts back.
 - `run_finish` - close the run.
 
@@ -63,18 +66,24 @@ Write like this instead:
 
    Drop candidates below 3.
 
-4. **Draft each comment.** Honour `campaign.config.voice` (`tone`, `hardBans`, `dos`, `disclosure`). HN-specific guidance:
+4. **Read how you actually write.** Call `operator_voice` (no arguments) for your persona and derived writing voice, and `my_prior_takes` with a short query naming the story's subject (not the whole story) for what you have already said about it. Write the comment in this voice, not a generic house tone.
+
+   `operator_voice`'s derived summary describes your writing in aggregate (word count, sentence length, closers, hashtag habits) - it is measured mostly from longer posts, not comments, so it tells you how you sound, not how long this comment should be. The length and register called for below still win. Either tool can come back with `{ ok: false, reason }` instead of inventing something when there is nothing on file - draft from the campaign voice alone when that happens.
+
+5. **Draft each comment.** Honour `campaign.config.voice` (`tone`, `hardBans`, `dos`, `disclosure`). HN-specific guidance:
    - HN comments use plain text with blank-line paragraphs and `*emphasis*`. No Markdown headings, no bullet syntax beyond `- ` lines.
    - Apply the House style section above literally: it outranks every default here and holds even when the campaign voice says nothing about it.
    - Open with the substantive answer or observation. No "Great post!" or "Thanks for sharing".
    - 60-180 words. Match thread register (terse threads get short replies).
    - Default = no link, no product name. One mention is acceptable only if the OP is asking for tool recommendations and the product is genuinely on-topic.
 
-5. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` - no secret. Record `accountId`.
+6. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` - no secret. Record `accountId`.
 
-6. **Score each draft.** Using `rubricTemplate` from the run context, score the comment 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted comments and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+7. **Score each draft.** Using `rubricTemplate` from the run context, score the comment 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted comments and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
 
-7. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+8. **Check your own style before persisting.** Call `check_style` with the exact comment body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
+
+9. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft:
 
@@ -95,7 +104,7 @@ Write like this instead:
 
    `targetUser` is the author of the story you are replying to (`by` on the item you scored). Commenting on someone's story counts as contacting them, so it feeds the blocklist, the dedup window and contact history. Hacker News has no scout staging candidates for the run, so nothing can recover this handle if you omit it: copy it across for every draft.
 
-8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 

@@ -43,6 +43,8 @@ import {
   projectInsights,
 } from '../commands/project.js';
 import { skillGenerateStart, skillGenerateFinish } from '../commands/skill.js';
+import { ASSIST_TOOLS_BY_NAME, type AssistToolContext } from '@pitchbox/shared/assist/tools';
+import { loadCompanionContext } from '@pitchbox/shared/assist/context';
 
 // The Pitchbox MCP server exposes the data-access surface that playbooks need as
 // MCP tools, reusing the same query logic as the `pitchbox` CLI. It is the single
@@ -138,6 +140,25 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       })();
     }
     return sessionProjectIdPromise;
+  };
+
+  // The operator's own persona for this session's organization, loaded once
+  // and reused by every LOR-224 tool below (`operator_voice`,
+  // `my_prior_takes`) - the same one-row-per-org shape `assist/context.ts`'s
+  // `loadCompanionContext` already resolves for the assist plane. A session
+  // with no bound organization has no persona to load either; the tool
+  // itself refuses in that case rather than this loader inventing a value.
+  let operatorPersonaPromise: Promise<AssistToolContext['operator']> | null = null;
+  const sessionOperatorPersona = (): Promise<AssistToolContext['operator']> => {
+    if (!operatorPersonaPromise) {
+      operatorPersonaPromise = (async () => {
+        const orgId = await sessionOrgId();
+        if (orgId == null) return null;
+        const { persona } = await loadCompanionContext(getDb(), { organizationId: orgId });
+        return persona;
+      })();
+    }
+    return operatorPersonaPromise;
   };
 
   /**
@@ -455,6 +476,50 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
       }
     },
   );
+
+  // LOR-224: the campaign plane gets the same three read-only reads the
+  // assist plane already has (`shared/src/assist/tools.ts`), reusing their
+  // exact handlers rather than a second implementation - only the context
+  // each handler receives differs (an org resolved from this session's
+  // run/campaign/project, no observed target, since a campaign run has no
+  // single post it is looking at). This is not a regression of #520's
+  // plane isolation: #520 is about *write* authority (the assist plane must
+  // never reach `drafts_create` or `run_finish`), and these three tools
+  // write nothing - they are ordinary org-scoped reads of the operator's
+  // own data, gated by `checkOwnership`'s same `sessionOrgId()` every other
+  // read on this server already uses. A playbook calls `operator_voice` and
+  // `my_prior_takes` before drafting, and `check_style` on the body it is
+  // about to hand to `drafts_create`, so a structural house-style finding
+  // can be repaired while the model is still in the loop - the post-hoc
+  // check inside `createDrafts` has no live model to send a rewrite back
+  // to (see the comment there).
+  const CAMPAIGN_ASSIST_TOOLS = ['operator_voice', 'my_prior_takes', 'check_style'] as const;
+  for (const toolName of CAMPAIGN_ASSIST_TOOLS) {
+    const tool = ASSIST_TOOLS_BY_NAME[toolName];
+    server.registerTool(
+      tool.name,
+      { title: tool.name, description: tool.description, inputSchema: tool.schema },
+      async (args: Record<string, unknown>, extra: { signal?: AbortSignal }) => {
+        const orgId = await sessionOrgId();
+        if (orgId == null) {
+          return errorResult(
+            `${tool.name} needs a session bound to an organization - no run/campaign/project id is set`,
+          );
+        }
+        try {
+          const toolCtx: AssistToolContext = {
+            db: getDb(),
+            orgId,
+            observedTarget: null,
+            operator: await sessionOperatorPersona(),
+          };
+          return jsonResult(await tool.handler(toolCtx, args, extra?.signal));
+        } catch (err) {
+          return errorResult(String(err instanceof Error ? err.message : err));
+        }
+      },
+    );
+  }
 
   server.registerTool(
     'subreddit_snapshot',

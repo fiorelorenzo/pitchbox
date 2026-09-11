@@ -17,6 +17,9 @@ The run is already bound to a campaign and run through the environment. Step 1 r
 
 - `run_start` - create/resume the run and load campaign context.
 - `hn_search` - fetch Hacker News stories from a listing.
+- `operator_voice` - your own persona and derived writing voice for this organization.
+- `my_prior_takes` - excerpts of what you have already written, matched against a query.
+- `check_style` - the deterministic house-style checker; run it on a body before persisting it.
 - `drafts_create` - write the drafts back.
 - `run_finish` - close the run.
 
@@ -58,7 +61,9 @@ Write like this instead:
 
    Note recurring themes, opening lines, and how the most-upvoted Show HN / Ask HN posts frame themselves.
 
-3. **Draft 1-3 distinct posts for this run.** For each draft:
+3. **Read how you actually write.** Call `operator_voice` (no arguments) for your persona and derived writing voice, and `my_prior_takes` with a short query naming the angle or subject you are about to write about, for what you have already said on it. Draft in this voice rather than a generic house tone - it is measured from your own past posts, so its length and register are a reasonable starting point here. Either tool can come back with `{ ok: false, reason }` instead of inventing something when there is nothing on file yet - draft from the campaign voice alone when that happens.
+
+4. **Draft 1-3 distinct posts for this run.** For each draft:
    - **Pick the format** that best fits `postAngle`:
      - `show-hn` - launching or sharing something you built; title starts with `Show HN: `.
      - `ask-hn` - genuine question for the community; title starts with `Ask HN: `.
@@ -71,16 +76,18 @@ Write like this instead:
    - **Link policy** - Show HN expects a URL field; populate `metadata.url` with `campaign.config.productUrl`. Ask HN and text posts have no URL field on HN; mention the project name at most once in the body if directly relevant.
    - **Disclosure** - include `campaign.config.voice.disclosure` once near the bottom for Show HN and text-with-product-mention. Ask HN posts that don't pitch the product can omit it.
 
-4. **Apply hard skips.** Drop any draft if:
+5. **Apply hard skips.** Drop any draft if:
    - The title or body contains any term from `campaign.config.avoidKeywords`.
    - The post is a thinly disguised pitch with no substantive content (Show HN that's just a landing page summary, Ask HN that's leading toward "would you pay for X").
    - HN already has a near-identical Show HN from the last 30 days for the same product (search step 2).
 
-5. **Score each draft.** Using `rubricTemplate` from the run context, score the post 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted posts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+6. **Score each draft.** Using `rubricTemplate` from the run context, score the post 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, personalized, well-targeted posts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
 
-6. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` - no secret. Record `accountId`.
+7. **Pick the account.** Use the first account with `role === 'personal'`. HN accounts only carry a `username` - no secret. Record `accountId`.
 
-7. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+8. **Check your own style before persisting.** Call `check_style` with the exact title and body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
+
+9. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft:
 
@@ -100,7 +107,7 @@ Write like this instead:
    }
    ```
 
-8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
+10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
 
 ## Hard rules
 
@@ -113,4 +120,4 @@ Write like this instead:
 ## Failure modes
 
 - If any tool call returns an error result, stop and call `run_finish` with `{ "runId": <runId>, "status": "failed", "error": "<message>" }`.
-- Zero qualifying drafts after step 4 → finish with `success`, zero drafts is valid (means the angle wasn't ripe).
+- Zero qualifying drafts after step 5 → finish with `success`, zero drafts is valid (means the angle wasn't ripe).

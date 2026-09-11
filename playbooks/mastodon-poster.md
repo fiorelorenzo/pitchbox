@@ -20,6 +20,9 @@ The run is already bound to a campaign and run through the environment. Step 1 r
 - `run_start` - create/resume the run and load campaign context.
 - `mastodon_scout` - fetch + stage Mastodon candidates from target hashtag timelines (used here for market context, not for replying).
 - `staging_candidates` - read the staged candidates.
+- `operator_voice` - your own persona and derived writing voice for this organization.
+- `my_prior_takes` - excerpts of what you have already written, matched against a query.
+- `check_style` - the deterministic house-style checker; run it on a body before persisting it.
 - `drafts_create` - write the drafts back.
 - `run_finish` - close the run.
 
@@ -56,7 +59,9 @@ Write like this instead:
 
 2. **Study what's currently active in the target hashtags.** Call `mastodon_scout` with `{ "runId": <runId> }`, then `staging_candidates` with `{ "run": <runId> }`, to see what people are already posting in `campaign.config.targetHashtags`. Note recurring themes, tone, and whether the same angle has already been said recently - you are not reading these to reply, only to calibrate the new post so it doesn't repeat or clash with what's already there.
 
-3. **Draft at most one or two distinct posts for this run.** For each draft:
+3. **Read how you actually write.** Call `operator_voice` (no arguments) for your persona and derived writing voice, and `my_prior_takes` with a short query naming the angle you picked, for what you have already said on it. Draft in this voice rather than a generic house tone - it is measured from your own past posts, so its length and register are a reasonable starting point here. Either tool can come back with `{ ok: false, reason }` instead of inventing something when there is nothing on file yet - draft from the campaign voice alone when that happens.
+
+4. **Draft at most one or two distinct posts for this run.** For each draft:
    - **Pick the angle** from `campaign.config.postAngle` (e.g. a launch note, a lesson learned, a genuine question to the community, a short write-up of a trade-off). Avoid pure announcements with no substance.
    - **Body** - plain text, natural paragraph breaks (blank line between paragraphs). Open with substance, not "Excited to announce..." or "Hey fediverse!". 100-350 words usually; most instances cap statuses around 500 characters, so keep the primary post well under that (long posts read as thread spam - if it needs more room, note in `reasoning` that it should be a thread, but only draft the opening status).
    - **Hashtags** - append 2-4 relevant hashtags from `campaign.config.targetHashtags` at the end, not stuffed through the body. Hashtags are how Mastodon discovery works; skipping them entirely makes the post nearly unfindable, but more than a handful reads as spam.
@@ -66,16 +71,18 @@ Write like this instead:
    - **Link policy** - at most one product URL (`campaign.config.productUrl`), mentioned once, not at the very top.
    - **Disclosure** - include `campaign.config.voice.disclosure` once, near the bottom.
 
-4. **Apply hard skips.** Drop any draft if:
+5. **Apply hard skips.** Drop any draft if:
    - The body or hashtags contain any term from `campaign.config.avoidKeywords`.
    - The post is a thinly disguised pitch with no substantive content.
    - Step 2's survey shows the same angle was posted very recently by this project (avoid duplicate/near-duplicate posts).
 
-5. **Score each draft.** Using `rubricTemplate` from the run context, score the post 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, well-timed posts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+6. **Score each draft.** Using `rubricTemplate` from the run context, score the post 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, well-timed posts and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
 
-6. **Pick the account.** Use the first account with `role === 'personal'`. Record `accountId`.
+7. **Pick the account.** Use the first account with `role === 'personal'`. Record `accountId`.
 
-7. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+8. **Check your own style before persisting.** Call `check_style` with the exact status body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
+
+9. **Persist drafts.** Build a JSON array, one row per surviving draft, and call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
    Each draft (sent later as a public status, on human approval):
 
@@ -94,7 +101,7 @@ Write like this instead:
    }
    ```
 
-8. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
+10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`. If anything failed irrecoverably, call it with `{ "runId": <runId>, "status": "failed", "error": "<reason>" }`.
 
 ## Hard rules
 
@@ -107,4 +114,4 @@ Write like this instead:
 ## Failure modes
 
 - If any tool call returns an error result, stop and call `run_finish` with `{ "runId": <runId>, "status": "failed", "error": "<message>" }`.
-- Zero qualifying drafts after step 4 → finish with `success`, zero drafts is valid (means the angle wasn't ripe).
+- Zero qualifying drafts after step 5 → finish with `success`, zero drafts is valid (means the angle wasn't ripe).

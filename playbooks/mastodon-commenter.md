@@ -20,6 +20,9 @@ The run is already bound to a campaign and run through the environment, so the t
 - `run_start` - create/resume the run and load campaign context.
 - `mastodon_scout` - fetch + stage Mastodon candidates from target hashtag timelines.
 - `staging_candidates` - read the staged candidates.
+- `operator_voice` - your own persona and derived writing voice for this organization.
+- `my_prior_takes` - excerpts of what you have already written, matched against a query.
+- `check_style` - the deterministic house-style checker; run it on a body before persisting it.
 - `drafts_create` - write the drafts back.
 - `run_finish` - close the run.
 
@@ -71,7 +74,11 @@ Write like this instead:
 
    Drop candidates below 3.
 
-6. **Draft the reply.** The voice rules are in `campaign.config.voice` (`tone`, `hardBans`, `dos`, `disclosure`). Mastodon-specific guidance:
+6. **Read how you actually write.** Call `operator_voice` (no arguments) for your persona and derived writing voice, and `my_prior_takes` with a short query naming the status's subject (not the whole status) for what you have already said about it. Write the reply in this voice, not a generic house tone.
+
+   `operator_voice`'s derived summary describes your writing in aggregate (word count, sentence length, closers, hashtag habits) - it is measured mostly from longer posts, not short replies, so it tells you how you sound, not how long this reply should be or whether it carries a hashtag. The length and register called for below still win. Either tool can come back with `{ ok: false, reason }` instead of inventing something when there is nothing on file - draft from the campaign voice alone when that happens.
+
+7. **Draft the reply.** The voice rules are in `campaign.config.voice` (`tone`, `hardBans`, `dos`, `disclosure`). Mastodon-specific guidance:
    - Honour every entry in `campaign.config.voice.hardBans` literally - exact substrings to never emit.
    - Apply the House style section above literally: it outranks every default here and holds even when the campaign voice says nothing about it.
    - Plain text, natural paragraph breaks (blank line between paragraphs), no markdown headings. Hashtags only if they genuinely belong (rarely, in a reply).
@@ -83,34 +90,36 @@ Write like this instead:
 
    **Self-promo constraint.** Default = no link, no product name, no offer. The reply stands on its own. Exception: if the author is directly asking for tool recommendations and `campaign.config.productUrl` is a genuinely appropriate answer, one mention at the end (not the top) is acceptable, together with `campaign.config.voice.disclosure` to flag your relationship with the project.
 
-7. **Pick the account.** Use the first account with `role === 'personal'`. Record `accountId`.
+8. **Pick the account.** Use the first account with `role === 'personal'`. Record `accountId`.
 
-8. **Score each draft.** Using `rubricTemplate` from the run context, score the reply 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, contextual replies and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
+9. **Score each draft.** Using `rubricTemplate` from the run context, score the reply 0-100 on the rubric's axes. Be an honest, calibrated critic: most drafts are not 90+; reserve high scores for genuinely specific, contextual replies and give low scores to generic or weak ones. Include `qualityScore` (0-100 integer) and a one-line `qualityReason` in the draft object.
 
-9. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
+10. **Check your own style before persisting.** Call `check_style` with the exact reply body you are about to submit. If it returns findings, rewrite the flagged span yourself and call `check_style` again until it comes back clean. This is the one point in the run where you can still repair a structural tell yourself - `drafts_create` runs after this and can only record what got through.
 
-   > Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
+11. **Write drafts back.** Call `drafts_create` with `{ "runId": <runId>, "drafts": [ ... ] }`.
 
-   Each draft (sent later as a reply status via `in_reply_to_id`, on human approval):
+> Result: `{ runId, inserted, skipped: [{ targetUser, reason }], dedupSkipped: [...] }` - blocklisted or recently-contacted targets are skipped server-side; log them and do not retry.
 
-   ```json
-   {
-     "accountId": 1,
-     "kind": "post_comment",
-     "fitScore": 4,
-     "targetUser": "<the status author's fully qualified handle, the candidate's author.acct>",
-     "body": "<reply text>",
-     "reasoning": "2-3 sentences on why this status, what angle, what value you're adding.",
-     "sourceRef": { "statusId": "109...", "statusUrl": "https://mastodon.social/@alice/109..." },
-     "metadata": { "matchedHashtag": "selfhosted", "matchedKeyword": "self-hosted" },
-     "qualityScore": 74,
-     "qualityReason": "concrete reference to their status, adds a real point"
-   }
-   ```
+Each draft (sent later as a reply status via `in_reply_to_id`, on human approval):
 
-   `targetUser` is the author of the status you are replying to, as the fully qualified `author.acct` handle. Replying to someone counts as contacting them, so it feeds the blocklist, the dedup window and contact history. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.statusId` points at.
+```json
+{
+  "accountId": 1,
+  "kind": "post_comment",
+  "fitScore": 4,
+  "targetUser": "<the status author's fully qualified handle, the candidate's author.acct>",
+  "body": "<reply text>",
+  "reasoning": "2-3 sentences on why this status, what angle, what value you're adding.",
+  "sourceRef": { "statusId": "109...", "statusUrl": "https://mastodon.social/@alice/109..." },
+  "metadata": { "matchedHashtag": "selfhosted", "matchedKeyword": "self-hosted" },
+  "qualityScore": 74,
+  "qualityReason": "concrete reference to their status, adds a real point"
+}
+```
 
-10. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
+`targetUser` is the author of the status you are replying to, as the fully qualified `author.acct` handle. Replying to someone counts as contacting them, so it feeds the blocklist, the dedup window and contact history. If you leave it out, the server fills it in from the staged candidate the draft's `sourceRef.statusId` points at.
+
+12. **Finish the run.** Call `run_finish` with `{ "runId": <runId>, "status": "success" }`.
 
 ## Hard constraints
 

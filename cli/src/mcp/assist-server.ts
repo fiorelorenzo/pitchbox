@@ -5,8 +5,10 @@
 // (docs/design/in-page-agent.md, section 1). A sibling of
 // `cli/src/mcp/server.ts`, the campaign MCP server - deliberately not built
 // on top of it or importing any of its tool registrations, because the two
-// planes carry different privileges (26 tools, most of them writers, bound
-// to a `runs` row, vs seven read-only tools bound to an org).
+// planes carry different privileges (29 tools, most of them writers, bound
+// to a `runs` row, vs seven read-only tools bound to an org - three of the
+// 29 reuse these same handlers by name, LOR-224, but that is a read-only
+// overlap, not a shared write surface).
 // Handing the assistant `drafts_create` or `run_finish` because they happen
 // to share a process would undo the isolation #520 exists for.
 //
