@@ -202,6 +202,17 @@ const COMMENTS_COLUMNS: readonly ColumnSpec[] = [
   },
 ];
 
+/** Counts from parsing one CSV: how many data rows it had (excluding the
+ * header), how many turned into an `ImportedVoiceItem`, and how many were
+ * dropped for having no text - a bare repost in Shares.csv, or a reaction
+ * with no written comment in Comments.csv. `imported + skipped ===
+ * totalRows` always. LOR-245's API route needs this to answer "how many
+ * rows landed" honestly instead of `{ok:true}`; the CLI and the companion
+ * form action only ever needed the items themselves, which is why these
+ * counts are a separate, additive export rather than a change to
+ * `parseSharesCsv`/`parseCommentsCsv`'s own return type. */
+export type CsvParseStats = { totalRows: number; imported: number; skipped: number };
+
 /**
  * Parses `Shares.csv` into posts. A row whose commentary cell is empty is
  * skipped rather than imported as an empty post - LinkedIn's export
@@ -209,16 +220,20 @@ const COMMENTS_COLUMNS: readonly ColumnSpec[] = [
  * added words) the same way it carries a real post, and a repost with
  * nothing added is not writing.
  */
-export function parseSharesCsv(csvText: string): ImportedVoiceItem[] {
+function parseSharesRows(csvText: string): { items: ImportedVoiceItem[]; stats: CsvParseStats } {
   const rows = parseCsvRows(csvText);
-  if (rows.length === 0) return [];
+  if (rows.length === 0) return { items: [], stats: { totalRows: 0, imported: 0, skipped: 0 } };
   const [header, ...body] = rows;
   const cols = resolveColumns(header!, SHARES_COLUMNS);
 
   const items: ImportedVoiceItem[] = [];
+  let skipped = 0;
   for (const row of body) {
     const text = cell(row, cols.get('text'));
-    if (!text) continue;
+    if (!text) {
+      skipped += 1;
+      continue;
+    }
     const url = cell(row, cols.get('link')) || null;
     items.push({
       externalId: deriveExternalId('post', url, text),
@@ -229,7 +244,21 @@ export function parseSharesCsv(csvText: string): ImportedVoiceItem[] {
       context: null,
     });
   }
-  return items;
+  return { items, stats: { totalRows: body.length, imported: items.length, skipped } };
+}
+
+// Kept as its own export - the CLI (`cli/src/commands/voice.ts`) and the
+// companion form action (`web/src/routes/companion/voice/+page.server.ts`)
+// already import this exact name and only ever wanted the items, not the
+// counts alongside them.
+export function parseSharesCsv(csvText: string): ImportedVoiceItem[] {
+  return parseSharesRows(csvText).items;
+}
+
+/** Same parse as `parseSharesCsv`, plus the row counts described on
+ * `CsvParseStats`. */
+export function parseSharesCsvStats(csvText: string): CsvParseStats {
+  return parseSharesRows(csvText).stats;
 }
 
 /**
@@ -237,16 +266,20 @@ export function parseSharesCsv(csvText: string): ImportedVoiceItem[] {
  * is skipped the same way an empty share is - some export rows carry a
  * reaction with no written text at all.
  */
-export function parseCommentsCsv(csvText: string): ImportedVoiceItem[] {
+function parseCommentsRows(csvText: string): { items: ImportedVoiceItem[]; stats: CsvParseStats } {
   const rows = parseCsvRows(csvText);
-  if (rows.length === 0) return [];
+  if (rows.length === 0) return { items: [], stats: { totalRows: 0, imported: 0, skipped: 0 } };
   const [header, ...body] = rows;
   const cols = resolveColumns(header!, COMMENTS_COLUMNS);
 
   const items: ImportedVoiceItem[] = [];
+  let skipped = 0;
   for (const row of body) {
     const text = cell(row, cols.get('text'));
-    if (!text) continue;
+    if (!text) {
+      skipped += 1;
+      continue;
+    }
     const link = cell(row, cols.get('link')) || null;
     items.push({
       externalId: deriveExternalId('comment', link, text),
@@ -257,7 +290,17 @@ export function parseCommentsCsv(csvText: string): ImportedVoiceItem[] {
       context: link,
     });
   }
-  return items;
+  return { items, stats: { totalRows: body.length, imported: items.length, skipped } };
+}
+
+export function parseCommentsCsv(csvText: string): ImportedVoiceItem[] {
+  return parseCommentsRows(csvText).items;
+}
+
+/** Same parse as `parseCommentsCsv`, plus the row counts described on
+ * `CsvParseStats`. */
+export function parseCommentsCsvStats(csvText: string): CsvParseStats {
+  return parseCommentsRows(csvText).stats;
 }
 
 /** Whether `csvText`'s header row matches Shares.csv's or Comments.csv's

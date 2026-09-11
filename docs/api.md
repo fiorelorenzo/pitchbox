@@ -62,6 +62,9 @@ POST /api/extension/draft/[id]/sent          # flip to 'sent' (user submitted on
 # Extension - reply sync (bearer-auth, per-device)
 POST /api/extension/dm-sync                  # inbox + chat poll → match drafts + status heartbeat
 
+# Extension - voice import (bearer-auth, per-device)
+POST /api/extension/voice-import              # raw archive body → import counts + corpus status
+
 # Export
 GET /api/export/[resource]?format=csv        # resource ∈ { drafts, contacts, conversations }
 ```
@@ -81,6 +84,69 @@ reflects exactly what the user sees.
 The only supported `format` today is `csv`. Response headers set
 `Content-Type: text/csv; charset=utf-8` and a dated `Content-Disposition`
 attachment filename (e.g. `drafts-2026-05-12.csv`).
+
+### `POST /api/extension/voice-import`
+
+Imports a LinkedIn "Get a copy of your data" export into the operator's voice
+corpus - the same import `pitchbox voice:import` and the companion's
+`/companion/voice` upload button run, now reachable without a terminal or a
+browser. Device bearer-token auth, same as every other `/api/extension/*`
+route (see "Auth" above) - mint one with `POST /api/extension/pair` from a
+pairing code generated in Settings, no extension install required.
+
+The body is the archive's raw bytes, not a multipart form. `Content-Type`
+says which shape it is:
+
+| Content-Type                   | Body                                                   |
+| ------------------------------ | ------------------------------------------------------ |
+| `application/zip`              | The export zip LinkedIn hands back directly            |
+| `application/x-zip-compressed` | Same as above (some clients report this instead)       |
+| `text/csv`                     | A single already-extracted `Shares.csv`/`Comments.csv` |
+
+The body is capped at 20MB, checked against `Content-Length` before anything
+is read and again while streaming, so an oversized upload is refused (`413`)
+without ever being buffered into memory.
+
+```bash
+curl -X POST https://your-pitchbox-host/api/extension/voice-import \
+  -H "Authorization: Bearer $PITCHBOX_DEVICE_TOKEN" \
+  -H "Content-Type: application/zip" \
+  --data-binary @linkedin-export.zip
+```
+
+A successful response is a full accounting, not `{"ok":true}`:
+
+```json
+{
+  "ok": true,
+  "imported": { "post": 2, "comment": 1 },
+  "duplicates": { "post": 0, "comment": 0 },
+  "skippedNoText": { "post": 1, "comment": 1 },
+  "totalRows": { "post": 3, "comment": 2 },
+  "noop": false,
+  "message": "Imported 3 new item(s) (2 post(s), 1 comment(s)).",
+  "profile": {
+    "post": { "itemCount": 2, "measurable": false },
+    "comment": { "itemCount": 1, "measurable": false },
+    "reply": { "itemCount": 0, "measurable": false }
+  }
+}
+```
+
+- `imported` - new rows actually written, per genre.
+- `duplicates` - parsed rows already on file (same `(organizationId, externalId)`), dropped by the insert's own dedup.
+- `skippedNoText` - rows dropped before ever reaching the corpus: a bare repost in `Shares.csv`, or a reaction with no written comment in `Comments.csv`.
+- `totalRows` - every row the file had, per genre (`imported + duplicates + skippedNoText`).
+- `noop` - `true` when nothing new landed. Re-posting the same archive is the normal case, not an error: the response still says so explicitly rather than looking like an ambiguous success.
+- `profile` - each genre's `itemCount` and whether it has cleared `MIN_ITEMS_TO_DERIVE` (`measurable`) after this import.
+
+Refusals are a `4xx`/`5xx` with a readable `{ "message": "..." }` body, never a
+stack trace: `400` for an unrecognised `Content-Type`, an empty body, a file
+that isn't a valid archive, or a zip with neither `Shares.csv` nor
+`Comments.csv`; `401` for a missing/invalid/revoked device token; `413` for a
+body over the 20MB cap; `429` for more than 10 imports/minute from one
+device; `500` if the `linkedin` platform row is missing (a self-host seed
+problem, not a bad request).
 
 See [`web/src/routes/api/`](https://github.com/fiorelorenzo/pitchbox/tree/development/web/src/routes/api) for the full surface - every route file is the source of truth.
 

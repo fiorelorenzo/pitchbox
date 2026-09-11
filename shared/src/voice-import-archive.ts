@@ -4,7 +4,14 @@
 // unit-testable without touching a filesystem.
 
 import AdmZip from 'adm-zip';
-import { detectCsvKind, parseLinkedinVoiceExport, type ImportedVoiceItem } from './voice-import.js';
+import {
+  detectCsvKind,
+  parseLinkedinVoiceExport,
+  parseSharesCsvStats,
+  parseCommentsCsvStats,
+  type ImportedVoiceItem,
+  type CsvParseStats,
+} from './voice-import.js';
 
 const SHARES_ENTRY = /(?:^|\/)shares\.csv$/iu;
 const COMMENTS_ENTRY = /(?:^|\/)comments\.csv$/iu;
@@ -45,6 +52,58 @@ export function extractLinkedinExportZip(buffer: Buffer): {
   return { sharesCsv, commentsCsv };
 }
 
+/** Per-genre `CsvParseStats` for one archive: `post` from `Shares.csv`,
+ * `comment` from `Comments.csv`. Zero-valued for a genre the export
+ * didn't carry at all (a bare CSV upload only ever has one). */
+export type LinkedinExportParseStats = { post: CsvParseStats; comment: CsvParseStats };
+
+const EMPTY_STATS: CsvParseStats = { totalRows: 0, imported: 0, skipped: 0 };
+
+/**
+ * `parseLinkedinExportBuffer`, plus the row counts LOR-245's API route
+ * needs to report an import honestly (rows seen, rows imported, rows
+ * skipped as textless reposts/reactions) - see `CsvParseStats`. Kept
+ * separate from `parseLinkedinExportBuffer` rather than changing its
+ * return type, since the CLI and the companion form action only ever
+ * wanted the items.
+ */
+export function parseLinkedinExportBufferWithStats(
+  buffer: Buffer,
+  filename: string,
+): { items: ImportedVoiceItem[]; stats: LinkedinExportParseStats } {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.zip')) {
+    const { sharesCsv, commentsCsv } = extractLinkedinExportZip(buffer);
+    return {
+      items: parseLinkedinVoiceExport({ sharesCsv, commentsCsv }),
+      stats: {
+        post: sharesCsv ? parseSharesCsvStats(sharesCsv) : EMPTY_STATS,
+        comment: commentsCsv ? parseCommentsCsvStats(commentsCsv) : EMPTY_STATS,
+      },
+    };
+  }
+  if (lower.endsWith('.csv')) {
+    const text = decodeUtf8(buffer);
+    const kind = detectCsvKind(text);
+    if (kind === 'shares') {
+      return {
+        items: parseLinkedinVoiceExport({ sharesCsv: text }),
+        stats: { post: parseSharesCsvStats(text), comment: EMPTY_STATS },
+      };
+    }
+    if (kind === 'comments') {
+      return {
+        items: parseLinkedinVoiceExport({ commentsCsv: text }),
+        stats: { post: EMPTY_STATS, comment: parseCommentsCsvStats(text) },
+      };
+    }
+    throw new Error(
+      'Could not tell whether this is a Shares.csv or a Comments.csv from its header row.',
+    );
+  }
+  throw new Error(`Unsupported file "${filename}" - expected a .zip export or a .csv file.`);
+}
+
 /**
  * Reads a LinkedIn voice export from a buffer - the zip LinkedIn hands
  * back directly, or one already-extracted CSV - and parses it into
@@ -53,19 +112,5 @@ export function extractLinkedinExportZip(buffer: Buffer): {
  * function, so the two paths cannot drift apart.
  */
 export function parseLinkedinExportBuffer(buffer: Buffer, filename: string): ImportedVoiceItem[] {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith('.zip')) {
-    const { sharesCsv, commentsCsv } = extractLinkedinExportZip(buffer);
-    return parseLinkedinVoiceExport({ sharesCsv, commentsCsv });
-  }
-  if (lower.endsWith('.csv')) {
-    const text = decodeUtf8(buffer);
-    const kind = detectCsvKind(text);
-    if (kind === 'shares') return parseLinkedinVoiceExport({ sharesCsv: text });
-    if (kind === 'comments') return parseLinkedinVoiceExport({ commentsCsv: text });
-    throw new Error(
-      'Could not tell whether this is a Shares.csv or a Comments.csv from its header row.',
-    );
-  }
-  throw new Error(`Unsupported file "${filename}" - expected a .zip export or a .csv file.`);
+  return parseLinkedinExportBufferWithStats(buffer, filename).items;
 }
