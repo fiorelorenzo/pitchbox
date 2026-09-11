@@ -318,6 +318,22 @@ its own compose project so it can never touch the dev Postgres on 5434).
 Run `preflight` (or let the installed `pre-push` hook run it) before you
 push; `preflight --list` shows what it would run for your current diff.
 
+**The trunk's gate only exists because of how concurrency is keyed, and that
+was broken until 2026-09-11.** `ci.yml`'s `concurrency` group used to be
+`ci-<event>-<ref>` with `cancel-in-progress: true` for every event, which is
+right on a PR and wrong on the trunk: the runs a merge cancels there each
+validate a different commit, and `Tests (Postgres)` runs nowhere else. Measured
+that day: 14 of the last 20 trunk runs cancelled, the newest success hours and
+ten commits old, and every `deploy-preview` skipped, since it triggers on a
+_successful_ CI `workflow_run`. During a wave of parallel agents, merges land
+every few minutes, so the expensive half ran never, and a PR whose own test job
+had skipped could break `main` with nobody noticing (that happened, #709). The
+trunk now keys its group per commit and does not cancel, so runs queue and
+every commit reaches a conclusion. The repo is public, so all four jobs are on
+GitHub-hosted runners and the queue costs time rather than money. If you are
+about to add a fifth job or a matrix, that is the constraint to check: the
+trunk's cost is now proportional to merges, not to the newest one.
+
 **Merging requires a PR, squash-only, and cleans up after itself.** Two active
 rulesets (`gh api repos/fiorelorenzo/pitchbox/rulesets`) protect `main`:
 deletion and non-fast-forward pushes are blocked outright, and a pull request is
@@ -482,7 +498,7 @@ here:
   `gh pr merge <n> --auto --squash --delete-branch` right after opening rather than
   waiting on `ci` yourself. `delete_branch_on_merge` is also on, so nothing needs
   deleting by hand; local `main` still needs `git checkout main && git reset --hard
-  origin/main` afterward, since it diverges on every squash.
+origin/main` afterward, since it diverges on every squash.
 
 ## Design and UI
 
