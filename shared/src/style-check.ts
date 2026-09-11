@@ -25,11 +25,23 @@
 //     dropped: it travels with the draft so a human sees it (moving-work
 //     -out-of-the-model's "change the evidence, do not weaken the check").
 //
-// Accent and diacritic characters are never touched by any rule below: every
-// pattern targets a specific punctuation code point or an ASCII phrase, never
-// a broad character class that could catch a letter. `shared/tests
-// /style-check.test.ts` asserts this directly against Italian and French text
-// carrying "è", "più", "café" and friends.
+// Accent and diacritic characters are never touched by any rule below in a
+// way that could catch a letter the rule was not written for: every pattern
+// targets a specific punctuation code point, an ASCII phrase, or (for an
+// Italian phrase rule added below) an explicit literal spelled exactly as
+// the language really writes it - never a broad character class. `shared
+// /tests/style-check.test.ts` asserts this directly against Italian and
+// French text carrying "è", "più", "café" and friends.
+//
+// Every phrase-based structural rule below runs a per-language phrase list,
+// chosen by `classifyLanguage` (`shared/src/assist/voice-profile.ts`) on the
+// text being checked - the corpus is bilingual (English/Italian), so a rule
+// that only ever matched English literals was silently not running on half
+// of what the product writes. On `unknown` (too little evidence either way)
+// both lists run: a false positive on a structural finding costs one model
+// round trip, a false negative ships the tell.
+
+import { classifyLanguage } from './assist/voice-profile.js';
 
 export type StyleRuleKind = 'character' | 'structural';
 
@@ -39,7 +51,9 @@ export interface StyleFinding {
   ruleId: string;
   kind: StyleRuleKind;
   /** One sentence, written for the operator who sees the finding, not for a
-   * log. */
+   * log. Always English (developer-facing); a finding matched via a
+   * non-English phrase list names that language in parentheses so a
+   * reviewer is not confused about which list matched. */
   message: string;
   /** The offending text, verbatim, as it appears in the checked string. */
   span: string;
@@ -55,8 +69,10 @@ interface Rule {
   id: string;
   kind: StyleRuleKind;
   message: string;
-  /** Every match in `text`, earliest first, never overlapping. */
-  scan(text: string): Array<{ start: number; end: number; repair?: string }>;
+  /** Every match in `text`, earliest first, never overlapping. A match may
+   * override `message` (used for a non-English phrase list match) instead
+   * of falling back to the rule's own `message`. */
+  scan(text: string): Array<{ start: number; end: number; repair?: string; message?: string }>;
 }
 
 function regexRule(
@@ -87,11 +103,6 @@ function regexRule(
  * text. Each phrase is escaped, so none of them are read as regex syntax. */
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function phraseRule(id: string, kind: StyleRuleKind, message: string, phrases: string[]): Rule {
-  const pattern = new RegExp(`(?:${phrases.map(escapeRegExp).join('|')})`, 'giu');
-  return regexRule(id, kind, message, pattern);
 }
 
 // ---------------------------------------------------------------------------
@@ -188,10 +199,58 @@ CHARACTER_RULES.push(EN_DASH_BETWEEN_WORDS);
 // never touches them.
 // ---------------------------------------------------------------------------
 
-/** house-style.ts's own opener list, checked only at the very start of the
- * text (that is what makes them "openers" rather than ordinary phrases to
- * avoid anywhere). */
-const FILLER_OPENERS = [
+/**
+ * Every phrase-based structural rule below runs the English list when the
+ * checked text classifies as English or `unknown`, and the Italian list
+ * when it classifies as Italian or `unknown` - `unknown` runs both, since a
+ * false positive here costs one model round trip and a false negative
+ * ships the tell. A match picked up from the Italian side tags its
+ * finding's message so a reviewer is not confused about which list
+ * matched.
+ */
+type LangMatch = { start: number; end: number; message?: string };
+
+function scanBilingual(
+  text: string,
+  enPattern: RegExp,
+  itPattern: RegExp,
+  message: string,
+): LangMatch[] {
+  const lang = classifyLanguage(text);
+  const out: LangMatch[] = [];
+  if (lang !== 'it') {
+    for (const m of text.matchAll(enPattern)) {
+      const start = m.index ?? 0;
+      out.push({ start, end: start + m[0].length });
+    }
+  }
+  if (lang !== 'en') {
+    for (const m of text.matchAll(itPattern)) {
+      const start = m.index ?? 0;
+      out.push({ start, end: start + m[0].length, message: `${message} (Italian)` });
+    }
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
+function bilingualWordRule(
+  id: string,
+  kind: StyleRuleKind,
+  message: string,
+  enWords: string[],
+  itWords: string[],
+): Rule {
+  const enPattern = new RegExp(`\\b(?:${enWords.map(escapeRegExp).join('|')})\\b`, 'giu');
+  const itPattern = new RegExp(`\\b(?:${itWords.map(escapeRegExp).join('|')})\\b`, 'giu');
+  return { id, kind, message, scan: (text) => scanBilingual(text, enPattern, itPattern, message) };
+}
+
+/** house-style.ts's own opener list, plus its direct Italian counterpart
+ * (a reply praising the post it is answering, "Grande post" / "Ottimo
+ * punto" and friends) - checked only at the very start of the text (that
+ * is what makes them "openers" rather than ordinary phrases to avoid
+ * anywhere), so the phrases' ordinary genericness never matters mid-text. */
+const FILLER_OPENERS_EN = [
   'Great question',
   'Great post',
   'Hope this finds you well',
@@ -199,17 +258,44 @@ const FILLER_OPENERS = [
   "You're absolutely right",
 ];
 
+const FILLER_OPENERS_IT = [
+  'Grande post',
+  'Bel post',
+  'Ottimo punto',
+  'Complimenti per',
+  'Spunto interessante',
+  'Grazie per aver condiviso',
+  "Assolutamente d'accordo",
+  'Concordo pienamente',
+];
+
+const FILLER_OPENER_MESSAGE = 'Filler opener: house style bans starting a draft this way.';
+
 const FILLER_OPENER_RULE: Rule = {
   id: 'filler-opener',
   kind: 'structural',
-  message: 'Filler opener: house style bans starting a draft this way.',
+  message: FILLER_OPENER_MESSAGE,
   scan(text) {
     const leading = text.match(/^\s*/u)?.[0].length ?? 0;
     const rest = text.slice(leading);
     const lower = rest.toLowerCase();
-    for (const phrase of FILLER_OPENERS) {
+    const lang = classifyLanguage(text);
+    const candidates: Array<{ phrase: string; italian: boolean }> = [];
+    if (lang !== 'it') {
+      for (const phrase of FILLER_OPENERS_EN) candidates.push({ phrase, italian: false });
+    }
+    if (lang !== 'en') {
+      for (const phrase of FILLER_OPENERS_IT) candidates.push({ phrase, italian: true });
+    }
+    for (const { phrase, italian } of candidates) {
       if (lower.startsWith(phrase.toLowerCase())) {
-        return [{ start: leading, end: leading + phrase.length }];
+        return [
+          {
+            start: leading,
+            end: leading + phrase.length,
+            message: italian ? `${FILLER_OPENER_MESSAGE} (Italian)` : undefined,
+          },
+        ];
       }
     }
     return [];
@@ -218,8 +304,12 @@ const FILLER_OPENER_RULE: Rule = {
 
 /** house-style.ts's puffery list, minus "in today's fast-paced world" (its
  * own rule below, since it is a phrase rather than a single word and worth
- * naming on its own in a finding). */
-const PUFFERY_WORDS = [
+ * naming on its own in a finding), plus its direct Italian counterparts.
+ * "approfondire" is deliberately not here: it is an ordinary Italian verb
+ * ("to look into further") that shows up constantly in genuine writing,
+ * and only reads as a tell in the stock closing line the wrapup-closer
+ * rule below checks for, never as a bare word anywhere in the draft. */
+const PUFFERY_WORDS_EN = [
   'leverage',
   'seamless',
   'robust',
@@ -230,14 +320,32 @@ const PUFFERY_WORDS = [
   'game-changer',
 ];
 
-const PUFFERY_RULE: Rule = regexRule(
+const PUFFERY_WORDS_IT = [
+  // Both grammatical genders: an Italian adjective agrees with the noun it
+  // describes ("una soluzione innovativa" / "un prodotto innovativo"), so a
+  // masculine-only literal would miss half of ordinary usage.
+  'innovativo',
+  'innovativa',
+  "all'avanguardia",
+  'rivoluzionario',
+  'rivoluzionaria',
+  'sinergia',
+  'valore aggiunto',
+  'sfruttare al meglio',
+  'game changer',
+];
+
+const PUFFERY_MESSAGE = 'Puffery word: house style bans this as a corporate-speak tell.';
+
+const PUFFERY_RULE = bilingualWordRule(
   'puffery',
   'structural',
-  'Puffery word: house style bans this as a corporate-speak tell.',
-  new RegExp(`\\b(?:${PUFFERY_WORDS.map(escapeRegExp).join('|')})\\b`, 'giu'),
+  PUFFERY_MESSAGE,
+  PUFFERY_WORDS_EN,
+  PUFFERY_WORDS_IT,
 );
 
-const WRAPUP_CLOSERS = [
+const WRAPUP_CLOSERS_EN = [
   'hope this helps',
   'at the end of the day',
   'the bottom line is',
@@ -245,21 +353,96 @@ const WRAPUP_CLOSERS = [
   'let me know if you have any questions',
 ];
 
-const WRAPUP_CLOSER_RULE = phraseRule(
-  'wrapup-closer',
-  'structural',
-  'Wrap-up closer: house style bans this as a machine-written tell.',
-  WRAPUP_CLOSERS,
-);
+/** Direct Italian counterparts, kept to the same specificity the English
+ * list has: a bare "fammi sapere" ("let me know") or "in conclusione" ("in
+ * conclusion") is ordinary writing on its own, so only the full closing
+ * formula is banned here, matching how specific every English phrase
+ * above already is. */
+const WRAPUP_CLOSERS_IT = [
+  'spero di essere stato utile',
+  'fammi sapere se hai domande',
+  'resto a disposizione',
+  'alla fine della fiera',
+];
 
-/** house-style.ts's "not just X, but Y" / "it's not X, it's Y" constructions,
- * bounded to one clause so the match cannot cross a sentence. */
-const NOT_X_BUT_Y_RULE = regexRule(
-  'not-x-but-y',
-  'structural',
-  '"Not just X but Y" construction: a listed LinkedIn tell.',
-  /\bnot\s+just\b[^.!?\n]{0,80}?\bbut\b|\bit'?s\s+not\b[^.!?\n]{0,80}?,\s*it'?s\b/giu,
-);
+const WRAPUP_CLOSER_MESSAGE = 'Wrap-up closer: house style bans this as a machine-written tell.';
+
+/**
+ * Two more Italian-only closer tells that fire only in closing position -
+ * the same words earlier in the text are ordinary writing:
+ *   - "cosa ne pensi?" as the literal last sentence (mirrors
+ *     RHETORICAL_OPENER_RULE's opener-only gating, at the other end of the
+ *     text instead of the start).
+ *   - "approfondire" used as the stock "let me know if you'd like to go
+ *     deeper" closing verb, checked only within the closing window rather
+ *     than banned everywhere (see PUFFERY_WORDS_IT's comment on why it is
+ *     not a bare word ban).
+ */
+const CLOSER_WINDOW_CHARS = 100;
+const CLOSING_QUESTION_IT = 'cosa ne pensi?';
+const CLOSER_VERB_IT = /\bapprofondire\b/iu;
+
+function closingWindow(text: string): { window: string; offset: number } {
+  const trimmed = text.replace(/\s+$/u, '');
+  const offset = Math.max(0, trimmed.length - CLOSER_WINDOW_CHARS);
+  return { window: trimmed.slice(offset), offset };
+}
+
+const WRAPUP_CLOSER_RULE: Rule = {
+  id: 'wrapup-closer',
+  kind: 'structural',
+  message: WRAPUP_CLOSER_MESSAGE,
+  scan(text) {
+    const out = scanBilingual(
+      text,
+      new RegExp(`(?:${WRAPUP_CLOSERS_EN.map(escapeRegExp).join('|')})`, 'giu'),
+      new RegExp(`(?:${WRAPUP_CLOSERS_IT.map(escapeRegExp).join('|')})`, 'giu'),
+      WRAPUP_CLOSER_MESSAGE,
+    );
+    if (classifyLanguage(text) !== 'en') {
+      const { window, offset } = closingWindow(text);
+      if (window.toLowerCase().endsWith(CLOSING_QUESTION_IT)) {
+        const start = offset + window.length - CLOSING_QUESTION_IT.length;
+        out.push({
+          start,
+          end: offset + window.length,
+          message: `${WRAPUP_CLOSER_MESSAGE} (Italian)`,
+        });
+      }
+      const verbMatch = CLOSER_VERB_IT.exec(window);
+      if (verbMatch) {
+        const start = offset + verbMatch.index;
+        out.push({
+          start,
+          end: start + verbMatch[0].length,
+          message: `${WRAPUP_CLOSER_MESSAGE} (Italian)`,
+        });
+      }
+    }
+    return out.sort((a, b) => a.start - b.start);
+  },
+};
+
+/** house-style.ts's "not just X, but Y" / "it's not X, it's Y"
+ * constructions, bounded to one clause so the match cannot cross a
+ * sentence, plus the direct Italian counterparts: "non solo X ma Y" and
+ * "non è X, è Y". "è" is not an ASCII word character, so the Italian half
+ * bounds it with a Unicode-letter lookaround instead of `\b` - `\b` never
+ * matches next to an accented letter in a JS regex, `u` flag or not. */
+const NOT_X_BUT_Y_MESSAGE = '"Not just X but Y" construction: a listed LinkedIn tell.';
+
+const NOT_X_BUT_Y_RULE: Rule = {
+  id: 'not-x-but-y',
+  kind: 'structural',
+  message: NOT_X_BUT_Y_MESSAGE,
+  scan: (text) =>
+    scanBilingual(
+      text,
+      /\bnot\s+just\b[^.!?\n]{0,80}?\bbut\b|\bit'?s\s+not\b[^.!?\n]{0,80}?,\s*it'?s\b/giu,
+      /\bnon\s+solo\b[^.!?\n]{0,80}?\bma\b|\bnon\s+è(?![\p{L}\p{N}_])[^.!?\n]{0,80}?,\s*è(?![\p{L}\p{N}_])/giu,
+      NOT_X_BUT_Y_MESSAGE,
+    ),
+};
 
 /** A rhetorical question as the very first sentence ("Ever wondered why...?")
  * - a classic LinkedIn opener. Only the opener is checked: a genuine question
@@ -277,12 +460,24 @@ const RHETORICAL_OPENER_RULE: Rule = {
   },
 };
 
-const FAST_PACED_RULE = regexRule(
-  'fast-paced-cliche',
-  'structural',
-  '"In today\'s fast-paced" cliche: a listed LinkedIn tell.',
-  /\bin\s+today'?s\s+fast-paced\b/giu,
-);
+/** house-style.ts's "in today's fast-paced world" cliche, plus its direct
+ * Italian counterpart "in un mondo sempre più" ("in an ever more ...
+ * world"). No trailing `\b` on the Italian pattern: it ends on "più", and
+ * `\b` never matches next to a non-ASCII letter in a JS regex. */
+const FAST_PACED_MESSAGE = '"In today\'s fast-paced" cliche: a listed LinkedIn tell.';
+
+const FAST_PACED_RULE: Rule = {
+  id: 'fast-paced-cliche',
+  kind: 'structural',
+  message: FAST_PACED_MESSAGE,
+  scan: (text) =>
+    scanBilingual(
+      text,
+      /\bin\s+today'?s\s+fast-paced\b/giu,
+      /\bin\s+un\s+mondo\s+sempre\s+pi\u00f9(?![\p{L}\p{N}_])/giu,
+      FAST_PACED_MESSAGE,
+    ),
+};
 
 /** Three or more hashtags in a row (a "hashtag stack"), separated only by
  * whitespace or commas. */
@@ -303,17 +498,33 @@ const EMOJI_BULLET_RULE = regexRule(
 
 /**
  * A tricolon: three short, comma-separated items closed with an Oxford
- * comma before "and"/"or" ("faster, cheaper, and better"). Bounded to short
- * items (at most four words each) and to one line, so an ordinary sentence
- * that happens to list three things without this shape is not flagged - the
- * counterexample test below is exactly that sentence.
+ * comma before a conjunction ("faster, cheaper, and better" / "più veloce,
+ * più semplice, e più economico"). Bounded to short items (at most four
+ * words each) and to one line, so an ordinary sentence that happens to
+ * list three things without this shape is not flagged - the counterexample
+ * test below is exactly that sentence.
  */
-const TRICOLON_RULE = regexRule(
-  'tricolon',
-  'structural',
-  'Tricolon (rule-of-three list): a listed LinkedIn tell.',
-  /\b(?:\w[\w'-]*(?:\s+\w[\w'-]*){0,3}),\s*(?:\w[\w'-]*(?:\s+\w[\w'-]*){0,3}),\s*(?:and|or)\s+\w[\w'-]*(?:\s+\w[\w'-]*){0,3}\b/giu,
-);
+const TRICOLON_ITEM = `\\w[\\w'-]*(?:\\s+\\w[\\w'-]*){0,3}`;
+const TRICOLON_MESSAGE = 'Tricolon (rule-of-three list): a listed LinkedIn tell.';
+
+const TRICOLON_RULE: Rule = {
+  id: 'tricolon',
+  kind: 'structural',
+  message: TRICOLON_MESSAGE,
+  scan: (text) =>
+    scanBilingual(
+      text,
+      new RegExp(
+        `\\b(?:${TRICOLON_ITEM}),\\s*(?:${TRICOLON_ITEM}),\\s*(?:and|or)\\s+${TRICOLON_ITEM}\\b`,
+        'giu',
+      ),
+      new RegExp(
+        `\\b(?:${TRICOLON_ITEM}),\\s*(?:${TRICOLON_ITEM}),\\s*(?:e|o)\\s+${TRICOLON_ITEM}\\b`,
+        'giu',
+      ),
+      TRICOLON_MESSAGE,
+    ),
+};
 
 const STRUCTURAL_RULES: Rule[] = [
   FILLER_OPENER_RULE,
@@ -337,11 +548,11 @@ const ALL_RULES: Rule[] = [...CHARACTER_RULES, ...STRUCTURAL_RULES];
 export function checkStyle(text: string): StyleFinding[] {
   const findings: StyleFinding[] = [];
   for (const rule of ALL_RULES) {
-    for (const { start, end, repair } of rule.scan(text)) {
+    for (const { start, end, repair, message } of rule.scan(text)) {
       findings.push({
         ruleId: rule.id,
         kind: rule.kind,
-        message: rule.message,
+        message: message ?? rule.message,
         span: text.slice(start, end),
         start,
         end,

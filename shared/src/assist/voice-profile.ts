@@ -693,7 +693,7 @@ export const EMPTY_LANGUAGE: LanguageProfile = {
   byKind: {},
 };
 
-function classifyLanguage(text: string): 'en' | 'it' | 'unknown' {
+export function classifyLanguage(text: string): 'en' | 'it' | 'unknown' {
   const en = (text.match(EN_STOPWORDS_GLOBAL) ?? []).length;
   const it = (text.match(IT_STOPWORDS_GLOBAL) ?? []).length;
   if (en >= LANGUAGE_MARKER_MIN && en > it) return 'en';
