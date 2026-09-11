@@ -1327,3 +1327,72 @@ export function readOwnPosts(root: ParentNode = document): OwnPost[] {
   }
   return out;
 }
+
+/** A comment the operator wrote, read off their own `recent-activity/comments`
+ * tab (LOR-228) - the comment genre alongside `readOwnPosts`' own posts. No
+ * permalink here either, for the same reason `OwnPost` carries none (see its
+ * own doc comment): every `href` on the anonymised capture is rewritten, and
+ * a URL built from the urn would be untested and unresolved. `context` is
+ * the post's own text the comment answers - never a URL, unlike the
+ * LinkedIn-export importer's `context` (`voice-import.ts`'s
+ * `parseCommentsCsv`, which does have a real link in the export) - so a
+ * caller rendering both genres of `context` the same way (the Voice page)
+ * has to tell them apart by shape, not assume one. */
+export type OwnComment = {
+  externalId: string;
+  text: string;
+  context: string | null;
+  relativeTime: string | null;
+};
+
+/**
+ * Comments the operator wrote on other people's posts, from the same
+ * `recent-activity` list `readOwnPosts` reads - the `/comments` tab of it,
+ * specifically. Reuses `findFeedPosts`/`readPostIdentifier`/`readPostText`
+ * exactly as `readOwnPosts` does, plus `findPostComments`/`readCommentAuthor`/
+ * `readCommentBody`, already used elsewhere in this module for the same
+ * classic-frontend comment markup.
+ *
+ * A card on this tab is not always one comment: replying to someone renders
+ * the parent comment alongside the operator's own reply, nested the same way
+ * `findParentCommentId` already documents (verified against a real capture,
+ * own-activity-comments.html - one of its five cards is exactly this shape).
+ * Telling the two apart cannot be done by name or position, since either
+ * comment could come first in the reply case, so this compares each
+ * comment's own profile link against `readOwnProfilePageHandle` - the page's
+ * own subject, the same guard `readOwnProfile`/`readOwnPosts` already key
+ * on rather than whoever is signed in - and only keeps the ones that match.
+ * A page whose subject cannot be read at all (`readOwnProfilePageHandle`
+ * returns `null`) yields nothing rather than guessing whose comments these
+ * are.
+ *
+ * `relativeTime` is each comment's *own* rendered time
+ * (`readCommentRelativeTime`), not the post's (`readOwnPostRelativeTime`,
+ * what `readOwnPosts` uses for a post's own card): measured on the real
+ * capture, a reply's containing card still carries the *post's* age in its
+ * byline (two days, in one measured case) while the reply itself was written
+ * hours later - reusing the post's own timestamp for a comment would silently
+ * misreport how old it is.
+ */
+export function readOwnComments(root: ParentNode = document): OwnComment[] {
+  const doc = (root as Node).ownerDocument ?? (root as Document);
+  const pageHandle = readOwnProfilePageHandle(doc);
+  if (!pageHandle) return [];
+
+  const comments = findPostComments(root);
+  const out: OwnComment[] = [];
+  for (const post of findFeedPosts(root)) {
+    const identifier = readPostIdentifier(post, root);
+    if (identifier.kind !== 'urn' || !identifier.value) continue;
+    const context = readPostText(post, root);
+    for (const comment of comments) {
+      if (!post.contains(comment)) continue;
+      if (readCommentAuthor(comment, root).handle !== pageHandle) continue;
+      const externalId = comment.getAttribute('data-id');
+      const text = readCommentBody(comment, root);
+      if (!externalId || !text) continue;
+      out.push({ externalId, text, context, relativeTime: readCommentRelativeTime(comment, root) });
+    }
+  }
+  return out;
+}

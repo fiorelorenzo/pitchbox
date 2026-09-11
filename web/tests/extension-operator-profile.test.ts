@@ -284,4 +284,63 @@ describe('POST /api/extension/operator-profile', () => {
       } as never),
     ).rejects.toMatchObject({ status: 400 });
   });
+
+  // LOR-228: the extension's own /comments capture, alongside the existing
+  // posts one.
+  it('records a captured comment with genre "comment" and the post it answered as context', async () => {
+    const org = await seedOrg('op-profile-comment');
+    await mintDevice(org.id, 'tokComment');
+    const linkedinId = await linkedinPlatformId();
+
+    const res = await operatorProfilePost({
+      request: bearer(
+        'tokComment',
+        capture({
+          comments: [
+            {
+              externalId: 'urn:li:comment:(activity:1,2)',
+              text: 'Great point.',
+              context: 'The original post text.',
+            },
+          ],
+        }),
+      ),
+    } as never);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; voiceSamplesRecorded: number };
+    expect(body).toEqual({ ok: true, voiceSamplesRecorded: 1 });
+
+    const [row] = await getDb()
+      .select()
+      .from(schema.operatorVoiceSamples)
+      .where(eq(schema.operatorVoiceSamples.organizationId, org.id));
+    expect(row.genre).toBe('comment');
+    expect(row.source).toBe('capture');
+    expect(row.context).toBe('The original post text.');
+    expect(row.text).toBe('Great point.');
+    expect(row.platformId).toBe(linkedinId);
+  });
+
+  it('records posts and comments from the same capture, each keeping its own genre, and dedupes each on re-capture', async () => {
+    const org = await seedOrg('op-profile-mixed-genre');
+    await mintDevice(org.id, 'tokMixed');
+
+    const captureBody = capture({
+      posts: [{ externalId: 'urn:li:activity:1', text: 'A post.' }],
+      comments: [
+        { externalId: 'urn:li:comment:(activity:1,2)', text: 'A comment.', context: 'A post.' },
+      ],
+    });
+    await operatorProfilePost({ request: bearer('tokMixed', captureBody) } as never);
+    // Re-capturing the identical payload must not grow either row.
+    await operatorProfilePost({ request: bearer('tokMixed', captureBody) } as never);
+
+    const rows = await getDb()
+      .select()
+      .from(schema.operatorVoiceSamples)
+      .where(eq(schema.operatorVoiceSamples.organizationId, org.id));
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.text === 'A post.')?.genre).toBe('post');
+    expect(rows.find((r) => r.text === 'A comment.')?.genre).toBe('comment');
+  });
 });

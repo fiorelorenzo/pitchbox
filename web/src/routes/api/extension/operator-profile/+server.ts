@@ -53,6 +53,9 @@ const MAX_EXPERIENCE_SUMMARY_LEN = 1200;
 const MAX_POST_TEXT_LEN = 3000;
 const MAX_EXPERIENCES = 20;
 const MAX_POSTS = 20;
+// A card on the comments tab renders at most one post-and-comment pair, so
+// this shares MAX_POSTS's own bound rather than inventing a separate one.
+const MAX_COMMENTS = 20;
 
 /** Trims and truncates - used across every free-text field this route
  * accepts (handle, name, headline, about, each experience field, each post
@@ -85,6 +88,19 @@ const PostSchema = z.object({
   postedAt: z.string().optional(),
 });
 
+// LOR-228: a comment the operator wrote on someone else's post, from the
+// same recent-activity list's `/comments` tab. No `url`/`postedAt` - see
+// `readOwnComments`'s own doc comment in linkedin-dom.ts for why the
+// extension has no post permalink to send and doesn't send a machine
+// timestamp for a relative-time string either, the same posture `PostSchema`
+// above already has. `context` is the post's own text the comment answers,
+// clamped the same as any other free-text field off a real page.
+const CommentSchema = z.object({
+  externalId: z.string().min(1),
+  text: z.string().min(1),
+  context: z.string().optional(),
+});
+
 const BodySchema = z.object({
   handle: z.string().min(1),
   displayName: z.string().optional(),
@@ -92,6 +108,7 @@ const BodySchema = z.object({
   about: z.string().optional(),
   experiences: z.array(ExperienceSchema).max(MAX_EXPERIENCES).optional(),
   posts: z.array(PostSchema).max(MAX_POSTS).optional(),
+  comments: z.array(CommentSchema).max(MAX_COMMENTS).optional(),
   /** Human asked, from Settings, to let a fresh capture replace a
    * hand-edited (`source: 'manual'`) row. The extension itself never sets
    * this. */
@@ -154,18 +171,25 @@ export async function POST({ request }: { request: Request }) {
     .limit(1);
 
   let voiceSamplesRecorded = 0;
-  if (platform && body.posts?.length) {
-    voiceSamplesRecorded = await recordVoiceSamples(
-      db,
-      orgId,
-      platform.id,
-      body.posts.slice(0, MAX_POSTS).map((p) => ({
-        externalId: p.externalId,
-        text: clamp(p.text, MAX_POST_TEXT_LEN),
-        url: p.url ?? null,
-        postedAt: p.postedAt ?? null,
-      })),
-    );
+  if (platform && (body.posts?.length || body.comments?.length)) {
+    const postSamples = (body.posts ?? []).slice(0, MAX_POSTS).map((p) => ({
+      externalId: p.externalId,
+      text: clamp(p.text, MAX_POST_TEXT_LEN),
+      url: p.url ?? null,
+      postedAt: p.postedAt ?? null,
+    }));
+    // genre defaults to 'post' inside recordVoiceSamples (LOR-223) - only a
+    // comment needs to say so, and to carry the post it answers as context.
+    const commentSamples = (body.comments ?? []).slice(0, MAX_COMMENTS).map((c) => ({
+      externalId: c.externalId,
+      text: clamp(c.text, MAX_POST_TEXT_LEN),
+      genre: 'comment' as const,
+      context: c.context ? clamp(c.context, MAX_POST_TEXT_LEN) : null,
+    }));
+    voiceSamplesRecorded = await recordVoiceSamples(db, orgId, platform.id, [
+      ...postSamples,
+      ...commentSamples,
+    ]);
     // A real new sample changes the corpus the voice profile is derived
     // from (#407) - refresh it here rather than waiting for the human to
     // notice in Settings. A no-op on a `source: 'manual'` row, same

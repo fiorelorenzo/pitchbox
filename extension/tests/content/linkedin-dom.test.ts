@@ -16,6 +16,7 @@ import {
   readOwnProfilePageHandle,
   readOwnProfile,
   readOwnPosts,
+  readOwnComments,
   getSelectorHealthReport,
   resetSelectorHealth,
   selectorHealthActivityEvents,
@@ -34,6 +35,7 @@ import FEED_HTML from './fixtures/linkedin/feed.html?raw';
 import POST_DETAIL_HTML from './fixtures/linkedin/post-detail.html?raw';
 import OWN_PROFILE_HTML from './fixtures/linkedin/own-profile.html?raw';
 import OWN_ACTIVITY_HTML from './fixtures/linkedin/own-activity.html?raw';
+import OWN_ACTIVITY_COMMENTS_HTML from './fixtures/linkedin/own-activity-comments.html?raw';
 
 function render(html: string): void {
   document.body.innerHTML = html;
@@ -768,6 +770,94 @@ describe('readOwnPosts: synthetic markup', () => {
       </div>
     `);
     expect(readOwnPosts(document)).toEqual([]);
+  });
+});
+
+describe('readOwnComments: own-activity-comments.html (classic frontend, real capture)', () => {
+  it('reads exactly one comment per card, even the one where a reply thread renders two authors', () => {
+    setUrl('/in/example-person/recent-activity/comments/');
+    render(OWN_ACTIVITY_COMMENTS_HTML);
+    const comments = readOwnComments(document);
+    // Five activity cards in the capture (see the fixture's own data-urn
+    // count), one of which renders a parent comment plus the operator's own
+    // reply nested inside it - readOwnComments must contribute exactly one
+    // entry per card either way, not one per comment article, or a reply
+    // thread would silently double-count.
+    expect(comments).toHaveLength(5);
+    expect(new Set(comments.map((c) => c.externalId)).size).toBe(5);
+    for (const comment of comments) {
+      expect(comment.externalId).toMatch(/^urn:li:comment:/);
+      expect(comment.text.length).toBeGreaterThan(0);
+      expect(comment.context?.length ?? 0).toBeGreaterThan(0);
+      expect(comment.relativeTime).toMatch(/\d/);
+    }
+  });
+
+  it("reads each comment's own relative time, not the post's - measurably different on the reply card", () => {
+    setUrl('/in/example-person/recent-activity/comments/');
+    render(OWN_ACTIVITY_COMMENTS_HTML);
+    const comments = readOwnComments(document);
+    // Every relativeTime here comes from readCommentRelativeTime's own
+    // <time> element, which never carries the trailing "•" LinkedIn's
+    // aria-hidden byline text does (readOwnPostRelativeTime's own shape,
+    // verified in own-activity.html's own tests above) - a stray "•" would
+    // mean this reused the post's timestamp instead of the comment's.
+    for (const comment of comments) expect(comment.relativeTime).not.toMatch(/•/);
+  });
+});
+
+describe('readOwnComments: synthetic markup', () => {
+  it("keeps only the comment authored by the page's own subject, skipping another author's parent comment", () => {
+    setUrl('/in/example-person/recent-activity/comments/');
+    render(`
+      <div role="article" data-urn="urn:li:activity:1111">
+        <div class="update-components-text">The post about the analytical engine.</div>
+        <article data-id="urn:li:comment:(activity:1111,9001)">
+          <h3><a href="/in/other-person/"><span>Someone Else</span></a></h3>
+          <section>Not mine.</section>
+          <time>3h</time>
+        </article>
+        <article data-id="urn:li:comment:(activity:1111,9002)">
+          <h3><a href="/in/example-person/"><span>The Operator</span></a></h3>
+          <section>My own reply.</section>
+          <time>1h</time>
+        </article>
+      </div>
+    `);
+    expect(readOwnComments(document)).toEqual([
+      {
+        externalId: 'urn:li:comment:(activity:1111,9002)',
+        text: 'My own reply.',
+        context: 'The post about the analytical engine.',
+        relativeTime: '1h',
+      },
+    ]);
+  });
+
+  it("yields nothing when the page's own subject cannot be read - never guesses whose comments these are", () => {
+    setUrl('/feed/');
+    render(`
+      <div role="article" data-urn="urn:li:activity:1111">
+        <div class="update-components-text">A post.</div>
+        <article data-id="urn:li:comment:(activity:1111,9001)">
+          <h3><a href="/in/example-person/"><span>The Operator</span></a></h3>
+          <section>A comment.</section>
+          <time>1h</time>
+        </article>
+      </div>
+    `);
+    expect(readOwnComments(document)).toEqual([]);
+  });
+
+  it('skips a feed-sdui sighting: no classic comment markup to read at all', () => {
+    setUrl('/in/example-person/feed/');
+    render(`
+      <div role="listitem">
+        <div data-sdui-anchor-id="feed-header-1">Ada Lovelace</div>
+        <div data-sdui-anchor-id="commentary-1">A feed post with no stable identifier.</div>
+      </div>
+    `);
+    expect(readOwnComments(document)).toEqual([]);
   });
 });
 

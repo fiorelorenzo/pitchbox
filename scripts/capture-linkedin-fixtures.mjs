@@ -161,10 +161,19 @@ function extractAnonymised(rootSelector, profileSlug, extraScrub) {
   const extraRe = EXTRA.length ? new RegExp(EXTRA.map(escape).join('|'), 'gi') : null;
   const scrubExtra = (s) => (extraRe ? s.replace(extraRe, 'Acme') : s);
 
+  // A short comment can be nothing but a literal link ("https://pitchbox.app"),
+  // kept otherwise-verbatim by the branch below since it is under the LOREM
+  // threshold - found capturing own-activity-comments.html (LOR-228), where
+  // two real comments were exactly this shape. `LOREM` already replaces
+  // anything longer, so this only has to cover the short branch.
+  const URL_SHAPED = /https?:\/\/\S+/gi;
   const scrubText = (raw) => {
     const s = raw.replace(/\s+/g, ' ').trim();
     if (!s || /^\d+$/.test(s)) return s;
-    if (s.length <= 24) return scrubExtra(s.replace(NAME_SHAPED, (m) => fakeName(m)));
+    if (s.length <= 24) {
+      const noUrl = s.replace(URL_SHAPED, 'a shared link');
+      return scrubExtra(noUrl.replace(NAME_SHAPED, (m) => fakeName(m)));
+    }
     return LOREM.slice(0, Math.min(LOREM.length, s.length));
   };
   // `(?!)` never matches, so an absent `--profile` scrubs nothing rather than
@@ -220,6 +229,28 @@ function extractAnonymised(rootSelector, profileSlug, extraScrub) {
     return value.replace(/\d{8,}/g, renumber);
   };
 
+  const hrefHandles = new Map();
+  let hrefHandleNext = 0;
+  // A card on the operator's own recent-activity/comments page (LOR-228) can
+  // render more than one author's comment under the same post - a parent
+  // comment plus the operator's own reply to it - and `readOwnComments`
+  // tells them apart by comparing each comment's own profile link against
+  // the page's own subject. Folding every anchor into the same
+  // `/in/example-person/` placeholder (the prior behaviour) would erase
+  // exactly that signal, so a real `/in/<slug>` is mapped to the operator's
+  // placeholder only when it actually is `--profile`'s slug; every other
+  // distinct real slug gets its own synthetic one instead of collapsing
+  // into "everyone is the same person". Anything that is not a profile link
+  // at all keeps the old blanket placeholder, unchanged.
+  function scrubHref(realHref) {
+    const m = (realHref ?? '').match(/\/in\/([^/?#]+)/);
+    if (!m) return '/in/example-person/';
+    const slug = decodeURIComponent(m[1]);
+    if (profileSlug && slug === profileSlug) return '/in/example-person/';
+    if (!hrefHandles.has(slug)) hrefHandles.set(slug, `other-person-${++hrefHandleNext}`);
+    return `/in/${hrefHandles.get(slug)}/`;
+  }
+
   const SKIP = new Set(['script', 'style', 'link', 'svg', 'video', 'canvas', 'iframe', 'noscript']);
 
   const clone = (from, into, depth) => {
@@ -241,7 +272,7 @@ function extractAnonymised(rootSelector, profileSlug, extraScrub) {
       const el = document.createElement(tag);
       for (const a of child.attributes)
         if (KEEP.has(a.name)) el.setAttribute(a.name, scrubAttr(a.name, a.value));
-      if (tag === 'a') el.setAttribute('href', '/in/example-person/');
+      if (tag === 'a') el.setAttribute('href', scrubHref(child.getAttribute('href')));
       into.appendChild(el);
       clone(child, el, depth + 1);
       if (child.shadowRoot) {
@@ -303,6 +334,16 @@ const PAGES = [
         {
           file: 'own-activity.html',
           url: `https://www.linkedin.com/in/${PROFILE_SLUG}/recent-activity/all/`,
+          root: 'main',
+        },
+        // LOR-228: the comments tab of the same recent-activity list. Same
+        // classic stack, same `div[data-urn][role="article"]` per card, but
+        // each card renders the operator's own comment alongside the post it
+        // answered rather than a post of their own - `readOwnComments`
+        // reads both off one card, so the fixture has to carry both.
+        {
+          file: 'own-activity-comments.html',
+          url: `https://www.linkedin.com/in/${PROFILE_SLUG}/recent-activity/comments/`,
           root: 'main',
         },
       ]
