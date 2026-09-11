@@ -1,6 +1,6 @@
 {
   "name": "@pitchbox/shared",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "type": "module",
@@ -122,7 +122,7 @@
     "@agentclientprotocol/sdk": "^1.1.0",
     "@ai-sdk/gateway": "^4.0.75",
     "@ai-sdk/mcp": "^2.0.45",
-    "adm-zip": "^0.6.0",
+    "adm-zip": "^0.6.1",
     "ai": "^7.0.93",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",

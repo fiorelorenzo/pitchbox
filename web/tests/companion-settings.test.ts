@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterAll } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
+import { LOCALES, dictionariesForTesting } from '../src/lib/i18n/index.js';
 import {
   load as loadPersona,
   actions as personaActions,
@@ -407,13 +408,23 @@ describe('companion/voice actions', () => {
     ).toBe(403);
   });
 
-  it('importVoice: refuses to run without a file, with a readable message rather than a stack trace', async () => {
+  it('importVoice: refuses to run without a file, naming a cause the page can render', async () => {
     const orgId = await seedOrg('comp-import-nofile');
     const result = (await voiceActions.importVoice(
       actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', new FormData()),
-    )) as { status: number; data: { importError: string } };
+    )) as { status: number; data: { importErrorCode: string } };
     expect(result.status).toBe(400);
-    expect(result.data.importError).toMatch(/choose a linkedin export/i);
+    expect(result.data.importErrorCode).toBe('no-file');
+    // The refusal is a code rather than a sentence (LOR-263), so the thing a
+    // customer actually reads lives in the catalogue: a code with no copy in
+    // both locales renders as the bare key on the page.
+    for (const locale of LOCALES) {
+      expect(
+        dictionariesForTesting[locale][
+          `companion.voice.import-error.${result.data.importErrorCode}`
+        ],
+      ).toBeTruthy();
+    }
   });
 
   it('importVoice: refuses a file whose header matches neither known export shape', async () => {
@@ -422,9 +433,16 @@ describe('companion/voice actions', () => {
     form.set('file', csvFile('Foo,Bar\n1,2', 'export.csv'));
     const result = (await voiceActions.importVoice(
       actionEvent<VoiceActionEvent>(orgId, 'admin', '/companion/voice', form),
-    )) as { status: number; data: { importError: string } };
+    )) as { status: number; data: { importErrorCode: string } };
     expect(result.status).toBe(400);
-    expect(result.data.importError).toBeTruthy();
+    expect(result.data.importErrorCode).toBe('missing-basic-archive');
+    for (const locale of LOCALES) {
+      expect(
+        dictionariesForTesting[locale][
+          `companion.voice.import-error.${result.data.importErrorCode}`
+        ],
+      ).toBeTruthy();
+    }
   });
 
   it('importVoice: parses Shares.csv the same way the CLI does, dedups on re-upload, and re-derives the voice profile', async () => {
