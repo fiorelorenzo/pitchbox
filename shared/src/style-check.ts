@@ -40,6 +40,16 @@
 // of what the product writes. On `unknown` (too little evidence either way)
 // both lists run: a false positive on a structural finding costs one model
 // round trip, a false negative ships the tell.
+//
+// LOR-291: a caller that already knows the language - the campaign's own
+// `campaign.config.voice.language` pin - passes it as `checkStyle`'s
+// `expectedLanguage` and it wins outright, the same precedence
+// `computeDeterministicQuality`'s `expectedLanguage` and
+// `resolveDraftLanguage`'s `pin` already give a pin over a guess.
+// `classifyLanguage(text)` only ever runs as the fallback for a caller
+// with no pin - it never overrides one, and no rule becomes skippable:
+// an expected language only selects which phrase list a bilingual rule
+// reads, never whether the rule runs at all.
 
 import { classifyLanguage } from './assist/voice-profile.js';
 
@@ -71,8 +81,15 @@ interface Rule {
   message: string;
   /** Every match in `text`, earliest first, never overlapping. A match may
    * override `message` (used for a non-English phrase list match) instead
-   * of falling back to the rule's own `message`. */
-  scan(text: string): Array<{ start: number; end: number; repair?: string; message?: string }>;
+   * of falling back to the rule's own `message`. `lang` is the language
+   * `checkStyle` resolved for this call (LOR-291: the caller's pin, or
+   * `classifyLanguage(text)` when it had none) - a character rule ignores
+   * it, every bilingual structural rule dispatches on it instead of
+   * reclassifying the text itself. */
+  scan(
+    text: string,
+    lang: 'en' | 'it' | 'unknown',
+  ): Array<{ start: number; end: number; repair?: string; message?: string }>;
 }
 
 function regexRule(
@@ -207,6 +224,10 @@ CHARACTER_RULES.push(EN_DASH_BETWEEN_WORDS);
  * ships the tell. A match picked up from the Italian side tags its
  * finding's message so a reviewer is not confused about which list
  * matched.
+ *
+ * `lang` is resolved once by `checkStyle` (LOR-291), never reclassified
+ * per rule: a caller's expected-language pin when it gave one, else
+ * `classifyLanguage(text)`.
  */
 type LangMatch = { start: number; end: number; message?: string };
 
@@ -215,8 +236,8 @@ function scanBilingual(
   enPattern: RegExp,
   itPattern: RegExp,
   message: string,
+  lang: 'en' | 'it' | 'unknown',
 ): LangMatch[] {
-  const lang = classifyLanguage(text);
   const out: LangMatch[] = [];
   if (lang !== 'it') {
     for (const m of text.matchAll(enPattern)) {
@@ -242,7 +263,12 @@ function bilingualWordRule(
 ): Rule {
   const enPattern = new RegExp(`\\b(?:${enWords.map(escapeRegExp).join('|')})\\b`, 'giu');
   const itPattern = new RegExp(`\\b(?:${itWords.map(escapeRegExp).join('|')})\\b`, 'giu');
-  return { id, kind, message, scan: (text) => scanBilingual(text, enPattern, itPattern, message) };
+  return {
+    id,
+    kind,
+    message,
+    scan: (text, lang) => scanBilingual(text, enPattern, itPattern, message, lang),
+  };
 }
 
 /** house-style.ts's own opener list, plus its direct Italian counterpart
@@ -275,11 +301,10 @@ const FILLER_OPENER_RULE: Rule = {
   id: 'filler-opener',
   kind: 'structural',
   message: FILLER_OPENER_MESSAGE,
-  scan(text) {
+  scan(text, lang) {
     const leading = text.match(/^\s*/u)?.[0].length ?? 0;
     const rest = text.slice(leading);
     const lower = rest.toLowerCase();
-    const lang = classifyLanguage(text);
     const candidates: Array<{ phrase: string; italian: boolean }> = [];
     if (lang !== 'it') {
       for (const phrase of FILLER_OPENERS_EN) candidates.push({ phrase, italian: false });
@@ -392,14 +417,15 @@ const WRAPUP_CLOSER_RULE: Rule = {
   id: 'wrapup-closer',
   kind: 'structural',
   message: WRAPUP_CLOSER_MESSAGE,
-  scan(text) {
+  scan(text, lang) {
     const out = scanBilingual(
       text,
       new RegExp(`(?:${WRAPUP_CLOSERS_EN.map(escapeRegExp).join('|')})`, 'giu'),
       new RegExp(`(?:${WRAPUP_CLOSERS_IT.map(escapeRegExp).join('|')})`, 'giu'),
       WRAPUP_CLOSER_MESSAGE,
+      lang,
     );
-    if (classifyLanguage(text) !== 'en') {
+    if (lang !== 'en') {
       const { window, offset } = closingWindow(text);
       if (window.toLowerCase().endsWith(CLOSING_QUESTION_IT)) {
         const start = offset + window.length - CLOSING_QUESTION_IT.length;
@@ -435,12 +461,13 @@ const NOT_X_BUT_Y_RULE: Rule = {
   id: 'not-x-but-y',
   kind: 'structural',
   message: NOT_X_BUT_Y_MESSAGE,
-  scan: (text) =>
+  scan: (text, lang) =>
     scanBilingual(
       text,
       /\bnot\s+just\b[^.!?\n]{0,80}?\bbut\b|\bit'?s\s+not\b[^.!?\n]{0,80}?,\s*it'?s\b/giu,
       /\bnon\s+solo\b[^.!?\n]{0,80}?\bma\b|\bnon\s+è(?![\p{L}\p{N}_])[^.!?\n]{0,80}?,\s*è(?![\p{L}\p{N}_])/giu,
       NOT_X_BUT_Y_MESSAGE,
+      lang,
     ),
 };
 
@@ -470,12 +497,13 @@ const FAST_PACED_RULE: Rule = {
   id: 'fast-paced-cliche',
   kind: 'structural',
   message: FAST_PACED_MESSAGE,
-  scan: (text) =>
+  scan: (text, lang) =>
     scanBilingual(
       text,
       /\bin\s+today'?s\s+fast-paced\b/giu,
       /\bin\s+un\s+mondo\s+sempre\s+pi\u00f9(?![\p{L}\p{N}_])/giu,
       FAST_PACED_MESSAGE,
+      lang,
     ),
 };
 
@@ -511,7 +539,7 @@ const TRICOLON_RULE: Rule = {
   id: 'tricolon',
   kind: 'structural',
   message: TRICOLON_MESSAGE,
-  scan: (text) =>
+  scan: (text, lang) =>
     scanBilingual(
       text,
       new RegExp(
@@ -523,6 +551,7 @@ const TRICOLON_RULE: Rule = {
         'giu',
       ),
       TRICOLON_MESSAGE,
+      lang,
     ),
 };
 
@@ -544,11 +573,24 @@ const ALL_RULES: Rule[] = [...CHARACTER_RULES, ...STRUCTURAL_RULES];
  * Runs every rule against `text` and returns every finding, earliest span
  * first. Unconditional: no argument here can turn a rule off, and no rule
  * short-circuits because another one already matched.
+ *
+ * `expectedLanguage` (LOR-291) is the campaign's own voice pin
+ * (`campaign.config.voice.language`), threaded here the same way
+ * `computeDeterministicQuality`'s `expectedLanguage` and
+ * `resolveDraftLanguage`'s `pin` already take one: it decides which
+ * bilingual phrase list a structural rule reads, in place of
+ * `classifyLanguage(text)` guessing off the very draft the pin exists to
+ * override. Absent, behaviour is exactly what it was before this
+ * parameter existed - `classifyLanguage(text)` decides, and `unknown`
+ * still runs both lists. Never a way to skip a rule: an expected language
+ * only ever selects which list a bilingual rule reads, the same "no
+ * options, skips nothing" invariant this module's header states.
  */
-export function checkStyle(text: string): StyleFinding[] {
+export function checkStyle(text: string, expectedLanguage?: 'en' | 'it'): StyleFinding[] {
+  const lang = expectedLanguage ?? classifyLanguage(text);
   const findings: StyleFinding[] = [];
   for (const rule of ALL_RULES) {
-    for (const { start, end, repair, message } of rule.scan(text)) {
+    for (const { start, end, repair, message } of rule.scan(text, lang)) {
       findings.push({
         ruleId: rule.id,
         kind: rule.kind,
@@ -665,14 +707,22 @@ export type RewriteFn = (text: string, findings: StyleFinding[]) => Promise<stri
  * way to skip the check: mechanical repair still runs, and any structural
  * finding that would have gone to the model comes back in `findings`
  * instead, unresolved but visible.
+ *
+ * `expectedLanguage` (LOR-291) is passed straight through to every
+ * `checkStyle` call this makes, including the post-rewrite recheck - see
+ * that function's own doc comment for the precedence over
+ * `classifyLanguage`.
  */
 export async function enforceHouseStyle(
   text: string,
   rewrite?: RewriteFn,
+  expectedLanguage?: 'en' | 'it',
 ): Promise<HouseStyleResult> {
   const mechanical = applyMechanicalRepairs(text);
   const repaired = mechanical !== text;
-  const structural = checkStyle(mechanical).filter((f) => f.kind === 'structural');
+  const structural = checkStyle(mechanical, expectedLanguage).filter(
+    (f) => f.kind === 'structural',
+  );
 
   if (structural.length === 0) {
     return { text: mechanical, findings: [], repaired, rewriteAttempted: false };
@@ -696,7 +746,9 @@ export async function enforceHouseStyle(
   // (a model asked to fix a tricolon can just as easily reintroduce an em
   // dash) and check again before trusting it.
   const rewrittenRepaired = applyMechanicalRepairs(rewritten);
-  const remaining = checkStyle(rewrittenRepaired).filter((f) => f.kind === 'structural');
+  const remaining = checkStyle(rewrittenRepaired, expectedLanguage).filter(
+    (f) => f.kind === 'structural',
+  );
   return {
     text: rewrittenRepaired,
     findings: remaining,

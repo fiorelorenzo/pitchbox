@@ -91,7 +91,9 @@ function extractOfferSubject(config: unknown): string | null {
  * `scoreDraftQuality`'s `expectedLanguage`, so a campaign pinned to
  * Italian that correctly writes Italian on an English post scores a
  * language match, not a manufactured mismatch against the post it was
- * explicitly asked to override.
+ * explicitly asked to override - and, since LOR-291, `enforceHouseStyle`'s
+ * own `expectedLanguage` below, so the style checker runs the pinned
+ * language's phrase list instead of guessing off the finished draft.
  */
 function extractVoiceLanguagePin(config: unknown): 'en' | 'it' | null {
   if (config == null || typeof config !== 'object') return null;
@@ -451,12 +453,23 @@ export async function createDrafts(runId: number, draftsInput: z.infer<typeof Pa
   // suggestion the operator can fix beats one he does not know is wrong.
   // Applies to `body` and `title` - the two fields a target actually reads;
   // `reasoning` is operator-facing only and is never sent.
+  // LOR-291: `languagePin` (read once above, same as `offerSubject`) is
+  // passed to every `enforceHouseStyle` call below - body, title, and each
+  // variant - so the bilingual phrase list the checker runs is the one the
+  // campaign actually pinned, not a fresh `classifyLanguage` guess at the
+  // finished draft. Absent a pin, `undefined` keeps today's behaviour
+  // exactly: `checkStyle` falls back to `classifyLanguage` itself.
   const styled = await Promise.all(
     allowed.map(async (d) => {
-      const bodyResult = await enforceHouseStyle(d.body);
-      const titleResult = d.title != null ? await enforceHouseStyle(d.title) : null;
+      const bodyResult = await enforceHouseStyle(d.body, undefined, languagePin ?? undefined);
+      const titleResult =
+        d.title != null
+          ? await enforceHouseStyle(d.title, undefined, languagePin ?? undefined)
+          : null;
       const variantResults = d.variants
-        ? await Promise.all(d.variants.map((v) => enforceHouseStyle(v)))
+        ? await Promise.all(
+            d.variants.map((v) => enforceHouseStyle(v, undefined, languagePin ?? undefined)),
+          )
         : null;
       const styledTitle = titleResult ? titleResult.text : (d.title ?? null);
       const styleFindings = [...bodyResult.findings, ...(titleResult?.findings ?? [])];
