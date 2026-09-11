@@ -9,6 +9,7 @@ import {
   type StyleFinding,
 } from '../src/style-check.js';
 import { HOUSE_STYLE_SECTION } from '../src/house-style.js';
+import { classifyLanguage } from '../src/assist/voice-profile.js';
 
 function ruleIds(findings: StyleFinding[]): string[] {
   return findings.map((f) => f.ruleId);
@@ -187,9 +188,60 @@ describe('checkStyle: the check is not conditional', () => {
   });
 
   it('has no flag or option that turns any rule off', () => {
-    // checkStyle takes exactly one argument: the text. There is nothing to
-    // pass that could disable a rule.
-    expect(checkStyle.length).toBe(1);
+    // The only optional argument, `expectedLanguage` (LOR-291), selects
+    // which bilingual phrase list a structural rule reads - it can never
+    // make a rule stop running. A character-level rule ignores it outright
+    // (same finding count with no pin, an English pin, or an Italian pin),
+    // and a bilingual structural rule still fires on its own language's
+    // list regardless of what, if anything, was passed.
+    expect(checkStyle('\u2014')).toHaveLength(1);
+    expect(checkStyle('\u2014', 'en')).toHaveLength(1);
+    expect(checkStyle('\u2014', 'it')).toHaveLength(1);
+    expect(ruleIds(checkStyle('Sinergia forte, davvero speciale.', 'it'))).toContain('puffery');
+    expect(ruleIds(checkStyle('This will leverage our stack.', 'en'))).toContain('puffery');
+  });
+});
+
+describe('checkStyle: an explicit expectedLanguage pin overrides classifyLanguage (LOR-291)', () => {
+  // A campaign pinned to a language (`campaign.config.voice.language`,
+  // LOR-265) can produce a short, genuinely mixed body classifyLanguage
+  // reads as `unknown` - LOR-280 measured this on roughly a third of short
+  // Italian text. This body is a realistic shape for that: Italian
+  // business copy that borrows an English term ("leverage") the same way
+  // it uses a real Italian one for the same idea ("innovativa"). The
+  // classifier's own read is asserted first, not assumed, since the whole
+  // point of this case is that it gives no reliable answer on its own.
+  const mixedBody = 'Innovativa soluzione qui, complimenti, leverage forte.';
+
+  it('classifyLanguage alone reads this body as unknown', () => {
+    expect(classifyLanguage(mixedBody)).toBe('unknown');
+  });
+
+  it('is checked against the Italian rules when the campaign is pinned to Italian', () => {
+    const pinned = checkStyle(mixedBody, 'it');
+    const puffery = pinned.filter((f) => f.ruleId === 'puffery');
+    // Exactly the Italian-list finding: "leverage" is a real English-list
+    // phrase too, and would be a second finding here if a pin did not
+    // exclude that list outright rather than merely deprioritizing it.
+    expect(puffery).toHaveLength(1);
+    expect(puffery[0]?.span).toBe('Innovativa');
+    expect(puffery[0]?.message).toContain('(Italian)');
+  });
+
+  it('is checked against both lists when there is no pin, exactly as before this parameter existed', () => {
+    const unpinned = checkStyle(mixedBody);
+    const spans = unpinned.filter((f) => f.ruleId === 'puffery').map((f) => f.span);
+    // Unchanged fallback: `unknown` still runs both phrase lists, so the
+    // same body that gets exactly one finding when pinned gets two with
+    // nothing to override the classifier's non-answer.
+    expect(spans).toContain('Innovativa');
+    expect(spans).toContain('leverage');
+  });
+
+  it('a pin to the other language reads the same body by its own list, never the classifier', () => {
+    const pinnedEn = checkStyle(mixedBody, 'en');
+    const spans = pinnedEn.filter((f) => f.ruleId === 'puffery').map((f) => f.span);
+    expect(spans).toEqual(['leverage']);
   });
 });
 
@@ -322,6 +374,16 @@ describe('enforceHouseStyle: the repair pass, in order', () => {
     const foundIds = ruleIds(result.findings);
     expect(foundIds).toContain('filler-opener');
     expect(foundIds).toContain('rhetorical-question-opener');
+  });
+
+  it('threads expectedLanguage into the structural check, same as checkStyle (LOR-291)', async () => {
+    const mixedBody = 'Innovativa soluzione qui, complimenti, leverage forte.';
+    const pinned = await enforceHouseStyle(mixedBody, undefined, 'it');
+    const puffery = pinned.findings.filter((f) => f.ruleId === 'puffery');
+    expect(puffery).toHaveLength(1);
+    expect(puffery[0]?.span).toBe('Innovativa');
+    const unpinned = await enforceHouseStyle(mixedBody);
+    expect(unpinned.findings.filter((f) => f.ruleId === 'puffery')).toHaveLength(2);
   });
 });
 

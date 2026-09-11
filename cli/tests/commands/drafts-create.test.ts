@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterAll } from 'vitest';
 import { execSync } from 'node:child_process';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
 import { eq, sql } from 'drizzle-orm';
+import { classifyLanguage } from '@pitchbox/shared/assist/voice-profile';
 
 function cli(args: string, stdin?: string): string {
   return execSync(`pnpm -s -F @pitchbox/cli dev ${args}`, {
@@ -513,9 +514,11 @@ describe('pitchbox drafts:create', () => {
   // LOR-265: the finding that makes the pin more than a prompt tweak - a
   // campaign pinned to Italian that correctly answers an English post in
   // Italian must score a language *match*, not a manufactured mismatch
-  // against the post it was explicitly asked to override, and the style
-  // checker (unchanged - `classifyLanguage` on the real, Italian body) must
-  // run the Italian phrase list on it, not the English one.
+  // against the post it was explicitly asked to override. This fixture's
+  // body is unambiguous Italian, so `classifyLanguage` alone already
+  // picks the Italian phrase list here regardless of the pin - the next
+  // test below (LOR-291) is the one that actually forces the pin to
+  // matter, on a body the classifier alone cannot read.
   it('a campaign pinned to Italian scores a language match on an English post, and the style checker runs the Italian rule list (LOR-265)', async () => {
     const db = getDb();
     const [platform] = await db
@@ -616,6 +619,94 @@ describe('pitchbox drafts:create', () => {
     expect(detail.deterministic.expectedLanguage).toBe('it');
     expect(detail.deterministic.languageMatch).toBe(true);
     expect(detail.deterministic.distance.languageMatch).toBe(0);
+  });
+
+  // LOR-291: the case the test above cannot prove, because its body is
+  // unambiguous Italian - `classifyLanguage` alone already picks the
+  // Italian list there, pin or no pin. This body is deliberately the
+  // shape LOR-280 measured as common and ambiguous: short, and it reads as
+  // `unknown` to `classifyLanguage` on its own (confirmed below rather
+  // than assumed). It also borrows a real English term ("leverage")
+  // exactly the way it uses a real Italian one for the same idea
+  // ("innovativa") - a realistic way for this exact ambiguity to occur.
+  // Before this issue, an `unknown` verdict ran *both* phrase lists, so
+  // "leverage" would ship as a second, spurious English-list finding
+  // alongside the real Italian one. Pinned to Italian, the checker must
+  // run the Italian list only.
+  it('a campaign pinned to Italian runs only the Italian rule list on a body classifyLanguage alone reads as unknown (LOR-291)', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'demo-lor291', name: 'D291' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        handle: 'marco',
+        role: 'personal',
+      })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: project.id,
+        platformId: platform.id,
+        name: 'c291',
+        skillSlug: 'reddit-commenter',
+        config: { voice: { language: 'it' } },
+      })
+      .returning();
+    const [run] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
+      .returning();
+
+    const body = 'Innovativa soluzione qui, complimenti, leverage forte.';
+    expect(classifyLanguage(body)).toBe('unknown');
+
+    const payload = JSON.stringify([
+      {
+        accountId: account.id,
+        kind: 'post_comment',
+        subreddit: 'smallbusiness',
+        targetUser: 'opuser',
+        body,
+        metadata: {},
+      },
+    ]);
+
+    const out = cli(`drafts:create --run=${run.id}`, payload);
+    const res = JSON.parse(out.trim().split('\n').at(-1)!);
+    expect(res.ok).toBe(true);
+    expect(res.data.inserted).toBe(1);
+
+    const [draft] = await db
+      .select()
+      .from(schema.drafts)
+      .where(eq(schema.drafts.accountId, account.id));
+
+    const metadata = draft.metadata as {
+      styleFindings?: Array<{ ruleId: string; message: string; span: string }>;
+    };
+    expect(metadata.styleFindings).toBeDefined();
+    const puffery = metadata.styleFindings!.filter((f) => f.ruleId === 'puffery');
+    // Exactly the Italian-list finding: the pin excludes the English list
+    // outright, so "leverage" (a real English-list phrase too) never
+    // ships as a second finding the way it would on an `unknown` verdict
+    // with no pin to decide for it.
+    expect(puffery).toHaveLength(1);
+    expect(puffery[0]?.span).toBe('Innovativa');
+    expect(puffery[0]?.message).toContain('(Italian)');
   });
 
   it('skips blocklisted targets and reports them in the response', async () => {
