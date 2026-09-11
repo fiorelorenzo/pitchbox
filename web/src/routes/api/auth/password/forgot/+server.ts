@@ -5,13 +5,15 @@ import {
   createPasswordResetToken,
   findUserByEmail,
   getLockoutUntil,
+  getUserLocale,
   loadAuthPolicy,
   normalizeEmail,
   recordAuthFailure,
 } from '@pitchbox/shared/auth';
 import { createMailTransport } from '@pitchbox/shared/mail/registry';
 import { loadMailEnv } from '@pitchbox/shared/mail/env';
-import { renderPlainTextMail } from '@pitchbox/shared/mail/template';
+import { passwordResetMail } from '@pitchbox/shared/mail/templates';
+import { DEFAULT_LOCALE, isLocale } from '@pitchbox/shared/messages';
 
 const Body = z.object({
   email: z.string().trim().pipe(z.email()),
@@ -77,12 +79,18 @@ export async function POST(event: RequestEvent) {
   if (user) {
     const { token } = await createPasswordResetToken(db, user.id);
     const resetUrl = `${event.url.origin}/reset/${token}`;
-    const rendered = renderPlainTextMail(
-      'Reset your Pitchbox password',
-      `Someone asked to reset the password on this Pitchbox account.\n\n` +
-        `Open this link within 20 minutes to choose a new one:\n${resetUrl}\n\n` +
-        `If this wasn't you, ignore this message - your password stays the same.`,
-    );
+    // The requester has no session (and may not even be the account holder
+    // probing an address they don't own), so the *request's* own
+    // `event.locals.locale` - cookie/Accept-Language of whoever is sitting
+    // here right now - is the wrong input. The mail has to speak the target
+    // account's own language, which only the account itself can name -
+    // exactly why LOR-260's precedence puts the account preference above
+    // the cookie in the first place. `getUserLocale` returns the raw
+    // column value (nullable, no DB-level enum), so `isLocale` re-validates
+    // it the same way `resolveLocale` re-validates a cookie.
+    const rawLocale = await getUserLocale(db, user.id);
+    const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+    const rendered = passwordResetMail(locale, resetUrl);
     const transport = createMailTransport(loadMailEnv());
     await transport.send({ to: email, ...rendered });
   }

@@ -16,7 +16,8 @@ import {
 } from '@pitchbox/shared/auth';
 import { createMailTransport } from '@pitchbox/shared/mail/registry';
 import { loadMailEnv } from '@pitchbox/shared/mail/env';
-import { renderPlainTextMail } from '@pitchbox/shared/mail/template';
+import { verifyEmailMail } from '@pitchbox/shared/mail/templates';
+import { t } from '@pitchbox/shared/messages';
 import {
   acceptInvite,
   createOrganization,
@@ -123,7 +124,7 @@ export async function POST(event: RequestEvent) {
     return json(
       {
         error: 'registration_closed',
-        message: 'Registration is disabled on this deployment. Ask its operator for an account.',
+        message: t(event.locals.locale, 'api.register.registration_closed'),
       },
       { status: 403 },
     );
@@ -133,7 +134,7 @@ export async function POST(event: RequestEvent) {
     return json(
       {
         error: 'invite_required',
-        message: 'This deployment is invite-only. Ask an organization owner for an invite link.',
+        message: t(event.locals.locale, 'api.register.invite_required'),
       },
       { status: 403 },
     );
@@ -253,13 +254,11 @@ export async function POST(event: RequestEvent) {
   if (!inviteEmailMatches) {
     const { token } = await createEmailVerificationToken(db, userId);
     const verifyUrl = `${event.url.origin}/verify/${token}`;
-    const rendered = renderPlainTextMail(
-      'Verify your Pitchbox email address',
-      `Welcome to Pitchbox. Confirm this address to start running campaigns.\n\n` +
-        `Open this link within 48 hours to verify:\n${verifyUrl}\n\n` +
-        `You can sign in and look around before you verify - you just can't ` +
-        `start a run yet. If you didn't create this account, ignore this message.`,
-    );
+    // No account preference exists yet at the instant this account is
+    // created - `event.locals.locale` is already the best guess LOR-260
+    // has (cookie, else Accept-Language), which is exactly what a
+    // pre-account visitor's locale is supposed to fall back to.
+    const rendered = verifyEmailMail(event.locals.locale, 'register', verifyUrl);
     const transport = createMailTransport(loadMailEnv());
     await transport.send({ to: email, ...rendered });
   }

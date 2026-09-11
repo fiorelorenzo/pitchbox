@@ -12,6 +12,7 @@ import { SCENARIO_SLUGS } from '@pitchbox/shared/campaigns';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
 import { isOrgReadOnly } from '@pitchbox/shared/plans';
+import { t } from '@pitchbox/shared/messages';
 
 const Body = z.object({
   projectId: z.number().int().positive(),
@@ -67,7 +68,7 @@ export async function POST(event: RequestEvent) {
     return json(
       {
         error: 'runner_not_allowed',
-        message: `Agent runner "${effectiveRunner}" is not available in this deployment's edition.`,
+        message: t(event.locals.locale, 'api.runner_not_allowed', { runner: effectiveRunner }),
       },
       { status: 400 },
     );

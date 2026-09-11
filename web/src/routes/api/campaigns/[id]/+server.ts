@@ -13,6 +13,7 @@ import {
 import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import { campaignBelongsToOrg } from '@pitchbox/shared/orgs';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
+import { t } from '@pitchbox/shared/messages';
 
 const Patch = z.object({
   name: z.string().min(1).max(120).optional(),
@@ -77,7 +78,9 @@ export async function PATCH(event: RequestEvent) {
       return json(
         {
           error: 'runner_not_allowed',
-          message: `Agent runner "${parsed.data.agentRunner}" is not available in this deployment's edition.`,
+          message: t(event.locals.locale, 'api.runner_not_allowed', {
+            runner: parsed.data.agentRunner,
+          }),
         },
         { status: 400 },
       );

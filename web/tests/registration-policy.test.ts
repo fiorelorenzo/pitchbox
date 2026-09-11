@@ -66,10 +66,15 @@ function registerEvent(body: unknown, jar: CookieJar): RequestEvent {
     // The route builds the verification link from the request's own origin
     // (#514, web/src/lib/trusted-origins.js), so a synthetic event without a
     // url makes it throw rather than answer - which is a fixture gap, not a
-    // route defect.
+    // route defect. Same reasoning for `locals.locale` (LOR-264): production
+    // always has it by the time a route handler runs (hooks.server.ts,
+    // LOR-260), so the registration_closed/invite_required message lookup
+    // reads it directly rather than guarding against a shape that can't
+    // occur outside a fixture.
     url: new URL(url),
     cookies: makeCookies(jar),
     getClientAddress: () => '10.2.0.1',
+    locals: { locale: 'en' },
   } as unknown as RequestEvent;
 }
 

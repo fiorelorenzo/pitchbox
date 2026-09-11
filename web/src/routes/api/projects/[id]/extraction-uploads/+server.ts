@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireOrgId } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
+import { t } from '@pitchbox/shared/messages';
 
 const MAX_FILES = 200;
 const MAX_FILE_BYTES = 200 * 1024;
@@ -32,18 +33,21 @@ function parseId(idParam: string | undefined): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
+type BadPathReason =
+  'empty_path' | 'absolute_path' | 'invalid_characters' | 'parent_traversal' | 'path_too_long';
+
 function isAcceptableRelPath(
   rel: string,
-): { ok: true; normalized: string } | { ok: false; reason: string } {
-  if (!rel || typeof rel !== 'string') return { ok: false, reason: 'empty path' };
-  if (rel.startsWith('/')) return { ok: false, reason: 'absolute path' };
+): { ok: true; normalized: string } | { ok: false; reason: BadPathReason } {
+  if (!rel || typeof rel !== 'string') return { ok: false, reason: 'empty_path' };
+  if (rel.startsWith('/')) return { ok: false, reason: 'absolute_path' };
   // Forbid backslashes too (Windows-style); we always use POSIX paths inside the upload root.
-  if (rel.includes(' ') || rel.includes('\\')) return { ok: false, reason: 'invalid characters' };
+  if (rel.includes(' ') || rel.includes('\\')) return { ok: false, reason: 'invalid_characters' };
   const norm = normalize(rel);
   if (norm.startsWith('..') || norm.split('/').some((seg) => seg === '..')) {
-    return { ok: false, reason: 'parent traversal' };
+    return { ok: false, reason: 'parent_traversal' };
   }
-  if (norm.length > 256) return { ok: false, reason: 'path too long' };
+  if (norm.length > 256) return { ok: false, reason: 'path_too_long' };
   return { ok: true, normalized: norm };
 }
 
@@ -74,7 +78,13 @@ export async function POST(event: RequestEvent) {
   try {
     form = await request.formData();
   } catch {
-    return json({ error: 'invalid_upload', message: 'multipart parse failed' }, { status: 400 });
+    return json(
+      {
+        error: 'invalid_upload',
+        message: t(event.locals.locale, 'api.uploads.multipart_parse_failed'),
+      },
+      { status: 400 },
+    );
   }
 
   // Collect parts that are files. The part *name* is the relative path.
@@ -83,11 +93,20 @@ export async function POST(event: RequestEvent) {
     if (typeof value === 'string') continue;
     parts.push({ rel: name, file: value as File });
     if (parts.length > MAX_FILES) {
-      return json({ error: 'too_large', message: `max ${MAX_FILES} files` }, { status: 413 });
+      return json(
+        {
+          error: 'too_large',
+          message: t(event.locals.locale, 'api.uploads.too_many_files', { max: MAX_FILES }),
+        },
+        { status: 413 },
+      );
     }
   }
   if (parts.length === 0) {
-    return json({ error: 'invalid_upload', message: 'no files in request' }, { status: 400 });
+    return json(
+      { error: 'invalid_upload', message: t(event.locals.locale, 'api.uploads.no_files') },
+      { status: 400 },
+    );
   }
 
   // Validate sizes & paths *before* writing anything.
@@ -98,7 +117,10 @@ export async function POST(event: RequestEvent) {
       return json(
         {
           error: 'too_large',
-          message: `${p.rel} exceeds per-file ${MAX_FILE_BYTES}B cap`,
+          message: t(event.locals.locale, 'api.uploads.file_too_large', {
+            rel: p.rel,
+            max: MAX_FILE_BYTES,
+          }),
         },
         { status: 413 },
       );
@@ -106,14 +128,23 @@ export async function POST(event: RequestEvent) {
     total += p.file.size;
     if (total > MAX_TOTAL_BYTES) {
       return json(
-        { error: 'too_large', message: `total upload exceeds ${MAX_TOTAL_BYTES}B cap` },
+        {
+          error: 'too_large',
+          message: t(event.locals.locale, 'api.uploads.total_too_large', { max: MAX_TOTAL_BYTES }),
+        },
         { status: 413 },
       );
     }
     const v = isAcceptableRelPath(p.rel);
     if (!v.ok) {
       return json(
-        { error: 'invalid_upload', message: `bad path "${p.rel}": ${v.reason}` },
+        {
+          error: 'invalid_upload',
+          message: t(event.locals.locale, 'api.uploads.bad_path', {
+            rel: p.rel,
+            reason: t(event.locals.locale, `api.uploads.reason.${v.reason}`),
+          }),
+        },
         { status: 400 },
       );
     }
@@ -126,7 +157,7 @@ export async function POST(event: RequestEvent) {
 
   if (accepted.length === 0) {
     return json(
-      { error: 'invalid_upload', message: 'no allowed files in upload' },
+      { error: 'invalid_upload', message: t(event.locals.locale, 'api.uploads.no_allowed_files') },
       { status: 400 },
     );
   }
@@ -143,7 +174,7 @@ export async function POST(event: RequestEvent) {
       return json(
         {
           error: 'invalid_upload',
-          message: `path resolution escaped root: ${a.rel}`,
+          message: t(event.locals.locale, 'api.uploads.path_escaped_root', { rel: a.rel }),
         },
         { status: 400 },
       );

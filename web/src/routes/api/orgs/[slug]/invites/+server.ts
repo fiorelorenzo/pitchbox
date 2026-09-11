@@ -4,7 +4,7 @@ import { getDb } from '$lib/server/db.js';
 import { createInvite, findOrgBySlug, isOrgAdmin } from '@pitchbox/shared/orgs';
 import { createMailTransport } from '@pitchbox/shared/mail/registry';
 import { loadMailEnv } from '@pitchbox/shared/mail/env';
-import { renderPlainTextMail } from '@pitchbox/shared/mail/template';
+import { inviteMail } from '@pitchbox/shared/mail/templates';
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
 import { checkUsageThresholds } from '@pitchbox/shared/usage-notifications';
@@ -14,31 +14,6 @@ const Body = z.object({
   email: z.email().optional(),
   role: z.enum(['owner', 'admin', 'member']).default('member'),
 });
-
-/**
- * Builds the invite email body. The link is built from `origin` - the
- * caller's own `event.url.origin`, which adapter-node resolves from the
- * ORIGIN env var (see `web/src/lib/trusted-origins.js`) rather than a
- * hardcoded host, so a deployment on any domain gets a link that works.
- */
-function inviteMail(args: {
-  to: string;
-  orgName: string;
-  role: string;
-  origin: string;
-  token: string;
-  expiresAt: Date;
-}) {
-  const url = `${args.origin}/invite/${args.token}`;
-  const rendered = renderPlainTextMail(
-    `You're invited to join ${args.orgName} on Pitchbox`,
-    `You've been invited to join ${args.orgName} on Pitchbox as ${args.role}.\n\n` +
-      `Accept the invite: ${url}\n\n` +
-      `This invite expires on ${args.expiresAt.toDateString()}. If you weren't ` +
-      `expecting this, you can ignore this email.`,
-  );
-  return { to: args.to, subject: rendered.subject, text: rendered.text, html: rendered.html };
-}
 
 export async function POST(event: import('@sveltejs/kit').RequestEvent) {
   const user = event.locals.user;
@@ -100,7 +75,7 @@ export async function POST(event: import('@sveltejs/kit').RequestEvent) {
   if (parsed.data.email) {
     const transport = createMailTransport(loadMailEnv());
     await transport.send(
-      inviteMail({
+      inviteMail(event.locals.locale, {
         to: parsed.data.email,
         orgName: org.name,
         role: parsed.data.role,

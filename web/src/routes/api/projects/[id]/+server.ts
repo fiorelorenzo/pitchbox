@@ -13,6 +13,7 @@ import { requireOrgId, requireRole } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
 import { isRunnerAllowed } from '@pitchbox/shared/edition';
 import { ASSIST_TONES, ASSIST_TONE_NOTES_MAX } from '@pitchbox/shared/linkedin-assist';
+import { t } from '@pitchbox/shared/messages';
 
 const PatchBody = z.object({
   name: z.string().min(1).max(120).optional(),
@@ -69,7 +70,9 @@ export async function PATCH(event: RequestEvent) {
     return json(
       {
         error: 'runner_not_allowed',
-        message: `Agent runner "${parsed.data.defaultAgentRunner}" is not available in this deployment's edition.`,
+        message: t(event.locals.locale, 'api.runner_not_allowed', {
+          runner: parsed.data.defaultAgentRunner,
+        }),
       },
       { status: 400 },
     );
@@ -82,7 +85,7 @@ export async function PATCH(event: RequestEvent) {
     return json(
       {
         error: 'invalid_body',
-        message: 'describe the tone you want, or pick "Use organization default"',
+        message: t(event.locals.locale, 'api.projects.custom_tone_required'),
       },
       { status: 400 },
     );
