@@ -6,6 +6,7 @@ import { loadLinkedInAssistDeviceState } from '@pitchbox/shared/linkedin-assist'
 import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
 import { isOrgReadOnly, PLAN_CATALOGUE } from '@pitchbox/shared/plans';
+import { getUserLocale } from '@pitchbox/shared/auth';
 
 // The read path #302's collector and #314's panel poll to learn whether they
 // should be running at all (LI-19, #316). No auth story of its own: it
@@ -16,7 +17,7 @@ import { isOrgReadOnly, PLAN_CATALOGUE } from '@pitchbox/shared/plans';
 // (docs/linkedin-integration-design.md).
 //
 // Response shape (see PR body for the frozen contract):
-//   { assist: LinkedInAssistDeviceState, plan: LinkedInAssistPlanState }
+//   { assist: LinkedInAssistDeviceState, plan: LinkedInAssistPlanState, locale: string | null }
 // LinkedInAssistDeviceState (shared/src/linkedin-assist.ts) carries booleans
 // and the two daily caps - nothing org-scoped beyond what the device already
 // handles in observations/suggest bodies. LOR-181: `projectId` is no longer
@@ -28,6 +29,14 @@ import { isOrgReadOnly, PLAN_CATALOGUE } from '@pitchbox/shared/plans';
 // purely for display - extending this endpoint rather than adding a second
 // poll. Anything cached from it is a hint: `/suggest` refuses on its own
 // read of the same numbers regardless of what a stale poll here still shows.
+// `locale` is LOR-262: the account's stored language override, `null` when
+// this device has no bound user (self-host, or paired by redeeming a
+// one-time code) - there is no per-org fallback to invent here, the same
+// way there is none in `resolveLocale`'s own precedence. Every reader of
+// this endpoint (the passive collector, both in-page assist panels, the
+// side panel's plan poll) applies it through the one shared
+// `applyAccountLocale` helper (`extension/src/lib/account-locale.ts`) so a
+// `null` here is a no-op, never a reset to English.
 
 // Polled on an interval by a background script, not user-driven, so this is
 // tighter than /suggest's perDevice(20, 60_000) while still generous for any
@@ -53,5 +62,6 @@ export async function GET({ request }: { request: Request }) {
     suggestionsRemaining: usage.suggestions.remaining,
     readOnly: isOrgReadOnly(usage.entitlements),
   };
-  return json({ assist, plan });
+  const locale = auth.userId != null ? await getUserLocale(db, auth.userId) : null;
+  return json({ assist, plan, locale });
 }

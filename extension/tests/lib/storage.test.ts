@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 // Minimal chrome.storage.local mock so storage.ts's getSettings()/upsertPairing()/
 // patchPairing() resolve, matching the pick-pairing.test.ts pattern.
-/* eslint-disable @typescript-eslint/no-explicit-any */
 (globalThis as any).chrome = {
   storage: {
     local: {

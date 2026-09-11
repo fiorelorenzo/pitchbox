@@ -61,6 +61,17 @@ export const users = pgTable(
     // nothing to prove and no way to ever clear this column.
     emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // LOR-262: the account's language override, one property of the
+    // person rather than the organization (two members of the same org
+    // can and do want different ones). Nullable: unset means "no
+    // preference recorded", which `resolveLocale` (web/src/lib/i18n.ts)
+    // treats as a fall-through to the pre-login cookie and then
+    // Accept-Language, never as English outright. Raw text rather than a
+    // DB enum, validated at the two write sites (the dashboard's
+    // /api/auth/locale and the extension's /api/extension/locale) against
+    // the same 'en' | 'it' set `web/src/lib/i18n.ts`'s `Locale` type
+    // declares - shared/ has no dependency on that web-only type.
+    locale: text('locale'),
   },
   (t) => ({
     // Postgres treats each NULL as distinct in a unique index, so accounts
@@ -872,6 +883,21 @@ export const extensionDevices = pgTable(
     // now + 90 days. requireExtensionAuth rejects a request once this is set
     // and in the past, but never treats a null expiry as expired.
     expiresAt: timestamp('expires_at', { withTimezone: true }),
+    // LOR-262: which signed-in user paired this device, when we happen to
+    // know one. Set only by /api/extension/auto-pair, the one pairing path
+    // that runs with a live session cookie already attached (it mints the
+    // token from inside the dashboard origin) - the public, session-less
+    // pairing-code redemption (POST /api/extension/pair) has no caller
+    // identity to record and leaves this null, same as every device paired
+    // before this column existed. `set null` on user deletion: losing the
+    // account link revokes nothing about the device itself, it just stops
+    // answering GET /api/extension/linkedin-assist's `locale` field and
+    // POST /api/extension/locale writes through no account preference
+    // (the extension keeps its own local-storage cache regardless - see
+    // lib/account-locale.ts). A null here is the same "no account
+    // preference to read" case self-host (PITCHBOX_AUTH off) already is
+    // everywhere else in this feature, not a new failure mode.
+    userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
   },
   (t) => ({
     byHash: uniqueIndex('extension_devices_token_hash_unique').on(t.tokenHash),

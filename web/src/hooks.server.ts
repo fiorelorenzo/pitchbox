@@ -189,15 +189,16 @@ function blocksCrossOriginMutation(event: { request: Request; url: URL }): boole
 }
 
 /**
- * `event.locals.locale` (LOR-260), computed once per request rather than
- * per loader so no two loaders/components can resolve it differently. No
- * `accountLocale` source exists yet - LOR-262 adds the column and reads it
- * from `event.locals.user`'s session; the call site below is exactly where
- * that value plugs in, and this precedence itself does not change.
+ * `event.locals.locale` (LOR-260/LOR-262), computed once per request rather
+ * than per loader so no two loaders/components can resolve it differently.
+ * `accountLocale` is `session.locale` (`users.locale`, raw text - see
+ * `shared/src/auth.ts`'s `loadSession`) once a session exists; absent for
+ * every request that never reaches the `else` branch below (signed out,
+ * self-host with auth off, an unauthenticated early return).
  */
 function requestLocale(
   event: { cookies: { get(name: string): string | undefined }; request: Request },
-  accountLocale?: Locale | null,
+  accountLocale?: string | null,
 ): Locale {
   return resolveLocale({
     accountLocale,
@@ -211,8 +212,10 @@ export const handle = async ({ event, resolve }) => {
   // preflight, a cross-origin block, an unauthenticated 401/302) never
   // reaches SvelteKit's own renderer and needs no locale, but every path
   // that does render a page reads the same `event.locals.locale` from here
-  // rather than deciding again. See `requestLocale` above for the LOR-262
-  // attach point (the account-preference input, currently always absent).
+  // rather than deciding again. No session is loaded yet at this point, so
+  // this first pass never carries an account preference - see the `else`
+  // branch below, where a signed-in request's session is already in hand
+  // and reassigns this with `session.locale` folded in.
   event.locals.locale = requestLocale(event);
 
   const isExtensionRoute = event.url.pathname.startsWith('/api/extension/');
@@ -258,11 +261,14 @@ export const handle = async ({ event, resolve }) => {
       // (web/src/routes/api/run/+server.ts).
     } else {
       event.locals.user = { id: session.userId, username: session.username };
-      // LOR-262 attaches here: once `session` carries a stored locale
-      // preference, re-run `requestLocale(event, session.locale)` and
-      // reassign `event.locals.locale` so the account setting outranks the
-      // cookie for a signed-in request. `resolveLocale`'s precedence does
-      // not change; only this call's second argument does.
+      // LOR-262: the account's stored preference outranks the cookie for a
+      // signed-in request, so re-run resolution now that we have one.
+      // `resolveLocale`'s precedence itself does not change; only this
+      // call's second argument does, from "always absent" (the first pass
+      // above) to the real stored value (possibly still null/unset, which
+      // `resolveLocale` falls through exactly like it already does for an
+      // unrecognised cookie).
+      event.locals.locale = requestLocale(event, session.locale);
 
       // Resolve active organization. Multi-tenant phase 2: every authenticated
       // request must map to a membership. If the user has none, return 404 to

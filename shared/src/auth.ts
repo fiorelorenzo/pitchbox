@@ -169,12 +169,24 @@ export async function loadSession(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: PgDatabase<any, any, any>,
   id: string,
-): Promise<{ userId: number; username: string; activeOrganizationId: number | null } | null> {
+): Promise<{
+  userId: number;
+  username: string;
+  activeOrganizationId: number | null;
+  // LOR-262: the account's stored language override, read alongside the
+  // rest of the session so hooks.server.ts's per-request locale
+  // resolution never needs a second query. Raw text, not the web
+  // workspace's `Locale` type - shared/ has no dependency on it, and
+  // web/src/lib/i18n.ts's `resolveLocale` already validates an
+  // unrecognised or unset value the same way it validates a cookie.
+  locale: string | null;
+} | null> {
   const rows = await db
     .select({
       userId: sessions.userId,
       username: users.username,
       activeOrganizationId: sessions.activeOrganizationId,
+      locale: users.locale,
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
@@ -201,6 +213,48 @@ export async function setSessionActiveOrg(
     .update(sessions)
     .set({ activeOrganizationId: organizationId })
     .where(eq(sessions.id, sessionId));
+}
+
+/**
+ * The single reader for a user's stored language override (LOR-262) - used
+ * by `loadSession` above for the live request path, and directly by
+ * anything that needs one user's preference outside a session (a
+ * forgot-password email with no cookie to read, LOR-264). Returns `null`
+ * for an unset preference or an unknown user id; callers treat both the
+ * same way `resolveLocale` treats an absent account preference - fall
+ * through to whatever comes next, never a thrown error.
+ */
+export async function getUserLocale(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+  userId: number,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ locale: users.locale })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row?.locale ?? null;
+}
+
+/**
+ * The single writer for a user's stored language override (LOR-262).
+ * Shared by the dashboard's self-service `/api/auth/locale` and the
+ * extension's device-token-authenticated `/api/extension/locale` - two
+ * surfaces write the same account setting, and this is the one place that
+ * actually does, so neither can drift from the other on what "set" means.
+ * Takes the caller's already-validated value as-is (each write site owns
+ * its own `'en' | 'it'` check against the web workspace's `Locale` type,
+ * which this shared/ module cannot import) - `null` clears the preference
+ * back to "unset".
+ */
+export async function setUserLocale(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: PgDatabase<any, any, any>,
+  userId: number,
+  locale: string | null,
+): Promise<void> {
+  await db.update(users).set({ locale }).where(eq(users.id, userId));
 }
 
 export async function countUsers(

@@ -1,5 +1,6 @@
 import { claimDocument } from './shared/claim-document.js';
 import { api } from '../lib/api.js';
+import { applyAccountLocale } from '../lib/account-locale.js';
 import { logFromContent } from '../lib/log-from-content.js';
 import {
   findFeedPosts,
@@ -267,6 +268,7 @@ async function pollAssistState(): Promise<void> {
   // a real, current refusal still surfaces authoritatively on the next
   // POST /api/extension/observations (see the module doc comment).
   if (!res.ok) return;
+  void applyAccountLocale(res.data.locale);
   const { assist } = res.data;
   const wasEnabled = collectorEnabled;
   collectorEnabled = assist.collectorEnabled;

@@ -17,6 +17,8 @@ import {
   loadOrganizationForUser,
   setInstanceAdmin,
   listUsers,
+  getUserLocale,
+  setUserLocale,
 } from '../src/auth.js';
 
 async function reset() {
@@ -200,6 +202,8 @@ describe('shared/auth', () => {
     const loaded = await loadSession(getDb(), sess.id);
     expect(loaded?.userId).toBe(userId);
     expect(loaded?.username).toBe('bob');
+    // LOR-262: unset by default, same as every other pre-existing account.
+    expect(loaded?.locale).toBeNull();
 
     await deleteSession(getDb(), sess.id);
     expect(await loadSession(getDb(), sess.id)).toBeNull();
@@ -216,6 +220,33 @@ describe('shared/auth', () => {
       sql`UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE id = ${sess.id}`,
     );
     expect(await loadSession(getDb(), sess.id)).toBeNull();
+  });
+
+  // LOR-262: getUserLocale/setUserLocale are the one reader and one writer
+  // shared by loadSession's session-path read, the dashboard's
+  // /api/auth/locale, and the extension's /api/extension/locale - this is
+  // the direct, HTTP-free test of that shared pair.
+  it('getUserLocale/setUserLocale round-trip, and loadSession picks up the write', async () => {
+    const userId = await createUser(getDb(), {
+      username: 'locale-dan',
+      password: 'a-very-long-password',
+    });
+    expect(await getUserLocale(getDb(), userId)).toBeNull();
+
+    await setUserLocale(getDb(), userId, 'it');
+    expect(await getUserLocale(getDb(), userId)).toBe('it');
+
+    const sess = await createSession(getDb(), userId);
+    expect((await loadSession(getDb(), sess.id))?.locale).toBe('it');
+
+    // Clearing back to null (the settings page never offers this, but the
+    // column itself must not get stuck non-null once it's been touched).
+    await setUserLocale(getDb(), userId, null);
+    expect(await getUserLocale(getDb(), userId)).toBeNull();
+  });
+
+  it('getUserLocale returns null for an unknown user id rather than throwing', async () => {
+    expect(await getUserLocale(getDb(), 999_999)).toBeNull();
   });
 });
 

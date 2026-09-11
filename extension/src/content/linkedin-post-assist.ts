@@ -14,6 +14,7 @@ import {
   type SuggestUsage,
 } from '../lib/api.js';
 import { logFromContent } from '../lib/log-from-content.js';
+import { applyAccountLocale } from '../lib/account-locale.js';
 import { setLocale } from '../lib/i18n/index.js';
 import { resolvePanelLocale } from './shared/panel-locale.js';
 import { mountPanel, panelFor, type PanelHandle } from './shared/panel-host.js';
@@ -286,6 +287,7 @@ function mountAssistPanel(editor: HTMLElement, modal: Element): void {
       void setRefused('backend_unreachable');
       return;
     }
+    void applyAccountLocale(assistRes.data.locale);
     const { assist } = assistRes.data;
     if (assist.killSwitch) {
       void setRefused('kill_switch');

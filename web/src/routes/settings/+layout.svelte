@@ -9,6 +9,7 @@
     Puzzle,
     Gauge,
     KeyRound,
+    Languages,
     Building2,
     CreditCard,
     Archive,
@@ -19,7 +20,7 @@
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
-  // Flat rail of eleven (#254 shipped seven; LI-19/#316 added LinkedIn assist;
+  // Flat rail of twelve (#254 shipped seven; LI-19/#316 added LinkedIn assist;
   // 2026-09-07's companion decisions added Companion, moved to its own
   // top-level /companion sidebar group by LOR-178/179 (see
   // web/src/lib/components/Sidebar.svelte); #506 added Password;
@@ -59,6 +60,7 @@
       { href: '/settings/extension', label: 'Browser extension', icon: Puzzle, show: true },
       { href: '/settings/quota', label: 'Quota', icon: Gauge, show: !data.isCloud },
       { href: '/settings/password', label: 'Password', icon: KeyRound, show: data.signedIn },
+      { href: '/settings/language', label: 'Language', icon: Languages, show: data.signedIn },
       {
         href: '/settings/linkedin-assist',
         label: 'LinkedIn assist',

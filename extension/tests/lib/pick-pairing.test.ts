@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 // Minimal chrome.storage.local mock so api.ts's getSettings() resolves.
-/* eslint-disable @typescript-eslint/no-explicit-any */
 (globalThis as any).chrome = {
   storage: {
     local: {

@@ -94,6 +94,21 @@ describe('resolveLocale precedence', () => {
     ).toBe('it');
   });
 
+  // LOR-262: `accountLocale` is now `users.locale`, an unvalidated DB
+  // column rather than a value the type system already narrowed to
+  // `Locale` - a stale row (written before 'it' existed, or hand-edited)
+  // must fall through exactly like an unrecognised cookie does, never
+  // throw and never win outright.
+  it('an unrecognised stored account preference falls through to the cookie', () => {
+    expect(
+      resolveLocale({
+        accountLocale: 'fr',
+        cookieLocale: 'it',
+        acceptLanguageHeader: 'en-GB',
+      }),
+    ).toBe('it');
+  });
+
   it('falls back to English with no account preference, no cookie, and no header', () => {
     expect(resolveLocale({})).toBe(DEFAULT_LOCALE);
   });
