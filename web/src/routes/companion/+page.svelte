@@ -13,6 +13,8 @@
 	import { enhance } from '$app/forms';
 	import { untrack } from 'svelte';
 	import { relativeTime } from '$lib/utils/time';
+	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	// Companion -> Persona (LOR-178/LOR-179, docs/design/DECISIONS.md D35):
 	// the landing page of its own top-level sidebar group, split out of the
@@ -38,6 +40,8 @@
 
 	let { data, form }: { data: PageData; form: FormResult } = $props();
 
+	const locale = $derived($page.data.locale as Locale);
+
 	let handle = $state(untrack(() => data.profile?.handle ?? ''));
 	let displayName = $state(untrack(() => data.profile?.displayName ?? ''));
 	let headline = $state(untrack(() => data.profile?.headline ?? ''));
@@ -62,7 +66,7 @@
 
 	$effect(() => {
 		if (form?.profile) {
-			toast.success('Persona saved');
+			toast.success(t(locale, 'companion.persona.toast-saved'));
 			handle = form.profile.handle ?? '';
 			displayName = form.profile.displayName ?? '';
 			headline = form.profile.headline ?? '';
@@ -70,37 +74,35 @@
 			notes = form.profile.notes ?? '';
 			experiences = form.profile.experiences.map((e) => ({ ...e }));
 		} else if (form?.error) {
-			toast.error(form.error);
+			toast.error(t(locale, 'companion.persona.error-save-failed'));
 		}
 	});
 </script>
 
 <Seo
-	title="Companion - Persona"
-	description="Who the in-page LinkedIn assistant writes as: handle, display name, headline, about and experience."
+	title={t(locale, 'companion.persona.seo-title')}
+	description={t(locale, 'companion.persona.seo-description')}
 />
 
 <PageContainer size="default">
 	<PageHeader
-		title="Persona"
-		description="What the in-page LinkedIn assistant knows about you, so a suggestion sounds like something you'd actually say. Nothing here is sent anywhere until a suggestion is requested."
+		title={t(locale, 'companion.persona.title')}
+		description={t(locale, 'companion.persona.description')}
 	/>
 
 	{#if !data.profile}
 		<Card.Root>
 			<Card.Header>
-				<Card.Title class="flex items-center gap-2"><UserRound class="size-4" /> Who you are</Card.Title>
+				<Card.Title class="flex items-center gap-2"><UserRound class="size-4" /> {t(locale, 'companion.persona.card-title')}</Card.Title>
 				<Card.Description>
-					Captured once when you open your own LinkedIn profile with the extension installed, and
-					editable here afterward. A saved edit is kept as-is: the next capture will not overwrite
-					it.
+					{t(locale, 'companion.persona.card-description')}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
 				<EmptyState
 					icon={UserRound}
-					title="No persona captured yet"
-					description="Open your own LinkedIn profile once with the extension installed - that's what fills this in."
+					title={t(locale, 'companion.persona.empty-title')}
+					description={t(locale, 'companion.persona.empty-description')}
 				/>
 			</Card.Content>
 		</Card.Root>
@@ -121,23 +123,23 @@
 			<Card.Root>
 				<Card.Header>
 					<Card.Title class="flex items-center gap-2"
-						><UserRound class="size-4" /> Who you are</Card.Title
+						><UserRound class="size-4" /> {t(locale, 'companion.persona.card-title')}</Card.Title
 					>
 					<Card.Description>
-						Captured once when you open your own LinkedIn profile with the extension installed, and
-						editable here afterward. A saved edit is kept as-is: the next capture will not overwrite
-						it.
+						{t(locale, 'companion.persona.card-description')}
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="flex flex-col gap-4">
 					{#if data.profile.capturedAt}
 						<div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
 							<Badge variant={data.profile.source === 'manual' ? 'secondary' : 'outline'}>
-								{data.profile.source === 'manual' ? 'Manually edited' : 'From LinkedIn capture'}
+								{data.profile.source === 'manual'
+									? t(locale, 'companion.persona.source-manual')
+									: t(locale, 'companion.persona.source-captured')}
 							</Badge>
-							<span>Captured {relativeTime(data.profile.capturedAt)}</span>
+							<span>{t(locale, 'companion.persona.captured-label', { when: relativeTime(data.profile.capturedAt) })}</span>
 							{#if staleCapture}
-								<Badge variant="destructive">Stale, over 90 days old</Badge>
+								<Badge variant="destructive">{t(locale, 'companion.persona.stale-badge')}</Badge>
 							{/if}
 						</div>
 						{#if data.profile.source === 'manual'}
@@ -146,53 +148,52 @@
 							     without this line that reads as a broken recapture rather than the
 							     protection working as designed. -->
 							<p class="text-xs text-muted-foreground">
-								A LinkedIn recapture will not change this: it stays as you last edited it.
+								{t(locale, 'companion.persona.manual-note')}
 							</p>
 						{/if}
 					{/if}
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div class="grid gap-1.5">
-							<label class="text-sm font-medium" for="handle">LinkedIn handle</label>
-							<Input id="handle" name="handle" bind:value={handle} placeholder="jane-doe" />
+							<label class="text-sm font-medium" for="handle">{t(locale, 'companion.persona.handle-label')}</label>
+							<Input id="handle" name="handle" bind:value={handle} placeholder={t(locale, 'companion.persona.handle-placeholder')} />
 						</div>
 						<div class="grid gap-1.5">
-							<label class="text-sm font-medium" for="displayName">Display name</label>
+							<label class="text-sm font-medium" for="displayName">{t(locale, 'companion.persona.display-name-label')}</label>
 							<Input id="displayName" name="displayName" bind:value={displayName} />
 						</div>
 					</div>
 					<div class="grid gap-1.5">
-						<label class="text-sm font-medium" for="headline">Headline</label>
+						<label class="text-sm font-medium" for="headline">{t(locale, 'companion.persona.headline-label')}</label>
 						<Input id="headline" name="headline" bind:value={headline} />
 					</div>
 					<div class="grid gap-1.5">
-						<label class="text-sm font-medium" for="about">About</label>
+						<label class="text-sm font-medium" for="about">{t(locale, 'companion.persona.about-label')}</label>
 						<Textarea id="about" name="about" bind:value={about} rows={4} />
 					</div>
 					<div class="grid gap-1.5">
-						<label class="text-sm font-medium" for="notes">How you want to sound</label>
+						<label class="text-sm font-medium" for="notes">{t(locale, 'companion.persona.notes-label')}</label>
 						<Textarea
 							id="notes"
 							name="notes"
 							bind:value={notes}
 							rows={3}
-							placeholder="Direct, no corporate hedging, short sentences..."
+							placeholder={t(locale, 'companion.persona.notes-placeholder')}
 						/>
 						<p class="text-xs text-muted-foreground">
-							Free text, never captured from LinkedIn - this is only what you type here.
+							{t(locale, 'companion.persona.notes-hint')}
 						</p>
 					</div>
 					<div>
-						<Button type="submit" disabled={savingProfile}>Save persona</Button>
+						<Button type="submit" disabled={savingProfile}>{t(locale, 'companion.persona.save-button')}</Button>
 					</div>
 				</Card.Content>
 			</Card.Root>
 
 			<Card.Root>
 				<Card.Header>
-					<Card.Title>Experience</Card.Title>
+					<Card.Title>{t(locale, 'companion.persona.experience-title')}</Card.Title>
 					<Card.Description>
-						What you have done, in the order the assistant should reach for it. Captured with the
-						rest of the profile and editable here.
+						{t(locale, 'companion.persona.experience-description')}
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="flex flex-col gap-2">
@@ -200,31 +201,31 @@
 						<div class="flex flex-col gap-2 rounded-md border border-border p-3">
 							<div class="flex items-start justify-between gap-2">
 								<div class="grid flex-1 gap-2 sm:grid-cols-3">
-									<Input bind:value={experience.title} placeholder="Title" aria-label="Title" />
-									<Input bind:value={experience.company} placeholder="Company" aria-label="Company" />
-									<Input bind:value={experience.period} placeholder="Period" aria-label="Period" />
+									<Input bind:value={experience.title} placeholder={t(locale, 'companion.persona.experience-field.title')} aria-label={t(locale, 'companion.persona.experience-field.title')} />
+									<Input bind:value={experience.company} placeholder={t(locale, 'companion.persona.experience-field.company')} aria-label={t(locale, 'companion.persona.experience-field.company')} />
+									<Input bind:value={experience.period} placeholder={t(locale, 'companion.persona.experience-field.period')} aria-label={t(locale, 'companion.persona.experience-field.period')} />
 								</div>
 								<Button
 									type="button"
 									variant="ghost"
 									size="icon-sm"
 									onclick={() => removeExperience(i)}
-									aria-label="Remove experience"
+								aria-label={t(locale, 'companion.persona.remove-experience-aria')}
 								>
 									<Trash2 class="size-4" />
 								</Button>
 							</div>
 							<Textarea
 								bind:value={experience.summary}
-								placeholder="Summary"
-								aria-label="Summary"
+								placeholder={t(locale, 'companion.persona.experience-field.summary')}
+								aria-label={t(locale, 'companion.persona.experience-field.summary')}
 								rows={2}
 							/>
 						</div>
 					{/each}
 					<div>
 						<Button type="button" variant="outline" size="sm" onclick={addExperience}>
-							<Plus class="size-4" /> Add experience
+							<Plus class="size-4" /> {t(locale, 'companion.persona.add-experience-button')}
 						</Button>
 					</div>
 				</Card.Content>

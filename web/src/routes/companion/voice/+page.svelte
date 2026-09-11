@@ -14,6 +14,8 @@
 	import { untrack } from 'svelte';
 	import { relativeTime } from '$lib/utils/time';
 	import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
+	import { page } from '$app/stores';
+	import { t, tn, splitAroundToken, type Locale } from '$lib/i18n/index.js';
 
 	// Companion -> Voice (LOR-178/LOR-179, docs/design/DECISIONS.md D35),
 	// split out of the old three-card settings/companion page.
@@ -83,11 +85,20 @@
 		toggledSampleId?: number;
 		voiceProfile?: VoiceProfile;
 		imported?: { inserted: number; byGenre: { post: number; comment: number } };
-		error?: string;
-		importError?: string;
+		errorCode?: 'invalid-sample-id';
+		importErrorCode?:
+			| 'no-file'
+			| 'file-too-large'
+			| 'missing-basic-archive'
+			| 'parse-failed'
+			| 'platform-not-configured';
+		maxMb?: number;
+		detail?: string;
 	} | null;
 
 	let { data, form }: { data: PageData; form: FormResult } = $props();
+
+	const locale = $derived($page.data.locale as Locale);
 
 	const voiceProfile = $derived(form?.voiceProfile ?? data.voiceProfile);
 	let voiceProfileSummary = $state(untrack(() => data.voiceProfile?.summary ?? ''));
@@ -97,23 +108,30 @@
 	let importingVoice = $state(false);
 	const includedSampleCount = $derived(data.voiceSamples.filter((s) => !s.excluded).length);
 
-	const GENRE_LABEL: Record<VoiceSampleGenre, string> = {
-		post: 'Post',
-		comment: 'Comment',
-		reply: 'Reply',
-	};
-	const SOURCE_LABEL: Record<VoiceSampleSource, string> = {
-		capture: 'Captured',
-		import: 'Imported',
-		manual: 'Manual',
-	};
+	const GENRE_LABEL = $derived<Record<VoiceSampleGenre, string>>({
+		post: t(locale, 'companion.voice.genre-singular.post'),
+		comment: t(locale, 'companion.voice.genre-singular.comment'),
+		reply: t(locale, 'companion.voice.genre-singular.reply'),
+	});
+	const GENRE_LABEL_PLURAL = $derived<Record<VoiceSampleGenre, string>>({
+		post: t(locale, 'companion.voice.genre-plural.post'),
+		comment: t(locale, 'companion.voice.genre-plural.comment'),
+		reply: t(locale, 'companion.voice.genre-plural.reply'),
+	});
+	const SOURCE_LABEL = $derived<Record<VoiceSampleSource, string>>({
+		capture: t(locale, 'companion.voice.source.capture'),
+		import: t(locale, 'companion.voice.source.import'),
+		manual: t(locale, 'companion.voice.source.manual'),
+	});
 	const GENRE_ORDER: VoiceSampleGenre[] = ['post', 'comment', 'reply'];
 
 	$effect(() => {
 		if (form?.voiceProfile && !form?.imported) {
 			voiceProfileSummary = form.voiceProfile.summary;
 			toast.success(
-				form.voiceProfile.source === 'manual' ? 'Voice description saved' : 'Voice profile refreshed',
+				form.voiceProfile.source === 'manual'
+					? t(locale, 'companion.voice.toast-profile-saved-manual')
+					: t(locale, 'companion.voice.toast-profile-refreshed'),
 			);
 		}
 	});
@@ -124,14 +142,30 @@
 			const { inserted, byGenre } = form.imported;
 			toast.success(
 				inserted === 0
-					? 'Nothing new in that export - already imported'
-					: `Imported ${inserted} sample${inserted === 1 ? '' : 's'} (${byGenre.post} post${byGenre.post === 1 ? '' : 's'}, ${byGenre.comment} comment${byGenre.comment === 1 ? '' : 's'})`,
+					? t(locale, 'companion.voice.toast-nothing-new')
+					: tn(locale, 'companion.voice.toast-imported', inserted, {
+							sample: tn(locale, 'companion.voice.count-sample', inserted),
+							post: tn(locale, 'companion.voice.count-post', byGenre.post),
+							comment: tn(locale, 'companion.voice.count-comment', byGenre.comment),
+						}),
 			);
 		}
 	});
 
 	$effect(() => {
-		if (form?.importError) toast.error(form.importError);
+		if (!form?.importErrorCode) return;
+		const code = form.importErrorCode;
+		const message =
+			code === 'no-file'
+				? t(locale, 'companion.voice.import-error.no-file')
+				: code === 'file-too-large'
+					? t(locale, 'companion.voice.import-error.file-too-large', { maxMb: form.maxMb ?? 0 })
+					: code === 'missing-basic-archive'
+						? t(locale, 'companion.voice.import-error.missing-basic-archive')
+						: code === 'platform-not-configured'
+							? t(locale, 'companion.voice.import-error.platform-not-configured')
+							: t(locale, 'companion.voice.import-error.parse-failed', { detail: form.detail ?? '' });
+		toast.error(message);
 	});
 
 	let voiceFormRefs: Record<number, HTMLFormElement> = $state({});
@@ -204,7 +238,7 @@
 			const g = voiceProfile.genres[genre];
 			return {
 				genre,
-				label: GENRE_LABEL[genre],
+				label: GENRE_LABEL_PLURAL[genre],
 				onFile: g.itemCount,
 				newCount: byGenre[genre],
 				measurable: g.measurable,
@@ -236,42 +270,41 @@
 			name="file"
 			accept=".zip,.csv"
 			required
-			aria-label="LinkedIn export file"
+			aria-label={t(locale, 'companion.voice.import-file-aria')}
 			class="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium"
 		/>
 		<Button type="submit" size="sm" disabled={importingVoice}>
-			<Upload class="size-4" /> {importingVoice ? 'Importing...' : 'Import'}
+			<Upload class="size-4" />
+			{importingVoice ? t(locale, 'companion.voice.importing-button') : t(locale, 'companion.voice.import-button')}
 		</Button>
 	</form>
 {/snippet}
 
 <Seo
-	title="Companion - Voice"
-	description="How the in-page LinkedIn assistant sounds when it writes as you."
+	title={t(locale, 'companion.voice.seo-title')}
+	description={t(locale, 'companion.voice.seo-description')}
 />
 
 <PageContainer size="default">
 	<PageHeader
-		title="Voice"
-		description="How you write, derived from what you have actually written - your voice samples, outbound messages, sent drafts and project templates - rather than a raw list of posts."
+		title={t(locale, 'companion.voice.title')}
+		description={t(locale, 'companion.voice.description')}
 	/>
 	<Card.Root>
 		<Card.Header>
 			<Card.Title class="flex items-center gap-2">
 				<Upload class="size-4" />
-				{corpusBelowFloor ? 'Get your writing sample from LinkedIn' : 'Import from LinkedIn'}
+				{corpusBelowFloor
+					? t(locale, 'companion.voice.import-card-title-empty')
+					: t(locale, 'companion.voice.import-card-title')}
 			</Card.Title>
 			{#if corpusBelowFloor}
 				<Card.Description>
-					Nothing here yet to measure your voice from, so every suggestion falls back to a
-					generic register instead of yours. Two steps get you a real one.
+					{t(locale, 'companion.voice.import-card-description-empty')}
 				</Card.Description>
 			{:else}
 				<Card.Description>
-					Upload "Shares.csv", "Comments.csv" or "messages.csv" from LinkedIn's own "Get a copy
-					of your data" export, or the zip carrying any of them, to fill the corpus in one step
-					instead of waiting on passive capture. Re-uploading the same export changes nothing -
-					it only ever adds what is not already on file.
+					{t(locale, 'companion.voice.import-card-description')}
 				</Card.Description>
 			{/if}
 		</Card.Header>
@@ -284,13 +317,9 @@
 						1
 					</div>
 					<div class="min-w-0 flex-1">
-						<p class="text-sm font-medium">Request your data from LinkedIn</p>
+						<p class="text-sm font-medium">{t(locale, 'companion.voice.step1-title')}</p>
 						<p class="mt-1 text-xs text-muted-foreground">
-							Choose the full data download, not the quicker option limited to specific
-							categories - only the full one includes your posts and comments. LinkedIn still
-							emails you twice either way: a small "Basic" archive within minutes that never has
-							them, then the real one up to 24 hours later. Wait for the second email before
-							uploading anything.
+							{t(locale, 'companion.voice.step1-description')}
 						</p>
 						<Button
 							href="https://www.linkedin.com/mypreferences/d/download-my-data"
@@ -301,7 +330,7 @@
 							class="mt-2"
 							onclick={markExportRequested}
 						>
-							<ExternalLink class="size-4" /> Request your data on LinkedIn
+							<ExternalLink class="size-4" /> {t(locale, 'companion.voice.request-data-button')}
 						</Button>
 						{#if exportRequestedAt}
 							<div
@@ -309,13 +338,12 @@
 							>
 								<Clock class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
 								<span class="flex-1">
-									Requested {relativeTime(exportRequestedAt)}. Come back once the second email
-									arrives and upload its archive below.
+									{t(locale, 'companion.voice.requested-note', { when: relativeTime(exportRequestedAt) })}
 								</span>
 								<button
 									type="button"
 									onclick={dismissExportReminder}
-									aria-label="Dismiss"
+									aria-label={t(locale, 'companion.voice.dismiss-aria')}
 									class="shrink-0 rounded p-0.5 text-sky-800/70 hover:bg-sky-500/20 hover:text-sky-900 dark:text-sky-200/70 dark:hover:text-sky-100"
 								>
 									<X class="size-3.5" aria-hidden="true" />
@@ -331,9 +359,9 @@
 						2
 					</div>
 					<div class="min-w-0 flex-1">
-						<p class="text-sm font-medium">Upload it once it arrives</p>
+						<p class="text-sm font-medium">{t(locale, 'companion.voice.step2-title')}</p>
 						<p class="mt-1 text-xs text-muted-foreground">
-							Drop the zip exactly as LinkedIn sends it - no need to unzip it or rename anything.
+							{t(locale, 'companion.voice.step2-description')}
 						</p>
 						<div class="mt-2">
 							{@render importUploadForm()}
@@ -346,15 +374,23 @@
 		</Card.Content>
 		{#if importSummaryRows.length > 0}
 			<Card.Footer class="flex flex-col gap-2 border-t border-border pt-4">
-				<p class="text-sm font-medium">What this import found</p>
+				<p class="text-sm font-medium">{t(locale, 'companion.voice.import-found-title')}</p>
 				<div class="flex flex-col gap-1">
 					{#each importSummaryRows as row (row.genre)}
 						<p class="text-xs text-muted-foreground">
-							<span class="font-medium text-foreground">{row.label}s:</span>
-							{row.onFile} on file{row.newCount > 0 ? ` (${row.newCount} new)` : ''} -
+							<span class="font-medium text-foreground">{row.label}:</span>
+							{t(locale, 'companion.voice.import-found-onfile-count', {
+								count: row.onFile,
+								new: row.newCount > 0 ? t(locale, 'companion.voice.import-found-new-suffix', { n: row.newCount }) : '',
+							})} -
 							{row.measurable
-								? `enough to describe how you write${row.summary ? `: ${row.summary}` : ''}`
-								: `${row.neededMore} more needed before this can measure your ${row.label.toLowerCase()}s`}
+								? t(locale, 'companion.voice.import-found-measurable', {
+										summary: row.summary ? t(locale, 'companion.voice.import-found-measurable-summary', { summary: row.summary }) : '',
+									})
+								: t(locale, 'companion.voice.import-found-needs-more', {
+										n: row.neededMore,
+										genrePluralLower: t(locale, `companion.voice.genre-plural-lower.${row.genre}`),
+									})}
 						</p>
 					{/each}
 				</div>
@@ -365,30 +401,29 @@
 	<div class="grid items-start gap-4 xl:grid-cols-2">
 		<Card.Root>
 			<Card.Header>
-				<Card.Title class="flex items-center gap-2"><Mic class="size-4" /> How you write</Card.Title>
+				<Card.Title class="flex items-center gap-2"><Mic class="size-4" /> {t(locale, 'companion.voice.how-you-write-title')}</Card.Title>
 				<Card.Description>
-					A description of your writing habits, derived from what you have actually written - your
-					voice samples, outbound messages, sent drafts and project templates - rather than a raw
-					list of posts. Reviewable and editable below.
+					{t(locale, 'companion.voice.how-you-write-description')}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
 				<div class="flex flex-col gap-3 rounded-md border border-border p-3">
 					<div class="flex flex-wrap items-center justify-between gap-2">
-						<span class="text-sm font-medium">Derived voice</span>
+						<span class="text-sm font-medium">{t(locale, 'companion.voice.derived-voice-label')}</span>
 						{#if voiceProfile}
 							<Badge variant={voiceProfile.source === 'manual' ? 'secondary' : 'outline'}>
-								{voiceProfile.source === 'manual' ? 'Manually edited' : 'Derived'}
+								{voiceProfile.source === 'manual'
+									? t(locale, 'companion.voice.source-manual')
+									: t(locale, 'companion.voice.source-derived')}
 							</Badge>
 						{/if}
 					</div>
 
 					{#if !voiceProfile?.summary.trim() && voiceProfile?.source !== 'manual'}
 						<p class="text-sm text-muted-foreground">
-							Not enough of your own writing on file yet to say anything honest about how you write{#if voiceProfile}
-								&nbsp;({voiceProfile.itemCount} piece{voiceProfile.itemCount === 1 ? '' : 's'} so far, need at least 3)
-							{/if}. This looks at your voice samples, outbound messages, sent drafts and project
-							templates.
+							{t(locale, 'companion.voice.not-enough-corpus', {
+								count: voiceProfile ? tn(locale, 'companion.voice.pieces-so-far', voiceProfile.itemCount) : '',
+							})}
 						</p>
 					{/if}
 
@@ -408,10 +443,10 @@
 							name="summary"
 							bind:value={voiceProfileSummary}
 							rows={4}
-							placeholder="Derived automatically once you have enough voice samples, messages, drafts or templates on file..."
+							placeholder={t(locale, 'companion.voice.summary-placeholder')}
 						/>
 						<div>
-							<Button type="submit" size="sm" disabled={savingVoiceProfile}>Save</Button>
+							<Button type="submit" size="sm" disabled={savingVoiceProfile}>{t(locale, 'companion.voice.save-button')}</Button>
 						</div>
 					</form>
 
@@ -428,7 +463,7 @@
 							}}
 						>
 							<Button type="submit" variant="outline" size="sm" disabled={refreshingVoiceProfile}>
-								<RefreshCw class="size-4" /> Refresh now
+								<RefreshCw class="size-4" /> {t(locale, 'companion.voice.refresh-button')}
 							</Button>
 						</form>
 						{#if voiceProfile?.source === 'manual'}
@@ -444,7 +479,7 @@
 								}}
 							>
 								<Button type="submit" variant="ghost" size="sm" disabled={resettingVoiceProfile}>
-									<RotateCcw class="size-4" /> Reset to derived
+									<RotateCcw class="size-4" /> {t(locale, 'companion.voice.reset-button')}
 								</Button>
 							</form>
 						{/if}
@@ -452,21 +487,12 @@
 
 					{#if voiceProfile && voiceProfile.itemCount > 0}
 						<p class="text-xs text-muted-foreground">
-							Derived from {voiceProfile.evidenceCounts.voiceSamples} voice sample{voiceProfile
-								.evidenceCounts.voiceSamples === 1
-								? ''
-								: 's'}, {voiceProfile.evidenceCounts.messages} message{voiceProfile.evidenceCounts
-								.messages === 1
-								? ''
-								: 's'}, {voiceProfile.evidenceCounts.drafts} sent draft{voiceProfile.evidenceCounts
-								.drafts === 1
-								? ''
-								: 's'} and {voiceProfile.evidenceCounts.templates} template{voiceProfile
-								.evidenceCounts.templates === 1
-								? ''
-								: 's'}{#if voiceProfile.derivedAt}
-								&nbsp;- last derived {relativeTime(voiceProfile.derivedAt)}
-							{/if}
+							{t(locale, 'companion.voice.derived-from', {
+								samples: tn(locale, 'companion.voice.count-voice-sample', voiceProfile.evidenceCounts.voiceSamples),
+								messages: tn(locale, 'companion.voice.count-message', voiceProfile.evidenceCounts.messages),
+								drafts: tn(locale, 'companion.voice.count-sent-draft', voiceProfile.evidenceCounts.drafts),
+								templates: tn(locale, 'companion.voice.count-template', voiceProfile.evidenceCounts.templates),
+							})}{#if voiceProfile.derivedAt}{t(locale, 'companion.voice.last-derived', { when: relativeTime(voiceProfile.derivedAt) })}{/if}
 						</p>
 					{/if}
 
@@ -475,7 +501,7 @@
 							{@const g = voiceProfile.genres[genre]}
 							{#if g.summary}
 								<div class="rounded-md border border-border/60 bg-muted/30 p-2 text-xs">
-									<span class="font-medium">{GENRE_LABEL[genre]}s:</span>
+									<span class="font-medium">{GENRE_LABEL_PLURAL[genre]}:</span>
 									<span class="text-muted-foreground">{g.summary}</span>
 								</div>
 							{/if}
@@ -485,19 +511,16 @@
 					{#if voiceProfile?.editSignature.measurable}
 						<div class="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/30 p-2 text-xs">
 							<div class="flex flex-wrap items-center justify-between gap-2">
-								<span class="font-medium">What you cut before posting</span>
+								<span class="font-medium">{t(locale, 'companion.voice.edit-signature-title')}</span>
 								<span class="text-muted-foreground">
-									Based on {voiceProfile.editSignature.pairCount} edited suggestion{voiceProfile
-										.editSignature.pairCount === 1
-										? ''
-										: 's'}
+									{tn(locale, 'companion.voice.edit-signature-based-on', voiceProfile.editSignature.pairCount)}
 								</span>
 							</div>
 							{#if voiceProfile.editSignatureExcluded}
-								<Badge variant="outline" class="w-fit">Excluded from prompt</Badge>
+								<Badge variant="outline" class="w-fit">{t(locale, 'companion.voice.edit-signature-excluded-badge')}</Badge>
 							{/if}
 							<p class="text-muted-foreground">
-								{voiceProfile.editSignatureDescription ?? 'Nothing recurring enough yet to name.'}
+								{voiceProfile.editSignatureDescription ?? t(locale, 'companion.voice.edit-signature-fallback')}
 							</p>
 							{#if voiceProfile.editSignature.bannedPhrases.length > 0}
 								<div class="flex flex-wrap gap-1">
@@ -531,7 +554,7 @@
 									disabled={togglingEditSignature}
 									onCheckedChange={() => editSignatureFormRef?.requestSubmit()}
 								/>
-								Exclude from prompt
+								{t(locale, 'companion.voice.exclude-from-prompt-label')}
 							</label>
 						</div>
 					{/if}
@@ -541,20 +564,20 @@
 
 		<Card.Root>
 			<Card.Header>
-				<Card.Title>Voice samples</Card.Title>
+				<Card.Title>{t(locale, 'companion.voice.samples-card-title')}</Card.Title>
 				<Card.Description>
-					Your own posts and comments, captured passively or imported from a LinkedIn export.
-					{includedSampleCount} of {data.voiceSamples.length} feed the derived voice beside this -
-					excluding a sample keeps it here, it just stops contributing, because a delete would come
-					back on the next capture or import.
+					{t(locale, 'companion.voice.samples-card-description', {
+						included: includedSampleCount,
+						total: data.voiceSamples.length,
+					})}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
 				{#if data.voiceSamples.length === 0}
 					<EmptyState
 						icon={Mic}
-						title="No voice samples yet"
-						description="Captured passively when you browse your own recent activity on LinkedIn with the extension installed, or filled in one step above from a LinkedIn data export."
+						title={t(locale, 'companion.voice.empty-samples-title')}
+						description={t(locale, 'companion.voice.empty-samples-description')}
 					/>
 				{:else}
 					<div class="flex flex-col divide-y divide-border">
@@ -564,9 +587,10 @@
 									{#if sample.genre === 'comment' && sample.context}
 										<p class="mb-1 truncate text-xs text-muted-foreground">
 											{#if sample.context.startsWith('http')}
-												Replying to <a href={sample.context} target="_blank" rel="noreferrer" class="underline">{sample.context}</a>
+												{@const [before, after] = splitAroundToken(locale, 'companion.voice.replying-to-link', 'url')}
+												{before}<a href={sample.context} target="_blank" rel="noreferrer" class="underline">{sample.context}</a>{after}
 											{:else}
-												Replying to: "{sample.context}"
+												{t(locale, 'companion.voice.replying-to-quoted', { context: sample.context })}
 											{/if}
 										</p>
 									{/if}
@@ -576,9 +600,9 @@
 										<Badge variant="outline">{GENRE_LABEL[sample.genre]}</Badge>
 										<Badge variant="outline">{SOURCE_LABEL[sample.source]}</Badge>
 										{#if sample.excluded}
-											<Badge variant="outline">Excluded</Badge>
+											<Badge variant="outline">{t(locale, 'companion.voice.excluded-badge')}</Badge>
 										{:else}
-											<Badge variant="secondary">Included</Badge>
+											<Badge variant="secondary">{t(locale, 'companion.voice.included-badge')}</Badge>
 										{/if}
 									</div>
 								</div>
@@ -604,7 +628,7 @@
 										disabled={togglingSampleId === sample.id}
 										onCheckedChange={() => voiceFormRefs[sample.id]?.requestSubmit()}
 									/>
-									Exclude
+									{t(locale, 'companion.voice.exclude-label')}
 								</label>
 							</div>
 						{/each}

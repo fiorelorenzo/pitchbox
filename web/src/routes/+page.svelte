@@ -21,6 +21,8 @@
 	import { relativeTime } from '$lib/utils/time';
 	import PageContainer from '$lib/components/PageContainer.svelte';
 	import type { OnboardingStepId } from '@pitchbox/shared/onboarding';
+	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	type Run = {
 		id: number;
@@ -72,6 +74,8 @@
 		};
 	} = $props();
 
+	const locale = $derived($page.data.locale as Locale);
+
 	const activeCampaigns = $derived(data.campaigns.filter((c) => c.status === 'active'));
 	const pausedCampaigns = $derived(data.campaigns.filter((c) => c.status !== 'active'));
 
@@ -90,13 +94,13 @@
 
 <PageContainer size="default">
 <Seo
-	title="Home"
-	description="Outreach overview - drafts awaiting review, recent runs, campaign status."
+	title={t(locale, 'home.seo-title')}
+	description={t(locale, 'home.seo-description')}
 />
 
 <PageHeader
-	title="Home"
-	description="Outreach overview - drafts awaiting review, recent runs, campaign status."
+	title={t(locale, 'home.title')}
+	description={t(locale, 'home.description')}
 />
 
 {#if data.onboarding}
@@ -110,77 +114,79 @@
 <!-- Primary stats -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
 	<StatCard
-		label="Drafts awaiting review"
+		label={t(locale, 'home.stat-drafts-pending-label')}
 		value={data.stats.pending}
 		icon={Inbox}
 		href="/inbox?state=pending_review"
 		hint={data.stats.createdToday > 0
-			? `${data.stats.createdToday} new in the last 24h`
-			: 'Nothing new to approve or reject'}
+			? t(locale, 'home.stat-drafts-pending-hint-new', { n: data.stats.createdToday })
+			: t(locale, 'home.stat-drafts-pending-hint-none')}
 	/>
 	<StatCard
-		label="Approved, not sent"
+		label={t(locale, 'home.stat-approved-label')}
 		value={data.stats.approved}
 		icon={CheckCircle2}
 		href="/inbox?state=approved"
-		hint="Open compose to send them"
+		hint={t(locale, 'home.hint-open-compose')}
 	/>
 	<StatCard
-		label="Messages sent (24h)"
+		label={t(locale, 'home.stat-sent-label')}
 		value={data.stats.sentToday}
 		icon={Send}
 		href="/inbox?state=sent"
-		hint="Marked as sent manually"
+		hint={t(locale, 'home.hint-marked-sent')}
 	/>
 	<StatCard
-		label="Reply rate"
+		label={t(locale, 'home.stat-reply-rate-label')}
 		value={replyRate > 0 ? `${replyRate}%` : '-'}
 		icon={MessageCircle}
 		href="/people?tab=contacts"
-		hint="{data.stats.replies} replies · {data.stats.uniqueContacts} contacts"
+		hint={t(locale, 'home.hint-reply-rate', { replies: data.stats.replies, contacts: data.stats.uniqueContacts })}
 	/>
 </div>
 
 <!-- Secondary stats: 7-day run health -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
 	<StatCard
-		label="Campaign runs (7d)"
+		label={t(locale, 'home.stat-runs-label')}
 		value={data.runStats7d.total}
 		icon={Sparkles}
-		hint={successRate != null ? `${successRate}% success rate` : 'No runs yet'}
+		hint={successRate != null
+			? t(locale, 'home.hint-success-rate', { rate: successRate })
+			: t(locale, 'home.hint-no-runs-yet')}
 	/>
 	<StatCard
-		label="Successful runs"
+		label={t(locale, 'home.stat-successful-runs-label')}
 		value={data.runStats7d.success}
 		icon={TrendingUp}
-		hint="Last 7 days"
+		hint={t(locale, 'home.hint-last-7-days')}
 	/>
 	<StatCard
-		label="Failed runs"
+		label={t(locale, 'home.stat-failed-runs-label')}
 		value={data.runStats7d.failed}
 		icon={AlertTriangle}
-		hint="Last 7 days"
+		hint={t(locale, 'home.hint-last-7-days')}
 	/>
 	{#if data.spend}
 		<StatCard
-			label="Campaign spend (24h / 7d)"
+			label={t(locale, 'home.stat-campaign-spend-label')}
 			value={`$${data.spend.cost24h.toFixed(2)}`}
 			icon={DollarSign}
-			hint={`$${data.spend.cost7d.toFixed(2)} over the last 7 days`}
+			hint={t(locale, 'home.hint-spend-7d', { amount: data.spend.cost7d.toFixed(2) })}
 		/>
 		<StatCard
-			label="Assistant spend (24h / 7d)"
+			label={t(locale, 'home.stat-assistant-spend-label')}
 			value={`$${data.spend.assistCost24h.toFixed(2)}`}
 			icon={Bot}
-			hint={`$${data.spend.assistCost7d.toFixed(2)} over the last 7 days - LinkedIn suggestions, separate from campaign spend`}
+			hint={t(locale, 'home.hint-assistant-spend-7d', { amount: data.spend.assistCost7d.toFixed(2) })}
 		/>
 	{/if}
 	<StatCard
-		label="Unique people contacted"
+		label={t(locale, 'home.stat-unique-contacts-label')}
 		value={data.stats.uniqueContacts}
 		icon={Users}
 		href="/people?tab=contacts"
-		hint="All-time outreach"
+		hint={t(locale, 'home.hint-all-time')}
 	/>
 </div>
 
@@ -188,13 +194,13 @@
 	<!-- Recent runs -->
 	<Card.Root size="sm">
 		<Card.Header>
-			<Card.Title class="text-base">Recent runs</Card.Title>
-			<Card.Description class="text-xs">Last 5 campaign runs</Card.Description>
+			<Card.Title class="text-base">{t(locale, 'home.recent-runs-title')}</Card.Title>
+			<Card.Description class="text-xs">{t(locale, 'home.recent-runs-description')}</Card.Description>
 		</Card.Header>
 		<Card.Content>
 			{#if data.recentRuns.length === 0}
 				<p class="text-sm text-muted-foreground italic py-6 text-center">
-					No runs yet - start one from Campaigns.
+					{t(locale, 'home.no-runs-yet')}
 				</p>
 			{:else}
 				<ul class="divide-y divide-border/60">
@@ -206,7 +212,7 @@
 									href="/campaigns/{run.campaignId}"
 									class="text-sm font-medium hover:underline truncate block"
 								>
-									{run.campaignName ?? `Campaign #${run.campaignId}`}
+									{run.campaignName ?? t(locale, 'home.campaign-fallback-label', { id: run.campaignId })}
 								</a>
 								<div class="text-[11px] text-muted-foreground flex items-center gap-1.5">
 									<span class="font-mono">#{run.id}</span>
@@ -229,17 +235,17 @@
 	<!-- Campaigns -->
 	<Card.Root size="sm">
 		<Card.Header>
-			<Card.Title class="text-base">Campaigns</Card.Title>
+			<Card.Title class="text-base">{t(locale, 'home.campaigns-card-title')}</Card.Title>
 			<Card.Description class="text-xs">
-				{activeCampaigns.length} active · {pausedCampaigns.length} paused
+				{t(locale, 'home.campaigns-summary', { active: activeCampaigns.length, paused: pausedCampaigns.length })}
 				{#if data.campaigns.length > 6}
-					· showing 6 of {data.campaigns.length}
+					{t(locale, 'home.campaigns-summary-showing', { total: data.campaigns.length })}
 				{/if}
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>
 			{#if data.campaigns.length === 0}
-				<p class="text-sm text-muted-foreground italic py-6 text-center">No campaigns yet.</p>
+				<p class="text-sm text-muted-foreground italic py-6 text-center">{t(locale, 'home.no-campaigns-yet')}</p>
 			{:else}
 				<ul class="divide-y divide-border/60">
 					{#each data.campaigns.slice(0, 6) as c (c.id)}
@@ -266,7 +272,7 @@
 									<Clock class="size-3" />
 									{relativeTime(c.lastRunStartedAt)}
 								{:else}
-									<span class="italic">never run</span>
+									<span class="italic">{t(locale, 'home.never-run')}</span>
 								{/if}
 							</span>
 						</li>
@@ -274,11 +280,12 @@
 			</ul>
 			{#if data.campaigns.length > 6}
 				<a href="/campaigns" class="mt-2 block text-center text-xs text-primary hover:underline">
-					View all {data.campaigns.length} campaigns
+					{t(locale, 'home.view-all-campaigns', { count: data.campaigns.length })}
 				</a>
 			{/if}
 			{/if}
 		</Card.Content>
 	</Card.Root>
 </div>
+
 </PageContainer>
