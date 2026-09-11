@@ -91,20 +91,32 @@ interface locale. Reading the dashboard in Italian while it drafts in English
 is not a bug to file; it is the two axes doing exactly what they are each
 built to do.
 
-## The one gap today
+## The pin reaches every check that language matters to
 
-The pin reaches the prompt (`resolveDraftLanguage`) and the quality scorer
-(`shared/src/quality-judge.ts`'s `computeDeterministicQuality`, via its own
-`expectedLanguage` argument, so a correctly-pinned Italian draft answering an
-English post scores a language match rather than a manufactured mismatch).
-It does not yet reach the house-style checker: `shared/src/style-check.ts`'s
-`checkStyle` takes a single `text` argument and no language of its own,
-so its bilingual phrase-list rules (`scanBilingual`, and `FILLER_OPENER_RULE`'s
-own dispatch) still call `classifyLanguage` on the finished draft body to
-decide which phrase list to run, rather than being told what the pin
-already resolved. A pinned-Italian reply that `classifyLanguage` alone
-misreads as English - not an edge case on this product's most common output
-shape, a short reaction of a handful of words - is checked against the wrong
-list, silently. This is tracked and being fixed in the same release
-(LOR-291); the prompt and the scorer are not affected, only the mechanical
-style check's choice of which phrase list to run.
+A campaign pin does not just change what the model is asked to write; it
+also changes how what comes back gets checked afterward. Three places read
+`campaign.config.voice.language` today, all fed from the one value
+`cli/src/commands/drafts.ts`'s `extractVoiceLanguagePin` reads per batch:
+
+- The prompt, as `resolveDraftLanguage`'s `pin` argument (above).
+- The quality scorer, as `shared/src/quality-judge.ts`'s
+  `computeDeterministicQuality`'s `expectedLanguage` argument, so a
+  correctly-pinned Italian draft answering an English post scores a
+  language match rather than a manufactured mismatch.
+- The house-style checker, as `shared/src/style-check.ts`'s `checkStyle`'s
+  `expectedLanguage` argument (threaded through `enforceHouseStyle`, which
+  `drafts.ts` calls on the body, the title and every A/B variant). Its
+  bilingual rules (`scanBilingual`, and `FILLER_OPENER_RULE`'s own
+  dispatch) pick a phrase list from that argument instead of reclassifying
+  the finished draft - the pin wins outright over a guess, the same
+  precedence the prompt and the scorer already give it.
+
+That last one closed a real gap. `classifyLanguage` alone reads roughly a
+third of short, readable Italian text as `unknown`, and on `unknown` the
+checker used to run both phrase lists - correct by luck, not by design, and
+wrong outright on a short pinned-Italian reply the classifier misreads as
+confidently English: it would have been checked only against the English
+list, silently. With no pin, nothing changed: `checkStyle`'s and
+`enforceHouseStyle`'s `expectedLanguage` argument is optional, and
+`classifyLanguage(text)` still decides exactly as before, `unknown` still
+running both lists.
