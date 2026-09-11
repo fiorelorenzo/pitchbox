@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { getDb, schema } from '../src/db/client.js';
 import { recordVoiceSamples, setVoiceSampleExcluded } from '../src/operator-profile.js';
-import { EMPTY_RHYTHM, MIN_ITEMS_TO_DERIVE } from '../src/assist/voice-profile.js';
+import {
+  EMPTY_RHYTHM,
+  EMPTY_EDIT_SIGNATURE,
+  MIN_ITEMS_TO_DERIVE,
+} from '../src/assist/voice-profile.js';
 import { DEFAULT_VOICE_PROFILE } from '../src/assist/voice-defaults.js';
 import {
   loadVoiceProfile,
@@ -10,6 +14,7 @@ import {
   saveVoiceProfileSummary,
   resetVoiceProfileToDerived,
   resolveOperatorVoiceProfile,
+  setEditSignatureExcluded,
   VOICE_AXES,
   type VoiceProfileEvidence,
 } from '../src/operator-voice-profile.js';
@@ -218,7 +223,13 @@ describe('shared/src/operator-voice-profile', () => {
     expect(row.itemCount).toBe(5);
     expect(row.summary).toContain('Just shipped');
     expect(row.summary).toContain('team');
-    expect(row.evidence.counts).toEqual({ voiceSamples: 2, messages: 1, drafts: 1, templates: 1 });
+    expect(row.evidence.counts).toEqual({
+      voiceSamples: 2,
+      messages: 1,
+      drafts: 1,
+      templates: 1,
+      acceptedSuggestions: 0,
+    });
     expect(row.evidence.voiceSampleIds).toHaveLength(2);
     expect(row.evidence.messageIds).toHaveLength(1);
     expect(row.evidence.draftIds).toHaveLength(1);
@@ -240,7 +251,13 @@ describe('shared/src/operator-voice-profile', () => {
     const rowB = await refreshVoiceProfile(getDb(), orgB);
     expect(rowB.itemCount).toBe(1);
     expect(rowB.summary).toBe('');
-    expect(rowB.evidence.counts).toEqual({ voiceSamples: 1, messages: 0, drafts: 0, templates: 0 });
+    expect(rowB.evidence.counts).toEqual({
+      voiceSamples: 1,
+      messages: 0,
+      drafts: 0,
+      templates: 0,
+      acceptedSuggestions: 0,
+    });
   });
 
   it('excluding the voice samples that carried a habit removes it from the derived profile', async () => {
@@ -593,5 +610,167 @@ describe('resolveOperatorVoiceProfile', () => {
     expect(evidence.lexicon.avoidedWords).toContain('humbled');
     expect(evidence.lexicon.avoidedWords.length).toBeGreaterThanOrEqual(10);
     expect(evidence.rhythm.medianSentenceWords).toBeGreaterThan(0);
+  });
+});
+
+/** A row in the assist plane's own ledger (`assist_accepted_suggestions`) -
+ * what accepting a suggestion writes. `kind` is a DraftKind ('post' or
+ * 'post_comment' today); `editedFrom` is the model's own draft, present
+ * only when the human changed it before posting. */
+async function makeAcceptedSuggestion(opts: {
+  organizationId: number;
+  kind: 'post' | 'post_comment';
+  body: string;
+  editedFrom?: string | null;
+}) {
+  const db = getDb();
+  await db.insert(schema.assistAcceptedSuggestions).values({
+    organizationId: opts.organizationId,
+    platformId: await platformId('linkedin'),
+    kind: opts.kind,
+    body: opts.body,
+    editedFrom: opts.editedFrom ?? null,
+    agentRunner: 'claude-code',
+  });
+}
+
+describe('accepted suggestions and the edit signature (LOR-227)', () => {
+  beforeEach(reset);
+
+  it('maps an accepted suggestion kind onto the corpus genre vocabulary (post_comment -> comment, post -> post)', async () => {
+    const orgId = await ensureOrg('vp-org-accepted-genre');
+    // Three of each kind - enough to clear MIN_ITEMS_TO_DERIVE per genre on
+    // their own, with nothing else in the corpus to attribute the genre
+    // measurement to.
+    for (let i = 0; i < 3; i += 1) {
+      await makeAcceptedSuggestion({
+        organizationId: orgId,
+        kind: 'post',
+        body: `A real published post about shipping something new today, part ${i}.`,
+      });
+      await makeAcceptedSuggestion({
+        organizationId: orgId,
+        kind: 'post_comment',
+        body: `Nice work ${i}!`,
+      });
+    }
+
+    const row = await refreshVoiceProfile(getDb(), orgId);
+    expect(row.evidence.counts.acceptedSuggestions).toBe(6);
+    expect(row.evidence.genres.post.itemCount).toBe(3);
+    expect(row.evidence.genres.post.measurable).toBe(true);
+    expect(row.evidence.genres.comment.itemCount).toBe(3);
+    expect(row.evidence.genres.comment.measurable).toBe(true);
+  });
+
+  it('a corpus with accepted suggestions produces a different profile than the same corpus without them', async () => {
+    const withoutOrg = await ensureOrg('vp-org-no-accepted');
+    const withOrg = await ensureOrg('vp-org-with-accepted');
+    const baseSamples = [
+      'Shipped a small fix today for the retry queue, seemed to help under load quite a bit honestly.',
+      'Working through a backlog of bug reports this week, slow going but steady real progress overall.',
+      'Put out a new release last night after testing thoroughly across every environment we support today.',
+    ];
+    const linkedin = await platformId('linkedin');
+    for (const org of [withoutOrg, withOrg]) {
+      for (const [i, text] of baseSamples.entries()) {
+        await recordVoiceSamples(getDb(), org, linkedin, [
+          { externalId: `sample-${org}-${i}`, text, postedAt: new Date().toISOString() },
+        ]);
+      }
+    }
+    // Only the second org gets accepted suggestions - three published posts
+    // sharing a phrase reused often enough to be counted as recurring.
+    for (let i = 0; i < 3; i += 1) {
+      await makeAcceptedSuggestion({
+        organizationId: withOrg,
+        kind: 'post',
+        body: `Big news: we just launched a redesign of the whole dashboard, part ${i} of the rollout today.`,
+      });
+    }
+
+    const without = await refreshVoiceProfile(getDb(), withoutOrg);
+    const withAccepted = await refreshVoiceProfile(getDb(), withOrg);
+    expect(without.evidence.counts.acceptedSuggestions).toBe(0);
+    expect(withAccepted.evidence.counts.acceptedSuggestions).toBe(3);
+    expect(withAccepted.itemCount).toBeGreaterThan(without.itemCount);
+    expect(withAccepted.wordCount).not.toBe(without.wordCount);
+    expect(withAccepted.openings).not.toEqual(without.openings);
+  });
+
+  it('derives an edit signature from edited accepted suggestions, and stores it separately from the measured axes', async () => {
+    const orgId = await ensureOrg('vp-org-edit-signature');
+    await makeAcceptedSuggestion({
+      organizationId: orgId,
+      kind: 'post',
+      body: 'Cool, thanks for sharing.',
+      editedFrom:
+        'Great question! I think this is really cool, thanks so much for sharing this with everyone.',
+    });
+    await makeAcceptedSuggestion({
+      organizationId: orgId,
+      kind: 'post',
+      body: 'This resonates with me.',
+      editedFrom:
+        'Great question! I appreciate you writing this, it truly resonates with me a lot.',
+    });
+    await makeAcceptedSuggestion({
+      organizationId: orgId,
+      kind: 'post',
+      body: 'Nice post.',
+      editedFrom:
+        'Nice post here, I think this is fantastic and I love reading things like this honestly.',
+    });
+
+    const row = await refreshVoiceProfile(getDb(), orgId);
+    expect(row.evidence.editSignature.measurable).toBe(true);
+    expect(row.evidence.editSignature.pairCount).toBe(3);
+    expect(row.evidence.editSignature.bannedPhrases).toEqual(['Great question!']);
+    expect(row.evidence.editSignature.shortensText).toBe(true);
+    expect(row.evidence.editSignatureExcluded).toBe(false);
+  });
+
+  it('setEditSignatureExcluded persists across a later refresh, unlike the measured signature itself', async () => {
+    const orgId = await ensureOrg('vp-org-edit-exclude');
+    for (const [body, editedFrom] of [
+      ['Cool, thanks for sharing.', 'Great question! Cool, thanks so much for sharing this.'],
+      ['This resonates with me.', 'Great question! This truly resonates with me a lot.'],
+      ['Nice post.', 'Great question! Nice post, I really loved reading this today.'],
+    ] as const) {
+      await makeAcceptedSuggestion({ organizationId: orgId, kind: 'post', body, editedFrom });
+    }
+    const derived = await refreshVoiceProfile(getDb(), orgId);
+    expect(derived.evidence.editSignatureExcluded).toBe(false);
+    expect(derived.evidence.editSignature.measurable).toBe(true);
+
+    const excluded = await setEditSignatureExcluded(getDb(), orgId, true);
+    expect(excluded.evidence.editSignatureExcluded).toBe(true);
+    // The measured signature itself is untouched by the exclude toggle.
+    expect(excluded.evidence.editSignature).toEqual(derived.evidence.editSignature);
+
+    // A later refresh recomputes the signature but carries the exclusion
+    // forward - it is a human judgement, not a measurement to overwrite.
+    const refreshedAgain = await refreshVoiceProfile(getDb(), orgId, { overwrite: true });
+    expect(refreshedAgain.evidence.editSignatureExcluded).toBe(true);
+    expect(refreshedAgain.evidence.editSignature.measurable).toBe(true);
+  });
+
+  it('resolveOperatorVoiceProfile exposes the edit signature and its exclude flag', async () => {
+    const orgId = await ensureOrg('vp-org-resolve-edit-signature');
+    const resolvedBefore = await resolveOperatorVoiceProfile(getDb(), orgId);
+    expect(resolvedBefore.editSignature).toEqual(EMPTY_EDIT_SIGNATURE);
+    expect(resolvedBefore.editSignatureExcluded).toBe(false);
+
+    for (const [body, editedFrom] of [
+      ['Cool, thanks for sharing.', 'Great question! Cool, thanks so much for sharing this.'],
+      ['This resonates with me.', 'Great question! This truly resonates with me a lot.'],
+      ['Nice post.', 'Great question! Nice post, I really loved reading this today.'],
+    ] as const) {
+      await makeAcceptedSuggestion({ organizationId: orgId, kind: 'post', body, editedFrom });
+    }
+    await refreshVoiceProfile(getDb(), orgId);
+    const resolvedAfter = await resolveOperatorVoiceProfile(getDb(), orgId);
+    expect(resolvedAfter.editSignature.measurable).toBe(true);
+    expect(resolvedAfter.editSignature.bannedPhrases).toEqual(['Great question!']);
   });
 });

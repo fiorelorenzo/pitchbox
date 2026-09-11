@@ -38,6 +38,21 @@
 		capturedAt: string;
 	};
 	type GenreSummary = { summary: string | null; itemCount: number; measurable: boolean };
+	// Mirrors shared/src/assist/voice-profile.ts's EditSignature - a plain,
+	// JSON-serializable measurement, not imported directly so this file
+	// stays independent of the server-only shared package the way its other
+	// local types already do (VoiceProfile/GenreSummary above).
+	type EditSignature = {
+		pairCount: number;
+		measurable: boolean;
+		shortensText: boolean;
+		dropsClosingSentence: boolean;
+		cutsHedges: boolean;
+		dropsOpening: boolean;
+		stripsEmoji: boolean;
+		changesLanguage: boolean;
+		bannedPhrases: string[];
+	};
 	type VoiceProfile = {
 		summary: string;
 		traits: string[];
@@ -47,11 +62,20 @@
 		wordsPerSentence: number;
 		itemCount: number;
 		wordCount: number;
-		evidenceCounts: { voiceSamples: number; messages: number; drafts: number; templates: number };
+		evidenceCounts: {
+			voiceSamples: number;
+			messages: number;
+			drafts: number;
+			templates: number;
+			acceptedSuggestions: number;
+		};
 		genres: Record<VoiceSampleGenre, GenreSummary>;
 		source: 'derived' | 'manual';
 		derivedAt: string | null;
 		updatedAt: string;
+		editSignature: EditSignature;
+		editSignatureDescription: string | null;
+		editSignatureExcluded: boolean;
 	};
 	type PageData = { voiceSamples: VoiceSample[]; voiceProfile: VoiceProfile | null };
 	type FormResult = {
@@ -112,6 +136,8 @@
 	let voiceFormRefs: Record<number, HTMLFormElement> = $state({});
 	let togglingSampleId = $state<number | null>(null);
 	let importFileInput: HTMLInputElement | undefined = $state();
+	let editSignatureFormRef: HTMLFormElement | undefined = $state();
+	let togglingEditSignature = $state(false);
 </script>
 
 <Seo
@@ -283,6 +309,60 @@
 								</div>
 							{/if}
 						{/each}
+					{/if}
+
+					{#if voiceProfile?.editSignature.measurable}
+						<div class="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/30 p-2 text-xs">
+							<div class="flex flex-wrap items-center justify-between gap-2">
+								<span class="font-medium">What you cut before posting</span>
+								<span class="text-muted-foreground">
+									Based on {voiceProfile.editSignature.pairCount} edited suggestion{voiceProfile
+										.editSignature.pairCount === 1
+										? ''
+										: 's'}
+								</span>
+							</div>
+							{#if voiceProfile.editSignatureExcluded}
+								<Badge variant="outline" class="w-fit">Excluded from prompt</Badge>
+							{/if}
+							<p class="text-muted-foreground">
+								{voiceProfile.editSignatureDescription ?? 'Nothing recurring enough yet to name.'}
+							</p>
+							{#if voiceProfile.editSignature.bannedPhrases.length > 0}
+								<div class="flex flex-wrap gap-1">
+									{#each voiceProfile.editSignature.bannedPhrases as phrase (phrase)}
+										<Badge variant="outline">{phrase}</Badge>
+									{/each}
+								</div>
+							{/if}
+							<form
+								method="POST"
+								action="?/toggleEditSignature"
+								bind:this={editSignatureFormRef}
+								use:enhance={() => {
+									togglingEditSignature = true;
+									return async ({ update }) => {
+										await update();
+										togglingEditSignature = false;
+									};
+								}}
+								class="contents"
+							>
+								<input
+									type="hidden"
+									name="excluded"
+									value={(!voiceProfile.editSignatureExcluded).toString()}
+								/>
+							</form>
+							<label class="flex w-fit items-center gap-2 text-xs text-muted-foreground">
+								<Checkbox
+									checked={voiceProfile.editSignatureExcluded}
+									disabled={togglingEditSignature}
+									onCheckedChange={() => editSignatureFormRef?.requestSubmit()}
+								/>
+								Exclude from prompt
+							</label>
+						</div>
 					{/if}
 				</div>
 			</Card.Content>

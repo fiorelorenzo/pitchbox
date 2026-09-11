@@ -207,6 +207,13 @@ const PERSONA_ABOUT_MAX = 1200;
  * post with no length contract - past this it would only mean the
  * derivation is padding rather than measuring. */
 export const VOICE_PROFILE_MAX = 500;
+/** Ceiling on the edit signature's own prose (LOR-227) - same reasoning as
+ * VOICE_PROFILE_MAX: it is generated, capped prose
+ * (`assist/voice-profile.ts`'s `describeEditSignature`), not captured text,
+ * so past this it would only mean the derivation is padding. Same size as
+ * VOICE_PROFILE_MAX for the same reason: a section this short does not need
+ * its own budget, it needs the same one. */
+export const EDIT_SIGNATURE_MAX = VOICE_PROFILE_MAX;
 /** Ceiling on a repo's README excerpt as it goes into the prompt. The cached
  * excerpt is already clamped to 1200 chars when it is fetched
  * (github-sources.ts README_EXCERPT_MAX_CHARS), a budget sized for "enough to
@@ -426,6 +433,19 @@ export function buildSuggestionPrompt(args: {
       ? 'How the operator writes when commenting, based on their own comments'
       : 'How the operator writes, based on what they have actually written';
     parts.push(`${lead}: ${clamp(voiceProfileText, VOICE_PROFILE_MAX)}`);
+  }
+
+  // What this operator reliably cuts before publishing (LOR-227), derived
+  // from accepted suggestions they edited before posting -
+  // `assist/voice-profile.ts`'s `describeEditSignature`, computed from
+  // `edited_from`/`body` pairs the same way `voiceProfileText` above is
+  // computed from the pooled corpus. Absent entirely below its own floor
+  // or when the operator excluded it in Settings (`context.ts` already
+  // resolves both to `null`) - never an empty heading.
+  if (voiceProfile?.editSignature?.trim()) {
+    parts.push(
+      `What this operator reliably cuts from a draft before posting it: ${clamp(voiceProfile.editSignature, EDIT_SIGNATURE_MAX)}`,
+    );
   }
 
   // What they are building: every project in the organization, with its own

@@ -63,6 +63,7 @@ const voiceProfile: VoiceProfileSummary = {
   summary:
     'Based on 12 pieces of their own writing (640 words). Usually writes with short sentences, close to speech, first person, speaking as themselves, about 11 words per sentence. Often opens with "Shipped the". Reuses these words often: shipped, team, campaign.',
   commentSummary: null,
+  editSignature: null,
 };
 
 const projects: ProjectBrief[] = [
@@ -259,6 +260,7 @@ describe('buildSuggestionPrompt', () => {
           'Based on 12 pieces of their own writing (640 words). Often closes with "#BuildInPublic".',
         commentSummary:
           'Based on 27 of their own comments (190 words). Usually writes one short sentence.',
+        editSignature: null,
       };
       const commentPrompt = buildSuggestionPrompt({
         kind: 'post_comment',
@@ -297,6 +299,36 @@ describe('buildSuggestionPrompt', () => {
       });
       expect(prompt).toContain(voiceProfile.summary);
       expect(prompt).toMatch(/How the operator writes, based on what they have actually written/);
+    });
+
+    it('LOR-227: carries the edit signature as its own section when present, absent entirely when null', () => {
+      const withSignature: VoiceProfileSummary = {
+        ...voiceProfile,
+        editSignature:
+          'Based on 5 edited suggestions. Before posting a draft, this operator usually shortens it, drops the closing line. Phrases they have deleted from a draft more than once: "Great question!".',
+      };
+      const prompt = buildSuggestionPrompt({
+        kind: 'post',
+        post,
+        persona: null,
+        voiceProfile: withSignature,
+        projects: [],
+        repos: [],
+      });
+      expect(prompt).toContain('What this operator reliably cuts from a draft before posting it');
+      expect(prompt).toContain('"Great question!"');
+
+      // null (below the derivation floor, or excluded in Settings -
+      // context.ts already resolves both to null) - no section at all.
+      const withoutSignature = buildSuggestionPrompt({
+        kind: 'post',
+        post,
+        persona: null,
+        voiceProfile: { ...voiceProfile, editSignature: null },
+        projects: [],
+        repos: [],
+      });
+      expect(withoutSignature).not.toContain('reliably cuts');
     });
 
     it('omits each section entirely, not as an empty heading, when its source is missing', () => {
@@ -374,7 +406,7 @@ describe('buildSuggestionPrompt', () => {
         kind: 'post_comment',
         post,
         persona: null,
-        voiceProfile: { summary: justOver, commentSummary: null },
+        voiceProfile: { summary: justOver, commentSummary: null, editSignature: null },
         projects: [],
         repos: [],
       });
@@ -382,7 +414,7 @@ describe('buildSuggestionPrompt', () => {
         kind: 'post_comment',
         post,
         persona: null,
-        voiceProfile: { summary: wayOver, commentSummary: null },
+        voiceProfile: { summary: wayOver, commentSummary: null, editSignature: null },
         projects: [],
         repos: [],
       });
