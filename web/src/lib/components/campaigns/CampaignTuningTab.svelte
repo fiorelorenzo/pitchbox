@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { page } from '$app/stores';
+  import { t, tn, type Locale } from '$lib/i18n/index.js';
   import { onMount, onDestroy } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
@@ -31,6 +33,8 @@
   };
   let { campaignId, tuningRuns }: Props = $props();
 
+  const locale = $derived($page.data.locale as Locale);
+
   // svelte-ignore state_referenced_locally
   let objective = $state(tuningRuns[0]?.params?.objective ?? '');
   let submitting = $state(false);
@@ -51,7 +55,7 @@
   const previousJson = $derived(
     selectedRun?.params?.previousConfig
       ? JSON.stringify(selectedRun.params.previousConfig, null, 2)
-      : '(no previous profile)',
+      : t(locale, 'campaigns.tuning-tab.no-previous-profile'),
   );
   const generatedJson = $derived(
     selectedRun?.params?.generatedConfig
@@ -99,7 +103,7 @@
 
   async function tune() {
     if (!objective.trim()) {
-      toast.error('Objective is required');
+      toast.error(t(locale, 'campaigns.tuning-tab.error-objective-required'));
       return;
     }
     submitting = true;
@@ -111,15 +115,15 @@
       });
       const body = await res.json();
       if (res.status === 409) {
-        toast.error('A tuning run is already in progress');
+        toast.error(t(locale, 'campaigns.tuning-tab.error-already-in-progress'));
         return;
       }
       if (!res.ok) {
-        toast.error(body.message ?? 'Failed to start tuning');
+        toast.error(body.message ?? t(locale, 'campaigns.tuning-tab.error-start-failed'));
         return;
       }
       runningRunId = body.runId;
-      toast.success(`Tuning run #${body.runId} started`);
+      toast.success(t(locale, 'campaigns.tuning-tab.toast-started', { run: body.runId }));
       await invalidateAll();
     } finally {
       submitting = false;
@@ -132,10 +136,10 @@
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      toast.error(body.error ?? 'Adopt failed');
+      toast.error(body.error ?? t(locale, 'campaigns.tuning-tab.error-adopt-failed'));
       return;
     }
-    toast.success('Profile adopted');
+    toast.success(t(locale, 'campaigns.tuning-tab.toast-adopted'));
     await invalidateAll();
   }
 
@@ -145,10 +149,10 @@
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      toast.error(body.error ?? 'Discard failed');
+      toast.error(body.error ?? t(locale, 'campaigns.tuning-tab.error-discard-failed'));
       return;
     }
-    toast.success('Tuning run discarded');
+    toast.success(t(locale, 'campaigns.tuning-tab.toast-discarded'));
     await invalidateAll();
   }
 
@@ -171,7 +175,7 @@
           runningRunId = null;
           selectedRunId = payload.runId ?? selectedRunId;
           await invalidateAll();
-          toast.success('Tuning finished - review the diff');
+          toast.success(t(locale, 'campaigns.tuning-tab.toast-finished'));
         }
       }),
     );
@@ -183,22 +187,21 @@
   <StreamStatusBanner active={runningRunId !== null} onReconnect={() => invalidateAll()} />
   <Card.Root size="sm">
     <Card.Header>
-      <Card.Title class="text-base">Tune this campaign</Card.Title>
+      <Card.Title class="text-base">{t(locale, 'campaigns.tuning-tab.title')}</Card.Title>
       <Card.Description>
-        Describe what should change. The agent will draft a new profile that you can adopt or
-        discard.
+        {t(locale, 'campaigns.tuning-tab.description')}
       </Card.Description>
     </Card.Header>
     <Card.Content class="space-y-3">
       <Textarea
         bind:value={objective}
         rows={4}
-        placeholder="e.g. tighten the tone, add subreddit r/foo, drop the disclosure line"
+        placeholder={t(locale, 'campaigns.tuning-tab.objective-placeholder')}
         disabled={submitting || runningRunId !== null}
       />
       <div class="flex justify-end">
         <Button onclick={tune} loading={submitting || runningRunId !== null}>
-          {runningRunId !== null ? 'Tuning in progress' : 'Tune this campaign'}
+          {runningRunId !== null ? t(locale, 'campaigns.tuning-tab.button-in-progress') : t(locale, 'campaigns.tuning-tab.title')}
         </Button>
       </div>
     </Card.Content>
@@ -209,14 +212,14 @@
       <Card.Header>
         <div class="flex items-center justify-between gap-3">
           <div>
-            <Card.Title class="text-base">Proposed profile - run #{selectedRun.id}</Card.Title>
+            <Card.Title class="text-base">{t(locale, 'campaigns.tuning-tab.proposed-profile-title', { run: selectedRun.id })}</Card.Title>
             <Card.Description>
               {#if selectedRun.params.adopted}
-                <Badge variant="secondary">Adopted</Badge>
+                <Badge variant="secondary">{t(locale, 'campaigns.tuning-tab.badge-adopted')}</Badge>
               {:else if selectedRun.params.discarded}
-                <Badge variant="outline">Discarded</Badge>
+                <Badge variant="outline">{t(locale, 'campaigns.tuning-tab.badge-discarded')}</Badge>
               {:else}
-                Pending review
+                {t(locale, 'campaigns.tuning-tab.badge-pending-review')}
               {/if}
             </Card.Description>
           </div>
@@ -227,14 +230,14 @@
               onclick={() => discard(selectedRun!.id)}
               disabled={!!selectedRun.params.discarded}
             >
-              Discard
+              {t(locale, 'campaigns.tuning-tab.discard-button')}
             </Button>
             <Button
               size="sm"
               onclick={() => adopt(selectedRun!.id)}
               disabled={!!selectedRun.params.adopted}
             >
-              Adopt
+              {t(locale, 'campaigns.tuning-tab.adopt-button')}
             </Button>
           </div>
         </div>
@@ -254,20 +257,20 @@
 
   <Card.Root size="sm">
     <Card.Header>
-      <Card.Title class="text-base">Tuning history</Card.Title>
-      <Card.Description>Last {tuningRuns.length} tuning runs</Card.Description>
+      <Card.Title class="text-base">{t(locale, 'campaigns.tuning-tab.history-title')}</Card.Title>
+      <Card.Description>{tn(locale, 'campaigns.tuning-tab.history-count', tuningRuns.length)}</Card.Description>
     </Card.Header>
     <Card.Content>
       {#if tuningRuns.length === 0}
-        <p class="text-sm text-muted-foreground">No tuning runs yet.</p>
+        <p class="text-sm text-muted-foreground">{t(locale, 'campaigns.tuning-tab.history-empty')}</p>
       {:else}
         <table class="w-full text-sm">
           <thead>
             <tr class="text-left text-xs text-muted-foreground border-b">
-              <th class="py-2 font-medium">Run</th>
-              <th class="py-2 font-medium">Started</th>
-              <th class="py-2 font-medium">Status</th>
-              <th class="py-2 font-medium">Adopted</th>
+              <th class="py-2 font-medium">{t(locale, 'campaigns.runs-tab.col-id')}</th>
+              <th class="py-2 font-medium">{t(locale, 'campaigns.runs-tab.col-started')}</th>
+              <th class="py-2 font-medium">{t(locale, 'campaigns.col-status')}</th>
+              <th class="py-2 font-medium">{t(locale, 'campaigns.tuning-tab.col-adopted')}</th>
               <th class="py-2 font-medium"></th>
             </tr>
           </thead>
@@ -281,9 +284,9 @@
                 <td class="py-2"><StatusBadge domain="run-status" value={r.status} size="sm" /></td>
                 <td class="py-2">
                   {#if r.params?.adopted}
-                    <Badge variant="secondary">Yes</Badge>
+                    <Badge variant="secondary">{t(locale, 'campaigns.tuning-tab.badge-yes')}</Badge>
                   {:else if r.params?.discarded}
-                    <Badge variant="outline">Discarded</Badge>
+                    <Badge variant="outline">{t(locale, 'campaigns.tuning-tab.badge-discarded')}</Badge>
                   {:else}
                     <span class="text-muted-foreground">-</span>
                   {/if}
@@ -291,7 +294,7 @@
                 <td class="py-2 text-right">
                   {#if r.status === 'success' && r.params?.generatedConfig}
                     <Button size="sm" variant="ghost" onclick={() => (selectedRunId = r.id)}>
-                      View diff
+                      {t(locale, 'campaigns.tuning-tab.view-diff-button')}
                     </Button>
                   {/if}
                 </td>

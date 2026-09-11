@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { invalidateAll } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -6,6 +7,7 @@
   import { toast } from 'svelte-sonner';
   import { TONE_CLASS } from '$lib/config/status-badges';
   import DeleteAccountDialog from './DeleteAccountDialog.svelte';
+  import { t, type Locale } from '$lib/i18n/index.js';
 
   type Account = {
     id: number;
@@ -26,6 +28,12 @@
     isAdmin: boolean;
   };
   let { projectId, accounts, platforms, platformDefaults = {}, isAdmin }: Props = $props();
+
+  const locale = $derived($page.data.locale as Locale);
+  const ROLE_OPTIONS = $derived([
+    { value: 'personal', label: t(locale, 'projects.role-personal') },
+    { value: 'brand', label: t(locale, 'projects.role-brand') },
+  ]);
 
   let addOpen = $state(false);
   let newHandle = $state('');
@@ -69,12 +77,12 @@
           });
       if (!res.ok) {
         if (res.status === 403) {
-          toast.error('You need admin access for that');
+          toast.error(t(locale, 'projects.error-admin-required'));
         } else if (isMastodon && res.status === 400) {
           const body = await res.json().catch(() => null);
-          toast.error(body?.message ?? 'Could not verify that token against the instance');
+          toast.error(body?.message ?? t(locale, 'projects.error-mastodon-verify-failed'));
         } else {
-          toast.error('Failed to add account');
+          toast.error(t(locale, 'projects.error-add-account-failed'));
         }
         return;
       }
@@ -103,7 +111,11 @@
       method: 'DELETE',
     });
     if (!res.ok) {
-      toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
+      toast.error(
+        res.status === 403
+          ? t(locale, 'projects.error-admin-required')
+          : t(locale, 'projects.error-delete-failed'),
+      );
       return;
     }
     deleteDialogOpen = false;
@@ -117,7 +129,12 @@
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ role }),
     });
-    if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to update');
+    if (!res.ok)
+      toast.error(
+        res.status === 403
+          ? t(locale, 'projects.error-admin-required')
+          : t(locale, 'projects.error-update-failed'),
+      );
     else await invalidateAll();
   }
 
@@ -127,7 +144,12 @@
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ isDefault: true }),
     });
-    if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to set default');
+    if (!res.ok)
+      toast.error(
+        res.status === 403
+          ? t(locale, 'projects.error-admin-required')
+          : t(locale, 'projects.error-set-default-failed'),
+      );
     else await invalidateAll();
   }
 </script>
@@ -139,26 +161,25 @@
       <span class="text-xs text-muted-foreground">{platformSlug(a.platformId)}</span>
       {#if a.isDefault}
         <span class="rounded-full ring-1 ring-inset {TONE_CLASS.emerald} px-2 py-0.5 text-[10px] font-medium">
-          default
+          {t(locale, 'projects.default-badge')}
         </span>
       {:else if isAdmin}
         <Button size="sm" variant="ghost" onclick={() => setDefault(a.id)} class="text-xs">
-          Set default
+          {t(locale, 'projects.set-default-button')}
         </Button>
       {/if}
       <SelectField
         value={a.role as 'personal' | 'brand'}
         onValueChange={(v) => changeRole(a.id, v as 'personal' | 'brand')}
-        options={[
-          { value: 'personal', label: 'personal' },
-          { value: 'brand', label: 'brand' },
-        ]}
+        options={ROLE_OPTIONS}
         size="sm"
         class="ml-auto"
         disabled={!isAdmin}
       />
       {#if isAdmin}
-        <Button size="sm" variant="ghost" onclick={() => openDeleteDialog(a)}>Delete</Button>
+        <Button size="sm" variant="ghost" onclick={() => openDeleteDialog(a)}
+          >{t(locale, 'projects.delete-button')}</Button
+        >
       {/if}
     </div>
   {/each}
@@ -167,7 +188,7 @@
     {#if addOpen}
       <div class="border border-border rounded-md p-3 space-y-2">
         <label class="flex flex-col gap-1 text-xs">
-          Platform
+          {t(locale, 'projects.platform-label')}
           <SelectField
             bind:value={newPlatform}
             options={platforms.map((p) => ({ value: p.slug, label: p.slug }))}
@@ -176,43 +197,48 @@
         </label>
         {#if isMastodon}
           <label class="flex flex-col gap-1 text-xs">
-            Instance URL
-            <Input bind:value={newInstanceUrl} placeholder="https://mastodon.social" />
+            {t(locale, 'projects.mastodon-instance-url-label')}
+            <Input
+              bind:value={newInstanceUrl}
+              placeholder={t(locale, 'projects.mastodon-instance-url-placeholder')}
+            />
           </label>
           <label class="flex flex-col gap-1 text-xs">
-            Access token
+            {t(locale, 'projects.mastodon-access-token-label')}
             <Input bind:value={newAccessToken} type="password" />
           </label>
           <p class="text-xs text-muted-foreground">
-            Create a token in that instance's Preferences &gt; Development &gt; New application
-            (scopes: read + write). Pitchbox verifies it before saving.
+            {t(locale, 'projects.mastodon-token-hint')}
           </p>
         {:else if isLinkedin}
           <label class="flex flex-col gap-1 text-xs">
-            Vanity slug
-            <Input bind:value={newHandle} placeholder="linkedin.com/in/your-slug" />
+            {t(locale, 'projects.linkedin-vanity-slug-label')}
+            <Input
+              bind:value={newHandle}
+              placeholder={t(locale, 'projects.linkedin-vanity-slug-placeholder')}
+            />
           </label>
           <label class="flex flex-col gap-1 text-xs">
-            Display name
-            <Input bind:value={newDisplayName} placeholder="Jane Doe" />
+            {t(locale, 'projects.linkedin-display-name-label')}
+            <Input
+              bind:value={newDisplayName}
+              placeholder={t(locale, 'projects.linkedin-display-name-placeholder')}
+            />
           </label>
           <p class="text-xs text-muted-foreground">
-            Pitchbox stores no LinkedIn credential: it never sees your password or session, and it
-            cannot post, comment or message on LinkedIn by itself either. Drafts land in your Inbox
-            and you open LinkedIn and send them yourself.
+            {t(locale, 'projects.linkedin-no-credential-hint')}
           </p>
         {:else}
-          <label class="flex flex-col gap-1 text-xs">Handle<Input bind:value={newHandle} /></label>
+          <label class="flex flex-col gap-1 text-xs"
+            >{t(locale, 'projects.handle-label')}<Input bind:value={newHandle} /></label
+          >
         {/if}
         <label class="flex flex-col gap-1 text-xs">
-          Role
+          {t(locale, 'projects.role-label')}
           <SelectField
             value={newRole}
             onValueChange={(v) => (newRole = v as 'personal' | 'brand')}
-            options={[
-              { value: 'personal', label: 'personal' },
-              { value: 'brand', label: 'brand' },
-            ]}
+            options={ROLE_OPTIONS}
             fullWidth
           />
         </label>
@@ -225,13 +251,17 @@
                 ? !newInstanceUrl.trim() || !newAccessToken.trim()
                 : !newHandle.trim())}
           >
-            Add
+            {t(locale, 'projects.add-button')}
           </Button>
-          <Button size="sm" variant="ghost" onclick={() => (addOpen = false)}>Cancel</Button>
+          <Button size="sm" variant="ghost" onclick={() => (addOpen = false)}
+            >{t(locale, 'projects.cancel-button')}</Button
+          >
         </div>
       </div>
     {:else}
-      <Button size="sm" variant="outline" onclick={() => (addOpen = true)}>Add account</Button>
+      <Button size="sm" variant="outline" onclick={() => (addOpen = true)}
+        >{t(locale, 'projects.add-account-button')}</Button
+      >
     {/if}
   {/if}
 </div>

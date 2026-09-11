@@ -23,6 +23,7 @@
 	import { TONE_BANNER_CLASS, TONE_TEXT_CLASS } from '$lib/config/status-badges';
 	import StreamStatusBanner from '$lib/realtime/StreamStatusBanner.svelte';
 	import { getSseManager } from '$lib/realtime/sse';
+	import { t, tn, type Locale } from '$lib/i18n/index.js';
 
 	type SkillRun = { id: number; status: string; params: { objective?: string } | null };
 
@@ -105,6 +106,8 @@
 		};
 	} = $props();
 
+	const locale = $derived($page.data.locale as Locale);
+
 	let isStarting = $state(false);
 	// `?run=<id>` (from the campaigns list or Audit log) targets one run inside
 	// this campaign's history: land straight on the Runs tab so it does not
@@ -131,8 +134,8 @@
 		if (raw && highlightRunId == null) {
 			if (warnedInvalidRun !== raw) {
 				warnedInvalidRun = raw;
-				toast.warning('Run link ignored', {
-					description: `"${raw}" is not a valid run id - showing the campaign overview instead.`,
+				toast.warning(t(locale, 'campaigns.detail.run-link-ignored-title'), {
+					description: t(locale, 'campaigns.detail.run-link-ignored-body', { run: raw }),
 				});
 			}
 		} else {
@@ -168,13 +171,13 @@
 	});
 	onDestroy(() => unsubs.forEach((unsub) => unsub()));
 
-	const tabs = [
-		{ k: 'overview' as const, label: 'Overview' },
-		{ k: 'profile' as const, label: 'Profile' },
-		{ k: 'tuning' as const, label: 'Tuning' },
-		{ k: 'watches' as const, label: 'Watches' },
-		{ k: 'runs' as const, label: 'Runs' },
-	];
+	const tabs = $derived([
+		{ k: 'overview' as const, label: t(locale, 'campaigns.detail.tab-overview') },
+		{ k: 'profile' as const, label: t(locale, 'campaigns.detail.tab-profile') },
+		{ k: 'tuning' as const, label: t(locale, 'campaigns.detail.tab-tuning') },
+		{ k: 'watches' as const, label: t(locale, 'campaigns.detail.tab-watches') },
+		{ k: 'runs' as const, label: t(locale, 'campaigns.detail.tab-runs') },
+	]);
 
 	const isDraft = $derived(data.campaign.status === 'draft');
 	const ready = $derived(data.readiness?.ready ?? false);
@@ -197,10 +200,10 @@
 			});
 			const body = await res.json().catch(() => ({}));
 			if (!res.ok) {
-				toast.error(body.error ?? 'Failed to update auto-post');
+				toast.error(body.error ?? t(locale, 'campaigns.detail.error-auto-post-update'));
 				return;
 			}
-			toast.success(value ? 'Auto-post enabled' : 'Auto-post disabled');
+			toast.success(value ? t(locale, 'campaigns.detail.auto-post-enabled') : t(locale, 'campaigns.detail.auto-post-disabled'));
 			await invalidateAll();
 		} finally {
 			autoPostSaving = false;
@@ -211,7 +214,7 @@
 		if (cronSaving) return;
 		const trimmed = cronDraft.trim();
 		if (trimmed && !cronValid) {
-			toast.error('Fix the cron expression before saving');
+			toast.error(t(locale, 'campaigns.detail.cron-invalid'));
 			return;
 		}
 		cronSaving = true;
@@ -224,14 +227,14 @@
 			const body = await res.json().catch(() => ({}));
 			if (!res.ok) {
 				if (res.status >= 500) console.error('failed to update campaign schedule', body);
-				toast.error(body.message ?? body.error ?? 'Failed to update schedule');
+				toast.error(body.message ?? body.error ?? t(locale, 'campaigns.detail.error-schedule-update'));
 				return;
 			}
-			toast.success(trimmed ? 'Schedule updated' : 'Schedule cleared');
+			toast.success(trimmed ? t(locale, 'campaigns.detail.schedule-updated') : t(locale, 'campaigns.detail.schedule-cleared'));
 			cronEditing = false;
 			await invalidateAll();
 		} catch {
-			toast.error('Failed to update schedule, check your connection');
+			toast.error(t(locale, 'campaigns.detail.error-schedule-update-network'));
 		} finally {
 			cronSaving = false;
 		}
@@ -264,8 +267,8 @@
 			const body = await res.json().catch(() => ({}));
 			if (res.status === 422 && body?.error === 'not_ready') {
 				const first = (body.issues as ReadinessIssue[] | undefined)?.[0];
-				toast.error('Setup incomplete', {
-					description: first?.title ?? 'Resolve the items in the Setup required panel.',
+				toast.error(t(locale, 'campaigns.detail.setup-incomplete-title'), {
+					description: first?.title ?? t(locale, 'campaigns.detail.setup-incomplete-fallback-body'),
 				});
 				await invalidateAll();
 				return;
@@ -273,13 +276,13 @@
 			if (!res.ok) throw new Error(body?.message ?? `HTTP ${res.status}`);
 			const { runId, alreadyRunning } = body;
 			if (alreadyRunning) {
-				toast.info(`Already running - showing live log`);
+				toast.info(t(locale, 'campaigns.toast-already-running'));
 			} else {
-				toast.success(`Run #${runId} started`);
+				toast.success(t(locale, 'campaigns.toast-run-started', { run: runId }));
 			}
 			await invalidateAll();
 		} catch (e) {
-			toast.error('Failed to start run', { description: (e as Error).message });
+			toast.error(t(locale, 'campaigns.toast-run-start-failed'), { description: (e as Error).message });
 		} finally {
 			isStarting = false;
 		}
@@ -292,8 +295,8 @@
 			// Belt-and-braces: even if SSE hasn't refreshed yet, don't let the
 			// user open the modal while a generation run is already underway.
 			if (generatingProfile) {
-				toast.info('Profile is already being generated', {
-					description: 'Wait for the current run to finish, then regenerate if needed.',
+				toast.info(t(locale, 'campaigns.detail.profile-generating-title'), {
+					description: t(locale, 'campaigns.detail.profile-generating-body'),
 				});
 				return;
 			}
@@ -323,15 +326,15 @@
 		});
 		if (!res.ok) {
 			if (res.status === 409) {
-				toast.error('A run is still in flight', {
-					description: 'Cancel the running run first, then delete the campaign.',
+				toast.error(t(locale, 'campaigns.detail.run-in-flight-title'), {
+					description: t(locale, 'campaigns.detail.run-in-flight-body'),
 				});
 			} else {
-				toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
+				toast.error(res.status === 403 ? t(locale, 'campaigns.detail.error-admin-required') : t(locale, 'campaigns.detail.error-delete-failed'));
 			}
 			return;
 		}
-		toast.success('Campaign deleted');
+		toast.success(t(locale, 'campaigns.detail.toast-campaign-deleted'));
 		await goto('/campaigns');
 	}
 </script>
@@ -339,7 +342,7 @@
 <PageContainer size="default">
 <Seo
 	title={data.campaign.name}
-	description="Campaign detail - cron schedule, recent runs, agent configuration."
+	description={t(locale, 'campaigns.detail.seo-description')}
 />
 
 <!-- Breadcrumb -->
@@ -349,7 +352,7 @@
 		class="hover:text-foreground transition-colors inline-flex items-center gap-1"
 	>
 		<ChevronLeft class="size-3.5" />
-		Campaigns
+		{t(locale, 'nav.campaigns')}
 	</a>
 </nav>
 
@@ -365,15 +368,15 @@
 			>
 		</div>
 		<p class="text-xs text-muted-foreground">
-			{#if data.project}
-				Project <span class="font-mono text-foreground">{data.project.slug}</span>
+		{#if data.project}
+				{t(locale, 'campaigns.col-project')} <span class="font-mono text-foreground">{data.project.slug}</span>
 				{#if data.platform}
 					·
 					<span class="font-mono">{data.platform.slug}</span>
 				{/if}
 				·
 			{/if}
-			Configuration, activity, and run history.
+			{t(locale, 'campaigns.detail.subtitle')}
 		</p>
 	</div>
 	<Button
@@ -382,12 +385,12 @@
 		disabled={!ready || campaignRunning}
 		loading={isStarting || campaignRunning}
 		title={!ready
-			? 'Resolve the setup items below first'
+			? t(locale, 'campaigns.detail.run-now-disabled-not-ready')
 			: campaignRunning
-				? 'A run is already in progress for this campaign'
+				? t(locale, 'campaigns.detail.run-now-disabled-running')
 				: undefined}
 	>
-		{campaignRunning ? 'Running…' : 'Run now'}
+		{campaignRunning ? t(locale, 'campaigns.running-button') : t(locale, 'campaigns.run-now-button')}
 	</Button>
 </header>
 
@@ -398,13 +401,13 @@
 	<div class="mb-6 rounded-md border p-4 {TONE_BANNER_CLASS.amber}">
 		<div class="flex items-baseline justify-between gap-3 mb-3">
 			<h2 class="text-sm font-medium {TONE_TEXT_CLASS.amber}">
-				{blocking > 0 ? 'Setup required' : 'In progress'}
+				{blocking > 0 ? t(locale, 'campaigns.detail.setup-required-heading') : t(locale, 'campaigns.detail.in-progress-heading')}
 			</h2>
 			<span class="text-xs {TONE_TEXT_CLASS.amber} opacity-70">
 				{#if blocking > 0}
-					{blocking} item{blocking === 1 ? '' : 's'} blocking this campaign
+					{tn(locale, 'campaigns.detail.blocking-count', blocking)}
 				{:else}
-					An operation is running for this campaign
+					{t(locale, 'campaigns.detail.operation-running')}
 				{/if}
 			</span>
 		</div>
@@ -444,13 +447,13 @@
 
 <!-- Tabs -->
 <div class="flex gap-2 border-b border-border mb-6">
-	{#each tabs as t (t.k)}
+	{#each tabs as tabItem (tabItem.k)}
 		<button
 			type="button"
-			class={`px-3 py-2 text-sm border-b-2 ${tab === t.k ? 'border-foreground' : 'border-transparent text-muted-foreground'}`}
-			onclick={() => (tab = t.k)}
+			class={`px-3 py-2 text-sm border-b-2 ${tab === tabItem.k ? 'border-foreground' : 'border-transparent text-muted-foreground'}`}
+			onclick={() => (tab = tabItem.k)}
 		>
-			{t.label}
+			{tabItem.label}
 		</button>
 	{/each}
 </div>
@@ -460,12 +463,12 @@
 	<div class="grid gap-4 mb-6 md:grid-cols-2">
 		<Card.Root size="sm">
 			<Card.Header>
-				<Card.Title class="text-base">Configuration</Card.Title>
+				<Card.Title class="text-base">{t(locale, 'campaigns.detail.configuration-title')}</Card.Title>
 			</Card.Header>
 			<Card.Content class="space-y-3">
 				<div>
 					<div class="flex items-center justify-between mb-1">
-						<p class="text-xs text-muted-foreground uppercase tracking-wide">Schedule</p>
+						<p class="text-xs text-muted-foreground uppercase tracking-wide">{t(locale, 'campaigns.detail.schedule-label')}</p>
 						{#if !cronEditing}
 							<button
 								type="button"
@@ -475,7 +478,7 @@
 									cronEditing = true;
 								}}
 							>
-								Edit
+								{t(locale, 'campaigns.detail.edit-button')}
 							</button>
 						{/if}
 					</div>
@@ -488,7 +491,7 @@
 								disabled={cronDraft.trim() !== '' && !cronValid}
 								onclick={saveCron}
 							>
-								Save
+								{t(locale, 'campaigns.detail.save-button')}
 							</Button>
 							<Button
 								size="sm"
@@ -496,7 +499,7 @@
 								disabled={cronSaving}
 								onclick={() => (cronEditing = false)}
 							>
-								Cancel
+								{t(locale, 'campaigns.cancel')}
 							</Button>
 						</div>
 					{:else if data.campaign.cronExpression}
@@ -504,25 +507,25 @@
 							>{data.campaign.cronExpression}</code
 						>
 						<p class="text-xs text-muted-foreground mt-1">
-							Times are in UTC. Next run:
+							{t(locale, 'campaigns.detail.cron-next-run-note')}
 							<span
 								class={data.campaign.nextRunAt &&
 								new Date(data.campaign.nextRunAt).getTime() < Date.now()
 									? TONE_TEXT_CLASS.rose
 									: undefined}
 							>
-								{relativeTimeUntil(data.campaign.nextRunAt)}
+								{relativeTimeUntil(data.campaign.nextRunAt, locale)}
 							</span>
 						</p>
 					{:else}
 						<p class="text-xs text-muted-foreground">
-							No schedule set - use "Run now" or add a cron expression.
+							{t(locale, 'campaigns.detail.no-schedule-set')}
 						</p>
 					{/if}
 				</div>
 				{#if hasRateLimit}
 					<div>
-						<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Rate limit</p>
+						<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">{t(locale, 'campaigns.detail.rate-limit-label')}</p>
 						<pre class="font-mono text-xs whitespace-pre-wrap bg-muted p-2 rounded">{JSON.stringify(
 								data.campaign.rateLimit,
 								null,
@@ -532,18 +535,17 @@
 				{/if}
 				{#if autoPostSupported}
 					<div>
-						<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">Auto-post</p>
+						<p class="text-xs text-muted-foreground uppercase tracking-wide mb-1">{t(locale, 'campaigns.detail.auto-post-label')}</p>
 						<label class="flex items-center gap-2 text-sm">
 							<Checkbox
 								checked={data.campaign.autoPost}
 								onCheckedChange={toggleAutoPost}
 								disabled={autoPostSaving}
 							/>
-							Send approved drafts automatically
+							{t(locale, 'campaigns.detail.auto-post-checkbox-label')}
 						</label>
 						<p class="text-xs text-muted-foreground mt-1">
-							When enabled, an approved draft is posted immediately via the platform's API
-							instead of waiting for a manual send. Off by default.
+							{t(locale, 'campaigns.detail.auto-post-help')}
 						</p>
 					</div>
 				{/if}
@@ -553,34 +555,34 @@
 		<!-- Recent activity summary card -->
 		<Card.Root size="sm">
 			<Card.Header>
-				<Card.Title class="text-base">Recent activity</Card.Title>
-				<Card.Description>Last {data.runs.length} runs</Card.Description>
+				<Card.Title class="text-base">{t(locale, 'campaigns.detail.recent-activity-title')}</Card.Title>
+				<Card.Description>{tn(locale, 'campaigns.detail.recent-activity-count', data.runs.length)}</Card.Description>
 			</Card.Header>
 			<Card.Content>
 				<dl class="grid grid-cols-2 gap-3">
 					<div>
-						<dt class="text-xs text-muted-foreground">Total runs</dt>
+						<dt class="text-xs text-muted-foreground">{t(locale, 'campaigns.detail.stat-total-runs')}</dt>
 						<dd class="text-2xl font-semibold">{stats.total}</dd>
 					</div>
 					<div>
-						<dt class="text-xs text-muted-foreground">Successful</dt>
+						<dt class="text-xs text-muted-foreground">{t(locale, 'campaigns.detail.stat-successful')}</dt>
 						<dd class="text-2xl font-semibold">{stats.successful}</dd>
 					</div>
 					<div>
-						<dt class="text-xs text-muted-foreground">Failed</dt>
+						<dt class="text-xs text-muted-foreground">{t(locale, 'campaigns.detail.stat-failed')}</dt>
 						<dd class="text-2xl font-semibold">{stats.failed}</dd>
 					</div>
 					<div>
-						<dt class="text-xs text-muted-foreground">Total drafts</dt>
+						<dt class="text-xs text-muted-foreground">{t(locale, 'campaigns.detail.stat-total-drafts')}</dt>
 						<dd class="text-2xl font-semibold">{stats.totalDrafts}</dd>
 					</div>
 					<div>
-						<dt class="text-xs text-muted-foreground">Total tokens</dt>
+						<dt class="text-xs text-muted-foreground">{t(locale, 'campaigns.detail.stat-total-tokens')}</dt>
 						<dd class="text-2xl font-semibold">{stats.totalTokens.toLocaleString()}</dd>
 					</div>
 					<div>
-						<dt class="text-xs text-muted-foreground">Avg duration</dt>
-						<dd class="text-2xl font-semibold">{formatDuration(stats.avgDuration)}</dd>
+						<dt class="text-xs text-muted-foreground">{t(locale, 'campaigns.detail.stat-avg-duration')}</dt>
+						<dd class="text-2xl font-semibold">{formatDuration(stats.avgDuration, locale)}</dd>
 					</div>
 				</dl>
 			</Card.Content>
@@ -592,10 +594,9 @@
 			class="mt-10 rounded-md border border-destructive/40 bg-destructive/5 p-4 flex items-start justify-between gap-4"
 		>
 			<div class="flex flex-col gap-1">
-				<h3 class="text-sm font-medium text-destructive">Danger zone</h3>
+				<h3 class="text-sm font-medium text-destructive">{t(locale, 'campaigns.detail.danger-zone-title')}</h3>
 				<p class="text-xs text-muted-foreground">
-					Permanently delete this campaign, its runs and its drafts. Contact history is kept. To
-					stop the schedule without losing anything, pause the campaign instead.
+					{t(locale, 'campaigns.detail.danger-zone-body')}
 				</p>
 			</div>
 			<Button
@@ -604,7 +605,7 @@
 				class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
 				onclick={() => (deleteOpen = true)}
 			>
-				Delete campaign
+				{t(locale, 'campaigns.detail.delete-campaign-button')}
 			</Button>
 		</div>
 	{/if}

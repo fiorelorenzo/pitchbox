@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 	import type { PageData } from './$types';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -20,6 +22,8 @@
 	import { untrack } from 'svelte';
 
 	let { data }: { data: PageData } = $props();
+
+	const locale = $derived($page.data.locale as Locale);
 	const isAdmin = $derived(data.isAdmin ?? true);
 
 	// Seed every form-field state from `data` exactly once. Wrapping in
@@ -77,14 +81,14 @@
 					console.error('failed to load campaign recommendations', pid, res.status, body);
 				}
 				recommendations = [];
-				toast.error(body.error ?? body.message ?? 'Could not load suggested campaigns for this project');
+				toast.error(body.error ?? body.message ?? t(locale, 'campaigns.new.error-load-recommendations'));
 				return;
 			}
 			const body = await res.json();
 			recommendations = body.recommendations ?? [];
 		} catch {
 			recommendations = [];
-			toast.error('Could not load suggested campaigns for this project, check your connection');
+			toast.error(t(locale, 'campaigns.new.error-load-recommendations-network'));
 		}
 	}
 
@@ -99,8 +103,8 @@
 	const runnerOptions = $derived(
 		data.runners.map((r) => {
 			let label = r.label;
-			if (!r.implemented) label = `${r.label} (not available yet)`;
-			else if (!r.available) label = `${r.label} (not installed)`;
+			if (!r.implemented) label = t(locale, 'campaigns.new.runner-not-available', { label: r.label });
+			else if (!r.available) label = t(locale, 'campaigns.new.runner-not-installed', { label: r.label });
 			return { value: r.slug, label, disabled: !r.available };
 		}),
 	);
@@ -120,11 +124,11 @@
 	async function submit() {
 		if (saving) return;
 		if (!projectId || !name.trim() || !objective.trim()) {
-			toast.error('Fill all required fields');
+			toast.error(t(locale, 'campaigns.new.error-fill-required'));
 			return;
 		}
 		if (cron.trim() && !cronValid) {
-			toast.error('Fix the cron expression before saving');
+			toast.error(t(locale, 'campaigns.detail.cron-invalid'));
 			return;
 		}
 		saving = true;
@@ -145,10 +149,10 @@
 			});
 			const body = await res.json().catch(() => ({}));
 			if (!res.ok) {
-				toast.error(body.message ?? body.error ?? 'Failed to create campaign');
+				toast.error(body.message ?? body.error ?? t(locale, 'campaigns.new.error-create-failed'));
 				return;
 			}
-			toast.success('Campaign created - generating profile');
+			toast.success(t(locale, 'campaigns.new.toast-created'));
 			// Deleting the used recommendation is an admin-only action (cleanup only,
 			// non-critical to the campaign-creation flow). Members skip it - the
 			// recommendation just stays around unused.
@@ -165,11 +169,11 @@
 </script>
 
 <PageContainer size="narrow">
-<h1 class="text-2xl font-semibold mb-6">New campaign</h1>
+<h1 class="text-2xl font-semibold mb-6">{t(locale, 'campaigns.new.title')}</h1>
 
 {#if !preselectedRecId && recommendations.length > 0}
 	<div class="space-y-2 mb-6">
-		<h2 class="text-sm font-medium">Suggested campaigns for this project</h2>
+		<h2 class="text-sm font-medium">{t(locale, 'campaigns.new.suggestions-heading')}</h2>
 		<CampaignRecommendationsList
 			{recommendations}
 			onUse={(rec) => {
@@ -193,7 +197,7 @@
 	}}
 >
 	<label class="flex flex-col gap-1 text-xs">
-		Project
+		{t(locale, 'campaigns.col-project')}
 		<SelectField
 			value={projectId ?? undefined}
 			onValueChange={(v) => {
@@ -205,7 +209,7 @@
 		/>
 	</label>
 	<label class="flex flex-col gap-1 text-xs">
-		Platform
+		{t(locale, 'campaigns.new.field-platform')}
 		<SelectField
 			value={platformSlug}
 			onValueChange={(v) => (platformSlug = v as string)}
@@ -214,7 +218,7 @@
 		/>
 	</label>
 	<label class="flex flex-col gap-1 text-xs">
-		Scenario
+		{t(locale, 'campaigns.new.field-scenario')}
 		<SelectField
 			value={scenarioSlug}
 			onValueChange={(v) => (scenarioSlug = v as ScenarioSlug)}
@@ -224,11 +228,11 @@
 		<span class="text-xs text-muted-foreground">{selectedScenarioDescription}</span>
 	</label>
 	<label class="flex flex-col gap-1 text-xs">
-		Name
-		<Input bind:value={name} placeholder="e.g. Reddit RPG launch" />
+		{t(locale, 'campaigns.new.field-name')}
+		<Input bind:value={name} placeholder={t(locale, 'campaigns.new.field-name-placeholder')} />
 	</label>
 	<label class="flex flex-col gap-1 text-xs">
-		Agent runner
+		{t(locale, 'campaigns.new.field-runner')}
 		<SelectField
 			value={runner}
 			onValueChange={(v) => (runner = v as string)}
@@ -237,30 +241,29 @@
 		/>
 	</label>
 	<label class="flex flex-col gap-1 text-xs">
-		Objective
+		{t(locale, 'campaigns.new.field-objective')}
 		<Textarea
 			bind:value={objective}
 			rows={5}
-			placeholder="Find tabletop RPG players curious about AI Game Masters and invite them to try the closed alpha."
+			placeholder={t(locale, 'campaigns.new.field-objective-placeholder')}
 		/>
 	</label>
 	<label class="flex flex-col gap-1 text-xs">
-		Cron schedule (optional)
+		{t(locale, 'campaigns.new.field-cron')}
 		<CronScheduleField bind:value={cron} bind:valid={cronValid} />
 	</label>
 	{#if autoPostSupported}
 		<label class="flex items-center gap-2 text-xs">
 			<Checkbox checked={autoPost} onCheckedChange={(v) => (autoPost = v)} />
-			Auto-post approved drafts
+			{t(locale, 'campaigns.new.auto-post-checkbox-label')}
 		</label>
 		<p class="text-xs text-muted-foreground -mt-4">
-			When enabled, an approved draft is sent immediately via the platform's API instead of
-			waiting for a manual send. Off by default.
+			{t(locale, 'campaigns.new.auto-post-help')}
 		</p>
 	{/if}
 	<div class="flex gap-2">
-		<Button type="submit" loading={saving}>Create</Button>
-		<Button type="button" variant="ghost" onclick={() => goto('/campaigns')}>Cancel</Button>
+		<Button type="submit" loading={saving}>{t(locale, 'campaigns.new.create-button')}</Button>
+		<Button type="button" variant="ghost" onclick={() => goto('/campaigns')}>{t(locale, 'campaigns.cancel')}</Button>
 	</div>
 </form>
 </PageContainer>

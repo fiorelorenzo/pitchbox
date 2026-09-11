@@ -6,15 +6,7 @@
 
 export type CronPresetId = 'hourly' | 'daily' | 'weekly' | 'custom';
 
-export const WEEKDAY_OPTIONS: Array<{ value: number; label: string }> = [
-  { value: 0, label: 'Sunday' },
-  { value: 1, label: 'Monday' },
-  { value: 2, label: 'Tuesday' },
-  { value: 3, label: 'Wednesday' },
-  { value: 4, label: 'Thursday' },
-  { value: 5, label: 'Friday' },
-  { value: 6, label: 'Saturday' },
-];
+export const WEEKDAY_VALUES: number[] = [0, 1, 2, 3, 4, 5, 6];
 
 /** "HH:MM" (a native `<input type="time">` value) -> { hour, minute}. Falls back to 09:00 for a malformed or empty string. */
 export function parseTimeInput(time: string): { hour: number; minute: number } {

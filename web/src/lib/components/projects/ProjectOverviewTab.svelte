@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
+  import { page } from '$app/stores';
   import { onMount, onDestroy, tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Spinner from '$lib/components/Spinner.svelte';
@@ -24,6 +25,7 @@
   } from '@pitchbox/shared/assist/tone';
   import StreamStatusBanner from '$lib/realtime/StreamStatusBanner.svelte';
   import { getSseManager } from '$lib/realtime/sse';
+  import { t, type Locale } from '$lib/i18n/index.js';
 
   type RunnerMeta = { slug: string; label: string; implemented: boolean };
 
@@ -87,6 +89,8 @@
     descriptionProposal,
   }: Props = $props();
 
+  const locale = $derived($page.data.locale as Locale);
+
   // `runners` is already filtered to this deployment's edition (#410) - the
   // list an admin can pick from. The project's own snapshot might predate
   // that guard (or a since-changed edition), so it stays visible here as a
@@ -95,13 +99,17 @@
   const RUNNER_OPTIONS = $derived.by(() => {
     const opts = runners.map((m) => ({
       value: m.slug,
-      label: m.implemented ? m.label : `${m.label} (not available yet)`,
+      label: m.implemented
+        ? m.label
+        : t(locale, 'projects.runner-label-unavailable', { label: m.label }),
       disabled: !m.implemented,
     }));
     if (!opts.some((o) => o.value === project.defaultAgentRunner)) {
       opts.push({
         value: project.defaultAgentRunner,
-        label: `${project.defaultAgentRunner} (not available in this edition)`,
+        label: t(locale, 'projects.runner-label-unavailable-edition', {
+          label: project.defaultAgentRunner,
+        }),
         disabled: true,
       });
     }
@@ -124,18 +132,18 @@
   );
   // svelte-ignore state_referenced_locally
   let voiceToneNotes = $state(project.voiceToneNotes ?? '');
-  const VOICE_TONE_LABELS: Record<AssistTone, string> = {
-    'match-room': 'Match the room',
-    professional: 'Professional',
-    plain: 'Plain',
-    warm: 'Warm',
-    technical: 'Technical',
-    custom: 'In my own words',
-  };
-  const VOICE_OPTIONS: Array<{ value: AssistTone | 'inherit'; label: string }> = [
-    { value: 'inherit', label: 'Use organization default' },
-    ...ASSIST_TONES.map((t) => ({ value: t, label: VOICE_TONE_LABELS[t] })),
-  ];
+  const VOICE_TONE_LABELS = $derived<Record<AssistTone, string>>({
+    'match-room': t(locale, 'projects.voice-tone.match-room'),
+    professional: t(locale, 'projects.voice-tone.professional'),
+    plain: t(locale, 'projects.voice-tone.plain'),
+    warm: t(locale, 'projects.voice-tone.warm'),
+    technical: t(locale, 'projects.voice-tone.technical'),
+    custom: t(locale, 'projects.voice-tone.custom'),
+  });
+  const VOICE_OPTIONS = $derived<Array<{ value: AssistTone | 'inherit'; label: string }>>([
+    { value: 'inherit', label: t(locale, 'projects.voice-tone.inherit') },
+    ...ASSIST_TONES.map((tone) => ({ value: tone, label: VOICE_TONE_LABELS[tone] })),
+  ]);
   let saving = $state(false);
   let deleteOpen = $state(false);
   let sourcesPanelEl = $state<HTMLDivElement | null>(null);
@@ -190,7 +198,7 @@
 
   async function save() {
     if (voiceTone === 'custom' && !voiceToneNotes.trim()) {
-      toast.error('Describe the tone you want, or pick "Use organization default"');
+      toast.error(t(locale, 'projects.error-tone-notes-required'));
       return;
     }
     saving = true;
@@ -207,10 +215,14 @@
         }),
       });
       if (!res.ok) {
-        toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to save');
+        toast.error(
+          res.status === 403
+            ? t(locale, 'projects.error-admin-required')
+            : t(locale, 'projects.error-save-failed'),
+        );
         return;
       }
-      toast.success('Saved');
+      toast.success(t(locale, 'projects.toast-saved'));
       await invalidateAll();
     } finally {
       saving = false;
@@ -224,10 +236,14 @@
       body: JSON.stringify({ confirmSlug: project.slug }),
     });
     if (!res.ok) {
-      toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to delete');
+      toast.error(
+        res.status === 403
+          ? t(locale, 'projects.error-admin-required')
+          : t(locale, 'projects.error-delete-failed'),
+      );
       return;
     }
-    toast.success('Project deleted');
+    toast.success(t(locale, 'projects.toast-deleted'));
     await goto('/projects');
   }
 
@@ -249,13 +265,13 @@
     if (!res.ok) {
       toast.error(
         res.status === 409
-          ? 'The sources changed since this was proposed - reopen it to see the new diff'
-          : 'Failed to apply the proposed description',
+          ? t(locale, 'projects.error-proposal-conflict')
+          : t(locale, 'projects.error-proposal-apply-failed'),
       );
       return;
     }
     proposalDiffOpen = false;
-    toast.success('Description updated');
+    toast.success(t(locale, 'projects.toast-description-updated'));
     await invalidateAll();
     await tick();
     description = project.description ?? '';
@@ -272,7 +288,11 @@
       body: JSON.stringify({ proposedDescription: descriptionProposal.proposedDescription }),
     });
     if (!res.ok) {
-      toast.error(res.status === 409 ? 'The sources already changed again' : 'Failed to decline');
+      toast.error(
+        res.status === 409
+          ? t(locale, 'projects.error-proposal-already-changed')
+          : t(locale, 'projects.error-proposal-decline-failed'),
+      );
       return;
     }
     proposalDiffOpen = false;
@@ -303,8 +323,8 @@
         description = project.description ?? '';
         editingDescription = true;
         extractionRunsState = extractionRuns;
-        toast.success('Description updated', {
-          action: { label: 'View diff', onClick: () => (diffOpen = true) },
+        toast.success(t(locale, 'projects.toast-description-updated'), {
+          action: { label: t(locale, 'projects.view-diff-button'), onClick: () => (diffOpen = true) },
         });
       }),
     );
@@ -339,16 +359,20 @@
   />
   <div class="grid gap-4 md:grid-cols-3">
     <label class="flex flex-col gap-1 text-xs">
-      Slug
+      {t(locale, 'projects.slug-label')}
       <Input value={project.slug} disabled />
-      <span class="text-xs text-muted-foreground">Slug cannot be changed.</span>
+      <span class="text-xs text-muted-foreground">{t(locale, 'projects.slug-immutable-hint')}</span>
     </label>
     <label class="flex flex-col gap-1 text-xs">
-      Name
-      <Input bind:value={name} disabled={!isAdmin} title={isAdmin ? undefined : 'Admin access required'} />
+      {t(locale, 'projects.name-label')}
+      <Input
+        bind:value={name}
+        disabled={!isAdmin}
+        title={isAdmin ? undefined : t(locale, 'projects.admin-required-tooltip')}
+      />
     </label>
     <label class="flex flex-col gap-1 text-xs">
-      Default agent runner
+      {t(locale, 'projects.runner-label')}
       <SelectField
         value={runner}
         onValueChange={(v) => (runner = v as string)}
@@ -361,7 +385,7 @@
 
   <div class="grid gap-4 md:grid-cols-3">
     <label class="flex flex-col gap-1 text-xs">
-      Voice
+      {t(locale, 'projects.voice-label')}
       <SelectField
         value={voiceTone}
         onValueChange={(v) => (voiceTone = v as AssistTone | 'inherit')}
@@ -370,16 +394,15 @@
         disabled={!isAdmin}
       />
       <span class="text-xs text-muted-foreground">
-        How a suggestion for this project should sound. Left at the default, it follows the
-        organization's LinkedIn assist tone (Settings &gt; LinkedIn assist).
+        {t(locale, 'projects.voice-hint')}
       </span>
     </label>
     {#if voiceTone === 'custom'}
       <label class="flex flex-col gap-1 text-xs md:col-span-2">
-        In your own words
+        {t(locale, 'projects.voice-custom-label')}
         <Input
           maxlength={ASSIST_TONE_NOTES_MAX}
-          placeholder="Direct, a bit dry, no enthusiasm I would not say out loud"
+          placeholder={t(locale, 'projects.voice-custom-placeholder')}
           bind:value={voiceToneNotes}
           disabled={!isAdmin}
         />
@@ -389,7 +412,7 @@
 
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
-      <span class="text-xs">Description</span>
+      <span class="text-xs">{t(locale, 'projects.description-label')}</span>
       {#if description || extractionRunning || editingDescription}
         <div class="flex gap-2">
           {#if !extractionRunning && description && !editingDescription}
@@ -399,7 +422,7 @@
               size="sm"
               onclick={() => (editingDescription = true)}
             >
-              Edit
+              {t(locale, 'projects.edit-button')}
             </Button>
           {:else if !extractionRunning && editingDescription}
             <Button
@@ -408,7 +431,7 @@
               size="sm"
               onclick={() => (editingDescription = false)}
             >
-              Preview
+              {t(locale, 'projects.preview-button')}
             </Button>
           {/if}
           <Button
@@ -418,7 +441,7 @@
             onclick={() => sourcesPanelEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
             disabled={extractionRunning}
           >
-            Manage sources
+            {t(locale, 'projects.manage-sources-button')}
           </Button>
         </div>
       {/if}
@@ -427,7 +450,7 @@
       <div
         class="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs {TONE_BANNER_CLASS.sky}"
       >
-        <span>Your sources changed - a new description is ready to review.</span>
+        <span>{t(locale, 'projects.proposal-ready-body')}</span>
         <Button
           type="button"
           size="sm"
@@ -435,7 +458,7 @@
           variant="outline"
           onclick={() => (proposalDiffOpen = true)}
         >
-          Review
+          {t(locale, 'projects.review-button')}
         </Button>
       </div>
     {/if}
@@ -444,7 +467,7 @@
         class="flex items-center gap-2 rounded-md border px-3 py-2 text-xs {TONE_BANNER_CLASS.amber}"
       >
         <Spinner size="xs" class={TONE_TEXT_CLASS.amber} />
-        <span>An extraction is running - editing is locked until it finishes.</span>
+        <span>{t(locale, 'projects.extraction-running-body')}</span>
       </div>
       <div class="rounded-md border border-border p-3">
         <Markdown source={description} />
@@ -469,10 +492,9 @@
         class="flex flex-col items-center justify-center gap-4 rounded-md border border-dashed border-border bg-muted/30 px-6 py-16 text-center"
       >
         <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-medium">No description yet</h3>
+          <h3 class="text-sm font-medium">{t(locale, 'projects.no-description-title')}</h3>
           <p class="text-xs text-muted-foreground max-w-md">
-            The description grounds the agent during scouting and drafting. Add a source below and
-            run an extraction, or start from a blank template.
+            {t(locale, 'projects.no-description-body')}
           </p>
         </div>
         <div class="flex gap-2">
@@ -481,7 +503,7 @@
             size="lg"
             onclick={() => sourcesPanelEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
           >
-            Manage sources
+            {t(locale, 'projects.manage-sources-button')}
           </Button>
           <Button
             type="button"
@@ -492,7 +514,7 @@
               editingDescription = true;
             }}
           >
-            Start from template
+            {t(locale, 'projects.start-from-template-button')}
           </Button>
         </div>
       </div>
@@ -518,10 +540,9 @@
 
   {#if recommendations.length > 0}
     <div class="flex flex-col gap-2">
-      <h3 class="text-sm font-medium">Suggested campaigns</h3>
+      <h3 class="text-sm font-medium">{t(locale, 'projects.suggested-campaigns-title')}</h3>
       <p class="text-xs text-muted-foreground">
-        From the latest project description extraction. Click "Use this" to start a campaign from a
-        suggestion.
+        {t(locale, 'projects.suggested-campaigns-body')}
       </p>
       <CampaignRecommendationsList
         {recommendations}
@@ -532,16 +553,18 @@
 
   {#if isAdmin}
     <div class="flex justify-end pt-2 border-t">
-      <Button onclick={save} disabled={extractionRunning} loading={saving}>Save</Button>
+      <Button onclick={save} disabled={extractionRunning} loading={saving}
+        >{t(locale, 'projects.save-button')}</Button
+      >
     </div>
 
     <div
       class="mt-10 rounded-md border border-destructive/40 bg-destructive/5 p-4 flex items-start justify-between gap-4"
     >
       <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-medium text-destructive">Danger zone</h3>
+        <h3 class="text-sm font-medium text-destructive">{t(locale, 'projects.danger-zone-title')}</h3>
         <p class="text-xs text-muted-foreground">
-          Permanently delete this project and all its data. This cannot be undone.
+          {t(locale, 'projects.danger-zone-body')}
         </p>
       </div>
       <Button
@@ -550,7 +573,7 @@
         class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
         onclick={() => (deleteOpen = true)}
       >
-        Delete project
+        {t(locale, 'projects.delete-project-button')}
       </Button>
     </div>
   {/if}

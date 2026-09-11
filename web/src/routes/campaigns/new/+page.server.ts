@@ -1,4 +1,5 @@
 import type { PageServerLoad } from './$types';
+import { t } from '$lib/i18n/index.js';
 import { desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { AGENT_RUNNER_META } from '@pitchbox/shared/agents/meta';
@@ -66,7 +67,9 @@ export const load: PageServerLoad = async (event) => {
     label: m.label,
     implemented: m.implemented,
     available: m.implemented && detections[m.slug].available,
-    error: m.implemented ? detections[m.slug].error : 'Runner adapter not implemented yet',
+    error: m.implemented
+      ? detections[m.slug].error
+      : t(event.locals.locale, 'campaigns.new.runner-not-implemented'),
   }));
 
   return { projects, platforms, preselected, recommendations, runners };

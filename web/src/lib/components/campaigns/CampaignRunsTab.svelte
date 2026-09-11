@@ -1,5 +1,7 @@
 <script lang="ts">
   import { AlertTriangle, ChevronDown, ChevronUp } from '@lucide/svelte';
+  import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
   import { tick } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { Badge } from '$lib/components/ui/badge';
@@ -35,6 +37,8 @@
     highlightRunId?: number | null;
   };
   let { runs, totalCount, nextCursor, campaignId, highlightRunId = null }: Props = $props();
+
+  const locale = $derived($page.data.locale as Locale);
 
   let expandedRunId = $state<number | null>(null);
   function toggle(id: number) {
@@ -89,8 +93,8 @@
         const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
         const message =
           res.status >= 500
-            ? 'Could not load more runs. Please try again.'
-            : (body.error ?? body.message ?? 'Could not load more runs.');
+            ? t(locale, 'campaigns.runs-tab.error-load-more-generic')
+            : (body.error ?? body.message ?? t(locale, 'campaigns.runs-tab.error-load-more'));
         if (res.status >= 500) console.error('failed to load more runs', res.status, body);
         loadMoreError = message;
         toast.error(message);
@@ -105,7 +109,7 @@
       appended = [...appended, ...nextPage.runs.filter((r) => !existingIds.has(r.id))];
       appendedCursor = nextPage.nextCursor;
     } catch {
-      loadMoreError = 'Could not reach the server. Check your connection and try again.';
+      loadMoreError = t(locale, 'campaigns.runs-tab.error-load-more-network');
       toast.error(loadMoreError);
     } finally {
       loadingMore = false;
@@ -148,11 +152,11 @@
 
 <Card.Root size="sm">
   <Card.Header>
-    <Card.Title class="text-base">Run history</Card.Title>
-    <Card.Description class="text-xs">Showing {items.length} of {totalCount} runs (any kind)</Card.Description>
+    <Card.Title class="text-base">{t(locale, 'campaigns.runs-tab.title')}</Card.Title>
+    <Card.Description class="text-xs">{t(locale, 'campaigns.runs-tab.subtitle', { shown: items.length, total: totalCount })}</Card.Description>
     {#if failureReasons.length > 0}
       <div class="flex flex-wrap items-center gap-1.5 pt-2">
-        <span class="text-xs text-muted-foreground">Filter failures:</span>
+        <span class="text-xs text-muted-foreground">{t(locale, 'campaigns.runs-tab.filter-failures-label')}</span>
         <button
           type="button"
           class="text-xs rounded px-1.5 py-0.5 border {failureFilter === null
@@ -160,7 +164,7 @@
             : 'text-muted-foreground'}"
           onclick={() => (failureFilter = null)}
         >
-          All
+          {t(locale, 'campaigns.runs-tab.filter-all')}
         </button>
         {#each failureReasons as reason (reason)}
           <button
@@ -180,23 +184,23 @@
     {#if visibleRuns.length === 0}
       <div class="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
         <p class="text-sm">
-          {items.length === 0 ? 'No runs yet' : 'No runs match this filter'}
+          {items.length === 0 ? t(locale, 'campaigns.runs-tab.empty-no-runs') : t(locale, 'campaigns.runs-tab.empty-no-match')}
         </p>
       </div>
     {:else}
       <Table.Root>
         <Table.Header>
           <Table.Row>
-            <Table.Head class="w-16">ID</Table.Head>
-            <Table.Head>Kind</Table.Head>
-            <Table.Head>Status</Table.Head>
-            <Table.Head>Trigger</Table.Head>
-            <Table.Head>Runner</Table.Head>
-            <Table.Head>Started</Table.Head>
-            <Table.Head>Duration</Table.Head>
-            <Table.Head>Drafts</Table.Head>
-            <Table.Head>Tokens</Table.Head>
-            <Table.Head>Cost</Table.Head>
+            <Table.Head class="w-16">{t(locale, 'campaigns.runs-tab.col-id')}</Table.Head>
+            <Table.Head>{t(locale, 'campaigns.runs-tab.col-kind')}</Table.Head>
+            <Table.Head>{t(locale, 'campaigns.runs-tab.col-status')}</Table.Head>
+            <Table.Head>{t(locale, 'campaigns.runs-tab.col-trigger')}</Table.Head>
+            <Table.Head>{t(locale, 'campaigns.runs-tab.col-runner')}</Table.Head>
+            <Table.Head>{t(locale, 'campaigns.runs-tab.col-started')}</Table.Head>
+            <Table.Head>{t(locale, 'campaigns.runs-tab.col-duration')}</Table.Head>
+            <Table.Head>{t(locale, 'campaigns.runs-tab.col-drafts')}</Table.Head>
+            <Table.Head>{t(locale, 'campaigns.runs-tab.col-tokens')}</Table.Head>
+            <Table.Head>{t(locale, 'campaigns.runs-tab.col-cost')}</Table.Head>
             <Table.Head class="w-8"></Table.Head>
           </Table.Row>
         </Table.Header>
@@ -215,7 +219,7 @@
               tabindex={0}
               role="button"
               aria-expanded={expanded}
-              aria-label="Toggle run #{run.id} log"
+              aria-label={t(locale, 'campaigns.runs-tab.toggle-log-aria', { run: run.id })}
               class="hover:bg-muted/40 transition-colors border-b cursor-pointer {expanded
                 ? 'bg-muted/30'
                 : ''}"
@@ -241,10 +245,10 @@
                 </Badge>
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3">
-                {relativeTime(run.startedAt)}
+                {relativeTime(run.startedAt, locale)}
               </Table.Cell>
               <Table.Cell class="text-xs text-muted-foreground py-3">
-                {formatDuration(run.durationMs)}
+                {formatDuration(run.durationMs, locale)}
               </Table.Cell>
               <Table.Cell class="py-3">
                 {#if run.kind === 'campaign' && run.draftCount > 0}
@@ -287,7 +291,7 @@
       {#if itemsNextCursor}
         <div class="flex flex-col items-center gap-2 py-3">
           <Button variant="outline" size="sm" onclick={loadMore} loading={loadingMore}>
-            Load more
+            {t(locale, 'campaigns.runs-tab.load-more-button')}
           </Button>
           {#if loadMoreError}
             <div
@@ -302,7 +306,7 @@
                   onclick={loadMore}
                   class="mt-1 underline underline-offset-2 hover:no-underline"
                 >
-                  Retry
+                  {t(locale, 'campaigns.runs-tab.retry-button')}
                 </button>
               </div>
             </div>

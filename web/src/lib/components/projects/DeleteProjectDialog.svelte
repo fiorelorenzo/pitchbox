@@ -1,6 +1,10 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import { t, splitAroundToken, type Locale } from '$lib/i18n/index.js';
+
+  const locale = $derived($page.data.locale as Locale);
 
   type Props = {
     open: boolean;
@@ -11,6 +15,10 @@
   let { open = $bindable(), slug, onConfirm, onClose }: Props = $props();
   let typed = $state('');
   let busy = $state(false);
+
+  const [confirmBefore, confirmAfter] = $derived(
+    splitAroundToken(locale, 'projects.delete-project-confirm-prompt', 'slug'),
+  );
 
   async function confirm() {
     if (typed !== slug || busy) return;
@@ -29,22 +37,22 @@
     onclick={onClose}
     role="button"
     tabindex="-1"
-    aria-label="Close dialog"
+    aria-label={t(locale, 'projects.aria-close-dialog')}
     onkeydown={(e) => e.key === 'Escape' && onClose()}
   ></div>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
     <div class="bg-background border border-border rounded-lg p-6 w-full max-w-md pointer-events-auto space-y-4">
-      <h3 class="font-medium">Delete project</h3>
+      <h3 class="font-medium">{t(locale, 'projects.delete-project-title')}</h3>
       <p class="text-sm text-muted-foreground">
-        This will cascade-delete all campaigns, runs, drafts, configs, and accounts of this project.
-        Type the project slug <code class="bg-muted px-1 rounded">{slug}</code> to confirm.
+        {t(locale, 'projects.delete-project-warning')}
+        {confirmBefore}<code class="bg-muted px-1 rounded">{slug}</code>{confirmAfter}
       </p>
       <label class="flex flex-col gap-1 text-xs">
-        Slug
+        {t(locale, 'projects.slug-label')}
         <Input bind:value={typed} />
       </label>
       <div class="flex justify-end gap-2">
-        <Button variant="ghost" type="button" onclick={onClose}>Cancel</Button>
+        <Button variant="ghost" type="button" onclick={onClose}>{t(locale, 'projects.cancel-button')}</Button>
         <Button
           type="button"
           variant="destructive"
@@ -52,7 +60,7 @@
           loading={busy}
           onclick={confirm}
         >
-          Delete project
+          {t(locale, 'projects.delete-project-button')}
         </Button>
       </div>
     </div>

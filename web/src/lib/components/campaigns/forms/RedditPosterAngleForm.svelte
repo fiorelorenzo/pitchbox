@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Textarea } from '$lib/components/ui/textarea';
+  import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
 
   type Props = {
     value: string;
@@ -7,14 +9,15 @@
     disabled?: boolean;
   };
   let { value, onChange, disabled = false }: Props = $props();
+
+  const locale = $derived($page.data.locale as Locale);
 </script>
 
 <section class="space-y-2">
   <header>
-    <h3 class="text-sm font-semibold">Post angle</h3>
+    <h3 class="text-sm font-semibold">{t(locale, 'campaigns.forms.angle.title')}</h3>
     <p class="text-xs text-muted-foreground">
-      The framing the agent applies to every drafted post - e.g. "lessons learned from building X",
-      "comparison: tool A vs tool B", "show: I shipped a small thing that solves Y". Keep it concrete.
+      {t(locale, 'campaigns.forms.angle.description')}
     </p>
   </header>
   <Textarea

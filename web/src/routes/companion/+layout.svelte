@@ -2,10 +2,13 @@
 	import type { Snippet } from 'svelte';
 	import { page } from '$app/stores';
 	import { IdCard, AudioLines, Briefcase, type LucideIcon } from '@lucide/svelte';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	let { children }: { children: Snippet } = $props();
 
-	type Item = { href: string; label: string; icon: LucideIcon; exact?: boolean };
+	const locale = $derived($page.data.locale as Locale);
+
+	type Item = { href: string; labelKey: string; icon: LucideIcon; exact?: boolean };
 
 	// The companion area (LOR-178/LOR-179, docs/design/DECISIONS.md D35): its
 	// own top-level sidebar group, split into three routes that each gate
@@ -20,9 +23,9 @@
 	// settings one wraps: three entries must all stay reachable without a
 	// swipe.
 	const items: Item[] = [
-		{ href: '/companion', label: 'Persona', icon: IdCard, exact: true },
-		{ href: '/companion/voice', label: 'Voice', icon: AudioLines },
-		{ href: '/companion/work', label: 'Work', icon: Briefcase },
+		{ href: '/companion', labelKey: 'companion.nav.persona', icon: IdCard, exact: true },
+		{ href: '/companion/voice', labelKey: 'companion.nav.voice', icon: AudioLines },
+		{ href: '/companion/work', labelKey: 'companion.nav.work', icon: Briefcase },
 	];
 
 	function isActive(item: Item): boolean {
@@ -35,12 +38,12 @@
 <div class="flex flex-col gap-6 md:flex-row md:gap-8">
 	<nav
 		class="flex flex-wrap gap-1 border-b border-border pb-2 md:w-48 md:flex-none md:flex-col md:flex-nowrap md:border-b-0 md:pb-0"
-		aria-label="Companion sections"
+		aria-label={t(locale, 'companion.nav.aria-label')}
 	>
 		<p
 			class="hidden px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground md:block"
 		>
-			Companion
+			{t(locale, 'companion.nav.heading')}
 		</p>
 		{#each items as item (item.href)}
 			{@const Icon = item.icon}
@@ -54,7 +57,7 @@
 				}`}
 			>
 				<Icon class="size-4 flex-none" />
-				{item.label}
+				{t(locale, item.labelKey)}
 			</a>
 		{/each}
 	</nav>

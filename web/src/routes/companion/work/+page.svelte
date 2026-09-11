@@ -12,6 +12,8 @@
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
 	import { relativeTime } from '$lib/utils/time';
+	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	// Companion -> Work (LOR-178/LOR-179, docs/design/DECISIONS.md D35),
 	// split out of the old three-card settings/companion page. The GitHub
@@ -19,6 +21,7 @@
 	// belong to the companion rather than to any one project - moving them
 	// there would split one persona across N project pages.
 
+	const locale = $derived($page.data.locale as Locale);
 	type GithubSource = {
 		id: number;
 		owner: string;
@@ -69,16 +72,16 @@
 			});
 			if (res.ok) {
 				newRepoUrl = '';
-				toast.success('Repository added');
+				toast.success(t(locale, 'companion.work.toast-repo-added'));
 				await loadRepos();
 			} else if (res.status === 403) {
-				toast.error('You need admin access for that');
+				toast.error(t(locale, 'companion.work.error-forbidden'));
 			} else {
 				const body = (await res.json().catch(() => null)) as { message?: string } | null;
-				toast.error(body?.message ?? 'Could not add that repository');
+				toast.error(body?.message ?? t(locale, 'companion.work.error-add-repo-failed'));
 			}
 		} catch {
-			toast.error('Could not add that repository');
+			toast.error(t(locale, 'companion.work.error-add-repo-failed'));
 		} finally {
 			addingRepo = false;
 		}
@@ -134,21 +137,25 @@
 		if (!result) return;
 		const detail = params.get('detail');
 		const messages: Record<string, string> = {
-			installed: `GitHub connected${detail ? ` for ${detail}` : ''}`,
-			requested: 'Install requested. An owner of that account has to approve it.',
-			not_configured: 'This deployment has no GitHub App configured.',
-			no_state: 'Start the install from this page, so it lands on the right organization.',
-			wrong_org: 'That install was started for a different organization.',
-			forbidden: 'You need admin access to connect GitHub.',
-			unauthenticated: 'Sign in again and retry the install.',
-			claimed_by_other_org: 'That GitHub account is already connected to another organization.',
-			unverified: `GitHub would not confirm that installation${detail ? `: ${detail}` : ''}`,
-			bad_request: 'GitHub sent back an install with no installation id.',
+			installed: detail
+				? t(locale, 'companion.work.github-connected-detail', { detail })
+				: t(locale, 'companion.work.github-connected'),
+			requested: t(locale, 'companion.work.github-install-requested'),
+			not_configured: t(locale, 'companion.work.github-not-configured'),
+			no_state: t(locale, 'companion.work.github-no-state'),
+			wrong_org: t(locale, 'companion.work.github-wrong-org'),
+			forbidden: t(locale, 'companion.work.github-forbidden'),
+			unauthenticated: t(locale, 'companion.work.github-unauthenticated'),
+			claimed_by_other_org: t(locale, 'companion.work.github-claimed-by-other-org'),
+			unverified: detail
+				? t(locale, 'companion.work.github-unverified-detail', { detail })
+				: t(locale, 'companion.work.github-unverified'),
+			bad_request: t(locale, 'companion.work.github-bad-request'),
 		};
 		if (result === 'installed' || result === 'requested') {
 			toast.success(messages[result]);
 		} else {
-			toast.error(messages[result] ?? 'The GitHub install did not complete');
+			toast.error(messages[result] ?? t(locale, 'companion.work.github-install-incomplete'));
 		}
 		// Strip the params so a refresh does not repeat the toast.
 		window.history.replaceState({}, '', window.location.pathname);
@@ -162,19 +169,17 @@
 			if (res.ok) {
 				const body = (await res.json()) as { uninstalled: boolean; reason: string | null };
 				if (body.uninstalled) {
-					toast.success('GitHub disconnected and the app uninstalled');
+					toast.success(t(locale, 'companion.work.toast-github-disconnected'));
 				} else {
 					// The row is gone either way, so the org has already stopped
 					// using the credential. Say what is left to do by hand.
-					toast.warning(
-						'Disconnected here, but GitHub did not confirm the uninstall. Remove it from the account settings on GitHub.',
-					);
+					toast.warning(t(locale, 'companion.work.warn-uninstall-unconfirmed'));
 				}
 				await Promise.all([loadInstallations(), loadRepos()]);
 			} else if (res.status === 403) {
-				toast.error('You need admin access for that');
+				toast.error(t(locale, 'companion.work.error-forbidden'));
 			} else {
-				toast.error('Could not disconnect that installation');
+				toast.error(t(locale, 'companion.work.error-disconnect-failed'));
 			}
 		} finally {
 			disconnectingId = null;
@@ -187,12 +192,12 @@
 		try {
 			const res = await fetch(`/api/settings/github-sources/${id}`, { method: 'DELETE' });
 			if (res.ok) {
-				toast.success('Repository removed');
+				toast.success(t(locale, 'companion.work.toast-repo-removed'));
 				await loadRepos();
 			} else if (res.status === 403) {
-				toast.error('You need admin access for that');
+				toast.error(t(locale, 'companion.work.error-forbidden'));
 			} else {
-				toast.error('Could not remove that repository');
+				toast.error(t(locale, 'companion.work.error-remove-repo-failed'));
 			}
 		} finally {
 			removingRepoId = null;
@@ -201,23 +206,22 @@
 </script>
 
 <Seo
-	title="Companion - Work"
-	description="Repositories the in-page LinkedIn assistant can mention when it writes about what you've built."
+	title={t(locale, 'companion.work.seo-title')}
+	description={t(locale, 'companion.work.seo-description')}
 />
 
 <PageContainer size="default">
 	<PageHeader
-		title="Work"
-		description="Repositories the companion can mention. A public repo needs nothing but its URL; a private one needs the GitHub App."
+		title={t(locale, 'companion.work.title')}
+		description={t(locale, 'companion.work.description')}
 	/>
 
 	<div class="grid items-start gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
 		<Card.Root>
 			<Card.Header>
-				<Card.Title class="flex items-center gap-2"><FolderGit2 class="size-4" /> What you have shipped</Card.Title>
+				<Card.Title class="flex items-center gap-2"><FolderGit2 class="size-4" /> {t(locale, 'companion.work.shipped-card-title')}</Card.Title>
 				<Card.Description>
-					Repositories the companion can mention. A public repo needs nothing but its URL; a
-					private one needs the App connected beside this.
+					{t(locale, 'companion.work.shipped-card-description')}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
@@ -225,26 +229,26 @@
 					<Input
 						bind:value={newRepoUrl}
 						placeholder="https://github.com/owner/repo"
-						aria-label="Repository URL"
+						aria-label={t(locale, 'companion.work.repo-url-aria')}
 						class="flex-1"
 					/>
 					<Button type="submit" disabled={addingRepo || !newRepoUrl.trim()}>
-						<Plus class="size-4" /> Add
+						<Plus class="size-4" /> {t(locale, 'companion.work.add-button')}
 					</Button>
 				</form>
 
 				{#if loadingRepos}
-					<p class="text-xs text-muted-foreground">Loading repositories...</p>
+					<p class="text-xs text-muted-foreground">{t(locale, 'companion.work.loading-repos')}</p>
 				{:else if reposLoadError}
 					<Alert.Root variant="destructive">
 						<TriangleAlert class="size-4" />
-						<Alert.Title>Could not load repositories</Alert.Title>
+						<Alert.Title>{t(locale, 'companion.work.load-error-title')}</Alert.Title>
 					</Alert.Root>
 				{:else if repos.length === 0}
 					<EmptyState
 						icon={FolderGit2}
-						title="No repositories yet"
-						description="Add a public GitHub repo URL above so the companion can talk about what you've built."
+						title={t(locale, 'companion.work.empty-repos-title')}
+						description={t(locale, 'companion.work.empty-repos-description')}
 						size="sm"
 					/>
 				{:else}
@@ -267,11 +271,11 @@
 										{#if source.primaryLanguage}
 											<Badge variant="outline">{source.primaryLanguage}</Badge>
 										{/if}
-										<span>
-											{source.fetchedAt
-												? `fetched ${relativeTime(source.fetchedAt)}`
-												: 'not fetched yet'}
-										</span>
+									<span>
+										{source.fetchedAt
+											? t(locale, 'companion.work.fetched-label', { when: relativeTime(source.fetchedAt, locale) })
+											: t(locale, 'companion.work.not-fetched-yet')}
+									</span>
 									</div>
 									{#if source.fetchError}
 										<Alert.Root variant="destructive" class="mt-2">
@@ -286,7 +290,7 @@
 									size="icon-sm"
 									disabled={removingRepoId === source.id}
 									onclick={() => removeRepo(source.id)}
-									aria-label="Remove repository"
+								aria-label={t(locale, 'companion.work.remove-repo-aria')}
 								>
 									<Trash2 class="size-4" />
 								</Button>
@@ -302,30 +306,25 @@
 		<Card.Root>
 			<Card.Header>
 				<Card.Title class="flex items-center gap-2"
-					><KeyRound class="size-4" /> GitHub App</Card.Title
+					><KeyRound class="size-4" /> {t(locale, 'companion.work.github-app-card-title')}</Card.Title
 				>
 				<Card.Description>
-					A public repository needs nothing but its URL. A private one is only readable once this
-					organization connects the App, and only for the repositories the account selects.
+					{t(locale, 'companion.work.github-app-card-description')}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
 				{#if !loadingInstallations}
 					{#if !appConfigured}
 						<p class="text-xs text-muted-foreground">
-							No GitHub App is configured on this deployment, so repositories are read
-							anonymously: public ones only, and GitHub allows 60 requests an hour per address.
-							That is the intended self-host setup and needs no credential.
+							{t(locale, 'companion.work.not-configured-note')}
 						</p>
 					{:else if installations.length === 0}
 						<div class="flex flex-col items-start gap-3">
 							<p class="text-xs text-muted-foreground">
-								Connect the GitHub App to read private repositories. You choose which
-								repositories it can see, it asks for read access to code and metadata and
-								nothing else, and you can disconnect it here at any time.
+								{t(locale, 'companion.work.connect-app-note')}
 							</p>
 							<Button href="/api/integrations/github/install" data-sveltekit-reload>
-								<KeyRound class="size-4" /> Connect GitHub
+								<KeyRound class="size-4" /> {t(locale, 'companion.work.connect-github-button')}
 							</Button>
 						</div>
 					{:else}
@@ -335,16 +334,16 @@
 									<div class="min-w-0">
 										<p class="text-sm font-medium text-foreground">
 											{install.accountLogin}
-											<Badge variant="outline" class="ml-1 align-middle">
-												{install.repositorySelection === 'all'
-													? 'all repositories'
-													: 'selected repositories'}
-											</Badge>
-										</p>
+										<Badge variant="outline" class="ml-1 align-middle">
+											{install.repositorySelection === 'all'
+												? t(locale, 'companion.work.repo-selection-all')
+												: t(locale, 'companion.work.repo-selection-selected')}
+										</Badge>
+									</p>
 										<p class="mt-0.5 text-xs text-muted-foreground">
-											{Object.entries(install.permissions)
-												.map(([name, level]) => `${name}: ${level}`)
-												.join(', ') || 'no permissions reported'}
+										{Object.entries(install.permissions)
+											.map(([name, level]) => t(locale, 'companion.work.permission-entry', { name, level }))
+											.join(', ') || t(locale, 'companion.work.no-permissions-reported')}
 										</p>
 									</div>
 									<div class="flex items-center gap-2">
@@ -354,7 +353,7 @@
 											size="sm"
 											data-sveltekit-reload
 										>
-											Change repositories
+										{t(locale, 'companion.work.change-repos-button')}
 										</Button>
 										<Button
 											type="button"
@@ -363,7 +362,7 @@
 											disabled={disconnectingId === install.id}
 											onclick={() => disconnectInstallation(install.id)}
 										>
-											Disconnect
+										{t(locale, 'companion.work.disconnect-button')}
 										</Button>
 									</div>
 								</div>

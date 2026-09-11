@@ -4,6 +4,8 @@ import { routesIt } from './dict/routes.js';
 import { draftDetailIt } from './dict/draft-detail.js';
 import { runlogIt } from './dict/runlog.js';
 import { settingsIt } from './dict/settings.js';
+import { companionIt } from './dict/companion.js';
+import { campaignsIt } from './dict/campaigns.js';
 
 /**
  * Glossary decisions, recorded in `docs/design/DECISIONS.md`: "draft"
@@ -17,6 +19,8 @@ export const it = {
   ...draftDetailIt,
   ...runlogIt,
   ...settingsIt,
+  ...companionIt,
+  ...campaignsIt,
 
   'auth.disabled-title': 'Autenticazione disattivata',
   'auth.disabled-seo-title': 'Autenticazione disattivata',

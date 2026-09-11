@@ -25,6 +25,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { TONE_TEXT_CLASS } from '$lib/config/status-badges';
 	import { SelectField } from '$lib/components/ui/select-field';
+	import { t, tn, type Locale } from '$lib/i18n/index.js';
 
 	let {
 		data,
@@ -54,6 +55,8 @@
 		};
 	} = $props();
 
+	const locale = $derived($page.data.locale as Locale);
+
 	type Campaign = (typeof data.campaigns)[number];
 
 	// A stale/foreign `?run=` link (from Audit) could not be resolved to a
@@ -63,8 +66,8 @@
 	$effect(() => {
 		if (data.runFilterInvalid != null && data.runFilterInvalid !== warnedRunFilterInvalid) {
 			warnedRunFilterInvalid = data.runFilterInvalid;
-			toast.warning('Run link ignored', {
-				description: `Run #${data.runFilterInvalid} could not be found - showing all campaigns instead.`,
+			toast.warning(t(locale, 'campaigns.run-filter-ignored-title'), {
+				description: t(locale, 'campaigns.run-filter-ignored-body', { run: data.runFilterInvalid }),
 			});
 		} else if (data.runFilterInvalid == null) {
 			warnedRunFilterInvalid = null;
@@ -104,11 +107,11 @@
 			if (!res.ok) throw new Error(await res.text());
 			const { runId, alreadyRunning } = await res.json();
 			if (alreadyRunning) {
-				toast.info(`Already running - showing live log`);
+			toast.info(t(locale, 'campaigns.toast-already-running'));
 			}
 			runIdByCampaign = new Map([...runIdByCampaign, [id, runId]]);
 		} catch {
-			toast.error('Failed to start run');
+			toast.error(t(locale, 'campaigns.toast-run-start-failed'));
 			runningCampaignIds = new Set([...runningCampaignIds].filter((x) => x !== id));
 		}
 	}
@@ -124,12 +127,12 @@
 		try {
 			const res = await fetch(`/api/run/${stopTarget.runId}`, { method: 'DELETE' });
 			if (!res.ok) throw new Error(await res.text());
-			toast.info(`Run #${stopTarget.runId} stopped`);
+			toast.info(t(locale, 'campaigns.toast-run-stopped', { run: stopTarget.runId }));
 			stopDialogOpen = false;
 			stopTarget = null;
 			await invalidateAll();
 		} catch (err) {
-			toast.error(`Failed to stop run: ${err}`);
+			toast.error(t(locale, 'campaigns.toast-run-stop-failed', { error: String(err) }));
 		} finally {
 			stopping = false;
 		}
@@ -147,7 +150,7 @@
 					// Auto-expand the campaign whose run just started.
 					expandedId = campaignId;
 				}
-				toast.info(`Run #${rid} started`);
+				toast.info(t(locale, 'campaigns.toast-run-started', { run: rid }));
 				await invalidateAll();
 			}),
 		);
@@ -159,11 +162,11 @@
 					runningCampaignIds = new Set([...runningCampaignIds].filter((x) => x !== campaignId));
 				}
 				if (exitCode === 0) {
-					toast.success(`Run #${rid} finished`);
+					toast.success(t(locale, 'campaigns.toast-run-finished', { run: rid }));
 				} else if (error === 'cancelled by user') {
-					toast.info(`Run #${rid} cancelled`);
+					toast.info(t(locale, 'campaigns.toast-run-cancelled', { run: rid }));
 				} else {
-					toast.error(`Run #${rid} failed`);
+					toast.error(t(locale, 'campaigns.toast-run-failed', { run: rid }));
 				}
 				await invalidateAll();
 			}),
@@ -198,35 +201,34 @@
 <AlertDialog.Root bind:open={stopDialogOpen}>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>Stop run #{stopTarget?.runId}?</AlertDialog.Title>
+			<AlertDialog.Title>{t(locale, 'campaigns.stop-dialog-title', { run: stopTarget?.runId ?? '' })}</AlertDialog.Title>
 			<AlertDialog.Description>
-				The in-progress claude-code subprocess will be terminated. Any drafts already created are
-				kept.
+				{t(locale, 'campaigns.stop-dialog-body')}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel onclick={() => (stopDialogOpen = false)}>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Cancel onclick={() => (stopDialogOpen = false)}>{t(locale, 'campaigns.cancel')}</AlertDialog.Cancel>
 			<AlertDialog.Action onclick={confirmStop} disabled={stopping}>
-				{#if stopping}Stopping…{:else}Stop run{/if}
+				{#if stopping}{t(locale, 'campaigns.stopping-button')}{:else}{t(locale, 'campaigns.stop-run-button')}{/if}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
 
 <Seo
-	title="Campaigns"
-	description="Manage outreach campaigns - trigger manual runs, review recent activity, edit cron schedules."
+	title={t(locale, 'nav.campaigns')}
+	description={t(locale, 'campaigns.seo-description')}
 />
 
 <PageHeader
-	title="Campaigns"
+	title={t(locale, 'nav.campaigns')}
 	description={data.activeProject
-		? `Project: ${data.activeProject.name}`
-		: 'Orchestrate outreach runs. Trigger a manual execution, inspect recent activity, or let the scheduler run active campaigns on their cron schedule.'}
+		? t(locale, 'campaigns.page-description-project', { project: data.activeProject.name })
+		: t(locale, 'campaigns.page-description')}
 >
 	{#snippet actions()}
 		<a href="/campaigns/new">
-			<Button size="sm">New campaign</Button>
+			<Button size="sm">{t(locale, 'campaigns.new-campaign-button')}</Button>
 		</a>
 	{/snippet}
 </PageHeader>
@@ -234,12 +236,12 @@
 <StreamStatusBanner active={anyRunning} onReconnect={() => invalidateAll()} />
 
 <div class="mb-3 flex items-center gap-2">
-	<span class="text-xs text-muted-foreground">Project</span>
+	<span class="text-xs text-muted-foreground">{t(locale, 'campaigns.col-project')}</span>
 	<SelectField
 		value={data.activeProject?.slug ?? ''}
 		onValueChange={(v) => changeProject(v)}
 		options={[
-			{ value: '', label: 'All projects' },
+			{ value: '', label: t(locale, 'campaigns.all-projects-option') },
 			...data.projects.map((p) => ({ value: p.slug, label: p.name })),
 		]}
 		size="sm"
@@ -251,13 +253,13 @@
 		<Card.Content>
 			<EmptyState
 				icon={Megaphone}
-				title="No campaigns yet"
+				title={t(locale, 'campaigns.empty-title')}
 				description={data.activeProject
-					? `Create the first campaign for ${data.activeProject.name}. Each campaign pairs a playbook with an agent runner and an optional cron schedule.`
-					: 'A campaign pairs a playbook (e.g. reddit-scout) with an agent runner and an optional cron schedule. Create the first one to dispatch a run.'}
+					? t(locale, 'campaigns.empty-body-project', { project: data.activeProject.name })
+					: t(locale, 'campaigns.empty-body')}
 				size="lg"
 			>
-				<a href="/campaigns/new"><Button size="sm">New campaign</Button></a>
+				<a href="/campaigns/new"><Button size="sm">{t(locale, 'campaigns.new-campaign-button')}</Button></a>
 			</EmptyState>
 		</Card.Content>
 	</Card.Root>
@@ -273,15 +275,13 @@
 				</Tooltip.Trigger>
 				<Tooltip.Content class="max-w-xs">
 				{#if c.status === 'paused'}
-						The scheduler will skip this campaign. "Run now" still works manually.
-						Set it to active to resume the schedule.
+						{t(locale, 'campaigns.status-tooltip-paused')}
 					{:else if c.status === 'active'}
-						The scheduler runs this automatically on its cron schedule, if one is set.
+						{t(locale, 'campaigns.status-tooltip-active')}
 					{:else if c.status === 'safety_braked'}
-						Auto-paused by the safety brake after repeated failures. Resume manually
-						once resolved.
+						{t(locale, 'campaigns.status-tooltip-safety-braked')}
 					{:else}
-						Current campaign status: {c.status}
+						{t(locale, 'campaigns.status-tooltip-fallback', { status: c.status })}
 					{/if}
 				</Tooltip.Content>
 			</Tooltip.Root>
@@ -303,10 +303,10 @@
 			{#if c.lastRunStatus}
 				<StatusBadge domain="run-status" value={c.lastRunStatus} />
 			{/if}
-			<span class="tabular-nums">{relativeTime(c.lastRunFinishedAt)}</span>
+			<span class="tabular-nums">{relativeTime(c.lastRunFinishedAt, locale)}</span>
 			{#if c.lastRunDurationMs != null}
 				<span class="text-muted-foreground/60">·</span>
-				<span class="tabular-nums">{formatDuration(c.lastRunDurationMs)}</span>
+				<span class="tabular-nums">{formatDuration(c.lastRunDurationMs, locale)}</span>
 			{/if}
 		</div>
 	{:else}
@@ -318,7 +318,7 @@
 	{#if c.nextRunAt}
 		{@const overdue = new Date(c.nextRunAt).getTime() < Date.now()}
 		<span class="tabular-nums {overdue ? TONE_TEXT_CLASS.rose : 'text-muted-foreground'}">
-			{relativeTimeUntil(c.nextRunAt)}
+			{relativeTimeUntil(c.nextRunAt, locale)}
 		</span>
 	{:else}
 		<span class="text-muted-foreground/50">-</span>
@@ -333,7 +333,7 @@
 			onclick={(e) => e.stopPropagation()}
 		>
 			<Badge variant="default" class="text-xs bg-primary/80 hover:bg-primary">
-				{c.lastRunDraftCount} drafts
+				{tn(locale, 'campaigns.drafts-count', c.lastRunDraftCount)}
 			</Badge>
 		</a>
 	{:else if c.lastRunId != null}
@@ -341,7 +341,7 @@
 			variant="outline"
 			class="text-xs text-muted-foreground/50 border-dashed border-muted-foreground/30"
 		>
-			0 drafts
+			{tn(locale, 'campaigns.drafts-count', 0)}
 		</Badge>
 	{:else}
 		<span class="text-muted-foreground/50 text-xs">-</span>
@@ -356,12 +356,12 @@
 			onclick={(e) => e.stopPropagation()}
 			role="presentation"
 		>
-			<Button loading size="sm" variant="secondary">Running…</Button>
+			<Button loading size="sm" variant="secondary">{t(locale, 'campaigns.running-button')}</Button>
 			<Button
 				size="sm"
 				variant="destructive"
 				onclick={() => openStopDialog(c.id, runId)}
-				title="Stop run"
+				title={t(locale, 'campaigns.stop-run-button')}
 			>
 				<Square class="size-4" />
 			</Button>
@@ -377,7 +377,7 @@
 			size="sm"
 			variant="secondary"
 		>
-			Run now
+			{t(locale, 'campaigns.run-now-button')}
 		</Button>
 	{/if}
 {/snippet}
@@ -388,13 +388,13 @@
 		<Table.Root>
 			<Table.Header>
 				<Table.Row class="border-b">
-					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Name</Table.Head>
-					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Project</Table.Head>
-					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Skill</Table.Head>
-					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Status</Table.Head>
-					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Last run</Table.Head>
-					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Next run</Table.Head>
-					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">Drafts</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">{t(locale, 'campaigns.col-name')}</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">{t(locale, 'campaigns.col-project')}</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">{t(locale, 'campaigns.col-skill')}</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">{t(locale, 'campaigns.col-status')}</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">{t(locale, 'campaigns.col-last-run')}</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">{t(locale, 'campaigns.col-next-run')}</Table.Head>
+					<Table.Head class="text-xs font-medium text-muted-foreground/80 py-3">{t(locale, 'campaigns.col-drafts')}</Table.Head>
 					<Table.Head class="py-3"></Table.Head>
 					<Table.Head class="w-8 py-3"></Table.Head>
 				</Table.Row>
@@ -467,7 +467,7 @@
 											toggleExpand(c.id);
 										}}
 										class="flex items-center justify-center size-7 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground cursor-pointer"
-										aria-label={expanded ? 'Collapse log' : 'Expand log'}
+									aria-label={expanded ? t(locale, 'campaigns.collapse-log-aria') : t(locale, 'campaigns.expand-log-aria')}
 									>
 										{#if expanded}
 											<ChevronUp class="size-4" />
@@ -537,7 +537,7 @@
 						{@render draftsCell(c)}
 					</div>
 					<div class="flex items-center gap-1 text-xs text-muted-foreground">
-						<span>Next run:</span>
+						<span>{t(locale, 'campaigns.next-run-label')}</span>
 						{@render nextRunCell(c)}
 					</div>
 
@@ -545,7 +545,7 @@
 						{@render runActions(c, running, runId)}
 						{#if runId != null}
 							<Button variant="ghost" size="sm" onclick={() => toggleExpand(c.id)}>
-								{expanded ? 'Hide log' : 'View log'}
+								{expanded ? t(locale, 'campaigns.hide-log-button') : t(locale, 'campaigns.view-log-button')}
 							</Button>
 						{/if}
 					</div>

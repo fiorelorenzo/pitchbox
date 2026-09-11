@@ -148,7 +148,7 @@ export const actions: Actions = {
     const orgId = await requireOrgId(event);
     const form = await event.request.formData();
     const sampleId = Number(form.get('sampleId'));
-    if (!Number.isInteger(sampleId)) return fail(400, { error: 'Invalid sample id' });
+    if (!Number.isInteger(sampleId)) return fail(400, { errorCode: 'invalid-sample-id' as const });
     const excluded = form.get('excluded') === 'true';
     await setVoiceSampleExcluded(getDb(), orgId, sampleId, excluded);
     const voiceProfile = await refreshVoiceProfile(getDb(), orgId);
@@ -218,13 +218,12 @@ export const actions: Actions = {
     const form = await event.request.formData();
     const file = form.get('file');
     if (!(file instanceof File) || file.size === 0) {
-      return fail(400, {
-        importError: 'Choose a LinkedIn export file (.zip) or a Shares.csv/Comments.csv first.',
-      });
+      return fail(400, { importErrorCode: 'no-file' as const });
     }
     if (file.size > MAX_VOICE_IMPORT_BYTES) {
       return fail(413, {
-        importError: `File exceeds the ${Math.floor(MAX_VOICE_IMPORT_BYTES / (1024 * 1024))}MB limit.`,
+        importErrorCode: 'file-too-large' as const,
+        maxMb: Math.floor(MAX_VOICE_IMPORT_BYTES / (1024 * 1024)),
       });
     }
 
@@ -249,9 +248,10 @@ export const actions: Actions = {
       const isMissingSharesAndComments =
         message.includes('Shares.csv') && message.includes('Comments.csv');
       return fail(400, {
-        importError: isMissingSharesAndComments
-          ? 'That looks like the quick "Basic" archive LinkedIn emails first - it never has your posts or comments. Wait for the second email (up to 24 hours after you requested it) and upload that archive instead.'
-          : message,
+        importErrorCode: isMissingSharesAndComments
+          ? ('missing-basic-archive' as const)
+          : ('parse-failed' as const),
+        detail: isMissingSharesAndComments ? undefined : message,
       });
     }
 
@@ -261,7 +261,7 @@ export const actions: Actions = {
       .from(schema.platforms)
       .where(eq(schema.platforms.slug, 'linkedin'))
       .limit(1);
-    if (!platform) return fail(500, { importError: 'LinkedIn platform is not configured.' });
+    if (!platform) return fail(500, { importErrorCode: 'platform-not-configured' as const });
 
     const { inserted, byGenre } = await importVoiceSamples(db, orgId, platform.id, items);
     const voiceProfile = await refreshVoiceProfile(db, orgId);

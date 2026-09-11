@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
+
   type Props = {
     project: {
       id: number;
@@ -10,6 +13,8 @@
     };
   };
   let { project }: Props = $props();
+
+  const locale = $derived($page.data.locale as Locale);
 
   // Strip enough markdown for a one-paragraph preview: headings, emphasis, code fences,
   // inline code, link markup, list bullets, blockquote arrows, then collapse whitespace.
@@ -46,7 +51,7 @@
     <p class="text-sm text-muted-foreground line-clamp-2 mb-3">{preview}</p>
   {/if}
   <div class="text-xs text-muted-foreground flex gap-3">
-    <span>{project.campaignCount} campaigns</span>
-    <span>{project.accountCount} accounts</span>
+    <span>{t(locale, 'projects.card-campaign-count', { n: project.campaignCount })}</span>
+    <span>{t(locale, 'projects.card-account-count', { n: project.accountCount })}</span>
   </div>
 </a>
