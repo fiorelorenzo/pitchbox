@@ -251,7 +251,14 @@ status was only ever one card on it, so calling it Status stopped being
 accurate once #254 flattened the tabs; `/settings/status` stays a redirect
 to `/settings/general` since it was deep-linked, same reasoning as the bare
 `/settings` redirect) still has no page-level role gate (daemon health
-comes from a client store) - the route itself is member-visible - but the
+comes from a client store) - the route itself is member-visible, though one
+card on it is not: the 2026-09-12 UI/UX defects batch folded the interface-
+locale picker in from its own `settings/language` route (LOR-262) into a
+`SettingsLanguageCard` on `general`, still gated on `locals.user` existing
+at all (same self-service shape as `password` above) - nobody signed in
+means the card is skipped, the rest of the page renders unchanged, and
+`settings/language` itself is now a redirect-only stub to `settings/general`
+(same deep-link reasoning as the `settings/status` redirect) - but the
 endpoint the store polls,
 `GET /api/daemon/status`, gates itself (#184): every tenant on cloud shares
 one daemon, so a per-org role is never the right axis and the route calls

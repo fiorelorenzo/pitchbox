@@ -4,7 +4,6 @@
 	import Seo from '$lib/components/Seo.svelte';
 	import ExtensionCard from '$lib/components/ExtensionCard.svelte';
 	import ExtensionDevices from '$lib/components/ExtensionDevices.svelte';
-	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { t, type Locale } from '$lib/i18n/index.js';
 
 	type PageData = {
@@ -22,14 +21,12 @@
 	description={t(locale, 'settings.extension.seo-description')}
 />
 
-<PageContainer size="default">
-	<PageHeader
-		title={t(locale, 'settings.extension.title')}
-		description={t(locale, 'settings.extension.description')}
-	/>
+<PageHeader
+	title={t(locale, 'settings.extension.title')}
+	description={t(locale, 'settings.extension.description')}
+/>
 
-	<div class="max-w-2xl flex flex-col gap-4">
-		<ExtensionCard backendUrl={data.extension.backendUrl} />
-		<ExtensionDevices {isAdmin} />
-	</div>
-</PageContainer>
+<div class="flex flex-col gap-4">
+	<ExtensionCard backendUrl={data.extension.backendUrl} />
+	<ExtensionDevices {isAdmin} />
+</div>

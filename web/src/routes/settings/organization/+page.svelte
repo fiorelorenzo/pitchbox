@@ -12,7 +12,6 @@
   import { UserPlus, Copy, Trash2, MoreHorizontal, Pencil } from '@lucide/svelte';
   import { untrack } from 'svelte';
   import { DOCS_URL } from '$lib/config/docs';
-  import PageContainer from '$lib/components/PageContainer.svelte';
   import RemoveMemberDialog from '$lib/components/settings/RemoveMemberDialog.svelte';
   import LeaveOrgDialog from '$lib/components/settings/LeaveOrgDialog.svelte';
   import { t, tn, type Locale } from '$lib/i18n/index.js';
@@ -402,7 +401,6 @@
   }
 </script>
 
-<PageContainer size="default">
 <Seo
   title={t(locale, 'settings.organization.seo-title')}
   description={t(locale, 'settings.organization.seo-description')}
@@ -414,7 +412,7 @@
 />
 
 {#if !data.org}
-  <Card.Root class="mt-4">
+  <Card.Root>
     <Card.Content class="py-6 text-sm text-muted-foreground">
       {#if data.authOn}
         {t(locale, 'settings.organization.sign-in-prompt')}
@@ -432,7 +430,7 @@
     </Card.Content>
   </Card.Root>
 {:else}
-  <div class="mt-4 flex flex-col gap-4">
+  <div class="flex flex-col gap-4">
     <Card.Root>
       <Card.Header>
         <Card.Title class="text-base">{t(locale, 'settings.organization.card-title')}</Card.Title>
@@ -881,4 +879,3 @@
   onConfirm={leaveOrg}
   onClose={() => (leaveDialogOpen = false)}
 />
-</PageContainer>

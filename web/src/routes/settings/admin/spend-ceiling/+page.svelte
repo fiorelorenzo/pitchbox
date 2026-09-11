@@ -5,7 +5,6 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import PageHeader from '$lib/components/PageHeader.svelte';
-  import PageContainer from '$lib/components/PageContainer.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
@@ -98,13 +97,13 @@
   description={t(locale, 'settings.admin.spend-ceiling.seo-description')}
 />
 
-<PageContainer size="default">
-  <PageHeader
-    title={t(locale, 'settings.admin.spend-ceiling.title')}
-    description={t(locale, 'settings.admin.spend-ceiling.description')}
-  />
+<PageHeader
+  title={t(locale, 'settings.admin.spend-ceiling.title')}
+  description={t(locale, 'settings.admin.spend-ceiling.description')}
+/>
 
-  <Alert.Root class="mb-6">
+<div class="flex flex-col gap-6">
+  <Alert.Root>
     <Info class="size-4" />
     <Alert.Description>
       {t(locale, 'settings.admin.spend-ceiling.info')}
@@ -151,7 +150,7 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root class="mt-6 max-w-2xl">
+  <Card.Root class="max-w-2xl">
     <Card.Header>
       <Card.Title class="text-base">{t(locale, 'settings.admin.spend-ceiling.self-reg-card-title')}</Card.Title>
       <p class="text-sm text-muted-foreground">
@@ -188,7 +187,7 @@
     </Card.Content>
   </Card.Root>
 
-  <div class="mt-6">
+  <div>
     <Button onclick={save} loading={saving}>{t(locale, 'settings.admin.spend-ceiling.save')}</Button>
   </div>
-</PageContainer>
+</div>

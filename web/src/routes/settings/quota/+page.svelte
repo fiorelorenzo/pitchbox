@@ -10,7 +10,6 @@
 	import { toast } from 'svelte-sonner';
 	import { fly } from 'svelte/transition';
 	import { untrack } from 'svelte';
-	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { t, type Locale } from '$lib/i18n/index.js';
 
 	type QuotaWindow = { perDay: number; perWeek: number };
@@ -74,13 +73,12 @@
 />
 
 <Tooltip.Provider>
-	<PageContainer size="default">
-		<PageHeader
-			title={t(locale, 'settings.quota.title')}
-			description={t(locale, 'settings.quota.description')}
-		/>
+	<PageHeader
+		title={t(locale, 'settings.quota.title')}
+		description={t(locale, 'settings.quota.description')}
+	/>
 
-		<div class="max-w-2xl flex flex-col gap-4">
+	<div class="flex flex-col gap-4">
 			{#if isAdmin}
 				{#each Object.entries(q) as [slug] (slug)}
 					<SettingsQuotaCard
@@ -98,7 +96,6 @@
 				</Alert.Root>
 			{/if}
 		</div>
-	</PageContainer>
 </Tooltip.Provider>
 
 {#if dirty}

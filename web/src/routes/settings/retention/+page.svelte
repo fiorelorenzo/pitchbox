@@ -8,7 +8,6 @@
 	import { toast } from 'svelte-sonner';
 	import { enhance } from '$app/forms';
 	import { untrack } from 'svelte';
-	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { t, type Locale } from '$lib/i18n/index.js';
 
 	type Policy = {
@@ -42,7 +41,6 @@
 	});
 </script>
 
-<PageContainer size="default">
 <Seo
 	title={t(locale, 'settings.retention.seo-title')}
 	description={t(locale, 'settings.retention.seo-description')}
@@ -53,7 +51,7 @@
 	description={t(locale, 'settings.retention.description')}
 />
 
-<div class="mt-4 grid gap-4">
+<div class="grid gap-4">
 	<Card.Root>
 		<Card.Header>
 			<Card.Title>{t(locale, 'settings.retention.policy-title')}</Card.Title>
@@ -106,4 +104,3 @@
 		</Card.Content>
 	</Card.Root>
 </div>
-</PageContainer>

@@ -6,7 +6,6 @@
   import { Input } from '$lib/components/ui/input';
   import { SelectField } from '$lib/components/ui/select-field';
   import PageHeader from '$lib/components/PageHeader.svelte';
-  import PageContainer from '$lib/components/PageContainer.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import { toast } from 'svelte-sonner';
   import { untrack } from 'svelte';
@@ -93,11 +92,10 @@
   description={t(locale, 'settings.admin.models.seo-description')}
 />
 
-<PageContainer size="default">
-  <PageHeader
-    title={t(locale, 'settings.admin.models.title')}
-    description={t(locale, 'settings.admin.models.description')}
-  />
+<PageHeader
+  title={t(locale, 'settings.admin.models.title')}
+  description={t(locale, 'settings.admin.models.description')}
+/>
 
   {#if data.catalogue.unavailable}
     <Alert.Root class="mb-4">
@@ -154,4 +152,3 @@
       </Card.Root>
     {/each}
   </div>
-</PageContainer>

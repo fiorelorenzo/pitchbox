@@ -9,7 +9,6 @@
   import { SelectField } from '$lib/components/ui/select-field';
   import { Info } from '@lucide/svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
-  import PageContainer from '$lib/components/PageContainer.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
@@ -99,20 +98,20 @@
   description={t(locale, 'settings.admin.plan-grants.seo-description')}
 />
 
-<PageContainer size="default">
-  <PageHeader
-    title={t(locale, 'settings.admin.plan-grants.title')}
-    description={t(locale, 'settings.admin.plan-grants.description')}
-  />
+<PageHeader
+  title={t(locale, 'settings.admin.plan-grants.title')}
+  description={t(locale, 'settings.admin.plan-grants.description')}
+/>
 
-  <Alert.Root class="mb-6">
+<div class="flex flex-col gap-6">
+  <Alert.Root>
     <Info class="size-4" />
     <Alert.Description>
       {t(locale, 'settings.admin.plan-grants.info')}
     </Alert.Description>
   </Alert.Root>
 
-  <Card.Root class="mt-2 max-w-3xl">
+  <Card.Root class="max-w-3xl">
     <Card.Header>
       <Card.Title>{t(locale, 'settings.admin.plan-grants.grant-card-title')}</Card.Title>
       <Card.Description>
@@ -149,7 +148,7 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root class="mt-8 max-w-4xl">
+  <Card.Root>
     <Card.Header>
       <Card.Title>{t(locale, 'settings.admin.plan-grants.orgs-card-title')}</Card.Title>
       <Card.Description>
@@ -203,7 +202,7 @@
       </Table.Root>
     </Card.Content>
   </Card.Root>
-</PageContainer>
+</div>
 
 <AlertDialog.Root open={revokeTarget !== null} onOpenChange={(v) => !v && (revokeTarget = null)}>
   <AlertDialog.Content>

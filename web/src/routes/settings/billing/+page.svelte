@@ -6,7 +6,6 @@
 	import { page } from '$app/stores';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
-	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { toast } from 'svelte-sonner';
 	import { AlertTriangle, Ban, ExternalLink } from '@lucide/svelte';
 	import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
@@ -115,19 +114,19 @@
 	</div>
 {/snippet}
 
-<PageContainer size="default">
-	<Seo
-		title={t(locale, 'settings.billing.seo-title')}
-		description={t(locale, 'settings.billing.seo-description')}
-	/>
+<Seo
+	title={t(locale, 'settings.billing.seo-title')}
+	description={t(locale, 'settings.billing.seo-description')}
+/>
 
-	<PageHeader
-		title={t(locale, 'settings.billing.title')}
-		description={t(locale, 'settings.billing.description')}
-	/>
+<PageHeader
+	title={t(locale, 'settings.billing.title')}
+	description={t(locale, 'settings.billing.description')}
+/>
 
+<div class="flex flex-col gap-6">
 	{#if data.selfHost}
-		<Card.Root class="mt-4">
+		<Card.Root>
 			<Card.Header>
 				<Card.Title>{t(locale, 'settings.billing.self-hosted-title')}</Card.Title>
 				<Card.Description>
@@ -139,7 +138,7 @@
 		{#if data.graceEndsAt}
 			<div
 				role="alert"
-				class="mt-4 flex items-start gap-2 rounded-lg border {data.readOnly
+				class="flex items-start gap-2 rounded-lg border {data.readOnly
 					? TONE_BANNER_CLASS.rose
 					: TONE_BANNER_CLASS.amber}"
 			>
@@ -170,7 +169,7 @@
 			</div>
 		{/if}
 
-		<Card.Root class="mt-4">
+		<Card.Root>
 			<Card.Header>
 				<div class="flex items-center gap-2">
 					<Card.Title>{data.planName}</Card.Title>
@@ -247,7 +246,7 @@
 			</Card.Content>
 		</Card.Root>
 
-		<Card.Root class="mt-4">
+		<Card.Root>
 			<Card.Header>
 				<Card.Title>{t(locale, 'settings.billing.usage-title')}</Card.Title>
 				<Card.Description>
@@ -284,4 +283,4 @@
 			</Card.Content>
 		</Card.Root>
 	{/if}
-</PageContainer>
+</div>

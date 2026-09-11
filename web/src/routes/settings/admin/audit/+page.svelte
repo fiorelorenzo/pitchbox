@@ -2,7 +2,6 @@
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import PageHeader from '$lib/components/PageHeader.svelte';
-  import PageContainer from '$lib/components/PageContainer.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import { page } from '$app/stores';
   import { t, type Locale } from '$lib/i18n/index.js';
@@ -40,13 +39,12 @@
   description={t(locale, 'settings.admin.audit.seo-description')}
 />
 
-<PageContainer size="wide">
-  <PageHeader
-    title={t(locale, 'settings.admin.audit.title')}
-    description={t(locale, 'settings.admin.audit.description')}
-  />
+<PageHeader
+  title={t(locale, 'settings.admin.audit.title')}
+  description={t(locale, 'settings.admin.audit.description')}
+/>
 
-  <Card.Root size="sm" class="mt-4">
+<Card.Root size="sm">
     <Card.Content class="py-2">
       <Table.Root>
         <Table.Header>
@@ -83,4 +81,3 @@
       </Table.Root>
     </Card.Content>
   </Card.Root>
-</PageContainer>

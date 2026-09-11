@@ -8,7 +8,6 @@
   import { Info } from '@lucide/svelte';
   import { page } from '$app/stores';
   import PageHeader from '$lib/components/PageHeader.svelte';
-  import PageContainer from '$lib/components/PageContainer.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
@@ -85,14 +84,14 @@
   description={t(locale, 'settings.admin.seo-description')}
 />
 
-<PageContainer size="default">
-  <PageHeader
-    title={t(locale, 'settings.admin.title')}
-    description={t(locale, 'settings.admin.description')}
-  />
+<PageHeader
+  title={t(locale, 'settings.admin.title')}
+  description={t(locale, 'settings.admin.description')}
+/>
 
+<div class="flex flex-col gap-6">
   {#if !data.authOn}
-    <Alert.Root class="mb-6">
+    <Alert.Root>
       <Info class="size-4" />
       <Alert.Title>{t(locale, 'settings.admin.auth-off-title')}</Alert.Title>
       <Alert.Description>
@@ -101,11 +100,11 @@
     </Alert.Root>
   {/if}
 
-  <p class="mb-6 max-w-2xl text-sm text-muted-foreground">
+  <p class="max-w-2xl text-sm text-muted-foreground">
     {t(locale, 'settings.admin.intro')}
   </p>
 
-  <div class="grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     {#each links as link (link.href)}
       {@const Icon = link.icon}
       <a href={link.href} class="block">
@@ -122,7 +121,7 @@
     {/each}
   </div>
 
-  <Card.Root class="mt-8 max-w-3xl">
+  <Card.Root class="max-w-3xl">
     <Card.Header>
       <Card.Title>{t(locale, 'settings.admin.registration.title')}</Card.Title>
       <Card.Description>
@@ -140,7 +139,7 @@
     </Card.Content>
   </Card.Root>
 
-  <Card.Root class="mt-8 max-w-3xl">
+  <Card.Root class="max-w-3xl">
     <Card.Header>
       <Card.Title>{t(locale, 'settings.admin.instance-admins.title')}</Card.Title>
       <Card.Description>
@@ -187,4 +186,4 @@
       </Table.Root>
     </Card.Content>
   </Card.Root>
-</PageContainer>
+</div>
