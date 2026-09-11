@@ -113,6 +113,7 @@ export const load: PageServerLoad = async (event) => {
     loadVoiceProfile(db, orgId),
   ]);
   return {
+    orgId,
     voiceSamples: samples.map((s): CompanionVoiceSample => ({
       id: s.id,
       text: s.text,
@@ -232,8 +233,25 @@ export const actions: Actions = {
     try {
       items = parseLinkedinExportBuffer(buffer, file.name);
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not read that file.';
+      // LOR-247: the guided onboarding path on this page tells a new
+      // customer to request their data and upload whatever LinkedIn sends,
+      // but LinkedIn actually answers with two archives - a "Basic" one
+      // within minutes that never carries Shares.csv/Comments.csv, and the
+      // real one up to 24 hours later. A customer following this page's own
+      // instructions will hit exactly this parser error on day one.
+      // LOR-267 (not landed) will make the importer read messages.csv from
+      // the Basic archive instead of refusing it; until then this only
+      // rewords the parser's own refusal - which archive is missing what
+      // stays entirely `parseLinkedinExportBuffer`'s call, this never
+      // second-guesses it - so it reads as "wrong archive, wait for the
+      // other one" instead of "wrong export".
+      const isMissingSharesAndComments =
+        message.includes('Shares.csv') && message.includes('Comments.csv');
       return fail(400, {
-        importError: err instanceof Error ? err.message : 'Could not read that file.',
+        importError: isMissingSharesAndComments
+          ? 'That looks like the quick "Basic" archive LinkedIn emails first - it never has your posts or comments. Wait for the second email (up to 24 hours after you requested it) and upload that archive instead.'
+          : message,
       });
     }
 
