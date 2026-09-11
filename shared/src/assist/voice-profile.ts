@@ -764,8 +764,430 @@ const EN_STOPWORDS_GLOBAL =
 export const IT_STOPWORDS_GLOBAL =
   /(?<![\p{L}\p{N}_])(?:il|la|di|che|per|con|un|una|è|non|questo|questa|sono|abbiamo|nel|della)(?![\p{L}\p{N}_])/giu;
 
-/** Below this many stopword hits, a text has not said enough to classify -
- * one stray "the" in an otherwise Italian post is not evidence. */
+// LOR-268: a fixed grammatical-stopword list is a poor detector on short
+// text, because stopwords are exactly the words a short message omits - a
+// median-length comment ("ci butto un occhio, grazie!") carries a greeting
+// and a verb, not an article or a conjunction. Measured against 233 of the
+// operator's real sent messages and a 27-comment eval corpus (both in
+// `private/voice-eval/`, gitignored - never quote a case body in a commit,
+// PR or test), the two stopword lists above left about 48% of that writing
+// as `unknown`, and LOR-234's accented-boundary fix (real, but a different
+// bug) moved one case out of 260.
+//
+// The fix is not a lower LANGUAGE_MARKER_MIN - that trades silence for
+// confident nonsense on genuinely unclassifiable text ("Grande!", a bare
+// emoji). It is a richer marker vocabulary: common greetings, confirmations,
+// discourse adverbs, pronouns and everyday verb forms that a real short
+// reply actually contains, so a five-to-ten-word message has a fair chance
+// to clear the same floor. Every entry below is a whole, unambiguous word or
+// contraction in one language only - no stemming, no substring matching, no
+// word shared with the other list (a genuinely bilingual token like "ok" is
+// deliberately left out of both). `classifyLanguage` still returns nothing
+// but a plain answer: no confidence score, no third "ambiguous" outcome -
+// the type this feeds (`LanguageMix`) is read by voice-metrics.ts and
+// style-check.ts today, and widening it would mean auditing both for a
+// change this module does not need to make.
+const EN_MARKER_WORDS = [
+  // greetings & politeness
+  'hi',
+  'hey',
+  'hello',
+  'thanks',
+  'thank',
+  'please',
+  'sorry',
+  // confirmation & agreement
+  'sure',
+  'yeah',
+  'definitely',
+  'absolutely',
+  'indeed',
+  'exactly',
+  'right',
+  'perfect',
+  'great',
+  'good',
+  'nice',
+  'cool',
+  'awesome',
+  'sounds',
+  // adverbs & discourse markers
+  'really',
+  'actually',
+  'probably',
+  'certainly',
+  'honestly',
+  'obviously',
+  'anyway',
+  'instead',
+  'however',
+  'though',
+  'although',
+  // time
+  'today',
+  'tomorrow',
+  'yesterday',
+  'morning',
+  'evening',
+  'afternoon',
+  'tonight',
+  'soon',
+  'later',
+  'now',
+  'already',
+  // place & interrogatives
+  'here',
+  'there',
+  'where',
+  'when',
+  'why',
+  'how',
+  'what',
+  'who',
+  'which',
+  // indefinite & quantifiers
+  'something',
+  'someone',
+  'somewhere',
+  'nothing',
+  'anything',
+  'everything',
+  'everyone',
+  'anyone',
+  'everybody',
+  'nobody',
+  'much',
+  'many',
+  'little',
+  'few',
+  'better',
+  'best',
+  'worse',
+  'worst',
+  'well',
+  // possessives & reflexives
+  'my',
+  'your',
+  'his',
+  'her',
+  'its',
+  'our',
+  'their',
+  'mine',
+  'yours',
+  'ours',
+  'theirs',
+  'myself',
+  'yourself',
+  'himself',
+  'herself',
+  // contractions not already covered by EN_STOPWORDS_GLOBAL
+  "don't",
+  "can't",
+  "won't",
+  "isn't",
+  "aren't",
+  "wasn't",
+  "weren't",
+  "didn't",
+  "doesn't",
+  "wouldn't",
+  "couldn't",
+  "shouldn't",
+  "let's",
+  "that's",
+  "there's",
+  "here's",
+  "what's",
+  "he's",
+  "she's",
+  "i've",
+  "you've",
+  "we've",
+  "they've",
+  "i'll",
+  "you'll",
+  "we'll",
+  "they'll",
+  "i'd",
+  "you'd",
+  "we'd",
+  "they'd",
+  "you're",
+  "they're",
+  "we're",
+  // conjunctions & prepositions
+  'but',
+  'or',
+  'because',
+  'without',
+  'inside',
+  'outside',
+  'above',
+  'below',
+  'toward',
+  'towards',
+  'between',
+  'before',
+  'after',
+  'while',
+  'since',
+];
+const EN_MARKERS_GLOBAL = new RegExp(`\\b(?:${EN_MARKER_WORDS.join('|')})\\b`, 'giu');
+
+// Same unicode-aware boundary IT_STOPWORDS_GLOBAL uses (LOR-234): several
+// of these carry an accent (`già`, `però`, `perché`, `cioè`, `lì`, `là`) and
+// a plain `\b` would silently never match them.
+const IT_MARKER_WORDS = [
+  // greetings & politeness
+  'ciao',
+  'salve',
+  'grazie',
+  'prego',
+  'scusa',
+  'scusi',
+  'buongiorno',
+  'buonasera',
+  'buonanotte',
+  'arrivederci',
+  // confirmation & agreement
+  'certo',
+  'certamente',
+  'perfetto',
+  'benissimo',
+  'esatto',
+  'esattamente',
+  'giusto',
+  // adverbs & discourse markers
+  'davvero',
+  'veramente',
+  'sicuramente',
+  'assolutamente',
+  'ovviamente',
+  'chiaramente',
+  'probabilmente',
+  'sinceramente',
+  'comunque',
+  'purtroppo',
+  'magari',
+  'forse',
+  'ancora',
+  'sempre',
+  'mai',
+  'già',
+  'subito',
+  'adesso',
+  'allora',
+  'quindi',
+  'dunque',
+  'invece',
+  'anche',
+  'però',
+  'ecco',
+  'dai',
+  'cioè',
+  'infatti',
+  'appena',
+  'proprio',
+  'praticamente',
+  'effettivamente',
+  'troppo',
+  // time
+  'domani',
+  'oggi',
+  'ieri',
+  'presto',
+  'tardi',
+  'stasera',
+  'stamattina',
+  'stanotte',
+  // place & interrogatives
+  'qui',
+  'qua',
+  'lì',
+  'là',
+  'dove',
+  'quando',
+  'come',
+  'perché',
+  'cosa',
+  'chi',
+  'quanto',
+  'quale',
+  'quali',
+  // indefinite & quantifiers
+  'niente',
+  'nulla',
+  'qualcosa',
+  'qualcuno',
+  'nessuno',
+  'ognuno',
+  'ogni',
+  'tutto',
+  'tutti',
+  'tutta',
+  'tutte',
+  'tanto',
+  'tanta',
+  'tanti',
+  'tante',
+  'molto',
+  'molta',
+  'molti',
+  'molte',
+  'poco',
+  'poca',
+  'pochi',
+  'poche',
+  'meglio',
+  'peggio',
+  'bene',
+  'male',
+  // pronouns
+  'mi',
+  'ti',
+  'si',
+  'ci',
+  'vi',
+  'gli',
+  'ne',
+  'tu',
+  'lui',
+  'lei',
+  'noi',
+  'voi',
+  'loro',
+  'quello',
+  'quella',
+  'quelli',
+  'quelle',
+  // common verb forms (essere, avere, fare, andare, potere, volere, dovere
+  // present/imperfect, plus a few frequent irregulars)
+  'ho',
+  'hai',
+  'ha',
+  'hanno',
+  'sei',
+  'siamo',
+  'siete',
+  'era',
+  'ero',
+  'avevo',
+  'avevi',
+  'aveva',
+  'avevamo',
+  'sarebbe',
+  'sarei',
+  'saresti',
+  'faccio',
+  'fai',
+  'fa',
+  'facciamo',
+  'fanno',
+  'vado',
+  'vai',
+  'va',
+  'andiamo',
+  'vanno',
+  'posso',
+  'puoi',
+  'può',
+  'possiamo',
+  'potete',
+  'possono',
+  'voglio',
+  'vuoi',
+  'vuole',
+  'vogliamo',
+  'volete',
+  'vogliono',
+  'devo',
+  'devi',
+  'deve',
+  'dobbiamo',
+  'dovete',
+  'devono',
+  'riesco',
+  'riesci',
+  'sembra',
+  'sembrano',
+  'penso',
+  'credo',
+  'immagino',
+  'capito',
+  'trovo',
+  // conjunctions & prepositions, including the articulated forms
+  // (preposition+article fused into one word - "sul", "dal", "nella" - as
+  // common in everyday Italian as the bare preposition itself)
+  'ma',
+  'senza',
+  'dentro',
+  'fuori',
+  'sopra',
+  'sotto',
+  'verso',
+  'tra',
+  'fra',
+  'mentre',
+  'dopo',
+  'prima',
+  'del',
+  'dello',
+  'degli',
+  'delle',
+  'dal',
+  'dallo',
+  'dalla',
+  'dagli',
+  'dalle',
+  'sul',
+  'sullo',
+  'sulla',
+  'sugli',
+  'sulle',
+  'nello',
+  'nella',
+  'negli',
+  'nelle',
+  'allo',
+  'alla',
+  'agli',
+  'alle',
+  // a handful more, added from real short replies that only carried one
+  // of the markers above and so still fell short of LANGUAGE_MARKER_MIN
+  'mille',
+  'tranquillo',
+  'tranquilla',
+  'finalmente',
+  'interessante',
+  'eccolo',
+  'eccola',
+  'eccoli',
+  'eccole',
+  'perfetta',
+];
+const IT_MARKERS_GLOBAL = new RegExp(
+  `(?<![\\p{L}\\p{N}_])(?:${IT_MARKER_WORDS.join('|')})(?![\\p{L}\\p{N}_])`,
+  'giu',
+);
+
+// Italian elision - a short word ending in a vowel drops it before another
+// vowel-initial word ("l'ho", "c'è", "dell'iniziativa", "sull'argomento").
+// `un'` is already covered: IT_STOPWORDS_GLOBAL's "un" is followed by a
+// non-word character (the apostrophe) either way, so its own boundary
+// already matches inside "un'idea". These prefixes are not: "dell'" and
+// "della" are different spellings, so the stopword list never sees them.
+const IT_ELISION_PREFIXES = ['l', 'c', 'd', 'dell', 'nell', 'dall', 'sull', 'quest', 'tutt'];
+const IT_ELISION_GLOBAL = new RegExp(
+  `(?<![\\p{L}\\p{N}_])(?:${IT_ELISION_PREFIXES.join('|')})['\u2019](?=\\p{L})`,
+  'giu',
+);
+
+/** Below this many marker hits (stopwords, common words and Italian
+ * elisions combined), a text has not said enough to classify - one stray
+ * "the" in an otherwise Italian post is not evidence. Left at 2 rather than
+ * lowered (LOR-268): the fix for short-text blindness is a richer marker
+ * vocabulary, not a lower bar for a thin one. */
 const LANGUAGE_MARKER_MIN = 2;
 /** Above this share, one language is called primary outright rather than
  * "mixed" - the split has to be lopsided, not just plurality. */
@@ -779,8 +1201,12 @@ export const EMPTY_LANGUAGE: LanguageProfile = {
 };
 
 export function classifyLanguage(text: string): 'en' | 'it' | 'unknown' {
-  const en = (text.match(EN_STOPWORDS_GLOBAL) ?? []).length;
-  const it = (text.match(IT_STOPWORDS_GLOBAL) ?? []).length;
+  const en =
+    (text.match(EN_STOPWORDS_GLOBAL) ?? []).length + (text.match(EN_MARKERS_GLOBAL) ?? []).length;
+  const it =
+    (text.match(IT_STOPWORDS_GLOBAL) ?? []).length +
+    (text.match(IT_MARKERS_GLOBAL) ?? []).length +
+    (text.match(IT_ELISION_GLOBAL) ?? []).length;
   if (en >= LANGUAGE_MARKER_MIN && en > it) return 'en';
   if (it >= LANGUAGE_MARKER_MIN && it > en) return 'it';
   return 'unknown';

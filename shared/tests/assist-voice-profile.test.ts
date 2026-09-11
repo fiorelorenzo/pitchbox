@@ -672,6 +672,50 @@ describe('classifyLanguage (exported for style-check.ts and voice-metrics.ts)', 
     expect(classifyLanguage("che bello, non vedo l'ora!")).toBe('it');
     expect(classifyLanguage('Grande!')).toBe('unknown');
   });
+
+  // LOR-268: measured against real short writing (233 sent messages, 27
+  // comments - both gitignored under private/voice-eval/, never quoted
+  // here), a plain grammatical-stopword count left about half of it
+  // `unknown`: a five-to-ten-word reply routinely carries zero or one
+  // stopword, which is below LANGUAGE_MARKER_MIN, but it still carries a
+  // greeting, a confirmation or an everyday verb the old marker set never
+  // counted. These fixtures are invented, not copied from that corpus, but
+  // pin the same category of short reply the old, stopword-only count
+  // classified as `unknown`.
+  it('classifies a short Italian reply that carries no grammatical stopword', () => {
+    // Old code: zero hits in IT_STOPWORDS_GLOBAL -> unknown. New code: four
+    // common-word markers ("grazie", "mille", "ci", "domani") clear the
+    // floor.
+    expect(classifyLanguage('Grazie mille, ci sentiamo domani!')).toBe('it');
+  });
+
+  it('classifies a short English reply that carries no grammatical stopword', () => {
+    // Old code: zero hits in EN_STOPWORDS_GLOBAL -> unknown. New code:
+    // "sure" and "thanks" clear the floor.
+    expect(classifyLanguage('Sure, thanks a lot!')).toBe('en');
+  });
+
+  it('classifies Italian elision together with one more marker, not alone', () => {
+    // "Dell'" is not "della" (IT_STOPWORDS_GLOBAL never sees it) - the
+    // elision pattern catches the apostrophe, and "domani" is the second
+    // marker the floor still requires.
+    expect(classifyLanguage("Dell'iniziativa parliamo domani.")).toBe('it');
+  });
+
+  it('still returns unknown for a single common word - the floor is not lowered', () => {
+    // "certamente" is in the expanded marker list, but one marker alone
+    // still falls short of LANGUAGE_MARKER_MIN, the same way "Grande!" does
+    // above: the fix widens the vocabulary a short reply is measured
+    // against, not how many hits are required.
+    expect(classifyLanguage('Certamente!')).toBe('unknown');
+  });
+
+  it('stays unknown on a genuine English/Italian tie rather than picking a side', () => {
+    // Two Italian markers ("grazie", "mille") and two English markers
+    // ("thanks", "my") - a text that is honestly mixed, not one this
+    // classifier has evidence to call either way.
+    expect(classifyLanguage('Grazie mille, thanks my friend.')).toBe('unknown');
+  });
 });
 
 // LOR-234: `\b` is defined against the ASCII word-character class, so it
