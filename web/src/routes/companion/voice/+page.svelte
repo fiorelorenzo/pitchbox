@@ -268,10 +268,10 @@
 				</Card.Description>
 			{:else}
 				<Card.Description>
-					Upload the "Shares.csv"/"Comments.csv" from LinkedIn's own "Get a copy of your data"
-					export (the zip works too) to fill the corpus with your posts and comments in one step,
-					instead of waiting on passive capture. Re-uploading the same export changes nothing - it
-					only ever adds what is not already on file.
+					Upload "Shares.csv", "Comments.csv" or "messages.csv" from LinkedIn's own "Get a copy
+					of your data" export, or the zip carrying any of them, to fill the corpus in one step
+					instead of waiting on passive capture. Re-uploading the same export changes nothing -
+					it only ever adds what is not already on file.
 				</Card.Description>
 			{/if}
 		</Card.Header>

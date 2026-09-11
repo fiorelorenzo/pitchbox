@@ -1413,10 +1413,17 @@ const TRAIT_PROSE: Record<RegisterTrait, string> = {
   'code-or-jargon': 'technical terms and identifiers',
 };
 
-const ENDING_PROSE: Record<PostEnding, string> = {
-  question: 'a question',
-  claim: 'a claim',
-  none: 'no clear ending, trailing off',
+// Whole sentences rather than noun phrases, because no single phrase works
+// after a shared "Tends to end on ..." template for all three endings: the
+// absence of an ending is not a thing a piece ends *on*, and composing the
+// two produced "Tends to end on no clear ending, trailing off" on a real
+// profile (LOR-284). This paragraph is read by a customer and composed into
+// the suggestion prompt, so a sentence that reads as generated filler is a
+// defect in the one description whose job is to not read like one.
+const ENDING_SENTENCE: Record<PostEnding, string> = {
+  question: 'Tends to end on a question.',
+  claim: 'Tends to end on a claim.',
+  none: 'Tends to trail off rather than land on a question or a claim.',
 };
 
 const LANGUAGE_PROSE: Record<Exclude<LanguageMix['primary'], null>, string> = {
@@ -1484,7 +1491,7 @@ export function describeVoiceProfile(
     sentences.push(`Reuses these words often: ${m.commonWords.join(', ')}.`);
   }
   if (m.shape.ending) {
-    sentences.push(`Tends to end on ${ENDING_PROSE[m.shape.ending]}.`);
+    sentences.push(ENDING_SENTENCE[m.shape.ending]);
   }
   if (m.shape.emoji.length > 0) {
     sentences.push(`Uses these emoji: ${m.shape.emoji.join(' ')}.`);
