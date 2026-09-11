@@ -60,36 +60,45 @@ async function probe(binary: string): Promise<DetectResult> {
   }
 }
 
+// Only real binary probes are cached: spawning a CLI to read its version is
+// what this exists to avoid paying for twice.
 const cache = new Map<AgentRunnerSlug, Promise<DetectResult>>();
 
 export function detectRunner(slug: AgentRunnerSlug): Promise<DetectResult> {
+  if (slug === 'cloud') {
+    // No local binary: the SDK runner (shared/src/agents/sdk/runner.ts) runs
+    // in-process and is "available" whenever this deployment has a Gateway
+    // credential to reach a model with - no separate service, no runner URL.
+    //
+    // Deliberately not cached. Reading an environment variable costs nothing,
+    // while a cached answer freezes the deployment's capability at whatever
+    // was true the first time anything asked: a process that resolved this
+    // before the credential was in place keeps reporting the cloud runner
+    // unavailable for its whole life, and every project that then resolves a
+    // default runner gets a local slug the cloud edition refuses to dispatch
+    // (LOR-217).
+    const enabled = !!process.env.AI_GATEWAY_API_KEY;
+    return Promise.resolve({
+      available: enabled,
+      version: enabled ? 'managed' : null,
+      path: null,
+      error: enabled ? null : 'Set AI_GATEWAY_API_KEY to enable the cloud runner.',
+      detectedAt: new Date().toISOString(),
+    });
+  }
   let pending = cache.get(slug);
   if (!pending) {
-    if (slug === 'cloud') {
-      // No local binary: the SDK runner (shared/src/agents/sdk/runner.ts) runs
-      // in-process and is "available" whenever this deployment has a Gateway
-      // credential to reach a model with - no separate service, no runner URL.
-      const enabled = !!process.env.AI_GATEWAY_API_KEY;
+    const binary = BINARY_BY_SLUG[slug];
+    if (!binary) {
       pending = Promise.resolve({
-        available: enabled,
-        version: enabled ? 'managed' : null,
+        available: false,
+        version: null,
         path: null,
-        error: enabled ? null : 'Set AI_GATEWAY_API_KEY to enable the cloud runner.',
+        error: 'No local binary - managed by the runtime.',
         detectedAt: new Date().toISOString(),
       });
     } else {
-      const binary = BINARY_BY_SLUG[slug];
-      if (!binary) {
-        pending = Promise.resolve({
-          available: false,
-          version: null,
-          path: null,
-          error: 'No local binary - managed by the runtime.',
-          detectedAt: new Date().toISOString(),
-        });
-      } else {
-        pending = probe(binary);
-      }
+      pending = probe(binary);
     }
     cache.set(slug, pending);
   }
