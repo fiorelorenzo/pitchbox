@@ -19,6 +19,7 @@
 	import { isDraftKind, mapDraftKindToQuotaKind } from '@pitchbox/shared/quota-types';
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 	import { interpretDraftPatchResponse, DraftVersionConflictError } from '$lib/utils/draft-patch-response';
+	import { parseStyleFindings, highlightStyleFindingSpans, STYLE_FINDING_SPAN_CLASS } from '$lib/utils/style-findings';
 
 	type DraftEvent = {
 		id: number;
@@ -380,6 +381,15 @@
 	function labelFor(qk: 'dm' | 'comment' | 'post'): string {
 		return { dm: 'DMs', comment: 'comments', post: 'posts' }[qk];
 	}
+
+	// D44: the style checker's structural findings that survived
+	// `enforceHouseStyle`'s round trip, travelling on `metadata.styleFindings`.
+	const styleFindings = $derived(draft ? parseStyleFindings(draft.metadata) : []);
+	const highlightedBody = $derived(
+		draft && styleFindings.length > 0
+			? highlightStyleFindingSpans(draft.body, styleFindings)
+			: (draft?.body ?? ''),
+	);
 </script>
 
 {#if draft}
@@ -548,7 +558,7 @@
 					</Tabs.List>
 					<Tabs.Content value="drafted" class="flex-1 min-h-0 mt-2">
 						<ScrollArea class="h-full rounded-lg border border-border/60 bg-muted/20 p-4">
-							<Markdown source={draft.body} />
+						<Markdown source={highlightedBody} />
 						</ScrollArea>
 					</Tabs.Content>
 					<Tabs.Content value="sent" class="flex-1 min-h-0 mt-2">
@@ -575,8 +585,31 @@
 				</div>
 			{:else}
 				<ScrollArea class="flex-1 rounded-lg border border-border/60 bg-muted/20 p-4">
-					<Markdown source={draft.body} />
+					<Markdown source={highlightedBody} />
 				</ScrollArea>
+			{/if}
+
+			<!-- D44: style-check findings that survived enforceHouseStyle's -->
+			<!-- round trip. Always visible, never behind a disclosure. -->
+			{#if styleFindings.length > 0}
+				<div
+					class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 flex flex-col gap-2"
+				>
+					<p class="text-xs font-medium text-destructive">
+						Style check flagged {styleFindings.length}
+						{styleFindings.length === 1 ? 'issue' : 'issues'}
+					</p>
+					<ul class="flex flex-col gap-1.5">
+						{#each styleFindings as finding (finding.ruleId + finding.span)}
+							<li class="text-xs text-foreground/90 leading-snug">
+								{finding.message}
+								<span class="{STYLE_FINDING_SPAN_CLASS} font-mono">
+									{finding.span}
+								</span>
+							</li>
+						{/each}
+					</ul>
+				</div>
 			{/if}
 
 			{#if draft.reasoning}

@@ -5,6 +5,7 @@
 	import { getPresenter } from '$lib/platforms/presenter';
 	import { scoreBand, DEFAULT_QUALITY_RUBRIC, type QualityRubric } from '@pitchbox/shared/quality-judge';
 	import { TONE_CLASS, type Tone } from '$lib/config/status-badges';
+	import { parseStyleFindings } from '$lib/utils/style-findings';
 
 	// scoreBand's band names are a shared-package contract (not the design
 	// registry's Tone names), so translate here rather than renaming the shared
@@ -57,6 +58,9 @@
 		const when = new Date(draft.scheduledSendAfter);
 		return when.getTime() > Date.now() ? when : null;
 	});
+	// D44: same rose as the "red" quality band - a reviewer flags the same
+	// way whether the LLM judge or the mechanical style checker raised it.
+	const styleFindingCount = $derived(parseStyleFindings(draft.metadata).length);
 </script>
 
 <button
@@ -83,6 +87,16 @@
 					title="Quality score (LLM judge)"
 				>
 					Q{draft.qualityScore}
+				</span>
+			{/if}
+			{#if styleFindingCount > 0}
+				<span
+					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium {TONE_CLASS.rose}"
+					title="Style check flagged {styleFindingCount} {styleFindingCount === 1
+						? 'issue'
+						: 'issues'}"
+				>
+					style {styleFindingCount}
 				</span>
 			{/if}
 			{#if draft.dedupWarning}
