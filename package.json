@@ -15,6 +15,7 @@
     "test:linkedin-compliance": "vitest run --config vitest.compliance.config.ts",
     "eval:voice": "tsx scripts/voice-eval.ts",
     "eval:voice:import": "tsx scripts/voice-eval-import.ts",
+    "eval:voice-language": "tsx scripts/voice-language-eval.ts",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p cli && tsc --noEmit -p daemon && pnpm -F @pitchbox/extension check && pnpm -F web check",
