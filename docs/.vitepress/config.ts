@@ -52,6 +52,7 @@ export default defineConfig({
         text: 'Concepts',
         items: [
           { text: 'Projects · accounts · campaigns', link: '/concepts' },
+          { text: "Why a draft doesn't read as AI", link: '/voice' },
           { text: 'Agent runners', link: '/runners' },
           { text: 'Playbooks', link: '/playbooks' },
           { text: 'Notifications', link: '/notifications' },
