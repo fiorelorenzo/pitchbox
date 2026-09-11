@@ -76,6 +76,7 @@ Write like this instead:
    `operator_voice`'s derived summary describes your writing in aggregate (word count, sentence length, closers, hashtag habits) - it is measured mostly from longer posts, not comments, so it tells you how you sound, not how long this comment should be. The length and register called for below still win; do not stretch a comment to match the summary's word count. Either tool can come back with `{ ok: false, reason }` instead of inventing something when there is nothing on file - draft from the campaign voice alone when that happens.
 
 6. **Draft the comment.** The voice rules are in `campaign.config.voice` (`tone`, `hardBans`, `dos`, `disclosure`). Typical hard rules:
+   - **Language.** If `campaign.config.voice.language` is set (`en` or `it`), write the comment in that language regardless of what language the post is in - the campaign pinned it and it outranks the post's own language and your own voice profile's habits. Otherwise, write in the same language as the post you are answering, whatever your own samples lean toward: the person reading your comment wrote in that language.
    - Honour every entry in `campaign.config.voice.hardBans` literally - they are exact substrings to never emit.
    - Apply the House style section above literally: it outranks every default here and holds even when the campaign voice says nothing about it.
    - Capitalization proper. Comments are mid-register (not the DM lowercase opener).

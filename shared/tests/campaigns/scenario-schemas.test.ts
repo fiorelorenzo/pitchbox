@@ -87,6 +87,21 @@ describe('reddit-commenter schema', () => {
   it('rejects invalid productUrl', () => {
     expect(() => schema.parse({ ...valid, productUrl: 'not-a-url' })).toThrow();
   });
+
+  // LOR-265: the campaign language pin, next to `tone` in the same shared
+  // voice shape every drafting scenario uses.
+  it('accepts an explicit voice.language pin', () => {
+    const withPin = { ...valid, voice: { ...valid.voice, language: 'it' as const } };
+    expect(schema.parse(withPin)).toEqual(withPin);
+  });
+
+  it('omits voice.language by default (an existing campaign has no such key)', () => {
+    expect(schema.parse(valid).voice).not.toHaveProperty('language');
+  });
+
+  it('rejects a language pin outside en/it', () => {
+    expect(() => schema.parse({ ...valid, voice: { ...valid.voice, language: 'fr' } })).toThrow();
+  });
 });
 
 describe('reddit-poster schema', () => {
@@ -119,5 +134,10 @@ describe('reddit-poster schema', () => {
 
   it('rejects empty targetSubreddits array', () => {
     expect(() => schema.parse({ ...valid, targetSubreddits: [] })).toThrow();
+  });
+
+  it('accepts an explicit voice.language pin, shared with every other drafting scenario', () => {
+    const withPin = { ...valid, voice: { ...valid.voice, language: 'it' as const } };
+    expect(schema.parse(withPin)).toEqual(withPin);
   });
 });
