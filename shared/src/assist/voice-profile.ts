@@ -292,6 +292,17 @@ function splitParagraphs(text: string): string[] {
 // ---------------------------------------------------------------------------
 
 export type RhythmProfile = {
+  /** Median words in a whole piece of writing, not in a sentence (LOR-231).
+   * This is the axis a suggestion misses by the widest margin and the one
+   * nothing reported until now: measured 2026-09-11 on a real corpus, the
+   * operator's own comments run a median of 7 words while the suggestions
+   * written "in his voice" ran 123, and every number below was already
+   * correct while that one was simply absent from the description. */
+  medianItemWords: number;
+  /** Interquartile range of whole-piece length. A corpus whose pieces run
+   * 5 to 9 words and one whose pieces run 2 to 200 have the same median
+   * and call for different drafts. */
+  itemWordsSpread: number;
   /** Median words per sentence, pooled across every sentence in the corpus
    * - not the mean of each item's own mean, which one long or short outlier
    * post can skew more than it should. */
@@ -312,6 +323,8 @@ const FRAGMENT_MAX_WORDS = 4;
 const SHORT_OPENING_MAX_WORDS = 6;
 
 export const EMPTY_RHYTHM: RhythmProfile = {
+  medianItemWords: 0,
+  itemWordsSpread: 0,
   medianSentenceWords: 0,
   sentenceWordsSpread: 0,
   medianParagraphWords: 0,
@@ -322,10 +335,12 @@ export const EMPTY_RHYTHM: RhythmProfile = {
 function measureRhythm(texts: string[]): RhythmProfile {
   const sentenceWordCounts: number[] = [];
   const paragraphWordCounts: number[] = [];
+  const itemWordCounts: number[] = [];
   let shortOpenings = 0;
   let fragments = 0;
 
   for (const text of texts) {
+    itemWordCounts.push(text.split(/\s+/u).filter(Boolean).length);
     const sentences = splitSentences(text);
     for (const s of sentences) {
       const words = s.split(/\s+/u).filter(Boolean).length;
@@ -342,6 +357,8 @@ function measureRhythm(texts: string[]): RhythmProfile {
   }
 
   return {
+    medianItemWords: Math.round(median(itemWordCounts)),
+    itemWordsSpread: interquartileRange(itemWordCounts),
     medianSentenceWords: Math.round(median(sentenceWordCounts)),
     sentenceWordsSpread: interquartileRange(sentenceWordCounts),
     medianParagraphWords: Math.round(median(paragraphWordCounts)),
@@ -949,6 +966,19 @@ export function describeVoiceProfile(
   if (!m.measurable) return null;
 
   const sentences: string[] = [];
+  // Length of a whole piece comes first, because it is the axis a draft
+  // misses by the widest margin and the one a reader notices before any
+  // other (LOR-231). It is also the one axis here that survives a corpus
+  // of very short items: register traits and words-per-sentence both need
+  // each item to clear register.ts's 12-word floor, which a corpus of
+  // one-line comments never does, so before this the description of such a
+  // corpus said everything about it except how long it is.
+  if (m.rhythm.medianItemWords > 0) {
+    const spread = m.rhythm.itemWordsSpread > 0 ? `, give or take ${m.rhythm.itemWordsSpread}` : '';
+    sentences.push(
+      `A typical one runs about ${m.rhythm.medianItemWords} words${spread}, and a draft that misses that length is wrong however well it is written.`,
+    );
+  }
   if (m.traits.length > 0) {
     const sentenceLength =
       m.wordsPerSentence > 0 ? `, about ${m.wordsPerSentence} words per sentence` : '';

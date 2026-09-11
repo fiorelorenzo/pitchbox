@@ -510,6 +510,30 @@ describe('measureVoiceCorpusByGenre', () => {
     expect(byGenre.comment.rhythm.medianSentenceWords).toBeGreaterThan(0);
   });
 
+  it('reports whole-piece length per genre, which is the axis a draft misses widest', () => {
+    const byGenre = measureVoiceCorpusByGenre(MIXED_GENRE_CORPUS);
+    // The five comments are one-liners and the three posts are several
+    // sentences each, so a measurement that cannot tell them apart on
+    // length is the defect LOR-231 fixes.
+    expect(byGenre.comment.rhythm.medianItemWords).toBeGreaterThan(0);
+    expect(byGenre.comment.rhythm.medianItemWords).toBeLessThan(
+      byGenre.post.rhythm.medianItemWords,
+    );
+  });
+
+  it('reports whole-piece length even when every item is too short for register.ts to score', () => {
+    const byGenre = measureVoiceCorpusByGenre(MIXED_GENRE_CORPUS);
+    // The companion's real corpus looks exactly like this: comments that
+    // individually carry no measurable register. Before LOR-231 such a
+    // genre described everything about itself except how long it is, and
+    // the prompt therefore never told the model to write short.
+    expect(byGenre.comment.wordsPerSentence).toBe(0);
+    expect(byGenre.comment.rhythm.medianItemWords).toBeGreaterThan(0);
+    expect(describeVoiceProfileForGenre('comment', byGenre.comment)).toMatch(
+      /A typical one runs about \d+ words/,
+    );
+  });
+
   it('leaves a genre with too few items unmeasurable, the same floor the pooled corpus applies', () => {
     const thin = corpusOfGenre([
       { text: SHORT_COMMENTS[0], genre: 'comment' },
