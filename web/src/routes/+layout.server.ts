@@ -16,6 +16,17 @@ import { currentEdition } from '@pitchbox/shared/edition';
  * `requireInstanceAdmin`/`isInstanceAdmin`, docs/permissions.md "Instance
  * admin"). `orgs` is empty when signed out or auth is off.
  *
+ * `locale` (LOR-260) is `event.locals.locale`, already resolved by
+ * `hooks.server.ts` - this is the mechanism's client call shape: every
+ * descendant `+page.svelte`/`+layout.svelte` reads it from `$page.data.locale`
+ * (or its own `data.locale` prop, since SvelteKit merges ancestor load data),
+ * with no second resolution and no risk of disagreeing with the server. The
+ * other call shape, for a route that needs the locale before rendering
+ * anything, is `event.locals.locale` read directly inside that route's own
+ * `+page.server.ts` load - see `web/tests/i18n.test.ts` for both asserted
+ * against `resolveLocale` directly, and `docs/design/DECISIONS.md` D46 for
+ * why the value never touches the path.
+ *
  * `billing` (#554) is the one entitlements read every page pays, gated on
  * having an active org at all (self-host with auth off never does, and
  * `resolveEntitlements` itself short-circuits to unlimited there anyway) and
@@ -42,6 +53,7 @@ export const load: LayoutServerLoad = async (event) => {
   }
 
   return {
+    locale: event.locals.locale,
     authOn: process.env.PITCHBOX_AUTH === 'on',
     signedIn: !!user,
     org: event.locals.org,
