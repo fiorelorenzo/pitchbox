@@ -149,6 +149,18 @@ pnpm -F @pitchbox/shared typecheck    # or cli / daemon
 pnpm -F web check                     # or @pitchbox/extension check
 ```
 
+**Never point a scoped `prettier` call at a `.svelte` path.** There is no
+`prettier-plugin-svelte` anywhere in the tree, so `npx prettier --check
+web/src/routes/inbox/+page.svelte` exits 2 with "No parser could be inferred"
+on **any** Svelte file, including one nobody has touched, which reads exactly
+like your own edit having broken it. `prettier --check .` (what `pnpm run
+lint` runs) skips them silently and `eslint.config.js` globs `**/*.svelte`
+into `ignores`, so neither gate covers them either: `pnpm -F web check`
+(svelte-check) is the only real check on a Svelte file. Keep scoped prettier
+to the `.ts`, `.json` and `.md` files you touched, and still run the
+repo-root `pnpm run lint` once before pushing, since that is the one that
+matches CI.
+
 Run the full `pnpm run lint`, `pnpm run typecheck`, and `pnpm test` only for
 release-critical changes (migrations, auth, the runner protocol) or when the
 change is genuinely repo-wide. `pnpm test` is also what `preflight` runs
@@ -216,6 +228,23 @@ either anymore: `pnpm install`, `pnpm test`, `pnpm run dev`, `pnpm run dev:web`,
 and `pnpm run docker:dev` all work identically with `cloud/` present or entirely
 absent, including the default cloud-edition dev loop - it dispatches to the
 in-process SDK runner, not to either submodule.
+
+**The private eval corpus lives in the main checkout only, and a worktree's
+copy is throwaway.** `private/` is gitignored, so nothing under
+`private/voice-eval/` is ever committed, `git worktree add` does not populate
+it, and anything an agent writes into its own copy dies with that worktree.
+That is not hypothetical: on 2026-09-11 LOR-280 replaced `cases.json`'s
+`referenceLanguage` (which was the old classifier's own output) with 27
+independent hand labels, and the worktree was removed at the end of the wave.
+The main checkout kept the pre-relabel file, a later agent copied that into its
+own worktree, and its whole language measurement was scored against the exact
+field the earlier issue existed to stop scoring against. The labels were only
+recoverable because the agent's session transcript still held them.
+
+So: copy the corpus in when a worktree needs it, and copy any change to it
+**back into the main checkout before the worktree is removed**, since that copy
+is the only one that survives. A run that edits the corpus says so in its PR
+body, with the file's new shape, because the diff cannot show it.
 
 **Migrations are drizzle-generated, so two migration-authoring issues in one
 wave collide.** `pnpm run migrate:generate` (`drizzle-kit generate`) numbers the
@@ -321,7 +350,7 @@ pnpm workspaces monorepo (`pnpm-workspace.yaml`). All workspaces share a single 
 
 - **`web/`** - SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte. Routes: `/`, `/inbox`, `/projects`, `/campaigns` (+ `/campaigns/[id]`), `/people` (Threads / All contacts tabs, merging the old `/contacts` and `/conversations` - both still redirect there), `/conversations/[id]` (thread detail), `/blocklist`, `/playbooks`, `/notifications`, `/analytics`, `/audit`, `/settings`, plus `/login`, `/register`, `/invite/[token]` and `/reset` (+ `/reset/[token]`) when auth/orgs are on, and `/api/*` (including `/api/extension/*` for the Chrome extension and `/api/settings/*` for runner + quota config). Server-only DB access lives under `src/lib/server/`; do not import `@pitchbox/shared/db` from client code.
   - **Multi-tenant orgs and roles.** Every tenant-scoped table (projects, campaigns, drafts, runs, accounts, blocklist, contact_history, …) is scoped to an `organizations` row, reached directly or through `projects.organization_id`. Three ranked roles - `member < admin < owner` - are enforced server-side by `requireRole(event, minRole)` (`src/lib/server/auth.ts`), a no-op when `PITCHBOX_AUTH!=on` (self-host default keeps full access). An account is never magic: it comes from the first-run login bootstrap, `pitchbox seed:owner`, self-registration at `POST /api/auth/register` (gated by `app_config.registration_policy` - `open`/`invite`/`off`, code default `invite`, `shared/src/registration-policy.ts`), an org invite accepted at `/invite/[token]`, or `pitchbox user:create`. See [`docs/auth.md`](docs/auth.md) for all of these and [`docs/orgs.md`](docs/orgs.md) for the tenancy/invite model. The trap: `users.email` is nullable and only registration ever writes it - `seed:owner`, the login bootstrap, and `user:create` all leave it null, and no route or CLI command can set one on an account afterward, so those accounts can never use the emailed forgot-password flow (`@pitchbox/shared/mail`, a null transport by default until `MAIL_PROVIDER` is set - #528) and stay CLI-only for password recovery permanently, not just until mail is configured. See [`docs/permissions.md`](docs/permissions.md) for the full route-to-role table. `contact_history.organization_id` is `NOT NULL` and holds the org of its draft's project, so contact dedup does not cross tenants (#263); the one deliberate exception is the daemon reply poller, a system process that polls every tenant.
-  - **Settings is ten flat routes, not tabs.** `/settings/general`, `/runners`, `/extension`, `/quota`, `/organization`, `/retention`, `/security`, `/linkedin-assist`, `/companion`, `/password` (#506, self-service password change - gated on being signed in at all rather than an org role, 404s when auth is off), each its own page reached from a rail in `settings/+layout.svelte` (bare `/settings` redirects to `/settings/general`; `/settings/status`, `general`'s name before #186, also redirects there since it was deep-linked). Every route enforces its own role gate in its own loader per [`docs/permissions.md`](docs/permissions.md); `general` deliberately has no loader, since daemon health is a client-side store with nothing server-side to gate. On cloud, `runners`/`quota`/`retention` additionally gate their read on `isInstanceAdmin` rather than the org role (#183: they describe the whole deployment, not one tenant) and the rail drops all three entries there, reachable instead from `/settings/admin`. Links are deep-linkable, so point at the exact route rather than relying on the redirect. The UI hides what a member cannot use, but the API stays the actual enforcement boundary. `settings/admin` is an eleventh entry on the same rail, visually separated by a divider: it belongs to the operator of the deployment rather than to an organization, gates in `settings/admin/+layout.server.ts` (one `requireInstanceAdmin` call covering the whole area rather than per-page, since a sibling page is expected to land under it) instead of per-route `requireRole`, and shows regardless of org role (see [`docs/permissions.md`](docs/permissions.md) "Instance admin area").
+  - **Settings is eleven rendering flat routes plus an admin subtree, not tabs.** The ones that render: `/settings/general`, `/runners`, `/extension`, `/quota`, `/organization`, `/retention`, `/security`, `/linkedin-assist`, `/password` (#506, self-service password change - gated on being signed in at all rather than an org role, 404s when auth is off), `/billing` and `/language` (the interface-locale picker, LOR-262, which also 404s with nobody signed in), plus `/onboarding`. Redirect-only stubs with nothing to render: bare `/settings` (to `general`), `/settings/status` (`general`'s name before #186, kept because it was deep-linked) and `/settings/companion` (to `/companion`, so its `+page.svelte` never renders and only the loader's redirect runs). This line said "ten" and named `companion` as a page until 2026-09-11, when an agent converting the area to the message catalogue had to enumerate it for real: count the routes in the tree rather than trusting a list, here or in a prompt. Every route enforces its own role gate in its own loader per [`docs/permissions.md`](docs/permissions.md); `general` deliberately has no loader, since daemon health is a client-side store with nothing server-side to gate. On cloud, `runners`/`quota`/`retention` additionally gate their read on `isInstanceAdmin` rather than the org role (#183: they describe the whole deployment, not one tenant) and the rail drops all three entries there, reachable instead from `/settings/admin`. Links are deep-linkable, so point at the exact route rather than relying on the redirect. The UI hides what a member cannot use, but the API stays the actual enforcement boundary. `settings/admin` is the last entry on the same rail, visually separated by a divider, and it is a subtree rather than a page: an index plus `audit`, `models`, `plan-grants` and `spend-ceiling`. It belongs to the operator of the deployment rather than to an organization, gates in `settings/admin/+layout.server.ts` (one `requireInstanceAdmin` call covering the whole area rather than per-page, since a sibling page is expected to land under it) instead of per-route `requireRole`, and shows regardless of org role (see [`docs/permissions.md`](docs/permissions.md) "Instance admin area").
 
 - **`daemon/`** - long-lived Node process running a set of independent loops. `scheduler.ts` parses `cron_expression` on active campaigns via `cron-parser` and POSTs to the web `/api/run` endpoint (the daemon never touches agent runners directly). `cron.ts` exports that same parsing as `describeCron` + `nextCronRuns` (reachable as `@pitchbox/daemon/cron`), so the campaign form's schedule preview cannot disagree with the scheduler that will actually fire it. `reply-poller.ts` drives the `ReplyReader` but only polls platforms with a real (non-Null) reader registered: it polls Mastodon (mentions via its API) and skips Null-reader platforms (Reddit, whose reply detection runs through the Chrome extension `inbox-sync`/`chat-sync` below instead). `heartbeat.ts` writes to `daemon_heartbeats` so Settings can show liveness. `retention.ts` prunes ageing run/draft events, `keyword-watcher.ts` polls saved keyword watches, and `webhook-sender.ts` drains the outbound notification-webhook queue. The same loops can run embedded inside the web process (`PITCHBOX_EMBED_DAEMON=1`) instead of as a separate process. SIGINT/SIGTERM trigger graceful shutdown.
 
