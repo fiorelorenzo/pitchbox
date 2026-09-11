@@ -4,6 +4,8 @@ import { routesEn } from './dict/routes.js';
 import { draftDetailEn } from './dict/draft-detail.js';
 import { runlogEn } from './dict/runlog.js';
 import { settingsEn } from './dict/settings.js';
+import { companionEn } from './dict/companion.js';
+import { campaignsEn } from './dict/campaigns.js';
 
 export const en = {
   ...timeEn,
@@ -11,6 +13,8 @@ export const en = {
   ...draftDetailEn,
   ...runlogEn,
   ...settingsEn,
+  ...companionEn,
+  ...campaignsEn,
 
   // Shared across every session-less auth page (/login, /register, /reset,
   // /reset/[token]): identical wording on all four, so one key rather than
