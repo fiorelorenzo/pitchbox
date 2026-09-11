@@ -238,6 +238,19 @@ from `shared/tests/token-drift.test.ts`, so grep before assuming it is only the
 table). On 2026-09-10 a docs PR was renumbered three times in 90 minutes,
 D32/D33 to D37/D38, because parallel sessions were merging every ten minutes.
 
+**Adding a row means running Prettier on the file, not just adding text.**
+`pnpm run lint` (the check CI actually runs, and the only one that matches it -
+a scoped `npx eslint <files>` plus `npx prettier --check <files>` on just your
+changed paths is a different, weaker check that can pass while the repo-wide
+one fails) runs `prettier --check .` over the whole tree, and a `D<n>` row
+whose "Round"/"Answer" cell is wider than every existing row's padding fails
+that check on its own, unrelated to anything else in the diff. `npx prettier
+--write docs/design/DECISIONS.md` fixes it - confirm with `git diff
+--ignore-space-change` that nothing textual changed, only whitespace, since a
+wider new cell only re-pads the column it widens, not the whole table. Two
+agents in one afternoon (2026-09-10 into 2026-09-11) shipped a PR with this
+exact failure before catching it from a red `ci`, not from their own checks.
+
 That is also why a re-push after such a rebase should not re-run `preflight`
 from scratch: the hook takes about nine minutes, `main` moves inside that
 window, and the tree it validated differs from the previous green run by a
