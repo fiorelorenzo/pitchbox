@@ -3,6 +3,7 @@ import { fail } from '@sveltejs/kit';
 import { getDb } from '../../../lib/server/db.js';
 import { requireRole, requireInstanceAdmin } from '../../../lib/server/auth.js';
 import { isCloud } from '@pitchbox/shared/edition';
+import { t } from '$lib/i18n/index.js';
 import {
   loadRetention,
   saveRetention,
@@ -55,7 +56,9 @@ export const actions: Actions = {
       draft_events_days === null ||
       webhook_deliveries_days === null
     ) {
-      return fail(400, { error: 'Invalid number' });
+      return fail(400, {
+        error: t(event.locals.locale, 'settings.retention.error-invalid-number'),
+      });
     }
     const db = getDb();
     const before = await loadRetention(db);

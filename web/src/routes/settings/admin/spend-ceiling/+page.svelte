@@ -10,6 +10,10 @@
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
   import { untrack } from 'svelte';
+  import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
+
+  const locale = $derived($page.data.locale as Locale);
 
   type PageData = {
     instanceMonthlyBudgetUsd: number | null;
@@ -47,17 +51,17 @@
     if (saving) return;
     const instanceRaw = instanceBudgetDraft.trim();
     if (instanceRaw !== '' && Number(instanceRaw) < 0) {
-      toast.error('Instance ceiling cannot be negative');
+      toast.error(t(locale, 'settings.admin.spend-ceiling.toast-error-negative'));
       return;
     }
     const selfRegBudget = Number(selfRegBudgetDraft.trim());
     if (!Number.isFinite(selfRegBudget) || selfRegBudget <= 0) {
-      toast.error('Self-registration budget must be a positive number');
+      toast.error(t(locale, 'settings.admin.spend-ceiling.toast-error-budget'));
       return;
     }
     const selfRegConcurrency = Number(selfRegConcurrencyDraft.trim());
     if (!Number.isInteger(selfRegConcurrency) || selfRegConcurrency <= 0) {
-      toast.error('Self-registration concurrency must be a positive whole number');
+      toast.error(t(locale, 'settings.admin.spend-ceiling.toast-error-concurrency'));
       return;
     }
     saving = true;
@@ -72,13 +76,17 @@
         }),
       });
       if (!res.ok) {
-        toast.error(res.status === 403 ? 'You need instance-admin access for that' : 'Could not save');
+        toast.error(
+          res.status === 403
+            ? t(locale, 'settings.admin.spend-ceiling.toast-error-forbidden')
+            : t(locale, 'settings.admin.spend-ceiling.toast-error-save'),
+        );
         return;
       }
-      toast.success('Spend ceiling saved');
+      toast.success(t(locale, 'settings.admin.spend-ceiling.toast-success'));
       await invalidateAll();
     } catch {
-      toast.error('Could not save');
+      toast.error(t(locale, 'settings.admin.spend-ceiling.toast-error-save'));
     } finally {
       saving = false;
     }
@@ -86,55 +94,57 @@
 </script>
 
 <Seo
-  title="Settings - Spend ceiling"
-  description="The instance-wide Gateway ceiling and what a self-registered organization starts with."
+  title={t(locale, 'settings.admin.spend-ceiling.seo-title')}
+  description={t(locale, 'settings.admin.spend-ceiling.seo-description')}
 />
 
 <PageContainer size="default">
   <PageHeader
-    title="Spend ceiling"
-    description="Opening registration to strangers turns a per-organization cap into an unbounded instance-wide one. These two numbers are the backstop: an instance-wide monthly ceiling summed across every organization, and the caps a self-registered organization starts with, separate from what an invited or manually-provisioned organization gets."
+    title={t(locale, 'settings.admin.spend-ceiling.title')}
+    description={t(locale, 'settings.admin.spend-ceiling.description')}
   />
 
   <Alert.Root class="mb-6">
     <Info class="size-4" />
     <Alert.Description>
-      A run refused by the instance ceiling fails with its own reason, distinct from an
-      organization's own budget, so it's clear on which side of the line the money ran out.
+      {t(locale, 'settings.admin.spend-ceiling.info')}
     </Alert.Description>
   </Alert.Root>
 
   <Card.Root class="max-w-2xl">
     <Card.Header>
-      <Card.Title class="text-base">Instance-wide monthly ceiling</Card.Title>
+      <Card.Title class="text-base">{t(locale, 'settings.admin.spend-ceiling.instance-card-title')}</Card.Title>
       <p class="text-sm text-muted-foreground">
-        Summed month-to-date Gateway spend across every organization on this deployment. Leave
-        blank for unlimited.
+        {t(locale, 'settings.admin.spend-ceiling.instance-card-description')}
       </p>
     </Card.Header>
     <Card.Content class="flex flex-col gap-4">
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-medium" for="instance-budget">Monthly ceiling (USD)</label>
+          <label class="text-sm font-medium" for="instance-budget"
+            >{t(locale, 'settings.admin.spend-ceiling.instance-budget-label')}</label
+          >
           <Input
             id="instance-budget"
             type="number"
             min="0"
             step="0.01"
-            placeholder="Unlimited"
+            placeholder={t(locale, 'settings.admin.spend-ceiling.instance-budget-placeholder')}
             bind:value={instanceBudgetDraft}
           />
         </div>
       </div>
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="flex flex-col gap-1">
-          <span class="text-sm font-medium">Month-to-date spend</span>
+          <span class="text-sm font-medium">{t(locale, 'settings.admin.spend-ceiling.month-to-date-label')}</span>
           <span class="text-sm text-muted-foreground">{money(data.monthToDateCostUsd)}</span>
         </div>
         <div class="flex flex-col gap-1">
-          <span class="text-sm font-medium">Remaining</span>
+          <span class="text-sm font-medium">{t(locale, 'settings.admin.spend-ceiling.remaining-label')}</span>
           <span class="text-sm text-muted-foreground">
-            {data.remainingUsd == null ? 'Unlimited' : money(data.remainingUsd)}
+            {data.remainingUsd == null
+              ? t(locale, 'settings.admin.spend-ceiling.unlimited')
+              : money(data.remainingUsd)}
           </span>
         </div>
       </div>
@@ -143,17 +153,17 @@
 
   <Card.Root class="mt-6 max-w-2xl">
     <Card.Header>
-      <Card.Title class="text-base">Self-registration defaults</Card.Title>
+      <Card.Title class="text-base">{t(locale, 'settings.admin.spend-ceiling.self-reg-card-title')}</Card.Title>
       <p class="text-sm text-muted-foreground">
-        What a stranger who signs up with no invite starts with (`/register`'s no-invite path).
-        Separate from the invited-organization defaults on purpose: raising what a paying or
-        invited tenant gets never raises what a stranger gets.
+        {t(locale, 'settings.admin.spend-ceiling.self-reg-card-description')}
       </p>
     </Card.Header>
     <Card.Content class="flex flex-col gap-4">
       <div class="grid gap-4 sm:grid-cols-2">
         <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-medium" for="self-reg-budget">Monthly run budget (USD)</label>
+          <label class="text-sm font-medium" for="self-reg-budget"
+            >{t(locale, 'settings.admin.spend-ceiling.self-reg-budget-label')}</label
+          >
           <Input
             id="self-reg-budget"
             type="number"
@@ -163,7 +173,9 @@
           />
         </div>
         <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-medium" for="self-reg-concurrency">Max concurrent runs</label>
+          <label class="text-sm font-medium" for="self-reg-concurrency"
+            >{t(locale, 'settings.admin.spend-ceiling.self-reg-concurrency-label')}</label
+          >
           <Input
             id="self-reg-concurrency"
             type="number"
@@ -177,6 +189,6 @@
   </Card.Root>
 
   <div class="mt-6">
-    <Button onclick={save} loading={saving}>Save</Button>
+    <Button onclick={save} loading={saving}>{t(locale, 'settings.admin.spend-ceiling.save')}</Button>
   </div>
 </PageContainer>

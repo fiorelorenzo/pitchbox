@@ -5,6 +5,10 @@
 	import { toast } from 'svelte-sonner';
 	import { Copy, KeyRound, Smartphone, Trash2 } from '@lucide/svelte';
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
+
+	const locale = $derived($page.data.locale as Locale);
 
 	type Device = {
 		id: number;
@@ -48,12 +52,12 @@
 		try {
 			const res = await fetch(`/api/settings/extension-devices/${id}`, { method: 'DELETE' });
 			if (res.ok) {
-				toast.success('Device revoked');
+				toast.success(t(locale, 'settings.extension.devices.device-revoked'));
 				await loadDevices();
 			} else if (res.status === 403) {
-				toast.error('You need admin access for that');
+				toast.error(t(locale, 'settings.extension.devices.error-admin-required'));
 			} else {
-				toast.error('Could not revoke the device');
+				toast.error(t(locale, 'settings.extension.devices.error-revoke-failed'));
 			}
 		} finally {
 			revokingId = null;
@@ -63,10 +67,12 @@
 	function relativeTime(iso: string): string {
 		const diff = Math.max(0, Date.now() - new Date(iso).getTime());
 		const s = Math.floor(diff / 1000);
-		if (s < 60) return `${s}s ago`;
-		if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-		if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-		return `${Math.floor(s / 86400)}d ago`;
+		if (s < 60) return t(locale, 'settings.extension.devices.age-seconds', { n: s });
+		if (s < 3600)
+			return t(locale, 'settings.extension.devices.age-minutes', { n: Math.floor(s / 60) });
+		if (s < 86400)
+			return t(locale, 'settings.extension.devices.age-hours', { n: Math.floor(s / 3600) });
+		return t(locale, 'settings.extension.devices.age-days', { n: Math.floor(s / 86400) });
 	}
 
 	// Pairing code generation (admin-only, POST /api/settings/extension-pairing).
@@ -107,9 +113,9 @@
 				pairingCode = body.code;
 				pairingExpiresAt = new Date(body.expiresAt).getTime();
 			} else if (res.status === 403) {
-				toast.error('You need admin access for that');
+				toast.error(t(locale, 'settings.extension.devices.error-admin-required'));
 			} else {
-				toast.error('Could not generate a pairing code');
+				toast.error(t(locale, 'settings.extension.devices.error-generate-failed'));
 			}
 		} finally {
 			generating = false;
@@ -119,9 +125,9 @@
 	async function copyCode() {
 		try {
 			await navigator.clipboard.writeText(pairingCode);
-			toast.success('Pairing code copied');
+			toast.success(t(locale, 'settings.extension.devices.pairing-copied'));
 		} catch {
-			toast.error('Could not copy, select the code and copy it manually');
+			toast.error(t(locale, 'settings.extension.devices.copy-failed'));
 		}
 	}
 </script>
@@ -131,12 +137,15 @@
 		<Card.Root size="sm">
 			<Card.Header class="flex flex-row flex-nowrap items-center gap-2 space-y-0">
 				<KeyRound class="size-4 shrink-0 text-muted-foreground" />
-				<Card.Title class="text-base min-w-0 flex-1 truncate">Pairing code</Card.Title>
+				<Card.Title class="text-base min-w-0 flex-1 truncate"
+					>{t(locale, 'settings.extension.devices.pairing-title')}</Card.Title
+				>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-3 text-sm">
 				<p class="text-xs text-muted-foreground">
-					Generate a one-time code to pair a device that is not signed into this dashboard. Enter
-					it in the extension's <em>Add connection</em> form. Codes expire after 10 minutes.
+					{t(locale, 'settings.extension.devices.pairing-description-lead')}
+					<em>Add connection</em>
+					{t(locale, 'settings.extension.devices.pairing-description-tail')}
 				</p>
 
 				{#if pairingCode && !expired}
@@ -145,20 +154,27 @@
 						<span class="text-xs tabular-nums text-muted-foreground">
 							{formatCountdown(remainingMs)}
 						</span>
-						<Button variant="ghost" size="sm" onclick={copyCode} aria-label="Copy pairing code">
+						<Button
+							variant="ghost"
+							size="sm"
+							onclick={copyCode}
+							aria-label={t(locale, 'settings.extension.devices.copy-aria-label')}
+						>
 							<Copy class="size-3.5" />
 						</Button>
 					</div>
 				{:else if pairingCode && expired}
 					<Alert.Root variant="destructive">
-						<Alert.Title>Code expired</Alert.Title>
-						<Alert.Description>Generate a new one below.</Alert.Description>
+						<Alert.Title>{t(locale, 'settings.extension.devices.code-expired-title')}</Alert.Title>
+						<Alert.Description
+							>{t(locale, 'settings.extension.devices.code-expired-description')}</Alert.Description
+						>
 					</Alert.Root>
 				{/if}
 
 				<div>
 					<Button size="sm" onclick={generateCode} loading={generating}>
-						Generate pairing code
+						{t(locale, 'settings.extension.devices.generate-code')}
 					</Button>
 				</div>
 			</Card.Content>
@@ -168,23 +184,27 @@
 	<Card.Root size="sm">
 		<Card.Header class="flex flex-row flex-nowrap items-center gap-2 space-y-0">
 			<Smartphone class="size-4 shrink-0 text-muted-foreground" />
-			<Card.Title class="text-base min-w-0 flex-1 truncate">Paired devices</Card.Title>
+				<Card.Title class="text-base min-w-0 flex-1 truncate"
+					>{t(locale, 'settings.extension.devices.paired-devices-title')}</Card.Title
+				>
 		</Card.Header>
 		<Card.Content class="flex flex-col gap-2 text-sm">
 			{#if loadingDevices}
-				<p class="text-xs text-muted-foreground">Loading devices...</p>
+				<p class="text-xs text-muted-foreground">{t(locale, 'settings.extension.devices.loading')}</p>
 			{:else if loadError}
 				<Alert.Root variant="destructive">
-					<Alert.Title>Could not load devices</Alert.Title>
+					<Alert.Title>{t(locale, 'settings.extension.devices.load-error-title')}</Alert.Title>
 					<Alert.Description>
-						<Button variant="ghost" size="sm" onclick={loadDevices}>Retry</Button>
+						<Button variant="ghost" size="sm" onclick={loadDevices}
+							>{t(locale, 'settings.extension.devices.retry')}</Button
+						>
 					</Alert.Description>
 				</Alert.Root>
 			{:else if devices.length === 0}
 				<Alert.Root>
-					<Alert.Title>No devices yet</Alert.Title>
+					<Alert.Title>{t(locale, 'settings.extension.devices.empty-title')}</Alert.Title>
 					<Alert.Description>
-						Pair the extension from a signed-in tab, or with a pairing code above.
+						{t(locale, 'settings.extension.devices.empty-description')}
 					</Alert.Description>
 				</Alert.Root>
 			{:else}
@@ -196,11 +216,15 @@
 								<span
 									class="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
 								>
-									Revoked
+									{t(locale, 'settings.extension.devices.revoked-badge')}
 								</span>
 							{:else}
 								<span class="text-xs text-muted-foreground" title={d.lastSeenAt ?? undefined}>
-									{d.lastSeenAt ? `seen ${relativeTime(d.lastSeenAt)}` : 'never seen'}
+								{d.lastSeenAt
+									? t(locale, 'settings.extension.devices.seen-ago', {
+											time: relativeTime(d.lastSeenAt),
+										})
+									: t(locale, 'settings.extension.devices.never-seen')}
 								</span>
 							{/if}
 							{#if isAdmin && !d.revokedAt}
@@ -212,7 +236,7 @@
 									loading={revokingId === d.id}
 								>
 									<Trash2 class="size-3.5" />
-									Revoke
+									{t(locale, 'settings.extension.devices.revoke')}
 								</Button>
 							{/if}
 						</div>

@@ -3,6 +3,7 @@ import { timeIt } from './dict/time.js';
 import { routesIt } from './dict/routes.js';
 import { draftDetailIt } from './dict/draft-detail.js';
 import { runlogIt } from './dict/runlog.js';
+import { settingsIt } from './dict/settings.js';
 
 /**
  * Glossary decisions, recorded in `docs/design/DECISIONS.md`: "draft"
@@ -15,6 +16,7 @@ export const it = {
   ...routesIt,
   ...draftDetailIt,
   ...runlogIt,
+  ...settingsIt,
 
   'auth.disabled-title': 'Autenticazione disattivata',
   'auth.disabled-seo-title': 'Autenticazione disattivata',

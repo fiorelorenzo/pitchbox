@@ -4,6 +4,10 @@
   import PageHeader from '$lib/components/PageHeader.svelte';
   import PageContainer from '$lib/components/PageContainer.svelte';
   import Seo from '$lib/components/Seo.svelte';
+  import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
+
+  const locale = $derived($page.data.locale as Locale);
 
   type AuditRow = {
     id: number;
@@ -32,14 +36,14 @@
 </script>
 
 <Seo
-  title="Settings - Instance admin - Audit"
-  description="Who changed instance-wide configuration, when, and from what to what."
+  title={t(locale, 'settings.admin.audit.seo-title')}
+  description={t(locale, 'settings.admin.audit.seo-description')}
 />
 
 <PageContainer size="wide">
   <PageHeader
-    title="Instance audit log"
-    description="Every instance-wide configuration write - not the per-organization audit feed at /audit, which stays scoped to your own organization's drafts and runs."
+    title={t(locale, 'settings.admin.audit.title')}
+    description={t(locale, 'settings.admin.audit.description')}
   />
 
   <Card.Root size="sm" class="mt-4">
@@ -47,11 +51,11 @@
       <Table.Root>
         <Table.Header>
           <Table.Row>
-            <Table.Head class="w-44">Timestamp</Table.Head>
-            <Table.Head class="w-40">Actor</Table.Head>
-            <Table.Head class="w-56">Key</Table.Head>
-            <Table.Head>Before</Table.Head>
-            <Table.Head>After</Table.Head>
+            <Table.Head class="w-44">{t(locale, 'settings.admin.audit.column-timestamp')}</Table.Head>
+            <Table.Head class="w-40">{t(locale, 'settings.admin.audit.column-actor')}</Table.Head>
+            <Table.Head class="w-56">{t(locale, 'settings.admin.audit.column-key')}</Table.Head>
+            <Table.Head>{t(locale, 'settings.admin.audit.column-before')}</Table.Head>
+            <Table.Head>{t(locale, 'settings.admin.audit.column-after')}</Table.Head>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -71,7 +75,7 @@
           {#if data.rows.length === 0}
             <Table.Row>
               <Table.Cell colspan={5} class="text-center text-sm text-muted-foreground py-8">
-                No instance-wide configuration has been changed yet.
+                {t(locale, 'settings.admin.audit.empty')}
               </Table.Cell>
             </Table.Row>
           {/if}

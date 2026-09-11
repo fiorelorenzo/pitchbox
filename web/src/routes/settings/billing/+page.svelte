@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Progress } from '$lib/components/ui/progress';
+	import { page } from '$app/stores';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import PageContainer from '$lib/components/PageContainer.svelte';
@@ -11,8 +12,10 @@
 	import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
 	import type { PageData } from './$types';
 	import type { UsageMetric } from '@pitchbox/shared/usage';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	let { data }: { data: PageData } = $props();
+	const locale = $derived($page.data.locale as Locale);
 
 	function money(dollars: number): string {
 		return dollars.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
@@ -53,17 +56,17 @@
 				body: JSON.stringify({ plan: planId, interval }),
 			});
 			if (!res.ok) {
-				toast.error('Could not start checkout');
+				toast.error(t(locale, 'settings.billing.error-checkout-failed'));
 				return;
 			}
 			const url = sessionUrl(await res.json());
 			if (!url) {
-				toast.error('Could not start checkout');
+				toast.error(t(locale, 'settings.billing.error-checkout-failed'));
 				return;
 			}
 			window.location.href = url;
 		} catch {
-			toast.error('Could not start checkout');
+			toast.error(t(locale, 'settings.billing.error-checkout-failed'));
 		} finally {
 			checkoutBusy = null;
 		}
@@ -76,17 +79,17 @@
 		try {
 			const res = await fetch('/api/billing/portal', { method: 'POST' });
 			if (!res.ok) {
-				toast.error('Could not open the customer portal');
+				toast.error(t(locale, 'settings.billing.error-portal-failed'));
 				return;
 			}
 			const url = sessionUrl(await res.json());
 			if (!url) {
-				toast.error('Could not open the customer portal');
+				toast.error(t(locale, 'settings.billing.error-portal-failed'));
 				return;
 			}
 			window.location.href = url;
 		} catch {
-			toast.error('Could not open the customer portal');
+			toast.error(t(locale, 'settings.billing.error-portal-failed'));
 		} finally {
 			portalBusy = false;
 		}
@@ -98,7 +101,7 @@
 		<div class="flex items-baseline justify-between text-sm">
 			<span class="font-medium">{label}</span>
 			{#if metric.limit == null}
-				<span class="text-muted-foreground">Unlimited</span>
+				<span class="text-muted-foreground">{t(locale, 'settings.billing.unlimited')}</span>
 			{:else}
 				<span class="tabular-nums text-muted-foreground">{metric.used} / {metric.limit}</span>
 			{/if}
@@ -114,22 +117,21 @@
 
 <PageContainer size="default">
 	<Seo
-		title="Settings - Billing"
-		description="Your plan, what of it is used this period, and how to change it."
+		title={t(locale, 'settings.billing.seo-title')}
+		description={t(locale, 'settings.billing.seo-description')}
 	/>
 
 	<PageHeader
-		title="Billing"
-		description="The plan, what of it is used this period, and the two real ways to change it."
+		title={t(locale, 'settings.billing.title')}
+		description={t(locale, 'settings.billing.description')}
 	/>
 
 	{#if data.selfHost}
 		<Card.Root class="mt-4">
 			<Card.Header>
-				<Card.Title>Self-hosted</Card.Title>
+				<Card.Title>{t(locale, 'settings.billing.self-hosted-title')}</Card.Title>
 				<Card.Description>
-					This deployment runs outside the cloud edition, so every limit is unlimited and there is
-					nothing to bill. There is no plan to pick or portal to open here.
+					{t(locale, 'settings.billing.self-hosted-description')}
 				</Card.Description>
 			</Card.Header>
 		</Card.Root>
@@ -148,17 +150,20 @@
 				{/if}
 				<div class="flex-1">
 					{#if data.readOnly}
-						<div class="font-medium">Account is read-only since {formatDate(data.graceEndsAt)}</div>
+						<div class="font-medium">
+							{t(locale, 'settings.billing.read-only-since', { date: formatDate(data.graceEndsAt) })}
+						</div>
 						<div class="text-xs opacity-85">
-							A payment failed and nothing succeeded during the grace period. New runs,
-							suggestions, accepts, projects, campaigns, invites and devices are refused until the
-							payment method is fixed in the portal below.
+							{t(locale, 'settings.billing.read-only-description')}
 						</div>
 					{:else}
-						<div class="font-medium">Payment failed - grace period until {formatDate(data.graceEndsAt)}</div>
+						<div class="font-medium">
+							{t(locale, 'settings.billing.grace-period-until', { date: formatDate(data.graceEndsAt) })}
+						</div>
 						<div class="text-xs opacity-85">
-							The plan keeps working normally until then. Update the payment method in the portal
-							below before {formatDate(data.graceEndsAt)} to avoid going read-only.
+							{t(locale, 'settings.billing.grace-period-description', {
+								date: formatDate(data.graceEndsAt),
+							})}
 						</div>
 					{/if}
 				</div>
@@ -173,19 +178,27 @@
 						<Badge variant={data.status === 'active' ? 'secondary' : 'outline'}>{data.status}</Badge>
 					{/if}
 					{#if isGrant}
-						<Badge variant="outline">Granted</Badge>
+						<Badge variant="outline">{t(locale, 'settings.billing.granted-badge')}</Badge>
 					{/if}
 				</div>
 				<Card.Description>
 					{#if isGrant}
-						This plan was granted by an instance admin. It is not billed through Stripe, and does
-						not change from this page.
+						{t(locale, 'settings.billing.granted-description')}
 					{:else if isFree}
-						No subscription. Free covers a single project on the house.
+						{t(locale, 'settings.billing.free-description')}
 					{:else if data.priceCents != null && data.interval}
-						{moneyCents(data.priceCents)} / {data.interval} · {data.cancelAtPeriodEnd
-						? `cancels on ${formatDate(data.currentPeriodEnd ?? '')}`
-						: `renews on ${formatDate(data.currentPeriodEnd ?? '')}`}{#if data.pendingPlanName && data.pendingPlanEffectiveAt}{` · switches to ${data.pendingPlanName} on ${formatDate(data.pendingPlanEffectiveAt)}`}{/if}
+						{moneyCents(data.priceCents)} / {data.interval} ·
+						{data.cancelAtPeriodEnd
+							? t(locale, 'settings.billing.cancels-on', {
+									date: formatDate(data.currentPeriodEnd ?? ''),
+								})
+							: t(locale, 'settings.billing.renews-on', {
+									date: formatDate(data.currentPeriodEnd ?? ''),
+								})}{#if data.pendingPlanName && data.pendingPlanEffectiveAt}{' · ' +
+								t(locale, 'settings.billing.switches-to', {
+									plan: data.pendingPlanName,
+									date: formatDate(data.pendingPlanEffectiveAt),
+								})}{/if}
 					{/if}
 				</Card.Description>
 			</Card.Header>
@@ -196,7 +209,11 @@
 							<div class="rounded-lg border p-3">
 								<div class="font-medium">{plan.name}</div>
 								<div class="mt-1 text-sm text-muted-foreground">
-									{moneyCents(plan.monthlyPriceCents)} / month or {moneyCents(plan.annualPriceCents)} / year
+								{moneyCents(plan.monthlyPriceCents)}
+								{t(locale, 'settings.billing.per-month')}
+								{t(locale, 'settings.billing.or')}
+								{moneyCents(plan.annualPriceCents)}
+								{t(locale, 'settings.billing.per-year')}
 								</div>
 								<div class="mt-3 flex gap-2">
 									<Button
@@ -205,14 +222,14 @@
 										loading={checkoutBusy === `${plan.id}:month`}
 										onclick={() => startCheckout(plan.id, 'month')}
 									>
-										Monthly
+									{t(locale, 'settings.billing.monthly')}
 									</Button>
 									<Button
 										size="sm"
 										loading={checkoutBusy === `${plan.id}:year`}
 										onclick={() => startCheckout(plan.id, 'year')}
 									>
-										Yearly
+									{t(locale, 'settings.billing.yearly')}
 									</Button>
 								</div>
 							</div>
@@ -220,12 +237,11 @@
 					</div>
 				{:else if isSubscription && data.hasStripeCustomer}
 					<Button loading={portalBusy} onclick={openPortal}>
-						Open customer portal
+						{t(locale, 'settings.billing.open-customer-portal')}
 						<ExternalLink class="size-3.5" />
 					</Button>
 					<p class="mt-2 text-xs text-muted-foreground">
-						Change plan, update the payment method, or see invoices in the portal. Nothing here
-						writes a plan directly - the portal and its webhook are the only path.
+						{t(locale, 'settings.billing.portal-note')}
 					</p>
 				{/if}
 			</Card.Content>
@@ -233,37 +249,35 @@
 
 		<Card.Root class="mt-4">
 			<Card.Header>
-				<Card.Title>Usage this period</Card.Title>
+				<Card.Title>{t(locale, 'settings.billing.usage-title')}</Card.Title>
 				<Card.Description>
-					What the plan meters, measured against its limits. A metric the plan leaves unmetered
-					says unlimited rather than a full bar.
+					{t(locale, 'settings.billing.usage-description')}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-4">
-				{@render usageRow('Runs', data.usage.runs)}
-				{@render usageRow('Suggestions', data.usage.suggestions)}
-				{@render usageRow('Projects', data.usage.projects)}
-				{@render usageRow('Connected accounts', data.usage.accounts)}
-				{@render usageRow('Seats', data.usage.seats)}
-				{@render usageRow('Paired devices', data.usage.extensionDevices)}
+				{@render usageRow(t(locale, 'settings.billing.metric-runs'), data.usage.runs)}
+				{@render usageRow(t(locale, 'settings.billing.metric-suggestions'), data.usage.suggestions)}
+				{@render usageRow(t(locale, 'settings.billing.metric-projects'), data.usage.projects)}
+				{@render usageRow(t(locale, 'settings.billing.metric-accounts'), data.usage.accounts)}
+				{@render usageRow(t(locale, 'settings.billing.metric-seats'), data.usage.seats)}
+				{@render usageRow(t(locale, 'settings.billing.metric-devices'), data.usage.extensionDevices)}
 
 				<div class="grid gap-1.5 border-t pt-4">
 					<div class="flex items-baseline justify-between text-sm">
-						<span class="font-medium">Model allowance used</span>
+						<span class="font-medium">{t(locale, 'settings.billing.model-allowance-label')}</span>
 						<span class="tabular-nums text-muted-foreground">
 							{data.usage.modelAllowance.usedPercent == null
-								? 'Unlimited'
+								? t(locale, 'settings.billing.unlimited')
 								: `${data.usage.modelAllowance.usedPercent}%`}
 						</span>
 					</div>
 					<p class="text-xs text-muted-foreground">
-						How much of this period's model-spend allowance the org has used. Not an invoice
-						line - the portal has those.
+						{t(locale, 'settings.billing.model-allowance-description')}
 					</p>
 					{#if data.usage.modelAllowance.usedPercent != null}
 						<Progress
 							value={Math.min(100, Math.max(0, data.usage.modelAllowance.usedPercent))}
-							aria-label="Model allowance used"
+							aria-label={t(locale, 'settings.billing.model-allowance-label')}
 						/>
 					{/if}
 				</div>

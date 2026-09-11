@@ -6,11 +6,15 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { TONE_CLASS, TONE_TEXT_CLASS } from '$lib/config/status-badges';
 	import { toast } from 'svelte-sonner';
+	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 	import {
 		AGENT_RUNNER_META,
 		RUNNER_CONFIG_SCHEMA,
 		type RunnerConfigField,
 	} from '@pitchbox/shared/agents/meta';
+
+	const locale = $derived($page.data.locale as Locale);
 
 	type RunnerConfig = Record<string, unknown>;
 
@@ -58,8 +62,13 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ slug: runner.slug, config: runner.config }),
 			});
-			if (!res.ok) toast.error(res.status === 403 ? 'You need admin access for that' : 'Save failed');
-			else toast.success('Runner config saved');
+			if (!res.ok)
+				toast.error(
+					res.status === 403
+						? t(locale, 'settings.runners.card.error-admin-required')
+						: t(locale, 'settings.runners.card.save-failed'),
+				);
+			else toast.success(t(locale, 'settings.runners.card.save-success'));
 		} finally {
 			saving = false;
 		}
@@ -82,7 +91,7 @@
 					<span
 						class="rounded-full ring-1 ring-inset {TONE_CLASS.emerald} px-2 py-0.5 text-[10px] font-medium"
 					>
-						default
+						{t(locale, 'settings.runners.card.default-badge')}
 					</span>
 				{/if}
 			</div>
@@ -96,14 +105,16 @@
 				</p>
 			{/if}
 			{#if !runner.implemented}
-				<p class="text-[11px] {TONE_TEXT_CLASS.amber} mt-1.5">Not available in this build yet.</p>
+				<p class="text-[11px] {TONE_TEXT_CLASS.amber} mt-1.5">
+					{t(locale, 'settings.runners.card.not-available-yet')}
+				</p>
 			{:else if runner.error && !runner.available}
 				<p class="text-[11px] {TONE_TEXT_CLASS.rose} mt-1.5">{runner.error}</p>
 			{/if}
 		</div>
 		{#if runner.implemented && runner.available && !isDefault && isAdmin}
 			<Button size="sm" variant="outline" onclick={onSetDefault} class="shrink-0">
-				Set as default
+				{t(locale, 'settings.runners.card.set-default')}
 			</Button>
 		{/if}
 	</Card.Header>
@@ -122,7 +133,10 @@
 						{#if f.kind === 'select'}
 							{@const current = (runner.config[f.key] as string | undefined) ?? ''}
 							{@const knownOpts = f.options.map((o) => ({ value: o, label: o }))}
-							{@const opts = [{ value: '', label: 'CLI default' }, ...knownOpts]}
+						{@const opts = [
+							{ value: '', label: t(locale, 'settings.runners.card.field-cli-default-option') },
+							...knownOpts,
+						]}
 							<SelectField
 								value={opts.some((o) => o.value === current) ? current : ''}
 								onValueChange={(v) => setField(f.key, v || undefined)}
@@ -133,7 +147,7 @@
 							{#if f.allowCustom}
 								<Input
 									value={current && !f.options.includes(current) ? current : ''}
-									placeholder="Custom value (overrides selector above)"
+								placeholder={t(locale, 'settings.runners.card.field-custom-placeholder')}
 									oninput={(e) => {
 										const v = e.currentTarget.value.trim();
 										setField(f.key, v || undefined);
@@ -148,7 +162,7 @@
 								min={f.min}
 								max={f.max}
 								value={(runner.config[f.key] as number | undefined) ?? ''}
-								placeholder="default"
+								placeholder={t(locale, 'settings.runners.card.field-default-placeholder')}
 								oninput={(e) => {
 									const n = Number(e.currentTarget.value);
 									setField(f.key, Number.isFinite(n) && n > 0 ? n : undefined);
@@ -170,7 +184,9 @@
 			</div>
 			{#if isAdmin}
 				<div class="flex justify-end">
-					<Button size="sm" onclick={save} loading={saving}>Save config</Button>
+					<Button size="sm" onclick={save} loading={saving}
+						>{t(locale, 'settings.runners.card.save-config')}</Button
+					>
 				</div>
 			{/if}
 		</Card.Content>

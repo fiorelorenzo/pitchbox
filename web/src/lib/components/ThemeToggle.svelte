@@ -1,15 +1,19 @@
 <script lang="ts">
 	import { Monitor, Sun, Moon } from '@lucide/svelte';
 	import { setMode, userPrefersMode } from 'mode-watcher';
+	import { page } from '$app/stores';
 	import { cn } from '$lib/utils';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	type Choice = 'system' | 'light' | 'dark';
 
-	const options: { value: Choice; label: string; icon: typeof Monitor }[] = [
-		{ value: 'system', label: 'System', icon: Monitor },
-		{ value: 'light', label: 'Light', icon: Sun },
-		{ value: 'dark', label: 'Dark', icon: Moon },
-	];
+	const locale = $derived($page.data.locale as Locale);
+
+	const options = $derived<{ value: Choice; label: string; icon: typeof Monitor }[]>([
+		{ value: 'system', label: t(locale, 'settings.general.appearance.theme-system'), icon: Monitor },
+		{ value: 'light', label: t(locale, 'settings.general.appearance.theme-light'), icon: Sun },
+		{ value: 'dark', label: t(locale, 'settings.general.appearance.theme-dark'), icon: Moon },
+	]);
 
 	// `userPrefersMode.current` is reactive Svelte 5 $state under the hood.
 	const current = $derived<Choice>(userPrefersMode.current as Choice);
@@ -21,7 +25,7 @@
 
 <div
 	role="group"
-	aria-label="Theme"
+	aria-label={t(locale, 'settings.general.appearance.theme-label')}
 	class="flex items-center gap-1 rounded-md border border-border bg-background/40 p-0.5"
 >
 	{#each options as opt (opt.value)}

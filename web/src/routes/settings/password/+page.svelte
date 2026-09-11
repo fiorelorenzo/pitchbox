@@ -3,13 +3,16 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { page } from '$app/stores';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { toast } from 'svelte-sonner';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	type PageData = { username: string; email: string | null; emailVerified: boolean };
 	let { data }: { data: PageData } = $props();
+	const locale = $derived($page.data.locale as Locale);
 
 	let currentPassword = $state('');
 	let newPassword = $state('');
@@ -34,8 +37,8 @@
 				body: JSON.stringify({ currentPassword, newPassword }),
 			});
 			if (res.ok) {
-				toast.success('Password changed', {
-					description: 'Every other session on your account was signed out.',
+				toast.success(t(locale, 'settings.password.success-changed'), {
+					description: t(locale, 'settings.password.success-changed-description'),
 				});
 				currentPassword = '';
 				newPassword = '';
@@ -43,19 +46,19 @@
 				return;
 			}
 			if (res.status === 401) {
-				toast.error('Current password is incorrect');
+				toast.error(t(locale, 'settings.password.error-incorrect'));
 				return;
 			}
 			if (res.status === 429) {
 				const body = (await res.json()) as { retry_after_seconds?: number };
-				toast.error('Too many attempts', {
+				toast.error(t(locale, 'settings.password.error-too-many-attempts'), {
 					description: body.retry_after_seconds
-						? `Try again in ${body.retry_after_seconds}s`
+						? t(locale, 'settings.password.error-retry-after', { n: body.retry_after_seconds })
 						: undefined,
 				});
 				return;
 			}
-			toast.error('Could not change password', { description: await res.text() });
+			toast.error(t(locale, 'settings.password.error-change-failed'), { description: await res.text() });
 		} finally {
 			busy = false;
 		}
@@ -68,21 +71,28 @@
 			const res = await fetch('/api/auth/verify/resend', { method: 'POST' });
 			if (res.ok) {
 				const body = (await res.json()) as { alreadyVerified?: boolean };
-				toast.success(body.alreadyVerified ? 'Already verified' : 'Verification email sent', {
-					description: body.alreadyVerified ? undefined : `Check ${data.email}.`,
-				});
+				toast.success(
+					body.alreadyVerified
+						? t(locale, 'settings.password.verify-already-verified')
+						: t(locale, 'settings.password.verify-sent'),
+					{
+						description: body.alreadyVerified
+							? undefined
+							: t(locale, 'settings.password.verify-sent-description', { email: data.email ?? '' }),
+					},
+				);
 				return;
 			}
 			if (res.status === 429) {
 				const body = (await res.json()) as { retry_after_seconds?: number };
-				toast.error('Too many attempts', {
+				toast.error(t(locale, 'settings.password.error-too-many-attempts'), {
 					description: body.retry_after_seconds
-						? `Try again in ${body.retry_after_seconds}s`
+						? t(locale, 'settings.password.error-retry-after', { n: body.retry_after_seconds })
 						: undefined,
 				});
 				return;
 			}
-			toast.error('Could not resend verification email');
+			toast.error(t(locale, 'settings.password.error-resend-failed'));
 		} finally {
 			resendBusy = false;
 		}
@@ -90,33 +100,41 @@
 </script>
 
 <PageContainer size="default">
-<Seo title="Settings - Password" description="Change your account password." />
+<Seo
+	title={t(locale, 'settings.password.seo-title')}
+	description={t(locale, 'settings.password.seo-description')}
+/>
 
-<PageHeader title="Password" description={`Change the password for ${data.username}.`} />
+<PageHeader
+	title={t(locale, 'settings.password.title')}
+	description={t(locale, 'settings.password.description', { username: data.username })}
+/>
 
 <div class="mt-4 grid gap-4">
 	{#if data.email}
 		<Card.Root>
 			<Card.Header>
 				<Card.Title class="flex items-center gap-2">
-					Email verification
+					{t(locale, 'settings.password.email-verification-title')}
 					{#if data.emailVerified}
-						<Badge variant="secondary">Verified</Badge>
+						<Badge variant="secondary">{t(locale, 'settings.password.verified-badge')}</Badge>
 					{:else}
-						<Badge variant="destructive">Unverified</Badge>
+						<Badge variant="destructive">{t(locale, 'settings.password.unverified-badge')}</Badge>
 					{/if}
 				</Card.Title>
 				<Card.Description>
 					{data.email}
 					{#if !data.emailVerified}
-						- an unverified account can sign in but can't start a run yet.
+						{t(locale, 'settings.password.unverified-note')}
 					{/if}
 				</Card.Description>
 			</Card.Header>
 			{#if !data.emailVerified}
 				<Card.Content>
 					<Button variant="outline" onclick={resendVerification} disabled={resendBusy}>
-						{resendBusy ? 'Sending…' : 'Resend verification email'}
+						{resendBusy
+							? t(locale, 'settings.password.sending')
+							: t(locale, 'settings.password.resend-verification')}
 					</Button>
 				</Card.Content>
 			{/if}
@@ -124,16 +142,14 @@
 	{/if}
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Change password</Card.Title>
+			<Card.Title>{t(locale, 'settings.password.change-title')}</Card.Title>
 			<Card.Description>
-				Requires your current password. The new one needs at least 8 characters, same as
-				sign-in. Changing it signs out every other session on your account - this one stays
-				signed in.
+				{t(locale, 'settings.password.change-description')}
 			</Card.Description>
 		</Card.Header>
 		<Card.Content class="flex max-w-sm flex-col gap-3">
 			<label class="flex flex-col gap-1 text-xs">
-				Current password
+				{t(locale, 'settings.password.current-password')}
 				<Input
 					type="password"
 					bind:value={currentPassword}
@@ -142,7 +158,7 @@
 				/>
 			</label>
 			<label class="flex flex-col gap-1 text-xs">
-				New password
+				{t(locale, 'settings.password.new-password')}
 				<Input
 					type="password"
 					bind:value={newPassword}
@@ -151,7 +167,7 @@
 				/>
 			</label>
 			<label class="flex flex-col gap-1 text-xs">
-				Confirm new password
+				{t(locale, 'settings.password.confirm-password')}
 				<Input
 					type="password"
 					bind:value={confirmPassword}
@@ -159,7 +175,9 @@
 					autocomplete="new-password"
 				/>
 			</label>
-			<Button onclick={submit} disabled={!canSubmit}>Change password</Button>
+			<Button onclick={submit} disabled={!canSubmit}
+				>{t(locale, 'settings.password.change-title')}</Button
+			>
 		</Card.Content>
 	</Card.Root>
 </div>
