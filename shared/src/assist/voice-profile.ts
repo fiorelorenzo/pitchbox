@@ -753,8 +753,16 @@ export type LanguageProfile = LanguageMix & {
 // without claiming to be a general-purpose language detector.
 const EN_STOPWORDS_GLOBAL =
   /\b(?:the|and|of|to|is|that|with|for|this|was|are|it's|i'm|we|you)\b/giu;
-const IT_STOPWORDS_GLOBAL =
-  /\b(?:il|la|di|che|per|con|un|una|è|non|questo|questa|sono|abbiamo|nel|della)\b/giu;
+// `\b` is defined against the ASCII word-character class ([A-Za-z0-9_])
+// regardless of the `u` flag, so it never sees an accented letter like `è`
+// as a word character: the boundary between a space and `è` does not exist
+// as far as the engine is concerned, so `\bè\b` can never match, and that
+// alternative (and any other accented entry) was dead code (LOR-234).
+// Unicode-aware lookaround boundaries fix it, matching the
+// `(?![\p{L}\p{N}_])` convention style-check.ts's own accented rules
+// already use for the same reason.
+export const IT_STOPWORDS_GLOBAL =
+  /(?<![\p{L}\p{N}_])(?:il|la|di|che|per|con|un|una|è|non|questo|questa|sono|abbiamo|nel|della)(?![\p{L}\p{N}_])/giu;
 
 /** Below this many stopword hits, a text has not said enough to classify -
  * one stray "the" in an otherwise Italian post is not evidence. */
