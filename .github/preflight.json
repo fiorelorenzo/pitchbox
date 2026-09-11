@@ -4,7 +4,7 @@
   "checks": [
     {
       "id": "test-postgres",
-      "run": "DATABASE_URL=postgres://pitchbox:pitchbox@127.0.0.1:5490/pitchbox_test_preflight ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef PITCHBOX_ROOT=$(pwd) pnpm test",
+      "run": "source scripts/preflight-postgres-env.sh && ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef PITCHBOX_ROOT=$(pwd) pnpm test",
       "when": [
         "web/**",
         "cli/**",
@@ -16,11 +16,9 @@
         "pnpm-lock.yaml",
         "vitest.config.ts"
       ],
-      "setup": "docker compose -f docker-compose.preflight.yml up -d --wait",
-      "teardown": "docker compose -f docker-compose.preflight.yml down -v",
-      "serial": true,
-      "lock": "postgres",
-      "why": "Tests (Postgres) moved off the PR path to main-only (5.2m job); this is its local-tier replacement, against its own disposable Postgres on 5490 so it never touches the dev DB on 5434"
+      "setup": "source scripts/preflight-postgres-env.sh && docker compose -f docker-compose.preflight.yml -p \"$PREFLIGHT_PROJECT\" up -d --wait",
+      "teardown": "source scripts/preflight-postgres-env.sh && docker compose -f docker-compose.preflight.yml -p \"$PREFLIGHT_PROJECT\" down -v",
+      "why": "Tests (Postgres) moved off the PR path to main-only (5.2m job); this is its local-tier replacement. LOR-269: the disposable Postgres used to be one fixed container/port/database shared by every checkout, so a wave of concurrent runs corrupted each other; scripts/preflight-postgres-env.sh now derives the compose project, port and database from the checkout path, so each run gets its own stack and no longer needs the old `serial`/`lock: postgres` exclusion to stay safe"
     }
   ]
 }

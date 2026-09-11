@@ -6,23 +6,38 @@
 # dev stack's "postgres" service or its `pitchbox-pg-data` volume - without it
 # both files share the directory-derived "pitchbox" project and collide on the
 # service key, which destroyed and replaced the live dev container the first
-# time this was tested. Port 5490 and the tmpfs data directory keep this stack
-# disposable and off every other repo's port range (dev + CI already use 5434).
+# time this was tested.
+#
+# LOR-269: the project name, container name, port and database below were all
+# fixed strings, so every checkout on the box shared this one stack - a wave of
+# concurrent `preflight` runs truncated each other's tables, and whichever
+# finished first ran `down -v` out from under whichever was still running.
+# `scripts/preflight-postgres-env.sh` derives `PREFLIGHT_PROJECT`,
+# `PREFLIGHT_SUFFIX`, `PREFLIGHT_PORT` and `PREFLIGHT_DB` from the checkout's
+# own path and exports them before every `docker compose` call in
+# `.github/preflight.json` (the project name is passed with `-p` at the call
+# site, since `-p` outranks `name:` below); two checkouts then get two
+# independent stacks that cannot share a container name, a port, or a
+# database. The `name:`/port/database literals below are only the fallback
+# for a human running this file directly, without the script or the `-p`
+# flag - every `preflight`-driven invocation overrides all three. The tmpfs
+# data directory keeps the stack disposable; there is no named volume to
+# protect, unlike the dev stack's `pitchbox-pg-data`.
 name: pitchbox-preflight
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: pitchbox-preflight-postgres
+    container_name: pitchbox-preflight-postgres-${PREFLIGHT_SUFFIX:-manual}
     environment:
       POSTGRES_USER: pitchbox
       POSTGRES_PASSWORD: pitchbox
-      POSTGRES_DB: pitchbox_test_preflight
+      POSTGRES_DB: ${PREFLIGHT_DB:-pitchbox_test_preflight}
     ports:
-      - '127.0.0.1:5490:5432'
+      - '127.0.0.1:${PREFLIGHT_PORT:-5490}:5432'
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U pitchbox -d pitchbox_test_preflight']
+      test: ['CMD-SHELL', 'pg_isready -U pitchbox -d ${PREFLIGHT_DB:-pitchbox_test_preflight}']
       interval: 2s
       timeout: 3s
       retries: 20
