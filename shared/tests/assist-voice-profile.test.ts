@@ -703,11 +703,11 @@ describe('classifyLanguage (exported for style-check.ts and voice-metrics.ts)', 
   });
 
   it('still returns unknown for a single common word - the floor is not lowered', () => {
-    // "perfetto" is in the expanded marker list, but one marker alone still
-    // falls short of LANGUAGE_MARKER_MIN, the same way "Grande!" does above:
-    // the fix widens the vocabulary a short reply is measured against, not
-    // how many hits are required.
-    expect(classifyLanguage('Perfetto!')).toBe('unknown');
+    // "certamente" is in the expanded marker list, but one marker alone
+    // still falls short of LANGUAGE_MARKER_MIN, the same way "Grande!" does
+    // above: the fix widens the vocabulary a short reply is measured
+    // against, not how many hits are required.
+    expect(classifyLanguage('Certamente!')).toBe('unknown');
   });
 
   it('stays unknown on a genuine English/Italian tie rather than picking a side', () => {
