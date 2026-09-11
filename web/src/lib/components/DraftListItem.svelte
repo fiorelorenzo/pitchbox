@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/stores';
 	import { cn } from '$lib/utils';
 	import { relativeTime } from '$lib/utils/time';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -11,6 +12,7 @@
 	} from '@pitchbox/shared/quality-bands';
 	import { TONE_CLASS, type Tone } from '$lib/config/status-badges';
 	import { parseStyleFindings } from '$lib/utils/style-findings';
+	import { t, tn, type Locale } from '$lib/i18n/index.js';
 
 	// scoreBand's band names are a shared-package contract (not the design
 	// registry's Tone names), so translate here rather than renaming the shared
@@ -61,15 +63,17 @@
 		onclick?: () => void;
 	} = $props();
 
+	const locale = $derived($page.data.locale as Locale);
 	const presenter = $derived(getPresenter(draft.platformSlug));
 	const band = $derived(scoreBand(draft.qualityScore, rubric));
 	const isJudged = $derived(
 		draft.qualityModel != null && draft.qualityModel !== DETERMINISTIC_QUALITY_MODEL,
 	);
 	const qualityTitle = $derived(
-		isJudged
-			? `Judged by ${draft.qualityModel}${draft.qualityReason ? `: ${draft.qualityReason}` : ''}`
-			: `Measured (style checker + operator voice, no model call)${draft.qualityReason ? `: ${draft.qualityReason}` : ''}`,
+		(isJudged
+			? t(locale, 'draft-list-item.judged-title', { model: draft.qualityModel ?? '' })
+			: t(locale, 'draft-list-item.measured-title')) +
+			(draft.qualityReason ? `: ${draft.qualityReason}` : ''),
 	);
 	// Mirrors DraftDetail's scheduledUntil: only a future scheduled_send_after
 	// is worth flagging - a past one no longer blocks the send.
@@ -96,7 +100,7 @@
 			{#if draft.variantLabel}
 				<span
 					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-200"
-					title="A/B variant {draft.variantLabel}"
+					title={t(locale, 'draft-list-item.variant-title', { variant: draft.variantLabel })}
 				>
 					{draft.variantLabel}
 				</span>
@@ -106,17 +110,17 @@
 					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium {TONE_CLASS[BAND_TONE[band as 'red' | 'amber' | 'green']]}"
 					title={qualityTitle}
 				>
-					{isJudged ? 'J' : 'M'}{draft.qualityScore}
+					{isJudged
+						? t(locale, 'draft-list-item.judged-letter')
+						: t(locale, 'draft-list-item.measured-letter')}{draft.qualityScore}
 				</span>
 			{/if}
 			{#if styleFindingCount > 0}
 				<span
 					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium {TONE_CLASS.rose}"
-					title="Style check flagged {styleFindingCount} {styleFindingCount === 1
-						? 'issue'
-						: 'issues'}"
+					title={tn(locale, 'draft-list-item.style-check-title', styleFindingCount)}
 				>
-					style {styleFindingCount}
+					{t(locale, 'draft-list-item.style-badge')} {styleFindingCount}
 				</span>
 			{/if}
 			{#if draft.dedupWarning}
@@ -124,7 +128,7 @@
 					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium {TONE_CLASS.amber}"
 					title={draft.dedupWarning}
 				>
-					dedup
+					{t(locale, 'draft-list-item.dedup-badge')}
 				</span>
 			{/if}
 			{#if draft.state === 'undeliverable' && draft.undeliverableReason}
@@ -132,15 +136,15 @@
 					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium {TONE_CLASS.slate}"
 					title={draft.undeliverableReason}
 				>
-					undeliverable
+					{t(locale, 'draft-list-item.undeliverable-badge')}
 				</span>
 			{/if}
 			{#if scheduledUntil}
 				<span
 					class="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium {TONE_CLASS.amber}"
-					title="Scheduled until {scheduledUntil.toLocaleString()}"
+					title={t(locale, 'draft-list-item.scheduled-title', { when: scheduledUntil.toLocaleString() })}
 				>
-					scheduled
+					{t(locale, 'draft-list-item.scheduled-badge')}
 				</span>
 			{/if}
 		</span>
@@ -159,7 +163,7 @@
 	<div class="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
 		<StatusBadge domain="draft-state" value={draft.state} />
 		{#if draft.fitScore != null}
-			<span>· fit {draft.fitScore}/5</span>
+			<span>· {t(locale, 'draft-list-item.fit-score', { score: draft.fitScore })}</span>
 		{/if}
 	</div>
 	{#if runId != null || draft.createdAt}
@@ -170,7 +174,7 @@
 					onclick={(e) => e.stopPropagation()}
 					class="hover:underline hover:text-muted-foreground"
 				>
-					Run #{runId}
+					{t(locale, 'inbox.run-badge', { run: runId })}
 				</a>
 				{#if draft.createdAt}
 					<span>·</span>
@@ -182,3 +186,4 @@
 		</div>
 	{/if}
 </button>
+

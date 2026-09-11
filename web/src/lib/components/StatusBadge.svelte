@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
+	import { page } from '$app/stores';
 	import {
 		resolveBadge,
+		badgeLabel,
 		TONE_CLASS,
 		PULSE_DOT_CLASS,
 		type BadgeDomain,
 	} from '$lib/config/status-badges';
+	import type { Locale } from '$lib/i18n/index.js';
 
 	type Size = 'xs' | 'sm';
 
@@ -21,7 +24,9 @@
 		class?: string;
 	} = $props();
 
+	const locale = $derived($page.data.locale as Locale);
 	const style = $derived(resolveBadge(domain, value));
+	const label = $derived(badgeLabel(locale, domain, value));
 
 	const SIZE_CLS: Record<Size, string> = {
 		xs: 'text-[10px] px-1.5 py-[1px] h-[18px] gap-1',
@@ -36,7 +41,7 @@
 		SIZE_CLS[size],
 		className,
 	)}
-	aria-label={style.label}
+	aria-label={label}
 >
 	{#if style.pulse}
 		<span
@@ -47,5 +52,5 @@
 			aria-hidden="true"
 		></span>
 	{/if}
-	<span class="truncate">{style.label}</span>
+	<span class="truncate">{label}</span>
 </span>
