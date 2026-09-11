@@ -91,9 +91,13 @@ Both endpoints return `{ results: [{ id, status, reason? }] }` so the UI can sur
 
 The inbox detail panel offers a `Regenerate` action alongside Approve/Reject. The user can optionally supply a short hint (e.g. "shorter and warmer"); the API `POST /api/drafts/[id]/regenerate` invokes the shared helper which records the hint into `draft_regeneration_hints`, increments `drafts.regeneration_count`, and appends a `regenerated` draft_event. The same helper backs `pitchbox drafts:regenerate <id>` so CLI-triggered regenerations leave the same audit trail.
 
-## LLM-judge quality scoring
+## Quality scoring
 
-New drafts can be scored 0-100 by an LLM judge invoked from `shared/src/quality-judge.ts`. The rubric and thresholds live in `app_config.quality_rubric`:
+New drafts carry a 0-100 quality score, but it is self-reported, not an
+independent judge's opinion: `shared/src/quality-judge.ts` holds only the
+rubric template and the score-to-band mapping, and no model call is ever
+made from that module. The rubric and thresholds live in
+`app_config.quality_rubric`:
 
 ```json
 {
@@ -103,9 +107,15 @@ New drafts can be scored 0-100 by an LLM judge invoked from `shared/src/quality-
 }
 ```
 
-The score, reason and judge model are persisted on `drafts.quality_score`, `drafts.quality_reason`, `drafts.quality_model`. The inbox renders a colour-coded `Q<score>` badge next to each draft (red `< threshold_red`, green `>= threshold_green`, amber in between) and exposes a `?minQuality=<n>` filter on the URL.
-
-Scoring is inline: the agent that writes a draft body (on creation, regeneration, or reply) scores it 0-100 against `rubric_template` and passes the score back on the same tool call that persists the body, so every draft is scored at write time with no separate scoring pass.
+Scoring is inline: whenever the agent writes a draft body, it is handed
+`rubric_template` and scores its own output against it, passing the score
+back on the same tool call that persists the body - there is no separate
+scoring pass, and no second model checking the first one's work. The score,
+reason and the model that wrote (and scored) the draft are persisted on
+`drafts.quality_score`, `drafts.quality_reason`, `drafts.quality_model`. The inbox renders a
+colour-coded `Q<score>` badge next to each draft (red `< threshold_red`,
+green `>= threshold_green`, amber in between) and exposes a
+`?minQuality=<n>` filter on the URL.
 
 ## A/B variant drafts
 
