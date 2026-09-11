@@ -8,7 +8,7 @@
 		DEFAULT_QUALITY_RUBRIC,
 		DETERMINISTIC_QUALITY_MODEL,
 		type QualityRubric,
-	} from '@pitchbox/shared/quality-judge';
+	} from '@pitchbox/shared/quality-bands';
 	import { TONE_CLASS, type Tone } from '$lib/config/status-badges';
 	import { parseStyleFindings } from '$lib/utils/style-findings';
 

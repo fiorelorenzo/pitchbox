@@ -62,24 +62,31 @@ import {
 } from './voice-metrics.js';
 import type { StyleFinding } from './style-check.js';
 
-export interface QualityRubric {
-  rubric_template: string;
-  threshold_red: number;
-  threshold_green: number;
-}
+// The rubric shape, the default, the band mapping and the deterministic
+// sentinel live in `quality-bands.ts` and are re-exported here so no
+// server caller has to know that. They are separate because this module
+// imports `ai`, `@ai-sdk/gateway` and the pg-backed voice profile, and two
+// Svelte components need the band mapping: importing it from here dragged
+// all of that into the browser bundle and broke the Inbox's hydration (see
+// `quality-bands.ts`'s own header for the measurement).
+export {
+  DEFAULT_QUALITY_RUBRIC,
+  DETERMINISTIC_QUALITY_MODEL,
+  scoreBand,
+  type QualityBand,
+  type QualityRubric,
+} from './quality-bands.js';
+import {
+  DEFAULT_QUALITY_RUBRIC,
+  DETERMINISTIC_QUALITY_MODEL,
+  type QualityRubric,
+} from './quality-bands.js';
 
 // The pre-LOR-229 default, kept only so `loadQualityRubric` can recognize a
 // stored row that is really just the old default rather than a genuine
 // customization (see its own comment below) - never used as a live rubric.
 const LEGACY_DEFAULT_RUBRIC_TEMPLATE =
   'Score the following outreach draft from 0-100 on these axes (clarity, relevance, personalization, tone). Return JSON {"score": number, "reason": string}.';
-
-export const DEFAULT_QUALITY_RUBRIC: QualityRubric = {
-  rubric_template:
-    'Score this draft from 0-100 on whether it reads as something a real person actually wrote and sent, not a generic AI reply. Weigh: would a reader take this for a person rather than a bot; does it say one concrete thing rather than vague encouragement; does it answer this specific post rather than any post on the same subject; and is it roughly the length a real reply in this room runs, not a small essay. Return JSON {"score": number, "reason": string}.',
-  threshold_red: 40,
-  threshold_green: 75,
-};
 
 export async function loadQualityRubric(db: Db): Promise<QualityRubric> {
   const [row] = await db.select().from(appConfig).where(eq(appConfig.key, 'quality_rubric'));
@@ -104,17 +111,6 @@ export async function loadQualityRubric(db: Db): Promise<QualityRubric> {
         ? v.threshold_green
         : DEFAULT_QUALITY_RUBRIC.threshold_green,
   };
-}
-
-// Map a numeric score to a UI band given the configured rubric thresholds.
-export function scoreBand(
-  score: number | null | undefined,
-  rubric: QualityRubric,
-): 'red' | 'amber' | 'green' | 'none' {
-  if (score == null) return 'none';
-  if (score < rubric.threshold_red) return 'red';
-  if (score >= rubric.threshold_green) return 'green';
-  return 'amber';
 }
 
 // ---------------------------------------------------------------------------
@@ -343,7 +339,6 @@ export async function judgeQuality(
 /** `drafts.quality_model`'s sentinel for "computed, not judged" - as real a
  * value as an actual Gateway model id, never confused with one (no `/` in
  * it, unlike every Gateway id). */
-export const DETERMINISTIC_QUALITY_MODEL = 'deterministic';
 
 export interface DraftQualityResult {
   qualityScore: number | null;

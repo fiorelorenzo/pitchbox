@@ -25,7 +25,7 @@
 		DEFAULT_QUALITY_RUBRIC,
 		DETERMINISTIC_QUALITY_MODEL,
 		type QualityRubric,
-	} from '@pitchbox/shared/quality-judge';
+	} from '@pitchbox/shared/quality-bands';
 
 	// scoreBand's band names are a shared-package contract (not the design
 	// registry's Tone names) - mirrors DraftListItem's own translation table.
