@@ -1019,11 +1019,17 @@ export function describeVoiceProfile(
   // each item to clear register.ts's 12-word floor, which a corpus of
   // one-line comments never does, so before this the description of such a
   // corpus said everything about it except how long it is.
+  //
+  // Measurement only, not an instruction (LOR-233): this used to end "...and
+  // a draft that misses that length is wrong however well it is written",
+  // which reads as an absolute cap sitting in the profile description where
+  // no task-level wording can soften it - it outranked suggest-prompt.ts's
+  // own, more carefully qualified length target and flattened the corpus's
+  // genuinely long items along with the short ones. A description states
+  // what was measured; only the task instructs.
   if (m.rhythm.medianItemWords > 0) {
     const spread = m.rhythm.itemWordsSpread > 0 ? `, give or take ${m.rhythm.itemWordsSpread}` : '';
-    sentences.push(
-      `A typical one runs about ${m.rhythm.medianItemWords} words${spread}, and a draft that misses that length is wrong however well it is written.`,
-    );
+    sentences.push(`A typical one runs about ${m.rhythm.medianItemWords} words${spread}.`);
   }
   if (m.traits.length > 0) {
     const sentenceLength =

@@ -87,6 +87,16 @@ export type VoiceProfileSummary = {
    * excluded it in Settings, the same "hide this" control voice samples
    * already have. */
   editSignature: string | null;
+  /** The same comment-genre measurement's own median whole-piece length, in
+   * words (LOR-232's rhythm axis, read per genre - LOR-227's
+   * `medianItemWords` on `VoiceGenreSummary`) - null under the exact same
+   * condition as `commentSummary`, never a number `commentSummary` itself
+   * doesn't also justify. `suggest-prompt.ts` (LOR-233) names this in the
+   * task itself: the prose already says "about 7 words" in passing, and a
+   * task that also demands the comment "add something" outweighs a
+   * sentence buried in a persona description - a number in the task's own
+   * instruction does not. */
+  medianCommentWords: number | null;
 };
 
 export type ProjectBrief = {
@@ -250,6 +260,10 @@ export async function loadCompanionContext(
           editSignature: voiceProfileRow.evidence.editSignatureExcluded
             ? null
             : describeEditSignature(voiceProfileRow.evidence.editSignature),
+          medianCommentWords:
+            voiceProfileRow.evidence.genres.comment.medianItemWords > 0
+              ? voiceProfileRow.evidence.genres.comment.medianItemWords
+              : null,
         }
       : null,
     projects: projectRows.map((p) => ({

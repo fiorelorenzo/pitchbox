@@ -259,9 +259,17 @@ function clamp(text: string, max: number): string {
   return t.length <= max ? t : `${t.slice(0, max)}\n[truncated]`;
 }
 
+// LOR-233: the old wording ("it has to add something... say so in one
+// sentence instead of padding") made a substantive addition the only
+// legitimate outcome, which is false for most of what the operator
+// actually writes - a plain reaction ("Grande!", a bicep emoji, "che UI!")
+// is not a comment that failed to find an angle, it is the correct comment
+// for a launch, a photo or a win. Naming the short reaction as a real
+// outcome removes the contradiction with the voice profile's own "about 7
+// words" rather than adding a second instruction to fight it.
 const TASK: Record<SuggestionKind, string> = {
   post_comment:
-    'Write one comment to leave on the post below. One paragraph, two at most. It has to add something the author or another reader would not already know: a specific experience, a number, a disagreement worth having. If you have nothing to add, say so in one sentence instead of padding.',
+    "Write one comment to leave on the post below. A short reaction in the operator's own voice - a word, an emoji, one line of real agreement or delight - is a complete answer on its own, not a fallback: a post that is social rather than technical, a launch, a photo, a win, calls for exactly that, and plenty of the operator's own real comments are exactly this short. Write a longer comment, one paragraph, two at most, only when there is something specific to add - an experience, a number, a disagreement worth having. Never pad a short reaction into something that reads as more substantial than it is.",
   post: 'Write one short post for this account, taking the post below as the starting point rather than something to summarise. Say one thing and stop.',
 };
 
@@ -277,7 +285,7 @@ const TASK: Record<SuggestionKind, string> = {
  */
 function taskFor(kind: SuggestionKind, replyToCommentId?: string): string {
   if (kind === 'post_comment' && replyToCommentId) {
-    return `Write one reply to the comment with id "${replyToCommentId}" in the thread below (call read_thread to see who wrote it and what it says) - not a comment on the post itself. One paragraph, two at most. It has to add something that commenter or another reader would not already know: a specific experience, a number, a disagreement worth having. If you have nothing to add, say so in one sentence instead of padding.`;
+    return `Write one reply to the comment with id "${replyToCommentId}" in the thread below (call read_thread to see who wrote it and what it says) - not a comment on the post itself. A short reaction in the operator's own voice is a complete answer on its own, not a fallback, when that is genuinely what the reply calls for. Write a longer reply, one paragraph, two at most, only when there is something specific to add that commenter or another reader would not already know. Never pad a short reaction into something that reads as more substantial than it is.`;
   }
   return TASK[kind];
 }
@@ -323,6 +331,57 @@ const RETUNE_INSTRUCTION: Record<RetuneDirection, string> = {
     'address the author more like a person and let real interest show, without adding exclamation marks.',
   shorter: 'say the same point in noticeably fewer words: keep only what earns its place.',
 };
+
+/** Counts words the same simple way every other length axis in this
+ * codebase does (voice-profile.ts's own `measureRhythm`, voice-metrics.ts's
+ * scorer) - split on whitespace, drop empties - so a target stated here
+ * means the same thing as the numbers it is derived from. */
+function wordCount(text: string): number {
+  const t = text.trim();
+  return t ? t.split(/\s+/u).filter(Boolean).length : 0;
+}
+
+/** Kept local rather than imported from voice-profile.ts or voice-metrics.ts,
+ * which each keep their own copy of this same handful of lines for the same
+ * reason their own module headers give: it is not specific to either of
+ * them, and three modules sharing one three-line function is not worth a
+ * new import surface. */
+function median(nums: number[]): number {
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return Math.round(sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!);
+}
+
+/**
+ * Names a length target in words for a `post_comment` task, derived rather
+ * than fixed (LOR-233) - `null` when neither source below exists, which the
+ * caller renders as no length sentence at all rather than inventing a
+ * default, the same posture `voice-defaults.ts` already takes for a corpus
+ * too thin to measure.
+ *
+ * The room, when the page sent a thread, outranks the operator's own habit:
+ * a person who usually writes seven words still writes thirty under a post
+ * where every other visible comment runs thirty, and the room is the more
+ * specific, more current signal for what fits under *this* post -
+ * `voice-defaults.ts`'s own "fits the room" rule, finally given a number.
+ * The operator's own comment-genre median (LOR-232's rhythm axis, read per
+ * genre - LOR-227's `medianCommentWords`) is the fallback for when no
+ * thread rendered at all, which is always, on the SDUI feed (see this
+ * file's `ObservedThread` doc comment).
+ *
+ * Returns which source won alongside the number: a human reading a
+ * suggestion should be able to tell why it came out the length it did, not
+ * just that it did.
+ */
+function lengthTarget(
+  voiceProfile: VoiceProfileSummary | null,
+  thread: ObservedThread | undefined,
+): { words: number; source: 'room' | "operator's own habit" } | null {
+  const threadWords = (thread?.comments ?? []).map((c) => wordCount(c.body)).filter((n) => n > 0);
+  if (threadWords.length > 0) return { words: median(threadWords), source: 'room' };
+  const own = voiceProfile?.medianCommentWords;
+  return own && own > 0 ? { words: own, source: "operator's own habit" } : null;
+}
 
 /**
  * Builds the single-turn prompt. Pure and synchronous: everything it needs is
@@ -524,6 +583,37 @@ export function buildSuggestionPrompt(args: {
   );
 
   parts.push(`Your task: ${taskFor(kind, post.replyToCommentId)}`);
+
+  // LOR-233: a length target in words, named explicitly rather than left
+  // for the model to reconcile "adds something" against a voice profile
+  // that separately says "about 7 words" - see `lengthTarget`'s own doc
+  // comment for which source wins and why. `post` has no room to read a
+  // target off (no thread, no per-genre comment habit) and keeps its own
+  // brevity instruction in TASK.post above instead.
+  //
+  // Deliberately not a ceiling: a median is the typical case, not every
+  // case, and roughly half of what the operator actually writes runs
+  // longer than it - sometimes much longer, when the post itself is the
+  // kind that earns a real answer. An early version of this sentence said
+  // "going noticeably over that is a defect" outright, and measured
+  // against the eval set it quietly flattened the genuinely long cases
+  // along with the short ones - the same failure this issue exists to
+  // avoid, just moved from "always long" to "always short". The target is
+  // a default to return to once there is nothing left to say, not a limit
+  // on how much there is to say.
+  if (kind === 'post_comment') {
+    const target = lengthTarget(voiceProfile, post.thread);
+    if (target) {
+      const words = `${target.words} word${target.words === 1 ? '' : 's'}`;
+      const clause =
+        target.source === 'room'
+          ? `this thread's own comments run about ${words}`
+          : `the operator's own comments run about ${words}`;
+      parts.push(
+        `Length target: ${clause} - treat that as the length to return to once you have said what is worth saying, not a ceiling on it. Padding a short reaction out to look more substantial is the defect; a longer comment earned by something real to say is not, and the post below sometimes calls for exactly that.`,
+      );
+    }
+  }
 
   // The tone, after the task and before the operator's steer, because that is
   // the precedence: house style outranks the tone, the operator's typed steer
