@@ -628,7 +628,7 @@ describe('pitchbox drafts:create', () => {
   // `unknown` to `classifyLanguage` on its own (confirmed below rather
   // than assumed). It also borrows a real English term ("leverage")
   // exactly the way it uses a real Italian one for the same idea
-  // ("innovativa") - a realistic way for this exact ambiguity to occur.
+  // ("sinergia") - a realistic way for this exact ambiguity to occur.
   // Before this issue, an `unknown` verdict ran *both* phrase lists, so
   // "leverage" would ship as a second, spurious English-list finding
   // alongside the real Italian one. Pinned to Italian, the checker must
@@ -671,7 +671,7 @@ describe('pitchbox drafts:create', () => {
       .values({ campaignId: campaign.id, trigger: 'manual', status: 'running' })
       .returning();
 
-    const body = 'Innovativa soluzione qui, complimenti, leverage forte.';
+    const body = 'Sinergia forte qui, complimenti, leverage forte.';
     expect(classifyLanguage(body)).toBe('unknown');
 
     const payload = JSON.stringify([
@@ -705,7 +705,7 @@ describe('pitchbox drafts:create', () => {
     // ships as a second finding the way it would on an `unknown` verdict
     // with no pin to decide for it.
     expect(puffery).toHaveLength(1);
-    expect(puffery[0]?.span).toBe('Innovativa');
+    expect(puffery[0]?.span).toBe('Sinergia');
     expect(puffery[0]?.message).toContain('(Italian)');
   });
 

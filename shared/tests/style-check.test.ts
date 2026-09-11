@@ -208,10 +208,10 @@ describe('checkStyle: an explicit expectedLanguage pin overrides classifyLanguag
   // reads as `unknown` - LOR-280 measured this on roughly a third of short
   // Italian text. This body is a realistic shape for that: Italian
   // business copy that borrows an English term ("leverage") the same way
-  // it uses a real Italian one for the same idea ("innovativa"). The
+  // it uses a real Italian one for the same idea ("sinergia"). The
   // classifier's own read is asserted first, not assumed, since the whole
   // point of this case is that it gives no reliable answer on its own.
-  const mixedBody = 'Innovativa soluzione qui, complimenti, leverage forte.';
+  const mixedBody = 'Sinergia forte qui, complimenti, leverage forte.';
 
   it('classifyLanguage alone reads this body as unknown', () => {
     expect(classifyLanguage(mixedBody)).toBe('unknown');
@@ -224,7 +224,7 @@ describe('checkStyle: an explicit expectedLanguage pin overrides classifyLanguag
     // phrase too, and would be a second finding here if a pin did not
     // exclude that list outright rather than merely deprioritizing it.
     expect(puffery).toHaveLength(1);
-    expect(puffery[0]?.span).toBe('Innovativa');
+    expect(puffery[0]?.span).toBe('Sinergia');
     expect(puffery[0]?.message).toContain('(Italian)');
   });
 
@@ -234,7 +234,7 @@ describe('checkStyle: an explicit expectedLanguage pin overrides classifyLanguag
     // Unchanged fallback: `unknown` still runs both phrase lists, so the
     // same body that gets exactly one finding when pinned gets two with
     // nothing to override the classifier's non-answer.
-    expect(spans).toContain('Innovativa');
+    expect(spans).toContain('Sinergia');
     expect(spans).toContain('leverage');
   });
 
@@ -377,11 +377,11 @@ describe('enforceHouseStyle: the repair pass, in order', () => {
   });
 
   it('threads expectedLanguage into the structural check, same as checkStyle (LOR-291)', async () => {
-    const mixedBody = 'Innovativa soluzione qui, complimenti, leverage forte.';
+    const mixedBody = 'Sinergia forte qui, complimenti, leverage forte.';
     const pinned = await enforceHouseStyle(mixedBody, undefined, 'it');
     const puffery = pinned.findings.filter((f) => f.ruleId === 'puffery');
     expect(puffery).toHaveLength(1);
-    expect(puffery[0]?.span).toBe('Innovativa');
+    expect(puffery[0]?.span).toBe('Sinergia');
     const unpinned = await enforceHouseStyle(mixedBody);
     expect(unpinned.findings.filter((f) => f.ruleId === 'puffery')).toHaveLength(2);
   });
