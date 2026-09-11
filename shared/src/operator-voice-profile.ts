@@ -80,6 +80,12 @@ export type VoiceGenreSummary = {
   summary: string | null;
   itemCount: number;
   measurable: boolean;
+  /** This genre's own whole-piece median/spread (LOR-232's axis, read per
+   * genre rather than pooled) - 0 while `measurable` is false, never a
+   * guess. `suggest-prompt.ts` needs the number itself, not just the
+   * prose `summary` already carries it in. */
+  medianItemWords: number;
+  itemWordsSpread: number;
 };
 
 /** What a stored row carries about its own derivation: the provenance
@@ -126,7 +132,13 @@ const EMPTY_PROVENANCE: VoiceCorpusProvenance = {
   counts: { voiceSamples: 0, messages: 0, drafts: 0, templates: 0 },
 };
 
-const EMPTY_GENRE_SUMMARY: VoiceGenreSummary = { summary: null, itemCount: 0, measurable: false };
+const EMPTY_GENRE_SUMMARY: VoiceGenreSummary = {
+  summary: null,
+  itemCount: 0,
+  measurable: false,
+  medianItemWords: 0,
+  itemWordsSpread: 0,
+};
 
 const EMPTY_GENRE_SUMMARIES: Record<VoiceCorpusItemGenre, VoiceGenreSummary> = {
   post: EMPTY_GENRE_SUMMARY,
@@ -145,6 +157,23 @@ const EMPTY_EVIDENCE: VoiceProfileEvidence = {
   language: EMPTY_LANGUAGE,
   genres: EMPTY_GENRE_SUMMARIES,
 };
+
+/** `genres` merged field-by-field against `EMPTY_GENRE_SUMMARY`, not just
+ * substituted whole when absent: a row derived before LOR-227 added
+ * `medianItemWords`/`itemWordsSpread` carries a `genres` object whose
+ * per-genre entries lack exactly those two fields, and reading them as
+ * `undefined` would forward that straight into a prompt expecting a
+ * number. */
+function normalizeGenreSummaries(raw: unknown): Record<VoiceCorpusItemGenre, VoiceGenreSummary> {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<
+    Record<VoiceCorpusItemGenre, Partial<VoiceGenreSummary>>
+  >;
+  const out = {} as Record<VoiceCorpusItemGenre, VoiceGenreSummary>;
+  for (const genre of VOICE_CORPUS_ITEM_GENRES) {
+    out[genre] = { ...EMPTY_GENRE_SUMMARY, ...(r[genre] ?? {}) };
+  }
+  return out;
+}
 
 /** Reads a stored `evidence` blob back into the current full shape,
  * whichever version wrote it. A field absent from the stored JSON (a row
@@ -167,7 +196,7 @@ function normalizeEvidence(raw: unknown): VoiceProfileEvidence {
     voiceMarkers: r.voiceMarkers ?? EMPTY_VOICE_MARKERS,
     lexicon: r.lexicon ?? EMPTY_LEXICON,
     language: r.language ?? EMPTY_LANGUAGE,
-    genres: r.genres ?? EMPTY_GENRE_SUMMARIES,
+    genres: normalizeGenreSummaries(r.genres),
   };
 }
 
@@ -328,6 +357,8 @@ export async function refreshVoiceProfile(
       summary: describeVoiceProfileForGenre(genre, genreMeasurement),
       itemCount: genreMeasurement.itemCount,
       measurable: genreMeasurement.measurable,
+      medianItemWords: genreMeasurement.rhythm.medianItemWords,
+      itemWordsSpread: genreMeasurement.rhythm.itemWordsSpread,
     };
   }
 
