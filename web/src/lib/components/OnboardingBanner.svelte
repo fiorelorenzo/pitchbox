@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { ArrowRight, ListChecks } from '@lucide/svelte';
+	import { page } from '$app/stores';
 	import { invalidateAll } from '$app/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Progress } from '$lib/components/ui/progress';
-	import { ONBOARDING_STEP_META } from '$lib/onboarding-steps';
+	import { onboardingStepMeta } from '$lib/onboarding-steps';
+	import { t, type Locale } from '$lib/i18n/index.js';
 	import type { OnboardingStepId } from '@pitchbox/shared/onboarding';
 
 	// The dashboard's entry point back into `/onboarding` while a flow is
@@ -24,8 +26,9 @@
 		total,
 	}: { currentStep: OnboardingStepId | null; done: number; total: number } = $props();
 
+	const locale = $derived($page.data.locale as Locale);
 	const pct = $derived(total > 0 ? Math.round((100 * done) / total) : 0);
-	const meta = $derived(currentStep ? ONBOARDING_STEP_META[currentStep] : null);
+	const meta = $derived(currentStep ? onboardingStepMeta(locale, currentStep) : null);
 
 	let busy = $state(false);
 
@@ -40,7 +43,7 @@
 	}
 </script>
 
-<Card.Root role="region" aria-label="Setup" class="mb-6">
+<Card.Root role="region" aria-label={t(locale, 'onboarding-banner.aria-label')} class="mb-6">
 	<Card.Content class="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6">
 		<!-- Icon and copy are one row at every width: stacking is for the actions,
 		     and an icon alone on its own line reads as a stray glyph. -->
@@ -53,12 +56,16 @@
 
 			<div class="min-w-0 flex-1">
 				<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-					<span class="font-medium">Finish setting up Pitchbox</span>
-					<span class="text-muted-foreground text-xs tabular-nums">{done} of {total} done</span>
+					<span class="font-medium">{t(locale, 'onboarding-banner.title')}</span>
+					<span class="text-muted-foreground text-xs tabular-nums"
+						>{t(locale, 'onboarding-banner.progress-count', { done, total })}</span
+					>
 				</div>
 				{#if meta}
 					<p class="text-muted-foreground mt-1 text-sm">
-						<span class="text-foreground">Next: {meta.title}.</span>
+						<span class="text-foreground"
+							>{t(locale, 'onboarding-banner.next-label', { step: meta.title })}</span
+						>
 						{meta.description}
 					</p>
 				{/if}
@@ -67,15 +74,21 @@
 
 		<div class="flex shrink-0 items-center gap-2">
 			<Button href="/onboarding" size="sm">
-				Continue setup
+				{t(locale, 'onboarding-banner.continue-setup')}
 				<ArrowRight class="size-4" aria-hidden="true" />
 			</Button>
-			<Button variant="ghost" size="sm" onclick={dismiss} disabled={busy}>Skip for now</Button>
+			<Button variant="ghost" size="sm" onclick={dismiss} disabled={busy}
+				>{t(locale, 'onboarding-banner.skip')}</Button
+			>
 		</div>
 	</Card.Content>
 
 	<!-- Flush along the card's bottom edge: the one element that makes this read
 	     as progress rather than as a notice. `-mb-6` cancels the card's own
 	     bottom padding, and the card clips it to the rounded corners. -->
-	<Progress value={pct} aria-label="Setup progress" class="-mb-6 h-1 rounded-none" />
+	<Progress
+		value={pct}
+		aria-label={t(locale, 'onboarding-banner.aria-progress')}
+		class="-mb-6 h-1 rounded-none"
+	/>
 </Card.Root>

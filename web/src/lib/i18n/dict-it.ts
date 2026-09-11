@@ -103,4 +103,144 @@ export const it = {
   'reset.confirm.error-invalid-title': 'Questo link non è più valido',
   'reset.confirm.error-invalid-body':
     'Potrebbe essere scaduto o già stato usato, richiedine uno nuovo.',
+
+  'brand.name': 'Pitchbox',
+
+  'nav.aria-primary': 'Navigazione principale',
+  'nav.aria-open': 'Apri la navigazione',
+  'nav.aria-close': 'Chiudi la navigazione',
+  'nav.home': 'Home',
+  'nav.inbox': 'Inbox',
+  'nav.group-outreach': 'Outreach',
+  'nav.projects': 'Progetti',
+  'nav.campaigns': 'Campagne',
+  'nav.playbooks': 'Playbook',
+  'nav.group-people': 'Persone',
+  'nav.people': 'Persone',
+  'nav.blocklist': 'Blocklist',
+  'nav.group-insight': 'Insight',
+  'nav.analytics': 'Analytics',
+  'nav.audit': 'Audit',
+  'nav.group-assistant': 'Assistente',
+  'nav.companion': 'Companion',
+  'nav.notifications': 'Notifiche',
+  'nav.settings': 'Impostazioni',
+  'nav.website': 'Sito web',
+  'nav.docs': 'Documentazione',
+  'nav.sign-out': 'Esci',
+  'nav.error-refresh-count': 'Impossibile aggiornare il conteggio delle notifiche',
+  'nav.error-refresh-count-offline':
+    'Impossibile aggiornare il conteggio delle notifiche, controlla la connessione',
+  'nav.error-sign-out': 'Impossibile uscire. Riprova.',
+  'nav.error-sign-out-offline': 'Impossibile uscire, controlla la connessione.',
+
+  'org-switcher.label': 'Organizzazione',
+  'org-switcher.organizations-label': 'Organizzazioni',
+  'org-switcher.organization-link': 'Organizzazione',
+  'org-switcher.create-link': "Crea un'organizzazione",
+  'org-switcher.create-description':
+    'Dai un nome al tuo nuovo workspace. Potrai invitare altre persone in seguito.',
+  'org-switcher.name-label': 'Nome',
+  'org-switcher.url-prefix': 'URL:',
+  'org-switcher.cancel': 'Annulla',
+  'org-switcher.create-button': 'Crea',
+  'org-switcher.error-switch': "Impossibile cambiare organizzazione",
+  'org-switcher.error-slug-taken': 'Questo URL è già in uso, scegli un altro nome',
+  'org-switcher.error-invalid-name': 'Inserisci un nome valido (almeno 3 lettere o numeri)',
+  'org-switcher.error-create-generic': "Impossibile creare l'organizzazione",
+  'org-switcher.success-created': 'Creata {name}',
+
+  'command-palette.placeholder': 'Cerca bozze, contatti, campagne, progetti...',
+  'command-palette.action-create-campaign': 'Crea campagna',
+  'command-palette.action-generate-token': 'Genera token per l\'extension',
+  'command-palette.action-open-settings': 'Apri le impostazioni',
+  'command-palette.heading-actions': 'Azioni',
+  'command-palette.searching': 'Ricerca in corso...',
+  'command-palette.no-results': 'Nessun risultato trovato.',
+  'command-palette.error-unavailable': 'La ricerca non è al momento disponibile.',
+  'command-palette.error-rejected': 'La richiesta di ricerca è stata rifiutata.',
+  'command-palette.error-unavailable-offline':
+    'La ricerca non è al momento disponibile, controlla la connessione.',
+  'command-palette.heading-drafts': 'Bozze',
+  'command-palette.heading-contacts': 'Contatti',
+  'command-palette.heading-campaigns': 'Campagne',
+  'command-palette.heading-projects': 'Progetti',
+
+  'billing-banner.read-only-title': 'Account in sola lettura dal {date}',
+  'billing-banner.read-only-body':
+    "Un pagamento non è andato a buon fine e nulla è riuscito durante il periodo di grazia, quindi nuovi run, suggerimenti, accettazioni, progetti, campagne, inviti e dispositivi vengono rifiutati. Tutto quello che è già qui resta leggibile - correggi il metodo di pagamento nel {link} per ripristinare il servizio.",
+  'billing-banner.customer-portal-link': 'portale clienti',
+  'billing-banner.grace-title': 'Pagamento non riuscito - periodo di grazia fino al {date}',
+  'billing-banner.grace-body':
+    'Il tuo piano continua a funzionare normalmente fino ad allora. Aggiorna il metodo di pagamento nel {link} prima del {date} per evitare che l\'account passi in sola lettura.',
+
+  'chat-sync-banner.title': 'Sync di Reddit Chat in pausa',
+  'chat-sync-banner.body':
+    "Il token Matrix dell'estensione del browser non è più accettato. Apri {link} e ricarica la pagina in modo che l'estensione possa catturare un token nuovo. I nuovi messaggi in arrivo non appariranno fino ad allora.",
+
+  'extension-nudge.no-device-title': "Rileva le risposte più in fretta con l'estensione del browser",
+  'extension-nudge.no-device-body':
+    "Nessuna estensione del browser è ancora abbinata a questo workspace. Installala e abbina un dispositivo da Impostazioni > Estensione browser così le risposte Reddit in arrivo compaiono qui automaticamente.",
+  'extension-nudge.stale-title': 'La tua estensione del browser è silenziosa',
+  'extension-nudge.stale-body':
+    "Nessun dispositivo abbinato ha dato notizie da un po'. Apri Reddit nel browser in cui è installata, oppure abbina un nuovo dispositivo da Impostazioni > Estensione browser, per continuare a ricevere le risposte.",
+  'extension-nudge.dismiss': 'Ignora',
+
+  'onboarding-banner.aria-label': 'Configurazione',
+  'onboarding-banner.title': 'Completa la configurazione di Pitchbox',
+  'onboarding-banner.progress-count': '{done} di {total} completati',
+  'onboarding-banner.next-label': 'Prossimo passo: {step}.',
+  'onboarding-banner.continue-setup': 'Continua la configurazione',
+  'onboarding-banner.skip': 'Salta per ora',
+  'onboarding-banner.aria-progress': 'Avanzamento configurazione',
+
+  'onboarding.step.organization.title': 'Dai un nome alla tua organizzazione',
+  'onboarding.step.organization.description':
+    "All'inizio prende il nome del tuo account. Dalle il nome che il tuo team o la tua azienda usano davvero.",
+  'onboarding.step.organization.cta': 'Rinomina organizzazione',
+  'onboarding.step.verify_email.title': 'Verifica il tuo indirizzo email',
+  'onboarding.step.verify_email.description':
+    "Conferma l'indirizzo registrato prima di poter avviare un run.",
+  'onboarding.step.verify_email.cta': 'Verifica email',
+  'onboarding.step.project.title': 'Crea un progetto con una fonte',
+  'onboarding.step.project.description':
+    "Dai all'agente qualcosa su cui scrivere: una cartella, un repository o un sito web.",
+  'onboarding.step.project.cta': 'Crea un progetto',
+  'onboarding.step.account.title': 'Collega un account della piattaforma',
+  'onboarding.step.account.description':
+    "Aggiungi l'account Reddit, Hacker News o Mastodon da cui partirà l'outreach.",
+  'onboarding.step.account.cta': 'Collega un account',
+  'onboarding.step.extension.title': "Installa l'estensione del browser",
+  'onboarding.step.extension.description':
+    "Abbinala una volta sola e ti aiuterà a scrivere commenti e a rilevare le risposte su una pagina reale.",
+  'onboarding.step.extension.cta': "Scarica l'estensione",
+  'onboarding.step.first_draft.title': 'Ottieni una prima bozza',
+  'onboarding.step.first_draft.description':
+    "Avvia una campagna e lascia che l'agente produca qualcosa da rivedere.",
+  'onboarding.step.first_draft.cta': 'Avvia una campagna',
+
+  'onboarding.page.seo-title': 'Configura Pitchbox',
+  'onboarding.page.seo-description':
+    'Dai un nome alla tua organizzazione, collega un account e arriva alla tua prima bozza.',
+  'onboarding.page.header-description':
+    'Pochi passi per andare da un workspace vuoto alla tua prima bozza.',
+  'onboarding.page.review-button': 'Rivedi',
+  'onboarding.page.completed-title': 'Sei pronto',
+  'onboarding.page.completed-body':
+    "Ogni passo della configurazione è completo. Rifalla quando vuoi da Impostazioni se vuoi ripercorrerla.",
+  'onboarding.page.go-to-dashboard': 'Vai alla dashboard',
+  'onboarding.page.skipped-title': 'Configurazione saltata',
+  'onboarding.page.skipped-body': 'Puoi ricominciarla quando vuoi, da qui o da Impostazioni.',
+  'onboarding.page.start-again': 'Ricomincia la configurazione',
+
+  'settings.onboarding.seo-title': 'Impostazioni - Onboarding',
+  'settings.onboarding.seo-description':
+    "La configurazione guidata iniziale: il suo stato e come ricominciarla.",
+  'settings.onboarding.title': 'Onboarding',
+  'settings.onboarding.description': 'La configurazione guidata avviata al primo accesso.',
+  'settings.onboarding.status-label': 'Stato',
+  'settings.onboarding.status.not-started': 'Non iniziata',
+  'settings.onboarding.status.in-progress': 'In corso',
+  'settings.onboarding.status.completed': 'Completata',
+  'settings.onboarding.status.skipped': 'Saltata',
 } satisfies Dict;

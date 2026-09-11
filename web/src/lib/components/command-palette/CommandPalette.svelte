@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import * as Command from '$lib/components/ui/command/index.js';
 	import { FileText, Users, Megaphone, FolderOpen, Plus, Key, Settings } from '@lucide/svelte';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	type SearchResult = {
 		kind: 'draft' | 'contact' | 'campaign' | 'project';
@@ -12,6 +14,8 @@
 		href: string;
 	};
 
+	const locale = $derived($page.data.locale as Locale);
+
 	let open = $state(false);
 	let query = $state('');
 	let results = $state<SearchResult[]>([]);
@@ -20,11 +24,15 @@
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// Static fallback actions shown when the query is empty.
-	const staticActions: Array<{ label: string; href: string; icon: typeof Plus }> = [
-		{ label: 'Create campaign', href: '/campaigns/new', icon: Plus },
-		{ label: 'Generate extension token', href: '/settings/extension', icon: Key },
-		{ label: 'Open Settings', href: '/settings', icon: Settings },
-	];
+	const staticActions = $derived([
+		{ label: t(locale, 'command-palette.action-create-campaign'), href: '/campaigns/new', icon: Plus },
+		{
+			label: t(locale, 'command-palette.action-generate-token'),
+			href: '/settings/extension',
+			icon: Key,
+		},
+		{ label: t(locale, 'command-palette.action-open-settings'), href: '/settings', icon: Settings },
+	]);
 
 	function onKeydown(e: KeyboardEvent) {
 		// Toggle on Cmd+K (mac) or Ctrl+K (others).
@@ -54,9 +62,9 @@
 				const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
 				if (res.status >= 500) {
 					console.error('search failed', res.status, body);
-					searchError = 'Search is temporarily unavailable.';
+					searchError = t(locale, 'command-palette.error-unavailable');
 				} else {
-					searchError = body.error ?? body.message ?? 'Search request was rejected.';
+					searchError = body.error ?? body.message ?? t(locale, 'command-palette.error-rejected');
 				}
 				results = [];
 				return;
@@ -64,7 +72,7 @@
 			const data = (await res.json()) as { results: SearchResult[] };
 			results = data.results ?? [];
 		} catch {
-			searchError = 'Search is temporarily unavailable, check your connection.';
+			searchError = t(locale, 'command-palette.error-unavailable-offline');
 			results = [];
 		} finally {
 			loading = false;
@@ -97,10 +105,10 @@
 </script>
 
 <Command.Dialog bind:open shouldFilter={false}>
-	<Command.Input placeholder="Search drafts, contacts, campaigns, projects..." bind:value={query} />
+	<Command.Input placeholder={t(locale, 'command-palette.placeholder')} bind:value={query} />
 	<Command.List>
 		{#if !query.trim()}
-			<Command.Group heading="Actions">
+			<Command.Group heading={t(locale, 'command-palette.heading-actions')}>
 				{#each staticActions as action (action.href + action.label)}
 					{@const Icon = action.icon}
 					<Command.Item onSelect={() => pick(action.href)}>
@@ -110,14 +118,14 @@
 				{/each}
 			</Command.Group>
 		{:else if loading && results.length === 0}
-			<Command.Loading>Searching...</Command.Loading>
+			<Command.Loading>{t(locale, 'command-palette.searching')}</Command.Loading>
 		{:else if searchError}
 			<Command.Empty>{searchError}</Command.Empty>
 		{:else if results.length === 0}
-			<Command.Empty>No results found.</Command.Empty>
+			<Command.Empty>{t(locale, 'command-palette.no-results')}</Command.Empty>
 		{:else}
 			{#if grouped.draft.length > 0}
-				<Command.Group heading="Drafts">
+				<Command.Group heading={t(locale, 'command-palette.heading-drafts')}>
 					{#each grouped.draft as r (r.id)}
 						<Command.Item onSelect={() => pick(r.href)}>
 							<FileText class="size-4" />
@@ -132,7 +140,7 @@
 				</Command.Group>
 			{/if}
 			{#if grouped.contact.length > 0}
-				<Command.Group heading="Contacts">
+				<Command.Group heading={t(locale, 'command-palette.heading-contacts')}>
 					{#each grouped.contact as r (r.id)}
 						<Command.Item onSelect={() => pick(r.href)}>
 							<Users class="size-4" />
@@ -147,7 +155,7 @@
 				</Command.Group>
 			{/if}
 			{#if grouped.campaign.length > 0}
-				<Command.Group heading="Campaigns">
+				<Command.Group heading={t(locale, 'command-palette.heading-campaigns')}>
 					{#each grouped.campaign as r (r.id)}
 						<Command.Item onSelect={() => pick(r.href)}>
 							<Megaphone class="size-4" />
@@ -157,7 +165,7 @@
 				</Command.Group>
 			{/if}
 			{#if grouped.project.length > 0}
-				<Command.Group heading="Projects">
+				<Command.Group heading={t(locale, 'command-palette.heading-projects')}>
 					{#each grouped.project as r (r.id)}
 						<Command.Item onSelect={() => pick(r.href)}>
 							<FolderOpen class="size-4" />
@@ -174,3 +182,4 @@
 		{/if}
 	</Command.List>
 </Command.Dialog>
+

@@ -25,10 +25,13 @@
 	import OrgSwitcher from '$lib/components/OrgSwitcher.svelte';
 	import { resolveTone, PULSE_DOT_CLASS } from '$lib/config/status-badges';
 	import { DOCS_URL } from '$lib/config/docs';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	// The marketing site (#429): the app moved off the apex to app.pitchbox.app
 	// (#422/#424), so nothing here pointed back at it until now.
 	const WEBSITE_URL = 'https://pitchbox.app';
+
+	const locale = $derived($page.data.locale as Locale);
 
 	type NavItem = {
 		href: string;
@@ -72,43 +75,48 @@
 				{
 					label: null,
 					items: [
-						{ href: '/', label: 'Home', icon: Home, exact: true },
-						{ href: '/inbox', label: 'Inbox', icon: Inbox },
+						{ href: '/', label: t(locale, 'nav.home'), icon: Home, exact: true },
+						{ href: '/inbox', label: t(locale, 'nav.inbox'), icon: Inbox },
 					],
 				},
 				{
-					label: 'Outreach',
+					label: t(locale, 'nav.group-outreach'),
 					items: [
-						{ href: '/projects', label: 'Projects', icon: FolderKanban },
-						{ href: '/campaigns', label: 'Campaigns', icon: PlayCircle },
-						{ href: '/playbooks', label: 'Playbooks', icon: BookOpen },
+						{ href: '/projects', label: t(locale, 'nav.projects'), icon: FolderKanban },
+						{ href: '/campaigns', label: t(locale, 'nav.campaigns'), icon: PlayCircle },
+						{ href: '/playbooks', label: t(locale, 'nav.playbooks'), icon: BookOpen },
 					],
 				},
 				{
-					label: 'People',
+					label: t(locale, 'nav.group-people'),
 					items: [
-						{ href: '/people', label: 'People', icon: Users },
-						{ href: '/blocklist', label: 'Blocklist', icon: Shield },
+						{ href: '/people', label: t(locale, 'nav.people'), icon: Users },
+						{ href: '/blocklist', label: t(locale, 'nav.blocklist'), icon: Shield },
 					],
 				},
 				{
-					label: 'Insight',
+					label: t(locale, 'nav.group-insight'),
 					items: [
-						{ href: '/analytics', label: 'Analytics', icon: BarChart3 },
-						{ href: '/audit', label: 'Audit', icon: History },
+						{ href: '/analytics', label: t(locale, 'nav.analytics'), icon: BarChart3 },
+						{ href: '/audit', label: t(locale, 'nav.audit'), icon: History },
 					],
 				},
 				{
-					label: 'Assistant',
+					label: t(locale, 'nav.group-assistant'),
 					items: [
-						{ href: '/companion', label: 'Companion', icon: BrainCircuit, show: isAdmin },
+						{
+							href: '/companion',
+							label: t(locale, 'nav.companion'),
+							icon: BrainCircuit,
+							show: isAdmin,
+						},
 					],
 				},
 				{
 					label: null,
 					items: [
-						{ href: '/notifications', label: 'Notifications', icon: Bell },
-						{ href: '/settings', label: 'Settings', icon: Settings },
+						{ href: '/notifications', label: t(locale, 'nav.notifications'), icon: Bell },
+						{ href: '/settings', label: t(locale, 'nav.settings'), icon: Settings },
 					],
 				},
 			] as NavGroup[]
@@ -132,7 +140,7 @@
 				// a failure the user can act on: the next navigation lands on /login.
 				// Never surface the API's own error string either - it reaches the
 				// user as raw wire text ("unauthenticated") instead of a sentence.
-				if (!unreadStale && res.status !== 401) toast.error('Could not refresh notification count');
+				if (!unreadStale && res.status !== 401) toast.error(t(locale, 'nav.error-refresh-count'));
 				unreadStale = true;
 				return;
 			}
@@ -140,7 +148,7 @@
 			unread = body.unread ?? 0;
 			unreadStale = false;
 		} catch {
-			if (!unreadStale) toast.error('Could not refresh notification count, check your connection');
+			if (!unreadStale) toast.error(t(locale, 'nav.error-refresh-count-offline'));
 			unreadStale = true;
 		}
 	}
@@ -166,16 +174,17 @@
 	type OrgSummary = { id: number; slug: string; name: string; role: string };
 	const orgs = $derived(($page.data?.orgs ?? []) as OrgSummary[]);
 	const activeOrgId = $derived(($page.data?.org as { id: number } | undefined)?.id);
+
 </script>
 
 <aside
-	aria-label="Primary navigation"
+	aria-label={t(locale, 'nav.aria-primary')}
 	class="w-60 h-full bg-background border-r border-border flex flex-col p-4 overflow-hidden min-h-0"
 >
 	<!-- Brand -->
 	<div class="flex items-center gap-2 mb-6">
 		<img src="/favicon.svg" alt="" class="size-7 shrink-0" aria-hidden="true" />
-		<h1 class="font-semibold text-lg">Pitchbox</h1>
+		<h1 class="font-semibold text-lg">{t(locale, 'brand.name')}</h1>
 	</div>
 
 	<!-- Organization switcher: shown only when auth is on and the caller has
@@ -217,7 +226,7 @@
 					<span class="flex-1">{item.label}</span>
 					{#if item.href === '/notifications' && unreadStale}
 						<span
-							title="Could not refresh notification count"
+						title={t(locale, 'nav.error-refresh-count')}
 							class="size-1.5 rounded-full shrink-0 {PULSE_DOT_CLASS[resolveTone('connection-status', 'down')]}"
 						></span>
 					{:else if item.href === '/notifications' && unread > 0}
@@ -239,7 +248,7 @@
 			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
 		>
 			<Globe class="size-4 shrink-0" />
-			Website
+			{t(locale, 'nav.website')}
 		</a>
 		<a
 			href={DOCS_URL}
@@ -248,7 +257,7 @@
 			class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
 		>
 			<BookOpen class="size-4 shrink-0" />
-			Docs
+			{t(locale, 'nav.docs')}
 		</a>
 		{#if authOn}
 			<button
@@ -257,18 +266,18 @@
 					try {
 						const res = await fetch('/api/auth/logout', { method: 'POST' });
 						if (!res.ok) {
-							toast.error('Could not sign out. Please try again.');
+						toast.error(t(locale, 'nav.error-sign-out'));
 							return;
 						}
 						await goto('/login');
 					} catch {
-						toast.error('Could not sign out, check your connection.');
+					toast.error(t(locale, 'nav.error-sign-out-offline'));
 					}
 				}}
 				class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors text-left"
 			>
 				<LogOut class="size-4 shrink-0" />
-				Sign out
+				{t(locale, 'nav.sign-out')}
 			</button>
 		{/if}
 		<div class="px-1 pt-1">

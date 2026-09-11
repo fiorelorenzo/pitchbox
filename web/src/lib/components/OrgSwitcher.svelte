@@ -5,13 +5,16 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Check, ChevronsUpDown, Plus, Users } from '@lucide/svelte';
+  import { page } from '$app/stores';
   import { goto, invalidateAll } from '$app/navigation';
   import { toast } from 'svelte-sonner';
+  import { t, type Locale } from '$lib/i18n/index.js';
 
   type OrgSummary = { id: number; slug: string; name: string; role: string };
   type Props = { orgs: OrgSummary[]; activeOrgId?: number };
   let { orgs, activeOrgId }: Props = $props();
 
+  const locale = $derived($page.data.locale as Locale);
   const activeOrg = $derived(orgs.find((o) => o.id === activeOrgId) ?? orgs[0]);
 
   function initials(name: string): string {
@@ -32,12 +35,12 @@
         body: JSON.stringify({ organizationId }),
       });
       if (!res.ok) {
-        toast.error('Could not switch organization');
+        toast.error(t(locale, 'org-switcher.error-switch'));
         return;
       }
       await invalidateAll();
     } catch {
-      toast.error('Could not switch organization');
+      toast.error(t(locale, 'org-switcher.error-switch'));
     } finally {
       switching = false;
     }
@@ -72,22 +75,24 @@
       });
       const body = await res.json().catch(() => ({}));
       if (res.status === 409) {
-        toast.error('That URL is already taken, pick a different name');
+        toast.error(t(locale, 'org-switcher.error-slug-taken'));
         return;
       }
       if (res.status === 400) {
-        toast.error('Enter a valid name (at least 3 letters or numbers)');
+        toast.error(t(locale, 'org-switcher.error-invalid-name'));
         return;
       }
       if (!res.ok) {
-        toast.error((body as { message?: string })?.message ?? 'Could not create organization');
+        toast.error(
+          (body as { message?: string })?.message ?? t(locale, 'org-switcher.error-create-generic'),
+        );
         return;
       }
-      toast.success(`Created ${trimmed}`);
+      toast.success(t(locale, 'org-switcher.success-created', { name: trimmed }));
       createOpen = false;
       await invalidateAll();
     } catch {
-      toast.error('Could not create organization');
+      toast.error(t(locale, 'org-switcher.error-create-generic'));
     } finally {
       creating = false;
     }
@@ -108,14 +113,14 @@
             {initials(activeOrg?.name ?? '?')}
           </Avatar.Fallback>
         </Avatar.Root>
-        <span class="flex-1 truncate font-medium">{activeOrg?.name ?? 'Organization'}</span>
+        <span class="flex-1 truncate font-medium">{activeOrg?.name ?? t(locale, 'org-switcher.label')}</span>
         <ChevronsUpDown class="size-4 shrink-0 text-muted-foreground" />
       </button>
     {/snippet}
   </DropdownMenu.Trigger>
   <DropdownMenu.Content class="w-56" align="start">
     <DropdownMenu.Label class="text-xs font-normal text-muted-foreground">
-      Organizations
+      {t(locale, 'org-switcher.organizations-label')}
     </DropdownMenu.Label>
     {#each orgs as org (org.id)}
       <DropdownMenu.Item class="gap-2" onclick={() => switchOrg(org.id)}>
@@ -136,11 +141,11 @@
     <DropdownMenu.Separator />
     <DropdownMenu.Item class="gap-2" onclick={() => goto('/settings/organization')}>
       <Users class="size-4" />
-      Organization
+      {t(locale, 'org-switcher.organization-link')}
     </DropdownMenu.Item>
     <DropdownMenu.Item class="gap-2" onclick={openCreate}>
       <Plus class="size-4" />
-      Create organization
+      {t(locale, 'org-switcher.create-link')}
     </DropdownMenu.Item>
   </DropdownMenu.Content>
 </DropdownMenu.Root>
@@ -148,13 +153,13 @@
 <Dialog.Root bind:open={createOpen}>
   <Dialog.Content class="sm:max-w-md">
     <Dialog.Header>
-      <Dialog.Title>Create organization</Dialog.Title>
+      <Dialog.Title>{t(locale, 'org-switcher.create-link')}</Dialog.Title>
       <Dialog.Description>
-        Give your new workspace a name. You can invite people afterwards.
+        {t(locale, 'org-switcher.create-description')}
       </Dialog.Description>
     </Dialog.Header>
     <div class="flex flex-col gap-2 py-2">
-      <label for="org-name" class="text-sm font-medium">Name</label>
+      <label for="org-name" class="text-sm font-medium">{t(locale, 'org-switcher.name-label')}</label>
       <Input
         id="org-name"
         bind:value={name}
@@ -165,15 +170,17 @@
       />
       {#if slug}
         <p class="text-xs text-muted-foreground">
-          URL: <span class="font-mono text-foreground">{slug}</span>
+          {t(locale, 'org-switcher.url-prefix')} <span class="font-mono text-foreground">{slug}</span>
         </p>
       {/if}
     </div>
     <Dialog.Footer>
       <Button variant="ghost" onclick={() => (createOpen = false)} disabled={creating}>
-        Cancel
+        {t(locale, 'org-switcher.cancel')}
       </Button>
-      <Button onclick={createOrg} loading={creating} disabled={!slug}>Create</Button>
+      <Button onclick={createOrg} loading={creating} disabled={!slug}
+        >{t(locale, 'org-switcher.create-button')}</Button
+      >
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

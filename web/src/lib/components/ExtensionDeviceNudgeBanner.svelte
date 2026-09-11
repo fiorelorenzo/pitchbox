@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Puzzle, RefreshCw, X } from '@lucide/svelte';
+	import { page } from '$app/stores';
 	import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	// Nudges an org toward installing or re-pairing the browser extension.
 	// `kind` comes from `getExtensionDeviceNudge` (web/src/lib/server/extension-sync.ts):
@@ -17,6 +19,7 @@
 		orgId = null,
 	}: { kind?: 'no_device' | 'stale_device' | null; orgId?: number | null } = $props();
 
+	const locale = $derived($page.data.locale as Locale);
 	const storageKey = $derived(`pitchbox.extension_nudge_dismissed.${orgId ?? 'default'}`);
 
 	let dismissedKind = $state<string | null>(null);
@@ -46,12 +49,12 @@
 	const copy = $derived(
 		kind === 'no_device'
 			? {
-					title: 'Get faster reply detection with the browser extension',
-					body: 'No browser extension is paired with this workspace yet. Install it and pair a device from Settings > Browser extension so incoming Reddit replies show up here automatically.',
+					title: t(locale, 'extension-nudge.no-device-title'),
+					body: t(locale, 'extension-nudge.no-device-body'),
 				}
 			: {
-					title: 'Your browser extension has gone quiet',
-					body: "No paired device has reported in for a while. Open Reddit in the browser it's installed in, or pair a new device from Settings > Browser extension, so incoming replies keep syncing.",
+					title: t(locale, 'extension-nudge.stale-title'),
+					body: t(locale, 'extension-nudge.stale-body'),
 				},
 	);
 </script>
@@ -73,7 +76,7 @@
 		<button
 			type="button"
 			onclick={dismiss}
-			aria-label="Dismiss"
+			aria-label={t(locale, 'extension-nudge.dismiss')}
 			class="shrink-0 rounded p-0.5 text-sky-800/70 hover:bg-sky-500/20 hover:text-sky-900 dark:text-sky-200/70 dark:hover:text-sky-100"
 		>
 			<X class="size-3.5" aria-hidden="true" />

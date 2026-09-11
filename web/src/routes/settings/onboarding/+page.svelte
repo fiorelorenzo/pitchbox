@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { CheckCircle2, Circle } from '@lucide/svelte';
+	import { page } from '$app/stores';
 	import { invalidateAll } from '$app/navigation';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import PageContainer from '$lib/components/PageContainer.svelte';
@@ -7,20 +8,28 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { TONE_CLASS, TONE_TEXT_CLASS } from '$lib/config/status-badges';
-	import { ONBOARDING_STEP_META } from '$lib/onboarding-steps';
+	import { onboardingStepMeta } from '$lib/onboarding-steps';
+	import { t, type Locale } from '$lib/i18n/index.js';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
+	const locale = $derived($page.data.locale as Locale);
 	const applicableSteps = $derived(data.snapshot.steps.filter((s) => s.applicable));
 
-	const STATUS_LABEL: Record<string, { label: string; tone: 'muted' | 'sky' | 'emerald' | 'slate' }> = {
-		not_started: { label: 'Not started', tone: 'muted' },
-		in_progress: { label: 'In progress', tone: 'sky' },
-		completed: { label: 'Completed', tone: 'emerald' },
-		skipped: { label: 'Skipped', tone: 'slate' },
-	};
-	const status = $derived(STATUS_LABEL[data.snapshot.status] ?? STATUS_LABEL.not_started);
+	const statusLabel = $derived(
+		(
+			{
+				not_started: { label: t(locale, 'settings.onboarding.status.not-started'), tone: 'muted' },
+				in_progress: { label: t(locale, 'settings.onboarding.status.in-progress'), tone: 'sky' },
+				completed: { label: t(locale, 'settings.onboarding.status.completed'), tone: 'emerald' },
+				skipped: { label: t(locale, 'settings.onboarding.status.skipped'), tone: 'slate' },
+			} as Record<string, { label: string; tone: 'muted' | 'sky' | 'emerald' | 'slate' }>
+		)[data.snapshot.status] ?? {
+			label: t(locale, 'settings.onboarding.status.not-started'),
+			tone: 'muted' as const,
+		},
+	);
 
 	let busy = $state(false);
 
@@ -36,19 +45,25 @@
 </script>
 
 <PageContainer size="default">
-	<Seo title="Settings - Onboarding" description="The guided first-run setup: its status, and starting it again." />
+	<Seo
+		title={t(locale, 'settings.onboarding.seo-title')}
+		description={t(locale, 'settings.onboarding.seo-description')}
+	/>
 
-	<PageHeader title="Onboarding" description="The guided setup that ran on first sign-in." />
+	<PageHeader
+		title={t(locale, 'settings.onboarding.title')}
+		description={t(locale, 'settings.onboarding.description')}
+	/>
 
 	<div class="mt-4 flex flex-col gap-4">
 		<Card.Root>
 			<Card.Header>
 				<div class="flex items-center justify-between gap-3">
-					<Card.Title>Status</Card.Title>
+					<Card.Title>{t(locale, 'settings.onboarding.status-label')}</Card.Title>
 					<span
-						class={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${TONE_CLASS[status.tone]}`}
+						class={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${TONE_CLASS[statusLabel.tone]}`}
 					>
-						{status.label}
+						{statusLabel.label}
 					</span>
 				</div>
 			</Card.Header>
@@ -61,16 +76,16 @@
 							<Circle class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 						{/if}
 						<span class={step.complete ? undefined : 'text-muted-foreground'}>
-							{ONBOARDING_STEP_META[step.id].title}
+							{onboardingStepMeta(locale, step.id).title}
 						</span>
 					</div>
 				{/each}
 			</Card.Content>
 			<Card.Footer class="flex justify-end gap-2">
 				{#if data.snapshot.status === 'in_progress'}
-					<Button href="/onboarding">Continue setup</Button>
+					<Button href="/onboarding">{t(locale, 'onboarding-banner.continue-setup')}</Button>
 				{:else}
-					<Button onclick={restart} disabled={busy}>Start setup again</Button>
+					<Button onclick={restart} disabled={busy}>{t(locale, 'onboarding.page.start-again')}</Button>
 				{/if}
 			</Card.Footer>
 		</Card.Root>

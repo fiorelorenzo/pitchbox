@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { AlertTriangle, Ban } from '@lucide/svelte';
+	import { page } from '$app/stores';
 	import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
+	import { t, splitAroundToken, type Locale } from '$lib/i18n/index.js';
 
 	// #554: a failed payment's grace window, and the read-only state past it -
 	// on every page, per the issue, so it is rendered from the root layout
@@ -15,6 +17,7 @@
 		billing,
 	}: { billing: { graceEndsAt: string; readOnly: boolean } | null } = $props();
 
+	const locale = $derived($page.data.locale as Locale);
 	const date = $derived(billing ? new Date(billing.graceEndsAt).toDateString() : '');
 </script>
 
@@ -32,26 +35,26 @@
 		{/if}
 		<div class="flex-1">
 			{#if billing.readOnly}
-				<div class="font-medium">Account is read-only since {date}</div>
+				{@const [before, after] = splitAroundToken(locale, 'billing-banner.read-only-body', 'link')}
+				<div class="font-medium">{t(locale, 'billing-banner.read-only-title', { date })}</div>
 				<div class="text-xs text-rose-800/85 dark:text-rose-200/80">
-					A payment failed and nothing succeeded during the grace period, so new runs,
-					suggestions, accepts, projects, campaigns, invites and devices are refused. Everything
-					already here stays readable - fix the payment method in the
-					<a
+					{before}<a
 						href="/settings/billing"
 						class="underline underline-offset-2 hover:text-rose-900 dark:hover:text-rose-100"
-						>customer portal</a
-					> to restore service.
+						>{t(locale, 'billing-banner.customer-portal-link')}</a
+					>{after}
 				</div>
 			{:else}
-				<div class="font-medium">Payment failed - grace period until {date}</div>
+				{@const [before, after] = splitAroundToken(locale, 'billing-banner.grace-body', 'link', {
+					date,
+				})}
+				<div class="font-medium">{t(locale, 'billing-banner.grace-title', { date })}</div>
 				<div class="text-xs text-amber-800/85 dark:text-amber-200/80">
-					Your plan keeps working normally until then. Update your payment method in the
-					<a
+					{before}<a
 						href="/settings/billing"
 						class="underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100"
-						>customer portal</a
-					> before {date} to avoid the account going read-only.
+						>{t(locale, 'billing-banner.customer-portal-link')}</a
+					>{after}
 				</div>
 			{/if}
 		</div>
