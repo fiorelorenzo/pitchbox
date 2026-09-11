@@ -31,7 +31,7 @@ export async function POST(event: RequestEvent) {
   }
   await requireVerifiedEmail(event);
 
-  const readiness = await getCampaignReadiness(body.campaignId);
+  const readiness = await getCampaignReadiness(body.campaignId, event.locals.locale);
   if (!readiness.ready) {
     return json({ error: 'not_ready', issues: readiness.issues }, { status: 422 });
   }

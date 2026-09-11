@@ -77,14 +77,26 @@ describe('getCampaignReadiness', () => {
 
   it('reports profile_missing when config is empty', async () => {
     const id = await makeCampaign({ withAccount: true, status: 'draft' });
-    const r = await getCampaignReadiness(id);
+    const r = await getCampaignReadiness(id, 'en');
     expect(r.ready).toBe(false);
     expect(r.issues.some((i) => i.id === 'profile_missing')).toBe(true);
   });
 
+  it("renders the same issue in the reader's own locale (LOR-297)", async () => {
+    const id = await makeCampaign({ withAccount: true, status: 'draft' });
+    const en = await getCampaignReadiness(id, 'en');
+    const it = await getCampaignReadiness(id, 'it');
+    const enIssue = en.issues.find((i) => i.id === 'profile_missing');
+    const itIssue = it.issues.find((i) => i.id === 'profile_missing');
+    expect(enIssue?.title).toBe('Campaign profile not generated');
+    expect(itIssue?.title).toBe('Profilo della campagna non generato');
+    expect(itIssue?.fix.label).toBe('Genera profilo');
+    expect(itIssue?.title).not.toBe(enIssue?.title);
+  });
+
   it('reports no_account when project has no account', async () => {
     const id = await makeCampaign({ withProfile: true });
-    const r = await getCampaignReadiness(id);
+    const r = await getCampaignReadiness(id, 'en');
     expect(r.issues.some((i) => i.id === 'no_account')).toBe(true);
   });
 
@@ -94,13 +106,13 @@ describe('getCampaignReadiness', () => {
       withAccount: true,
       agentRunner: 'codex',
     });
-    const r = await getCampaignReadiness(id);
+    const r = await getCampaignReadiness(id, 'en');
     expect(r.issues.some((i) => i.id === 'runner_unavailable')).toBe(true);
   });
 
   it('returns ready=true once profile, account, and a runnable runner are present', async () => {
     const id = await makeCampaign({ withProfile: true, withAccount: true });
-    const r = await getCampaignReadiness(id);
+    const r = await getCampaignReadiness(id, 'en');
     // claude-code may or may not be installed in the test environment - the
     // remaining gating issues should at minimum exclude profile_missing and
     // no_account.
@@ -109,7 +121,7 @@ describe('getCampaignReadiness', () => {
   });
 
   it('returns empty issues + ready=false when the campaign id is unknown', async () => {
-    const r = await getCampaignReadiness(999_999);
+    const r = await getCampaignReadiness(999_999, 'en');
     expect(r.ready).toBe(false);
     expect(r.issues).toEqual([]);
   });

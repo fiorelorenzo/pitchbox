@@ -5,6 +5,7 @@
   import { SelectField } from '$lib/components/ui/select-field';
   import { Button } from '$lib/components/ui/button';
   import { previewCron } from '@pitchbox/daemon/cron';
+  import { renderCronDescription } from '$lib/cron-descriptor-i18n.js';
   import { TONE_TEXT_CLASS } from '$lib/config/status-badges';
   import {
     WEEKDAY_VALUES,
@@ -149,7 +150,7 @@
   {#if preview}
     {#if preview.valid}
       <div class="text-xs space-y-0.5">
-        <p>{preview.description} {t(locale, 'campaigns.cron.utc-suffix')}</p>
+        <p>{renderCronDescription(preview.descriptor, locale)} {t(locale, 'campaigns.cron.utc-suffix')}</p>
         <p class="text-muted-foreground">
           {t(locale, 'campaigns.cron.next-runs-label', { runs: preview.nextRuns.map(formatRun).join(', ') })}
         </p>

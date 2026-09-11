@@ -3,6 +3,7 @@ import { getDb, schema } from './db.js';
 import { getSchema } from '@pitchbox/shared/campaigns';
 import { AGENT_RUNNER_META, type AgentRunnerSlug } from '@pitchbox/shared/agents/meta';
 import { detectRunner } from '@pitchbox/shared/agents/detect';
+import { t, type Locale } from '$lib/i18n/index.js';
 
 export type ReadinessIssue = {
   id:
@@ -32,7 +33,22 @@ export type CampaignReadiness = {
   campaignRunning: boolean;
 };
 
-export async function getCampaignReadiness(campaignId: number): Promise<CampaignReadiness> {
+/**
+ * Composes each issue's title/hint/fix.label already rendered in `locale`
+ * (LOR-297): this page's own copy lives in `$lib/i18n` (LOR-263), and a
+ * readiness issue reaches nobody but this dashboard - no mail, no
+ * extension - so it follows that same catalogue rather than
+ * `@pitchbox/shared/messages`, matching the sibling "runner not
+ * implemented" string `routes/campaigns/new/+page.server.ts` already
+ * renders the same way. A `where`/`message`/`detail` fragment sourced from
+ * a Zod validation error or a runner detection probe is passed through
+ * untranslated inside the sentence, same as any other diagnostic text this
+ * codebase doesn't own the wording of.
+ */
+export async function getCampaignReadiness(
+  campaignId: number,
+  locale: Locale,
+): Promise<CampaignReadiness> {
   const db = getDb();
   const [campaign] = await db
     .select()
@@ -60,16 +76,16 @@ export async function getCampaignReadiness(campaignId: number): Promise<Campaign
   if (generatingProfile) {
     issues.push({
       id: 'profile_generating',
-      title: 'Generating campaign profile…',
-      hint: 'An agent run is producing the profile right now. This usually takes a minute or two.',
-      fix: { label: 'In progress', kind: 'progress' },
+      title: t(locale, 'campaigns.readiness.profile-generating-title'),
+      hint: t(locale, 'campaigns.readiness.profile-generating-hint'),
+      fix: { label: t(locale, 'campaigns.readiness.fix-in-progress'), kind: 'progress' },
     });
   } else if (profileEmpty) {
     issues.push({
       id: 'profile_missing',
-      title: 'Campaign profile not generated',
-      hint: 'Generate the profile from an objective so the agent knows what to target.',
-      fix: { label: 'Generate profile', kind: 'profile' },
+      title: t(locale, 'campaigns.readiness.profile-missing-title'),
+      hint: t(locale, 'campaigns.readiness.profile-missing-hint'),
+      fix: { label: t(locale, 'campaigns.readiness.fix-generate-profile'), kind: 'profile' },
     });
   } else {
     // Skill-known scenarios validate strictly; non-registered slugs are accepted as-is.
@@ -85,11 +101,12 @@ export async function getCampaignReadiness(campaignId: number): Promise<Campaign
       if (!parsed.success) {
         const first = parsed.error.issues[0];
         const where = first?.path?.length ? first.path.join('.') : '(root)';
+        const message = first?.message ?? t(locale, 'campaigns.readiness.schema-mismatch-fallback');
         issues.push({
           id: 'profile_invalid',
-          title: 'Campaign profile is invalid',
-          hint: `${where}: ${first?.message ?? 'schema mismatch'} - regenerate the profile.`,
-          fix: { label: 'Regenerate profile', kind: 'profile' },
+          title: t(locale, 'campaigns.readiness.profile-invalid-title'),
+          hint: t(locale, 'campaigns.readiness.profile-invalid-hint', { where, message }),
+          fix: { label: t(locale, 'campaigns.readiness.fix-regenerate-profile'), kind: 'profile' },
         });
       }
     }
@@ -99,18 +116,30 @@ export async function getCampaignReadiness(campaignId: number): Promise<Campaign
   if (!runnerMeta || !runnerMeta.implemented) {
     issues.push({
       id: 'runner_unavailable',
-      title: 'Agent runner unavailable',
-      hint: `${campaign.agentRunner} is not a supported agent runner.`,
-      fix: { label: 'Open settings', kind: 'runner', href: '/settings/runners' },
+      title: t(locale, 'campaigns.readiness.runner-not-supported-title'),
+      hint: t(locale, 'campaigns.readiness.runner-not-supported-hint', {
+        runner: campaign.agentRunner,
+      }),
+      fix: {
+        label: t(locale, 'campaigns.readiness.fix-open-settings'),
+        kind: 'runner',
+        href: '/settings/runners',
+      },
     });
   } else {
     const detection = await detectRunner(campaign.agentRunner as AgentRunnerSlug);
     if (!detection.available) {
       issues.push({
         id: 'runner_unavailable',
-        title: `${runnerMeta.label} not installed`,
-        hint: detection.error ?? 'Runner CLI not detected on PATH.',
-        fix: { label: 'Open settings', kind: 'runner', href: '/settings/runners' },
+        title: t(locale, 'campaigns.readiness.runner-not-installed-title', {
+          label: runnerMeta.label,
+        }),
+        hint: detection.error ?? t(locale, 'campaigns.readiness.runner-cli-not-detected'),
+        fix: {
+          label: t(locale, 'campaigns.readiness.fix-open-settings'),
+          kind: 'runner',
+          href: '/settings/runners',
+        },
       });
     }
   }
@@ -122,10 +151,10 @@ export async function getCampaignReadiness(campaignId: number): Promise<Campaign
   if (accounts.length === 0) {
     issues.push({
       id: 'no_account',
-      title: 'No account linked to this project',
-      hint: 'The agent needs at least one account on the target platform before it can run.',
+      title: t(locale, 'campaigns.readiness.no-account-title'),
+      hint: t(locale, 'campaigns.readiness.no-account-hint'),
       fix: {
-        label: 'Add account',
+        label: t(locale, 'campaigns.readiness.fix-add-account'),
         kind: 'accounts',
         href: `/projects/${campaign.projectId}?tab=accounts`,
       },
