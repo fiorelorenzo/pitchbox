@@ -208,4 +208,138 @@ describe('pitchbox drafts:reply:*', () => {
       cliWithStdin(`drafts:reply:finish --run=${runId}`, JSON.stringify({ body: '  ' })),
     ).toThrow();
   });
+
+  // LOR-294: `replyDraftFinish` used to call `checkStyle`/`scoreDraftQuality`
+  // with no `expectedLanguage`, so a reply drafted for a pinned campaign
+  // scored and was checked differently from a created draft answering to
+  // the same campaign. Body is the LOR-291 fixture shape - short enough
+  // that `classifyLanguage` alone reads it as 'unknown', which is exactly
+  // the case the pin exists to settle. Before this issue an `unknown`
+  // verdict ran both phrase lists (a spurious English "leverage" finding
+  // alongside the real Italian one) and scored with no expected language
+  // recorded at all - both wrong for a campaign that pinned Italian.
+  it('finish threads the campaign language pin into both the style checker and the quality score (LOR-294)', async () => {
+    const db = getDb();
+    const [platform] = await db
+      .select()
+      .from(schema.platforms)
+      .where(eq(schema.platforms.slug, 'reddit'));
+    const [org] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(sql`slug = 'default'`);
+    const [proj] = await db
+      .insert(schema.projects)
+      .values({ organizationId: org.id, slug: 'p-lor294', name: 'P294' })
+      .returning();
+    const [account] = await db
+      .insert(schema.accounts)
+      .values({ projectId: proj.id, platformId: platform.id, handle: 'us294' })
+      .returning();
+    const [campaign] = await db
+      .insert(schema.campaigns)
+      .values({
+        projectId: proj.id,
+        platformId: platform.id,
+        name: 'c294',
+        skillSlug: 'reddit-scout',
+        config: { voice: { language: 'it' } },
+      })
+      .returning();
+    const [origin] = await db
+      .insert(schema.runs)
+      .values({ campaignId: campaign.id, trigger: 'manual', status: 'success' })
+      .returning();
+    const [parent] = await db
+      .insert(schema.drafts)
+      .values({
+        runId: origin.id,
+        projectId: proj.id,
+        platformId: platform.id,
+        accountId: account.id,
+        kind: 'dm',
+        body: 'original',
+        targetUser: 'them294',
+        state: 'sent',
+      })
+      .returning();
+    const [contact] = await db
+      .insert(schema.contactHistory)
+      .values({
+        platformId: platform.id,
+        accountHandle: account.handle,
+        targetUser: 'them294',
+        draftId: parent.id,
+        organizationId: org.id,
+      })
+      .returning();
+    const [inbound] = await db
+      .insert(schema.messages)
+      .values({
+        contactId: contact.id,
+        draftId: parent.id,
+        platformId: platform.id,
+        author: 'them294',
+        isFromUs: false,
+        body: 'tell me more',
+        platformMessageId: 'm294',
+        createdAtPlatform: new Date(),
+        source: 'legacy',
+      })
+      .returning();
+    const body = 'Sinergia forte qui, complimenti, leverage forte.';
+    const [reply] = await db
+      .insert(schema.drafts)
+      .values({
+        runId: origin.id,
+        projectId: proj.id,
+        platformId: platform.id,
+        accountId: account.id,
+        kind: 'reply_dm',
+        body: '[reply pending]',
+        targetUser: 'them294',
+        state: 'pending_review',
+        parentMessageId: inbound.id,
+        sourceRef: { kind: 'reply', parentDraftId: parent.id, parentMessageId: inbound.id },
+      })
+      .returning();
+    // A reply_drafting run copies its campaignId forward from the parent
+    // draft's origin run (shared/src/reply-drafter.ts's
+    // startReplyDrafting) - reproduced by hand here since this test
+    // inserts the run directly rather than calling that function.
+    const [run] = await db
+      .insert(schema.runs)
+      .values({
+        kind: 'reply_drafting',
+        campaignId: campaign.id,
+        projectId: proj.id,
+        trigger: 'manual',
+        status: 'running',
+        params: { replyDraftId: reply.id, parentMessageId: inbound.id },
+      })
+      .returning();
+
+    const out = cliWithStdin(`drafts:reply:finish --run=${run.id}`, JSON.stringify({ body }));
+    expect(lastJson(out).ok).toBe(true);
+
+    const [d] = await db.select().from(schema.drafts).where(eq(schema.drafts.id, reply.id));
+    const metadata = d.metadata as {
+      styleFindings?: Array<{ ruleId: string; message: string; span: string }>;
+    };
+    // Checked: only the Italian rule list ran - the pin excludes the
+    // English list outright, so "leverage" (a real English-list phrase
+    // too) never ships as a second, spurious finding.
+    const puffery = metadata.styleFindings!.filter((f) => f.ruleId === 'puffery');
+    expect(puffery).toHaveLength(1);
+    expect(puffery[0]?.span).toBe('Sinergia');
+    expect(puffery[0]?.message).toContain('(Italian)');
+    // Scored: the quality axis recorded the pin as the expected language,
+    // not the null it falls back to with no pin (the reply thread still
+    // supplies a post via the inbound message, but its own language plays
+    // no part in what the pin overrides here).
+    const detail = (d.metadata as Record<string, unknown>).qualityDetail as {
+      deterministic: { expectedLanguage: string | null };
+    };
+    expect(detail.deterministic.expectedLanguage).toBe('it');
+  });
 });
