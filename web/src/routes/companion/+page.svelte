@@ -12,15 +12,21 @@
 	import { toast } from 'svelte-sonner';
 	import { enhance } from '$app/forms';
 	import { untrack } from 'svelte';
+	import { fly } from 'svelte/transition';
 	import { relativeTime } from '$lib/utils/time';
 	import { page } from '$app/stores';
 	import { t, type Locale } from '$lib/i18n/index.js';
 
-	// Companion -> Persona (LOR-178/LOR-179, docs/design/DECISIONS.md D35):
-	// the landing page of its own top-level sidebar group, split out of the
-	// old three-card settings/companion page so the fields Lorenzo corrects
-	// most - handle, display name, headline, about, with the provenance
-	// badge - are the first thing open without scrolling.
+	// Companion -> Persona (LOR-178/LOR-179, docs/design/DECISIONS.md D35,
+	// refined by D43 then D49): the landing page of its own top-level
+	// sidebar group. D43's rail-plus-two-columns arrangement put Experience
+	// beside identity, but its three-field row (title/company/period) at a
+	// ~550px column squeezed each input to ~155px and clipped real values
+	// ("Chief Technol...", "giu 2026 - Pre..."). D49 drops the second
+	// column for this page - one card per idea, stacked - and moves Save
+	// into a fixed bottom bar (the same pattern
+	// settings/linkedin-assist/+page.svelte uses) so it stays reachable no
+	// matter how many Experience entries a real profile has.
 
 	const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -42,6 +48,25 @@
 
 	const locale = $derived($page.data.locale as Locale);
 
+	type Fields = {
+		handle: string;
+		displayName: string;
+		headline: string;
+		about: string;
+		notes: string;
+		experiences: Experience[];
+	};
+	function fieldsOf(p: Persona | null): Fields {
+		return {
+			handle: p?.handle ?? '',
+			displayName: p?.displayName ?? '',
+			headline: p?.headline ?? '',
+			about: p?.about ?? '',
+			notes: p?.notes ?? '',
+			experiences: (p?.experiences ?? []).map((e) => ({ ...e })),
+		};
+	}
+
 	let handle = $state(untrack(() => data.profile?.handle ?? ''));
 	let displayName = $state(untrack(() => data.profile?.displayName ?? ''));
 	let headline = $state(untrack(() => data.profile?.headline ?? ''));
@@ -51,6 +76,25 @@
 		untrack(() => (data.profile?.experiences ?? []).map((e) => ({ ...e }))),
 	);
 	let savingProfile = $state(false);
+	let formRef: HTMLFormElement | undefined = $state();
+
+	// Dirty-tracking for the fixed save bar below: shown only once there is
+	// something to save, rather than a Save button buried below however
+	// many Experience entries a real profile has.
+	let initial = $state(untrack(() => fieldsOf(data.profile)));
+	const dirty = $derived(
+		JSON.stringify({ handle, displayName, headline, about, notes, experiences }) !==
+			JSON.stringify(initial),
+	);
+
+	function discard() {
+		handle = initial.handle;
+		displayName = initial.displayName;
+		headline = initial.headline;
+		about = initial.about;
+		notes = initial.notes;
+		experiences = initial.experiences.map((e) => ({ ...e }));
+	}
 
 	const capturedAt = $derived(data.profile?.capturedAt ? new Date(data.profile.capturedAt) : null);
 	const staleCapture = $derived(
@@ -73,6 +117,7 @@
 			about = form.profile.about ?? '';
 			notes = form.profile.notes ?? '';
 			experiences = form.profile.experiences.map((e) => ({ ...e }));
+			initial = fieldsOf(form.profile);
 		} else if (form?.error) {
 			toast.error(t(locale, 'companion.persona.error-save-failed'));
 		}
@@ -84,7 +129,7 @@
 	description={t(locale, 'companion.persona.seo-description')}
 />
 
-<PageContainer size="default">
+<PageContainer size="default" class="max-w-5xl">
 	<PageHeader
 		title={t(locale, 'companion.persona.title')}
 		description={t(locale, 'companion.persona.description')}
@@ -110,6 +155,7 @@
 		<form
 			method="POST"
 			action="?/saveProfile"
+			bind:this={formRef}
 			use:enhance={({ formData }) => {
 				formData.set('experiences', JSON.stringify(experiences));
 				savingProfile = true;
@@ -118,7 +164,7 @@
 					savingProfile = false;
 				};
 			}}
-			class="grid items-start gap-4 xl:grid-cols-2"
+			class="flex flex-col gap-6"
 		>
 			<Card.Root>
 				<Card.Header>
@@ -166,26 +212,41 @@
 						<label class="text-sm font-medium" for="headline">{t(locale, 'companion.persona.headline-label')}</label>
 						<Input id="headline" name="headline" bind:value={headline} />
 					</div>
-					<div class="grid gap-1.5">
-						<label class="text-sm font-medium" for="about">{t(locale, 'companion.persona.about-label')}</label>
-						<Textarea id="about" name="about" bind:value={about} rows={4} />
-					</div>
-					<div class="grid gap-1.5">
-						<label class="text-sm font-medium" for="notes">{t(locale, 'companion.persona.notes-label')}</label>
-						<Textarea
-							id="notes"
-							name="notes"
-							bind:value={notes}
-							rows={3}
-							placeholder={t(locale, 'companion.persona.notes-placeholder')}
-						/>
-						<p class="text-xs text-muted-foreground">
-							{t(locale, 'companion.persona.notes-hint')}
-						</p>
-					</div>
-					<div>
-						<Button type="submit" disabled={savingProfile}>{t(locale, 'companion.persona.save-button')}</Button>
-					</div>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>{t(locale, 'companion.persona.about-label')}</Card.Title>
+				</Card.Header>
+				<Card.Content>
+					<Textarea
+						id="about"
+						name="about"
+						bind:value={about}
+						rows={5}
+						aria-label={t(locale, 'companion.persona.about-label')}
+						class="field-sizing-fixed max-h-48 resize-none overflow-y-auto"
+					/>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>{t(locale, 'companion.persona.notes-label')}</Card.Title>
+					<Card.Description>
+						{t(locale, 'companion.persona.notes-hint')}
+					</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					<Textarea
+						id="notes"
+						name="notes"
+						bind:value={notes}
+						rows={3}
+						placeholder={t(locale, 'companion.persona.notes-placeholder')}
+						aria-label={t(locale, 'companion.persona.notes-label')}
+					/>
 				</Card.Content>
 			</Card.Root>
 
@@ -196,24 +257,29 @@
 						{t(locale, 'companion.persona.experience-description')}
 					</Card.Description>
 				</Card.Header>
-				<Card.Content class="flex flex-col gap-2">
+				<Card.Content class="flex flex-col gap-4">
 					{#each experiences as experience, i (i)}
 						<div class="flex flex-col gap-2 rounded-md border border-border p-3">
-							<div class="flex items-start justify-between gap-2">
-								<div class="grid flex-1 gap-2 sm:grid-cols-3">
-									<Input bind:value={experience.title} placeholder={t(locale, 'companion.persona.experience-field.title')} aria-label={t(locale, 'companion.persona.experience-field.title')} />
-									<Input bind:value={experience.company} placeholder={t(locale, 'companion.persona.experience-field.company')} aria-label={t(locale, 'companion.persona.experience-field.company')} />
-									<Input bind:value={experience.period} placeholder={t(locale, 'companion.persona.experience-field.period')} aria-label={t(locale, 'companion.persona.experience-field.period')} />
-								</div>
+							<div class="flex items-start gap-2">
+								<Input
+									bind:value={experience.title}
+									placeholder={t(locale, 'companion.persona.experience-field.title')}
+									aria-label={t(locale, 'companion.persona.experience-field.title')}
+									class="flex-1"
+								/>
 								<Button
 									type="button"
 									variant="ghost"
 									size="icon-sm"
 									onclick={() => removeExperience(i)}
-								aria-label={t(locale, 'companion.persona.remove-experience-aria')}
+									aria-label={t(locale, 'companion.persona.remove-experience-aria')}
 								>
 									<Trash2 class="size-4" />
 								</Button>
+							</div>
+							<div class="grid gap-2 sm:grid-cols-2">
+								<Input bind:value={experience.company} placeholder={t(locale, 'companion.persona.experience-field.company')} aria-label={t(locale, 'companion.persona.experience-field.company')} />
+								<Input bind:value={experience.period} placeholder={t(locale, 'companion.persona.experience-field.period')} aria-label={t(locale, 'companion.persona.experience-field.period')} />
 							</div>
 							<Textarea
 								bind:value={experience.summary}
@@ -233,3 +299,18 @@
 		</form>
 	{/if}
 </PageContainer>
+
+{#if dirty}
+	<div
+		class="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-background px-4 py-2 shadow-lg"
+		transition:fly={{ y: 20, duration: 150 }}
+	>
+		<span class="text-sm">{t(locale, 'companion.persona.unsaved-changes')}</span>
+		<Button variant="outline" size="sm" onclick={discard}
+			>{t(locale, 'companion.persona.discard-button')}</Button
+		>
+		<Button size="sm" onclick={() => formRef?.requestSubmit()} disabled={savingProfile}>
+			{t(locale, 'companion.persona.save-button')}
+		</Button>
+	</div>
+{/if}

@@ -285,356 +285,360 @@
 	description={t(locale, 'companion.voice.seo-description')}
 />
 
-<PageContainer size="default">
+<PageContainer size="default" class="max-w-5xl">
 	<PageHeader
 		title={t(locale, 'companion.voice.title')}
 		description={t(locale, 'companion.voice.description')}
 	/>
-	<Card.Root>
-		<Card.Header>
-			<Card.Title class="flex items-center gap-2">
-				<Upload class="size-4" />
-				{corpusBelowFloor
-					? t(locale, 'companion.voice.import-card-title-empty')
-					: t(locale, 'companion.voice.import-card-title')}
-			</Card.Title>
-			{#if corpusBelowFloor}
-				<Card.Description>
-					{t(locale, 'companion.voice.import-card-description-empty')}
-				</Card.Description>
-			{:else}
-				<Card.Description>
-					{t(locale, 'companion.voice.import-card-description')}
-				</Card.Description>
-			{/if}
-		</Card.Header>
-		<Card.Content class={corpusBelowFloor ? 'flex flex-col gap-5' : undefined}>
-			{#if corpusBelowFloor}
-				<div class="flex gap-3">
-					<div
-						class="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground"
-					>
-						1
-					</div>
-					<div class="min-w-0 flex-1">
-						<p class="text-sm font-medium">{t(locale, 'companion.voice.step1-title')}</p>
-						<p class="mt-1 text-xs text-muted-foreground">
-							{t(locale, 'companion.voice.step1-description')}
-						</p>
-						<Button
-							href="https://www.linkedin.com/mypreferences/d/download-my-data"
-							target="_blank"
-							rel="noopener"
-							variant="outline"
-							size="sm"
-							class="mt-2"
-							onclick={markExportRequested}
-						>
-							<ExternalLink class="size-4" /> {t(locale, 'companion.voice.request-data-button')}
-						</Button>
-						{#if exportRequestedAt}
-							<div
-								class="mt-2 flex items-start gap-2 rounded-md border {TONE_BANNER_CLASS.sky} px-3 py-2 text-xs"
-							>
-								<Clock class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-								<span class="flex-1">
-									{t(locale, 'companion.voice.requested-note', { when: relativeTime(exportRequestedAt, locale) })}
-								</span>
-								<button
-									type="button"
-									onclick={dismissExportReminder}
-									aria-label={t(locale, 'companion.voice.dismiss-aria')}
-									class="shrink-0 rounded p-0.5 text-sky-800/70 hover:bg-sky-500/20 hover:text-sky-900 dark:text-sky-200/70 dark:hover:text-sky-100"
-								>
-									<X class="size-3.5" aria-hidden="true" />
-								</button>
-							</div>
-						{/if}
-					</div>
-				</div>
-				<div class="flex gap-3">
-					<div
-						class="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground"
-					>
-						2
-					</div>
-					<div class="min-w-0 flex-1">
-						<p class="text-sm font-medium">{t(locale, 'companion.voice.step2-title')}</p>
-						<p class="mt-1 text-xs text-muted-foreground">
-							{t(locale, 'companion.voice.step2-description')}
-						</p>
-						<div class="mt-2">
-							{@render importUploadForm()}
-						</div>
-					</div>
-				</div>
-			{:else}
-				{@render importUploadForm()}
-			{/if}
-		</Card.Content>
-		{#if importSummaryRows.length > 0}
-			<Card.Footer class="flex flex-col gap-2 border-t border-border pt-4">
-				<p class="text-sm font-medium">{t(locale, 'companion.voice.import-found-title')}</p>
-				<div class="flex flex-col gap-1">
-					{#each importSummaryRows as row (row.genre)}
-						<p class="text-xs text-muted-foreground">
-							<span class="font-medium text-foreground">{row.label}:</span>
-							{t(locale, 'companion.voice.import-found-onfile-count', {
-								count: row.onFile,
-								new: row.newCount > 0 ? t(locale, 'companion.voice.import-found-new-suffix', { n: row.newCount }) : '',
-							})} -
-							{row.measurable
-								? t(locale, 'companion.voice.import-found-measurable', {
-										summary: row.summary ? t(locale, 'companion.voice.import-found-measurable-summary', { summary: row.summary }) : '',
-									})
-								: t(locale, 'companion.voice.import-found-needs-more', {
-										n: row.neededMore,
-										genrePluralLower: t(locale, `companion.voice.genre-plural-lower.${row.genre}`),
-									})}
-						</p>
-					{/each}
-				</div>
-			</Card.Footer>
-		{/if}
-	</Card.Root>
-
-	<div class="grid items-start gap-4 xl:grid-cols-2">
+	<div class="flex flex-col gap-6">
 		<Card.Root>
 			<Card.Header>
-				<Card.Title class="flex items-center gap-2"><Mic class="size-4" /> {t(locale, 'companion.voice.how-you-write-title')}</Card.Title>
-				<Card.Description>
-					{t(locale, 'companion.voice.how-you-write-description')}
-				</Card.Description>
+				<Card.Title class="flex items-center gap-2">
+					<Upload class="size-4" />
+					{corpusBelowFloor
+						? t(locale, 'companion.voice.import-card-title-empty')
+						: t(locale, 'companion.voice.import-card-title')}
+				</Card.Title>
+				{#if corpusBelowFloor}
+					<Card.Description>
+						{t(locale, 'companion.voice.import-card-description-empty')}
+					</Card.Description>
+				{:else}
+					<Card.Description>
+						{t(locale, 'companion.voice.import-card-description')}
+					</Card.Description>
+				{/if}
 			</Card.Header>
-			<Card.Content class="flex flex-col gap-4">
-				<div class="flex flex-col gap-3 rounded-md border border-border p-3">
-					<div class="flex flex-wrap items-center justify-between gap-2">
-						<span class="text-sm font-medium">{t(locale, 'companion.voice.derived-voice-label')}</span>
-						{#if voiceProfile}
-							<Badge variant={voiceProfile.source === 'manual' ? 'secondary' : 'outline'}>
-								{voiceProfile.source === 'manual'
-									? t(locale, 'companion.voice.source-manual')
-									: t(locale, 'companion.voice.source-derived')}
-							</Badge>
-						{/if}
-					</div>
-
-					{#if !voiceProfile?.summary.trim() && voiceProfile?.source !== 'manual'}
-						<p class="text-sm text-muted-foreground">
-							{t(locale, 'companion.voice.not-enough-corpus', {
-								count: voiceProfile ? tn(locale, 'companion.voice.pieces-so-far', voiceProfile.itemCount) : '',
-							})}
-						</p>
-					{/if}
-
-					<form
-						method="POST"
-						action="?/saveVoiceProfile"
-						use:enhance={() => {
-							savingVoiceProfile = true;
-							return async ({ update }) => {
-								await update();
-								savingVoiceProfile = false;
-							};
-						}}
-						class="flex flex-col gap-2"
-					>
-						<Textarea
-							name="summary"
-							bind:value={voiceProfileSummary}
-							rows={4}
-							placeholder={t(locale, 'companion.voice.summary-placeholder')}
-						/>
-						<div>
-							<Button type="submit" size="sm" disabled={savingVoiceProfile}>{t(locale, 'companion.voice.save-button')}</Button>
+			<Card.Content class={corpusBelowFloor ? 'flex flex-col gap-5' : undefined}>
+				{#if corpusBelowFloor}
+					<div class="flex gap-3">
+						<div
+							class="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground"
+						>
+							1
 						</div>
-					</form>
-
-					<div class="flex flex-wrap items-center gap-2">
+						<div class="min-w-0 flex-1">
+							<p class="text-sm font-medium">{t(locale, 'companion.voice.step1-title')}</p>
+							<p class="mt-1 text-xs text-muted-foreground">
+								{t(locale, 'companion.voice.step1-description')}
+							</p>
+							<Button
+								href="https://www.linkedin.com/mypreferences/d/download-my-data"
+								target="_blank"
+								rel="noopener"
+								variant="outline"
+								size="sm"
+								class="mt-2"
+								onclick={markExportRequested}
+							>
+								<ExternalLink class="size-4" /> {t(locale, 'companion.voice.request-data-button')}
+							</Button>
+							{#if exportRequestedAt}
+								<div
+									class="mt-2 flex items-start gap-2 rounded-md border {TONE_BANNER_CLASS.sky} px-3 py-2 text-xs"
+								>
+									<Clock class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+									<span class="flex-1">
+										{t(locale, 'companion.voice.requested-note', { when: relativeTime(exportRequestedAt, locale) })}
+									</span>
+									<button
+										type="button"
+										onclick={dismissExportReminder}
+										aria-label={t(locale, 'companion.voice.dismiss-aria')}
+										class="shrink-0 rounded p-0.5 text-sky-800/70 hover:bg-sky-500/20 hover:text-sky-900 dark:text-sky-200/70 dark:hover:text-sky-100"
+									>
+										<X class="size-3.5" aria-hidden="true" />
+									</button>
+								</div>
+							{/if}
+						</div>
+					</div>
+					<div class="flex gap-3">
+						<div
+							class="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground"
+						>
+							2
+						</div>
+						<div class="min-w-0 flex-1">
+							<p class="text-sm font-medium">{t(locale, 'companion.voice.step2-title')}</p>
+							<p class="mt-1 text-xs text-muted-foreground">
+								{t(locale, 'companion.voice.step2-description')}
+							</p>
+							<div class="mt-2">
+								{@render importUploadForm()}
+							</div>
+						</div>
+					</div>
+				{:else}
+					{@render importUploadForm()}
+				{/if}
+			</Card.Content>
+			{#if importSummaryRows.length > 0}
+				<Card.Footer class="flex flex-col gap-2 border-t border-border pt-4">
+					<p class="text-sm font-medium">{t(locale, 'companion.voice.import-found-title')}</p>
+					<div class="flex flex-col gap-1">
+						{#each importSummaryRows as row (row.genre)}
+							<p class="text-xs text-muted-foreground">
+								<span class="font-medium text-foreground">{row.label}:</span>
+								{t(locale, 'companion.voice.import-found-onfile-count', {
+									count: row.onFile,
+									new: row.newCount > 0 ? t(locale, 'companion.voice.import-found-new-suffix', { n: row.newCount }) : '',
+								})} -
+								{row.measurable
+									? t(locale, 'companion.voice.import-found-measurable', {
+											summary: row.summary ? t(locale, 'companion.voice.import-found-measurable-summary', { summary: row.summary }) : '',
+										})
+									: t(locale, 'companion.voice.import-found-needs-more', {
+											n: row.neededMore,
+											genrePluralLower: t(locale, `companion.voice.genre-plural-lower.${row.genre}`),
+										})}
+							</p>
+						{/each}
+					</div>
+				</Card.Footer>
+			{/if}
+		</Card.Root>
+	
+		<div class="grid items-start gap-4 xl:grid-cols-2">
+			<Card.Root>
+				<Card.Header>
+					<Card.Title class="flex items-center gap-2"><Mic class="size-4" /> {t(locale, 'companion.voice.how-you-write-title')}</Card.Title>
+					<Card.Description>
+						{t(locale, 'companion.voice.how-you-write-description')}
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="flex flex-col gap-4">
+					<div class="flex flex-col gap-3 rounded-md border border-border p-3">
+						<div class="flex flex-wrap items-center justify-between gap-2">
+							<span class="text-sm font-medium">{t(locale, 'companion.voice.derived-voice-label')}</span>
+							{#if voiceProfile}
+								<Badge variant={voiceProfile.source === 'manual' ? 'secondary' : 'outline'}>
+									{voiceProfile.source === 'manual'
+										? t(locale, 'companion.voice.source-manual')
+										: t(locale, 'companion.voice.source-derived')}
+								</Badge>
+							{/if}
+						</div>
+	
+						{#if !voiceProfile?.summary.trim() && voiceProfile?.source !== 'manual'}
+							<p class="text-sm text-muted-foreground">
+								{t(locale, 'companion.voice.not-enough-corpus', {
+									count: voiceProfile ? tn(locale, 'companion.voice.pieces-so-far', voiceProfile.itemCount) : '',
+								})}
+							</p>
+						{/if}
+	
 						<form
 							method="POST"
-							action="?/refreshVoiceProfile"
+							action="?/saveVoiceProfile"
 							use:enhance={() => {
-								refreshingVoiceProfile = true;
+								savingVoiceProfile = true;
 								return async ({ update }) => {
 									await update();
-									refreshingVoiceProfile = false;
+									savingVoiceProfile = false;
 								};
 							}}
+							class="flex flex-col gap-2"
 						>
-							<Button type="submit" variant="outline" size="sm" disabled={refreshingVoiceProfile}>
-								<RefreshCw class="size-4" /> {t(locale, 'companion.voice.refresh-button')}
-							</Button>
+							<Textarea
+								name="summary"
+								bind:value={voiceProfileSummary}
+								rows={4}
+								placeholder={t(locale, 'companion.voice.summary-placeholder')}
+							/>
+							<div>
+								<Button type="submit" size="sm" disabled={savingVoiceProfile}>{t(locale, 'companion.voice.save-button')}</Button>
+							</div>
 						</form>
-						{#if voiceProfile?.source === 'manual'}
+	
+						<div class="flex flex-wrap items-center gap-2">
 							<form
 								method="POST"
-								action="?/resetVoiceProfile"
+								action="?/refreshVoiceProfile"
 								use:enhance={() => {
-									resettingVoiceProfile = true;
+									refreshingVoiceProfile = true;
 									return async ({ update }) => {
 										await update();
-										resettingVoiceProfile = false;
+										refreshingVoiceProfile = false;
 									};
 								}}
 							>
-								<Button type="submit" variant="ghost" size="sm" disabled={resettingVoiceProfile}>
-									<RotateCcw class="size-4" /> {t(locale, 'companion.voice.reset-button')}
+								<Button type="submit" variant="outline" size="sm" disabled={refreshingVoiceProfile}>
+									<RefreshCw class="size-4" /> {t(locale, 'companion.voice.refresh-button')}
 								</Button>
 							</form>
-						{/if}
-					</div>
-
-					{#if voiceProfile && voiceProfile.itemCount > 0}
-						<p class="text-xs text-muted-foreground">
-							{t(locale, 'companion.voice.derived-from', {
-								samples: tn(locale, 'companion.voice.count-voice-sample', voiceProfile.evidenceCounts.voiceSamples),
-								messages: tn(locale, 'companion.voice.count-message', voiceProfile.evidenceCounts.messages),
-								drafts: tn(locale, 'companion.voice.count-sent-draft', voiceProfile.evidenceCounts.drafts),
-								templates: tn(locale, 'companion.voice.count-template', voiceProfile.evidenceCounts.templates),
-							})}{#if voiceProfile.derivedAt}{t(locale, 'companion.voice.last-derived', { when: relativeTime(voiceProfile.derivedAt, locale) })}{/if}
-						</p>
-					{/if}
-
-					{#if voiceProfile}
-						{#each GENRE_ORDER as genre (genre)}
-							{@const g = voiceProfile.genres[genre]}
-							{#if g.summary}
-								<div class="rounded-md border border-border/60 bg-muted/30 p-2 text-xs">
-									<span class="font-medium">{GENRE_LABEL_PLURAL[genre]}:</span>
-									<span class="text-muted-foreground">{g.summary}</span>
-								</div>
-							{/if}
-						{/each}
-					{/if}
-
-					{#if voiceProfile?.editSignature.measurable}
-						<div class="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/30 p-2 text-xs">
-							<div class="flex flex-wrap items-center justify-between gap-2">
-								<span class="font-medium">{t(locale, 'companion.voice.edit-signature-title')}</span>
-								<span class="text-muted-foreground">
-									{tn(locale, 'companion.voice.edit-signature-based-on', voiceProfile.editSignature.pairCount)}
-								</span>
-							</div>
-							{#if voiceProfile.editSignatureExcluded}
-								<Badge variant="outline" class="w-fit">{t(locale, 'companion.voice.edit-signature-excluded-badge')}</Badge>
-							{/if}
-							<p class="text-muted-foreground">
-								{voiceProfile.editSignatureDescription ?? t(locale, 'companion.voice.edit-signature-fallback')}
-							</p>
-							{#if voiceProfile.editSignature.bannedPhrases.length > 0}
-								<div class="flex flex-wrap gap-1">
-									{#each voiceProfile.editSignature.bannedPhrases as phrase (phrase)}
-										<Badge variant="outline">{phrase}</Badge>
-									{/each}
-								</div>
-							{/if}
-							<form
-								method="POST"
-								action="?/toggleEditSignature"
-								bind:this={editSignatureFormRef}
-								use:enhance={() => {
-									togglingEditSignature = true;
-									return async ({ update }) => {
-										await update();
-										togglingEditSignature = false;
-									};
-								}}
-								class="contents"
-							>
-								<input
-									type="hidden"
-									name="excluded"
-									value={(!voiceProfile.editSignatureExcluded).toString()}
-								/>
-							</form>
-							<label class="flex w-fit items-center gap-2 text-xs text-muted-foreground">
-								<Checkbox
-									checked={voiceProfile.editSignatureExcluded}
-									disabled={togglingEditSignature}
-									onCheckedChange={() => editSignatureFormRef?.requestSubmit()}
-								/>
-								{t(locale, 'companion.voice.exclude-from-prompt-label')}
-							</label>
-						</div>
-					{/if}
-				</div>
-			</Card.Content>
-		</Card.Root>
-
-		<Card.Root>
-			<Card.Header>
-				<Card.Title>{t(locale, 'companion.voice.samples-card-title')}</Card.Title>
-				<Card.Description>
-					{t(locale, 'companion.voice.samples-card-description', {
-						included: includedSampleCount,
-						total: data.voiceSamples.length,
-					})}
-				</Card.Description>
-			</Card.Header>
-			<Card.Content class="flex flex-col gap-4">
-				{#if data.voiceSamples.length === 0}
-					<EmptyState
-						icon={Mic}
-						title={t(locale, 'companion.voice.empty-samples-title')}
-						description={t(locale, 'companion.voice.empty-samples-description')}
-					/>
-				{:else}
-					<div class="flex flex-col divide-y divide-border">
-						{#each data.voiceSamples as sample (sample.id)}
-							<div class="flex items-start justify-between gap-3 py-3">
-								<div class="min-w-0 flex-1">
-									{#if sample.genre === 'comment' && sample.context}
-										<p class="mb-1 truncate text-xs text-muted-foreground">
-											{#if sample.context.startsWith('http')}
-												{@const [before, after] = splitAroundToken(locale, 'companion.voice.replying-to-link', 'url')}
-												{before}<a href={sample.context} target="_blank" rel="noreferrer" class="underline">{sample.context}</a>{after}
-											{:else}
-												{t(locale, 'companion.voice.replying-to-quoted', { context: sample.context })}
-											{/if}
-										</p>
-									{/if}
-									<p class="text-sm whitespace-pre-wrap">{sample.text}</p>
-									<div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-										<span>{relativeTime(sample.postedAt ?? sample.capturedAt, locale)}</span>
-										<Badge variant="outline">{GENRE_LABEL[sample.genre]}</Badge>
-										<Badge variant="outline">{SOURCE_LABEL[sample.source]}</Badge>
-										{#if sample.excluded}
-											<Badge variant="outline">{t(locale, 'companion.voice.excluded-badge')}</Badge>
-										{:else}
-											<Badge variant="secondary">{t(locale, 'companion.voice.included-badge')}</Badge>
-										{/if}
-									</div>
-								</div>
+							{#if voiceProfile?.source === 'manual'}
 								<form
 									method="POST"
-									action="?/toggleVoiceSample"
-									bind:this={voiceFormRefs[sample.id]}
+									action="?/resetVoiceProfile"
 									use:enhance={() => {
-										togglingSampleId = sample.id;
+										resettingVoiceProfile = true;
 										return async ({ update }) => {
 											await update();
-											togglingSampleId = null;
+											resettingVoiceProfile = false;
+										};
+									}}
+								>
+									<Button type="submit" variant="ghost" size="sm" disabled={resettingVoiceProfile}>
+										<RotateCcw class="size-4" /> {t(locale, 'companion.voice.reset-button')}
+									</Button>
+								</form>
+							{/if}
+						</div>
+	
+						{#if voiceProfile && voiceProfile.itemCount > 0}
+							<p class="text-xs text-muted-foreground">
+								{t(locale, 'companion.voice.derived-from', {
+									samples: tn(locale, 'companion.voice.count-voice-sample', voiceProfile.evidenceCounts.voiceSamples),
+									messages: tn(locale, 'companion.voice.count-message', voiceProfile.evidenceCounts.messages),
+									drafts: tn(locale, 'companion.voice.count-sent-draft', voiceProfile.evidenceCounts.drafts),
+									templates: tn(locale, 'companion.voice.count-template', voiceProfile.evidenceCounts.templates),
+								})}{#if voiceProfile.derivedAt}{t(locale, 'companion.voice.last-derived', { when: relativeTime(voiceProfile.derivedAt, locale) })}{/if}
+							</p>
+						{/if}
+	
+						{#if voiceProfile}
+							{#each GENRE_ORDER as genre (genre)}
+								{@const g = voiceProfile.genres[genre]}
+								{#if g.summary}
+									<div class="rounded-md border border-border/60 bg-muted/30 p-2 text-xs">
+										<span class="font-medium">{GENRE_LABEL_PLURAL[genre]}:</span>
+										<span class="text-muted-foreground">{g.summary}</span>
+									</div>
+								{/if}
+							{/each}
+						{/if}
+	
+						{#if voiceProfile?.editSignature.measurable}
+							<div class="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/30 p-2 text-xs">
+								<div class="flex flex-wrap items-center justify-between gap-2">
+									<span class="font-medium">{t(locale, 'companion.voice.edit-signature-title')}</span>
+									<span class="text-muted-foreground">
+										{tn(locale, 'companion.voice.edit-signature-based-on', voiceProfile.editSignature.pairCount)}
+									</span>
+								</div>
+								{#if voiceProfile.editSignatureExcluded}
+									<Badge variant="outline" class="w-fit">{t(locale, 'companion.voice.edit-signature-excluded-badge')}</Badge>
+								{/if}
+								<p class="text-muted-foreground">
+									{voiceProfile.editSignatureDescription ?? t(locale, 'companion.voice.edit-signature-fallback')}
+								</p>
+								{#if voiceProfile.editSignature.bannedPhrases.length > 0}
+									<div class="flex flex-wrap gap-1">
+										{#each voiceProfile.editSignature.bannedPhrases as phrase (phrase)}
+											<Badge variant="outline">{phrase}</Badge>
+										{/each}
+									</div>
+								{/if}
+								<form
+									method="POST"
+									action="?/toggleEditSignature"
+									bind:this={editSignatureFormRef}
+									use:enhance={() => {
+										togglingEditSignature = true;
+										return async ({ update }) => {
+											await update();
+											togglingEditSignature = false;
 										};
 									}}
 									class="contents"
 								>
-									<input type="hidden" name="sampleId" value={sample.id} />
-									<input type="hidden" name="excluded" value={(!sample.excluded).toString()} />
-								</form>
-								<label class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-									<Checkbox
-										checked={sample.excluded}
-										disabled={togglingSampleId === sample.id}
-										onCheckedChange={() => voiceFormRefs[sample.id]?.requestSubmit()}
+									<input
+										type="hidden"
+										name="excluded"
+										value={(!voiceProfile.editSignatureExcluded).toString()}
 									/>
-									{t(locale, 'companion.voice.exclude-label')}
+								</form>
+								<label class="flex w-fit items-center gap-2 text-xs text-muted-foreground">
+									<Checkbox
+										checked={voiceProfile.editSignatureExcluded}
+										disabled={togglingEditSignature}
+										onCheckedChange={() => editSignatureFormRef?.requestSubmit()}
+									/>
+									{t(locale, 'companion.voice.exclude-from-prompt-label')}
 								</label>
 							</div>
-						{/each}
+						{/if}
 					</div>
-				{/if}
-			</Card.Content>
-		</Card.Root>
+				</Card.Content>
+			</Card.Root>
+	
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>{t(locale, 'companion.voice.samples-card-title')}</Card.Title>
+					<Card.Description>
+						{t(locale, 'companion.voice.samples-card-description', {
+							included: includedSampleCount,
+							total: data.voiceSamples.length,
+						})}
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="flex flex-col gap-4">
+					{#if data.voiceSamples.length === 0}
+						<EmptyState
+							icon={Mic}
+							title={t(locale, 'companion.voice.empty-samples-title')}
+							description={t(locale, 'companion.voice.empty-samples-description')}
+						/>
+					{:else}
+						<div class="max-h-96 overflow-y-auto pr-1">
+							<div class="flex flex-col divide-y divide-border">
+								{#each data.voiceSamples as sample (sample.id)}
+									<div class="flex items-start justify-between gap-3 py-3">
+										<div class="min-w-0 flex-1">
+											{#if sample.genre === 'comment' && sample.context}
+												<p class="mb-1 truncate text-xs text-muted-foreground">
+													{#if sample.context.startsWith('http')}
+														{@const [before, after] = splitAroundToken(locale, 'companion.voice.replying-to-link', 'url')}
+														{before}<a href={sample.context} target="_blank" rel="noreferrer" class="underline">{sample.context}</a>{after}
+													{:else}
+														{t(locale, 'companion.voice.replying-to-quoted', { context: sample.context })}
+													{/if}
+												</p>
+											{/if}
+											<p class="text-sm whitespace-pre-wrap">{sample.text}</p>
+											<div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+												<span>{relativeTime(sample.postedAt ?? sample.capturedAt, locale)}</span>
+												<Badge variant="outline">{GENRE_LABEL[sample.genre]}</Badge>
+												<Badge variant="outline">{SOURCE_LABEL[sample.source]}</Badge>
+												{#if sample.excluded}
+													<Badge variant="outline">{t(locale, 'companion.voice.excluded-badge')}</Badge>
+												{:else}
+													<Badge variant="secondary">{t(locale, 'companion.voice.included-badge')}</Badge>
+												{/if}
+											</div>
+										</div>
+										<form
+											method="POST"
+											action="?/toggleVoiceSample"
+											bind:this={voiceFormRefs[sample.id]}
+											use:enhance={() => {
+												togglingSampleId = sample.id;
+												return async ({ update }) => {
+													await update();
+													togglingSampleId = null;
+												};
+											}}
+											class="contents"
+										>
+											<input type="hidden" name="sampleId" value={sample.id} />
+											<input type="hidden" name="excluded" value={(!sample.excluded).toString()} />
+										</form>
+										<label class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+											<Checkbox
+												checked={sample.excluded}
+												disabled={togglingSampleId === sample.id}
+												onCheckedChange={() => voiceFormRefs[sample.id]?.requestSubmit()}
+											/>
+											{t(locale, 'companion.voice.exclude-label')}
+										</label>
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		</div>
 	</div>
 </PageContainer>

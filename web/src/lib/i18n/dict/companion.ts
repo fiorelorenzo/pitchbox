@@ -42,6 +42,8 @@ export const companionEn = {
   'companion.persona.notes-hint':
     'Free text, never captured from LinkedIn - this is only what you type here.',
   'companion.persona.save-button': 'Save persona',
+  'companion.persona.unsaved-changes': 'You have unsaved changes',
+  'companion.persona.discard-button': 'Discard',
   'companion.persona.experience-title': 'Experience',
   'companion.persona.experience-description':
     'What you have done, in the order the assistant should reach for it. Captured with the rest of the profile and editable here.',
@@ -285,12 +287,14 @@ export const companionIt = {
   'companion.persona.handle-placeholder': 'mario-rossi',
   'companion.persona.display-name-label': 'Nome visualizzato',
   'companion.persona.headline-label': 'Headline',
-  'companion.persona.about-label': 'Chi sei',
+  'companion.persona.about-label': 'Informazioni',
   'companion.persona.notes-label': 'Come vuoi suonare',
   'companion.persona.notes-placeholder': 'Diretto, senza giri di parole, frasi brevi...',
   'companion.persona.notes-hint':
     'Testo libero, non catturato da LinkedIn: è solo quello che scrivi qui.',
   'companion.persona.save-button': 'Salva persona',
+  'companion.persona.unsaved-changes': 'Hai modifiche non salvate',
+  'companion.persona.discard-button': 'Annulla',
   'companion.persona.experience-title': 'Esperienza',
   'companion.persona.experience-description':
     "Quello che hai fatto, nell'ordine in cui l'assistente dovrebbe attingervi. Catturato insieme al resto del profilo e modificabile qui.",
