@@ -5,18 +5,20 @@
  * prints a body from:
  *
  *   - `cases.json` - LOR-280's 27 hand-labelled real LinkedIn post/comment
- *     replies (`reference`, `referenceLanguage`). Scored as agree/wrong/
- *     conservative-miss against the classifier's own output.
+ *     replies (`reference`, `referenceLanguageLabel`: `it`/`en`/
+ *     `unlabelable`, restored 2026-09-11 after the original labels were
+ *     lost with LOR-280's own worktree - see the file's own
+ *     `referenceLanguageLabels` block for the recovery note). Scored as
+ *     agree/swap-wrong/conservative-miss against the classifier's output.
  *   - `messages.csv` - the operator's real LinkedIn message export, filtered
  *     to their own 233 sent, non-draft, non-empty messages. No hand labels
  *     exist for these; this table is just the en/it/unknown split.
  *
- * "Wrong" means the classifier named a language (`en`/`it`) that disagrees
- * with the hand label, whether the hand label is the other language or
- * `unknown` - a classifier that turns a truly unclassifiable reply into a
- * confident wrong guess is exactly the regression LOR-286 must not cause.
- * "Conservative miss" is the opposite shape: the classifier said `unknown`
- * on text a human reads as a real language - LOR-286's actual target.
+ * "Confidently wrong" is narrow on purpose: the classifier named a real
+ * language (en/it) and the hand label names the *other* real language - an
+ * actual language swap, the one regression LOR-286 must not cause.
+ * "Conservative miss" is the opposite shape and LOR-286's actual target:
+ * the classifier said `unknown` on text a human hand-labelled `it`/`en`.
  *
  * Missing input file -> a readable message and a skipped table, never a
  * stack trace, same discipline as `scripts/voice-eval.ts`.
@@ -29,7 +31,8 @@ import { classifyLanguage } from '../shared/src/assist/voice-profile.js';
 const CASES_PATH = process.env.PITCHBOX_EVAL_CASES ?? 'private/voice-eval/cases.json';
 const MESSAGES_PATH = process.env.PITCHBOX_EVAL_MESSAGES ?? 'private/voice-eval/messages.csv';
 
-type Label = 'en' | 'it' | 'unknown';
+type Verdict = 'en' | 'it' | 'unknown';
+type HandLabel = 'en' | 'it' | 'unlabelable';
 
 // ---------------------------------------------------------------------------
 // cases.json
@@ -38,7 +41,7 @@ type Label = 'en' | 'it' | 'unknown';
 interface EvalCase {
   id: string;
   reference: string;
-  referenceLanguage: Label;
+  referenceLanguageLabel: HandLabel;
 }
 
 interface CasesFile {
@@ -52,32 +55,32 @@ function scoreCases(): void {
   }
   const file = JSON.parse(readFileSync(CASES_PATH, 'utf8')) as CasesFile;
   let agree = 0;
-  // "Confidently wrong" is narrow on purpose: the classifier named a real
-  // language (en/it) and the hand label names the *other* real language -
-  // an actual language swap, the one regression LOR-286 must not cause.
+  // A real language swap against the hand label - the one regression
+  // LOR-286 must not cause.
   let swapWrong = 0;
-  // A separate, informational bucket: the classifier named a real language
-  // where the hand label says `unknown`. Not a swap (there is no "other"
-  // real language to have picked instead), and for several cases in this
-  // corpus it is the classifier correctly reading a short but genuinely
-  // unambiguous Italian reply that the hand label called unclassifiable -
-  // reported separately rather than folded into `swapWrong` so it can be
-  // read for what it is instead of inflating the regression count.
-  let realWhenHandUnknown = 0;
+  // The classifier said `unknown` on text hand-labelled a real language -
+  // LOR-286's actual target failure mode.
   let conservativeMiss = 0;
+  // The classifier named a real language on text hand-labelled
+  // `unlabelable` ("no language marker of any kind", per the corpus's own
+  // method note) - a genuine false positive, not merely a disagreement,
+  // since `unlabelable` is a stronger claim than an ordinary miss.
+  let realWhenUnlabelable = 0;
   const swapWrongIds: string[] = [];
-  const realWhenHandUnknownIds: string[] = [];
   const missIds: string[] = [];
+  const realWhenUnlabelableIds: string[] = [];
   for (const c of file.cases) {
-    const predicted = classifyLanguage(c.reference);
-    if (predicted === c.referenceLanguage) {
+    const predicted: Verdict = classifyLanguage(c.reference);
+    const hand = c.referenceLanguageLabel;
+    const handAsVerdict: Verdict = hand === 'unlabelable' ? 'unknown' : hand;
+    if (predicted === handAsVerdict) {
       agree++;
     } else if (predicted === 'unknown') {
       conservativeMiss++;
       missIds.push(c.id);
-    } else if (c.referenceLanguage === 'unknown') {
-      realWhenHandUnknown++;
-      realWhenHandUnknownIds.push(c.id);
+    } else if (hand === 'unlabelable') {
+      realWhenUnlabelable++;
+      realWhenUnlabelableIds.push(c.id);
     } else {
       swapWrong++;
       swapWrongIds.push(c.id);
@@ -93,13 +96,13 @@ function scoreCases(): void {
       confidentlyWrong: swapWrong,
       unknownPredicted,
       unknownButShouldBeALanguage: conservativeMiss,
-      realButHandSaysUnknown: realWhenHandUnknown,
+      realButHandSaysUnlabelable: realWhenUnlabelable,
     },
   ]);
   if (swapWrongIds.length > 0)
     console.log(`  confidently wrong (en/it swap): ${swapWrongIds.join(', ')}`);
-  if (realWhenHandUnknownIds.length > 0) {
-    console.log(`  real language, hand says unknown: ${realWhenHandUnknownIds.join(', ')}`);
+  if (realWhenUnlabelableIds.length > 0) {
+    console.log(`  real language, hand says unlabelable: ${realWhenUnlabelableIds.join(', ')}`);
   }
   if (missIds.length > 0) console.log(`  unknown but should be a language: ${missIds.join(', ')}`);
 }
@@ -193,7 +196,7 @@ function scoreMessages(): void {
     return true;
   });
 
-  const counts: Record<Label, number> = { en: 0, it: 0, unknown: 0 };
+  const counts: Record<Verdict, number> = { en: 0, it: 0, unknown: 0 };
   for (const r of sent) counts[classifyLanguage(r[contentCol])]++;
 
   const total = sent.length;
