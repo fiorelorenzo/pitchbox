@@ -11,7 +11,6 @@ import type {
 } from '@ai-sdk/provider';
 import { MockLanguageModelV4, convertArrayToReadableStream } from 'ai/test';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { __resetModelCatalogueCacheForTests } from '@pitchbox/shared/agents/sdk/runner';
 import type { RunnerConfig } from '@pitchbox/shared/agents/config';
 import type { ObservedPost } from '@pitchbox/shared/assist/suggest-prompt';
 import {
@@ -169,13 +168,11 @@ async function reset() {
   await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
   currentGatewayFn = null;
   process.env.AI_GATEWAY_API_KEY = 'test-key';
-  // The runner's model-catalogue cache is process-wide with a 5-minute TTL
-  // by design (real deployments never re-fetch per run) - in this file's
-  // test process that means an earlier test's plain, empty-catalogue
-  // `useModel()` call would otherwise leak into a later test that supplies
-  // real pricing via a different fake gateway, exactly the trap
-  // `shared/tests/agents/sdk/runner.test.ts` already guards against (#574).
-  __resetModelCatalogueCacheForTests();
+  // The runner's catalogue cache is keyed by the gateway that answered it
+  // (LOR-216), and `useModel` builds a fresh gateway per test, so an
+  // earlier test's empty catalogue cannot be read by a later one that
+  // wires real pricing - including when the earlier run is still finishing
+  // in the background after a cancellation.
 }
 
 async function seedOrgProject(slug: string) {

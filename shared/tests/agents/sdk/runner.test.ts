@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import type { streamText } from 'ai';
 import type { createGateway } from '@ai-sdk/gateway';
-import { SdkRunner, __resetModelCatalogueCacheForTests } from '../../../src/agents/sdk/runner.js';
+import { SdkRunner } from '../../../src/agents/sdk/runner.js';
 import type { ParsedEvent } from '../../../src/runlog/types.js';
 import type { PitchboxToolSet } from '../../../src/agents/sdk/tools.js';
 
@@ -87,10 +87,6 @@ let logDir: string;
 beforeEach(() => {
   logDir = tmpLogDir();
   process.env.AI_GATEWAY_API_KEY = 'test-key';
-  // Otherwise a plain-catalogue test's cached empty model list (5-minute
-  // TTL, process-lifetime by design) leaks into a later test that supplies
-  // its own pricing via a different fake gateway.
-  __resetModelCatalogueCacheForTests();
 });
 
 afterEach(() => {
@@ -424,6 +420,49 @@ describe('SdkRunner', () => {
     expect(resultEvent?.payload).toMatchObject({ type: 'result', success: false });
     expect(resultEvent?.raw).toMatch(/quota exhausted/);
     expect(resultEvent?.raw).toMatch(/monthly Gateway budget/);
+  });
+
+  it('prices a run from its own gateway catalogue, not from one an earlier gateway answered', async () => {
+    // LOR-216: the catalogue used to live in a single process-wide slot, so
+    // whichever gateway answered first decided the pricing every later run
+    // saw - including a cancelled run's empty catalogue landing in the slot
+    // after the next run had already started. Two runs here, the first on a
+    // gateway with no pricing at all, and the second must still be priced.
+    const unpriced = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGateway(),
+      createToolSetFn: fakeToolSet().fn,
+      streamTextFn: fakeStreamText(() =>
+        gen({
+          type: 'finish',
+          finishReason: 'stop',
+          totalUsage: { inputTokens: 1000, outputTokens: 1000 },
+        }),
+      ),
+    });
+    const unpricedRes = await unpriced.run({ ...baseOpts(), prompt: 'hi', attachMcp: false })
+      .result;
+    expect(unpricedRes.usage?.costUsd).toBeNull();
+
+    const priced = new SdkRunner({
+      config: { model: 'google/gemini-3.1-flash-lite' },
+      logDir,
+      createGatewayFn: fakeGatewayWithPricing('google/gemini-3.1-flash-lite', {
+        input: '0.000002',
+        output: '0.000002',
+      }),
+      createToolSetFn: fakeToolSet().fn,
+      streamTextFn: fakeStreamText(() =>
+        gen({
+          type: 'finish',
+          finishReason: 'stop',
+          totalUsage: { inputTokens: 1000, outputTokens: 1000 },
+        }),
+      ),
+    });
+    const pricedRes = await priced.run({ ...baseOpts(), prompt: 'hi', attachMcp: false }).result;
+    expect(pricedRes.usage?.costUsd).toBeCloseTo(0.004, 4);
   });
 
   it('does not abort a run that stays under its budgetRemainingUsd', async () => {
