@@ -97,11 +97,11 @@ pairing code generated in Settings, no extension install required.
 The body is the archive's raw bytes, not a multipart form. `Content-Type`
 says which shape it is:
 
-| Content-Type                   | Body                                                   |
-| ------------------------------ | ------------------------------------------------------ |
-| `application/zip`              | The export zip LinkedIn hands back directly            |
-| `application/x-zip-compressed` | Same as above (some clients report this instead)       |
-| `text/csv`                     | A single already-extracted `Shares.csv`/`Comments.csv` |
+| Content-Type                   | Body                                                                  |
+| ------------------------------ | --------------------------------------------------------------------- |
+| `application/zip`              | The export zip LinkedIn hands back directly                           |
+| `application/x-zip-compressed` | Same as above (some clients report this instead)                      |
+| `text/csv`                     | A single already-extracted `Shares.csv`/`Comments.csv`/`messages.csv` |
 
 The body is capped at 20MB, checked against `Content-Length` before anything
 is read and again while streaming, so an oversized upload is refused (`413`)
@@ -123,8 +123,9 @@ A successful response is a full accounting, not `{"ok":true}`:
   "duplicates": { "post": 0, "comment": 0 },
   "skippedNoText": { "post": 1, "comment": 1 },
   "totalRows": { "post": 3, "comment": 2 },
+  "messages": { "imported": 2, "duplicates": 0, "skippedNoText": 2, "totalRows": 4 },
   "noop": false,
-  "message": "Imported 3 new item(s) (2 post(s), 1 comment(s)).",
+  "message": "Imported 5 new item(s) (2 post(s), 1 comment(s), 2 message(s)).",
   "profile": {
     "post": { "itemCount": 2, "measurable": false },
     "comment": { "itemCount": 1, "measurable": false },
@@ -137,16 +138,22 @@ A successful response is a full accounting, not `{"ok":true}`:
 - `duplicates` - parsed rows already on file (same `(organizationId, externalId)`), dropped by the insert's own dedup.
 - `skippedNoText` - rows dropped before ever reaching the corpus: a bare repost in `Shares.csv`, or a reaction with no written comment in `Comments.csv`.
 - `totalRows` - every row the file had, per genre (`imported + duplicates + skippedNoText`).
-- `noop` - `true` when nothing new landed. Re-posting the same archive is the normal case, not an error: the response still says so explicitly rather than looking like an ambiguous success.
-- `profile` - each genre's `itemCount` and whether it has cleared `MIN_ITEMS_TO_DERIVE` (`measurable`) after this import.
+- `messages` - the operator's own sent DMs read from `messages.csv` (zero across the board when the archive carries none). `skippedNoText` here also covers a row sent by someone else and an unsent draft row, not only an empty body - `messages.csv` has no genre of its own, so those three reasons are folded into one count rather than three.
+- `noop` - `true` when nothing new landed anywhere. Re-posting the same archive is the normal case, not an error: the response still says so explicitly rather than looking like an ambiguous success.
+- `profile` - each genre's `itemCount` and whether it has cleared `MIN_ITEMS_TO_DERIVE` (`measurable`) after this import. Messages have no genre and so no equivalent entry here; they still count toward the pooled voice profile.
+
+LinkedIn answers a "Get a copy of your data" request with two archives: a
+small one within minutes carrying only `messages.csv`, and a second with
+`Shares.csv`/`Comments.csv` up to 24 hours later. Both import successfully;
+uploading the first no longer needs to wait for the second.
 
 Refusals are a `4xx`/`5xx` with a readable `{ "message": "..." }` body, never a
 stack trace: `400` for an unrecognised `Content-Type`, an empty body, a file
-that isn't a valid archive, or a zip with neither `Shares.csv` nor
-`Comments.csv`; `401` for a missing/invalid/revoked device token; `413` for a
-body over the 20MB cap; `429` for more than 10 imports/minute from one
-device; `500` if the `linkedin` platform row is missing (a self-host seed
-problem, not a bad request).
+that isn't a valid archive, or an archive with none of `Shares.csv`,
+`Comments.csv` or `messages.csv`; `401` for a missing/invalid/revoked device
+token; `413` for a body over the 20MB cap; `429` for more than 10
+imports/minute from one device; `500` if the `linkedin` platform row is
+missing (a self-host seed problem, not a bad request).
 
 See [`web/src/routes/api/`](https://github.com/fiorelorenzo/pitchbox/tree/development/web/src/routes/api) for the full surface - every route file is the source of truth.
 

@@ -304,66 +304,86 @@ async function gatherVoiceCorpus(
   editPairs: EditPair[];
   evidence: VoiceCorpusProvenance;
 }> {
-  const [sampleRows, messageRows, draftRows, templateRows, acceptedRows] = await Promise.all([
-    db
-      .select({
-        id: schema.operatorVoiceSamples.id,
-        text: schema.operatorVoiceSamples.text,
-        genre: schema.operatorVoiceSamples.genre,
-      })
-      .from(schema.operatorVoiceSamples)
-      .where(
-        and(
-          eq(schema.operatorVoiceSamples.organizationId, organizationId),
-          eq(schema.operatorVoiceSamples.excluded, false),
-        ),
-      )
-      .orderBy(desc(schema.operatorVoiceSamples.postedAt))
-      .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
-    db
-      .select({ id: schema.messages.id, text: schema.messages.body })
-      .from(schema.messages)
-      .innerJoin(schema.contactHistory, eq(schema.contactHistory.id, schema.messages.contactId))
-      .where(
-        and(
-          eq(schema.contactHistory.organizationId, organizationId),
-          eq(schema.messages.isFromUs, true),
-        ),
-      )
-      .orderBy(desc(schema.messages.createdAtPlatform))
-      .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
-    db
-      .select({
-        id: schema.drafts.id,
-        body: schema.drafts.body,
-        sentContent: schema.drafts.sentContent,
-      })
-      .from(schema.drafts)
-      .innerJoin(schema.projects, eq(schema.projects.id, schema.drafts.projectId))
-      .where(
-        and(eq(schema.projects.organizationId, organizationId), isNotNull(schema.drafts.sentAt)),
-      )
-      .orderBy(desc(schema.drafts.sentAt))
-      .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
-    db
-      .select({ id: schema.templates.id, text: schema.templates.body })
-      .from(schema.templates)
-      .innerJoin(schema.projects, eq(schema.projects.id, schema.templates.projectId))
-      .where(eq(schema.projects.organizationId, organizationId))
-      .orderBy(desc(schema.templates.updatedAt))
-      .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
-    db
-      .select({
-        id: schema.assistAcceptedSuggestions.id,
-        kind: schema.assistAcceptedSuggestions.kind,
-        body: schema.assistAcceptedSuggestions.body,
-        editedFrom: schema.assistAcceptedSuggestions.editedFrom,
-      })
-      .from(schema.assistAcceptedSuggestions)
-      .where(eq(schema.assistAcceptedSuggestions.organizationId, organizationId))
-      .orderBy(desc(schema.assistAcceptedSuggestions.createdAt))
-      .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
-  ]);
+  const [sampleRows, dmMessageRows, importedMessageRows, draftRows, templateRows, acceptedRows] =
+    await Promise.all([
+      db
+        .select({
+          id: schema.operatorVoiceSamples.id,
+          text: schema.operatorVoiceSamples.text,
+          genre: schema.operatorVoiceSamples.genre,
+        })
+        .from(schema.operatorVoiceSamples)
+        .where(
+          and(
+            eq(schema.operatorVoiceSamples.organizationId, organizationId),
+            eq(schema.operatorVoiceSamples.excluded, false),
+          ),
+        )
+        .orderBy(desc(schema.operatorVoiceSamples.postedAt))
+        .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
+      db
+        .select({ id: schema.messages.id, text: schema.messages.body })
+        .from(schema.messages)
+        .innerJoin(schema.contactHistory, eq(schema.contactHistory.id, schema.messages.contactId))
+        .where(
+          and(
+            eq(schema.contactHistory.organizationId, organizationId),
+            eq(schema.messages.isFromUs, true),
+          ),
+        )
+        .orderBy(desc(schema.messages.createdAtPlatform))
+        .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
+      // A LinkedIn DM read from a data export (LOR-267) - a different
+      // table from the Reddit/HN sent-DM query above (a data export has
+      // no contact_history row to join through), merged into one
+      // `messageRows` list right after this Promise.all resolves so
+      // everything below it (the `kind: 'message'` mapping, the
+      // provenance ids/counts) treats both sources identically: a DM is a
+      // DM regardless of which platform it went out on.
+      db
+        .select({ id: schema.operatorVoiceMessages.id, text: schema.operatorVoiceMessages.text })
+        .from(schema.operatorVoiceMessages)
+        .where(eq(schema.operatorVoiceMessages.organizationId, organizationId))
+        .orderBy(desc(schema.operatorVoiceMessages.postedAt))
+        .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
+      db
+        .select({
+          id: schema.drafts.id,
+          body: schema.drafts.body,
+          sentContent: schema.drafts.sentContent,
+        })
+        .from(schema.drafts)
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.drafts.projectId))
+        .where(
+          and(eq(schema.projects.organizationId, organizationId), isNotNull(schema.drafts.sentAt)),
+        )
+        .orderBy(desc(schema.drafts.sentAt))
+        .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
+      db
+        .select({ id: schema.templates.id, text: schema.templates.body })
+        .from(schema.templates)
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.templates.projectId))
+        .where(eq(schema.projects.organizationId, organizationId))
+        .orderBy(desc(schema.templates.updatedAt))
+        .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
+      db
+        .select({
+          id: schema.assistAcceptedSuggestions.id,
+          kind: schema.assistAcceptedSuggestions.kind,
+          body: schema.assistAcceptedSuggestions.body,
+          editedFrom: schema.assistAcceptedSuggestions.editedFrom,
+        })
+        .from(schema.assistAcceptedSuggestions)
+        .where(eq(schema.assistAcceptedSuggestions.organizationId, organizationId))
+        .orderBy(desc(schema.assistAcceptedSuggestions.createdAt))
+        .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
+    ]);
+
+  // Merged right after resolving: both are "a DM the operator sent",
+  // just from two different tables (see the query above's own comment) -
+  // everything below treats a Reddit/HN sent DM and an imported LinkedIn
+  // one as one undifferentiated `kind: 'message'` source.
+  const messageRows = [...dmMessageRows, ...importedMessageRows];
 
   const corpus: VoiceCorpusItem[] = [
     ...sampleRows.map((r) => ({

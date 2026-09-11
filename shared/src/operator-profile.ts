@@ -10,7 +10,7 @@
 
 import { and, desc, eq } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
-import type { ImportedVoiceItem } from './voice-import.js';
+import type { ImportedVoiceItem, ImportedVoiceMessage } from './voice-import.js';
 
 export type OperatorProfileSource = 'linkedin_capture' | 'manual';
 
@@ -275,4 +275,52 @@ export async function importVoiceSamples(
     if (row.genre === 'post' || row.genre === 'comment') byGenre[row.genre] += 1;
   }
   return { inserted: inserted.length, byGenre };
+}
+
+export type ImportedMessagesResult = {
+  /** New rows actually written - a re-import of the same archive returns
+   * 0, since `voice-import.ts`'s `deriveMessageExternalId` is
+   * deterministic and the unique index does the rest. */
+  inserted: number;
+};
+
+/**
+ * Persists parsed LinkedIn DMs (`voice-import.ts`'s
+ * `ImportedVoiceMessage[]`, from `messages.csv`) into their own table,
+ * deduped on `(organization_id, external_id)` the same way
+ * `importVoiceSamples` dedupes posts/comments - but deliberately NOT into
+ * `operator_voice_samples` itself: a DM is not a post, a comment or a
+ * reply, and folding it into that table's `genre` column would either
+ * invent a fourth value `assist/voice-profile.ts`'s per-genre measurement
+ * was never built for or silently mislabel it as one it isn't. See
+ * `operator-voice-profile.ts`'s `gatherVoiceCorpus`, which reads this
+ * table as `kind: 'message'` corpus items - the same kind a sent
+ * Reddit/HN DM already contributes.
+ */
+export async function importVoiceMessages(
+  db: Db,
+  organizationId: number,
+  platformId: number,
+  items: ImportedVoiceMessage[],
+): Promise<ImportedMessagesResult> {
+  if (items.length === 0) return { inserted: 0 };
+  const inserted = await db
+    .insert(schema.operatorVoiceMessages)
+    .values(
+      items.map((item) => ({
+        organizationId,
+        platformId,
+        externalId: item.externalId,
+        text: item.text,
+        postedAt: item.postedAt ? new Date(item.postedAt) : null,
+      })),
+    )
+    .onConflictDoNothing({
+      target: [
+        schema.operatorVoiceMessages.organizationId,
+        schema.operatorVoiceMessages.externalId,
+      ],
+    })
+    .returning({ id: schema.operatorVoiceMessages.id });
+  return { inserted: inserted.length };
 }

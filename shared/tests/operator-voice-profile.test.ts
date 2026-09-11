@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { sql, eq } from 'drizzle-orm';
 import { getDb, schema } from '../src/db/client.js';
-import { recordVoiceSamples, setVoiceSampleExcluded } from '../src/operator-profile.js';
+import {
+  recordVoiceSamples,
+  setVoiceSampleExcluded,
+  importVoiceMessages,
+} from '../src/operator-profile.js';
 import {
   EMPTY_RHYTHM,
   EMPTY_EDIT_SIGNATURE,
@@ -36,9 +40,9 @@ import {
 
 async function reset() {
   await getDb().execute(
-    sql`TRUNCATE operator_voice_profiles, operator_voice_samples, operator_profiles,
-      messages, contact_history, drafts, runs, campaigns, templates, accounts, projects
-      RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE operator_voice_profiles, operator_voice_samples, operator_voice_messages,
+      operator_profiles, messages, contact_history, drafts, runs, campaigns, templates,
+      accounts, projects RESTART IDENTITY CASCADE`,
   );
   await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
 }
@@ -258,6 +262,32 @@ describe('shared/src/operator-voice-profile', () => {
       templates: 0,
       acceptedSuggestions: 0,
     });
+  });
+
+  it('merges a LinkedIn-imported message (operator_voice_messages) into the same kind: message pool as a sent Reddit/HN DM (LOR-267)', async () => {
+    const orgId = await ensureOrg('vp-org-imported-message');
+    await seedCorpus(orgId, 'im');
+    const linkedin = await platformId('linkedin');
+    await importVoiceMessages(getDb(), orgId, linkedin, [
+      {
+        externalId: 'li-import-message:vp-1',
+        text: 'Thanks for the intro last week, really appreciate it.',
+        postedAt: null,
+      },
+    ]);
+
+    const row = await refreshVoiceProfile(getDb(), orgId);
+    // seedCorpus's own 5 items (2 samples, 1 message, 1 draft, 1 template)
+    // plus this one imported message.
+    expect(row.itemCount).toBe(6);
+    expect(row.evidence.counts).toEqual({
+      voiceSamples: 2,
+      messages: 2,
+      drafts: 1,
+      templates: 1,
+      acceptedSuggestions: 0,
+    });
+    expect(row.evidence.messageIds).toHaveLength(2);
   });
 
   it('excluding the voice samples that carried a habit removes it from the derived profile', async () => {

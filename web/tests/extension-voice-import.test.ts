@@ -15,7 +15,7 @@ import { POST as voiceImportPost } from '../src/routes/api/extension/voice-impor
 
 async function reset() {
   await getDb().execute(
-    sql`TRUNCATE operator_voice_samples, operator_voice_profiles RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE operator_voice_samples, operator_voice_messages, operator_voice_profiles RESTART IDENTITY CASCADE`,
   );
   await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
   // A plain DELETE, not TRUNCATE ... RESTART IDENTITY: the route's rate
@@ -67,10 +67,24 @@ const COMMENTS_CSV =
   '2026-01-01T00:00:00Z,https://www.linkedin.com/posts/10,"Great point about cold outreach!"\n' +
   '2026-01-02T00:00:00Z,https://www.linkedin.com/posts/11,\n';
 
-function buildExportZip(opts: { shares?: string; comments?: string } = {}): Buffer {
+// messages.csv (LOR-267): the "Basic" archive's only usable file. Two
+// conversations so the operator (party to both) is decisively
+// distinguishable from either correspondent (party to only their own) -
+// one real message, one from someone else, one draft.
+const MESSAGES_CSV =
+  'CONVERSATION ID,SENDER PROFILE URL,CONTENT,IS MESSAGE DRAFT\n' +
+  'ext-conv-1,https://www.linkedin.com/in/ext-other,Hi there,No\n' +
+  'ext-conv-1,https://www.linkedin.com/in/ext-operator,Good to hear from you,No\n' +
+  'ext-conv-2,https://www.linkedin.com/in/ext-operator,Following up on our chat,No\n' +
+  'ext-conv-2,https://www.linkedin.com/in/ext-operator,Draft I never sent,Yes\n';
+
+function buildExportZip(
+  opts: { shares?: string; comments?: string; messages?: string } = {},
+): Buffer {
   const zip = new AdmZip();
   if (opts.shares !== undefined) zip.addFile('Shares.csv', Buffer.from(opts.shares));
   if (opts.comments !== undefined) zip.addFile('Comments.csv', Buffer.from(opts.comments));
+  if (opts.messages !== undefined) zip.addFile('messages.csv', Buffer.from(opts.messages));
   return zip.toBuffer();
 }
 
@@ -80,6 +94,7 @@ type VoiceImportBody = {
   duplicates: { post: number; comment: number };
   skippedNoText: { post: number; comment: number };
   totalRows: { post: number; comment: number };
+  messages: { imported: number; duplicates: number; skippedNoText: number; totalRows: number };
   noop: boolean;
   message: string;
   profile: Record<'post' | 'comment' | 'reply', { itemCount: number; measurable: boolean }>;
@@ -171,7 +186,7 @@ describe('POST /api/extension/voice-import', () => {
     expect(message).toMatch(/invalid|unsupported/i);
   });
 
-  it('refuses a zip with neither Shares.csv nor Comments.csv (400)', async () => {
+  it('refuses a zip with none of Shares.csv, Comments.csv or messages.csv (400)', async () => {
     const org = await seedOrg('vi-no-csv');
     await mintDevice(org.id, 'tokNoCsv');
 
@@ -181,7 +196,64 @@ describe('POST /api/extension/voice-import', () => {
       request: rawRequest('tokNoCsv', 'application/zip', zip.toBuffer()),
     } as never);
     const message = await messageOf(res);
-    expect(message).toMatch(/neither a Shares\.csv nor a Comments\.csv/);
+    expect(message).toMatch(/none of Shares\.csv, Comments\.csv or messages\.csv/);
+    expect(message).toContain('Profile.csv');
+  });
+
+  it('imports the "Basic" archive - messages.csv only, no Shares.csv/Comments.csv - instead of refusing it (LOR-267)', async () => {
+    const org = await seedOrg('vi-basic-archive');
+    await mintDevice(org.id, 'tokBasic');
+
+    const res = await voiceImportPost({
+      request: rawRequest(
+        'tokBasic',
+        'application/zip',
+        buildExportZip({ messages: MESSAGES_CSV }),
+      ),
+    } as never);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as VoiceImportBody;
+
+    expect(body.ok).toBe(true);
+    expect(body.imported).toEqual({ post: 0, comment: 0 });
+    // 4 rows in the fixture: 2 the operator's own, 1 from someone else, 1
+    // draft - only the operator's own 2 land.
+    expect(body.messages).toEqual({
+      imported: 2,
+      duplicates: 0,
+      skippedNoText: 2,
+      totalRows: 4,
+    });
+    expect(body.noop).toBe(false);
+
+    const rows = await getDb()
+      .select()
+      .from(schema.operatorVoiceMessages)
+      .where(eq(schema.operatorVoiceMessages.organizationId, org.id));
+    expect(rows).toHaveLength(2);
+  });
+
+  it('re-posting the "Basic" archive is an explicit no-op', async () => {
+    const org = await seedOrg('vi-basic-repost');
+    await mintDevice(org.id, 'tokBasicRepost');
+    const archive = buildExportZip({ messages: MESSAGES_CSV });
+
+    await voiceImportPost({
+      request: rawRequest('tokBasicRepost', 'application/zip', archive),
+    } as never);
+    const second = await voiceImportPost({
+      request: rawRequest('tokBasicRepost', 'application/zip', archive),
+    } as never);
+    const body = (await second.json()) as VoiceImportBody;
+
+    expect(body.noop).toBe(true);
+    expect(body.messages).toEqual({ imported: 0, duplicates: 2, skippedNoText: 2, totalRows: 4 });
+
+    const rows = await getDb()
+      .select()
+      .from(schema.operatorVoiceMessages)
+      .where(eq(schema.operatorVoiceMessages.organizationId, org.id));
+    expect(rows).toHaveLength(2);
   });
 
   it('imports a synthetic zip archive and reports per-genre counts, dedup, skipped reposts, and MIN_ITEMS_TO_DERIVE status', async () => {
@@ -205,6 +277,14 @@ describe('POST /api/extension/voice-import', () => {
     expect(body.skippedNoText).toEqual({ post: 1, comment: 1 });
     expect(body.imported).toEqual({ post: 2, comment: 1 });
     expect(body.duplicates).toEqual({ post: 0, comment: 0 });
+    // No messages.csv in this archive - the addition is zero across the
+    // board, not absent.
+    expect(body.messages).toEqual({
+      imported: 0,
+      duplicates: 0,
+      skippedNoText: 0,
+      totalRows: 0,
+    });
     expect(body.noop).toBe(false);
 
     // MIN_ITEMS_TO_DERIVE is 3: 2 posts alone doesn't clear it, but the

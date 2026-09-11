@@ -37,6 +37,33 @@ export type ImportedVoiceItem = {
   context: string | null;
 };
 
+/** A message the operator sent, read from `messages.csv` (LOR-267). No
+ * `genre` - a DM is not a post, a comment or a reply, and it is never
+ * routed through `ImportedVoiceItem`/`operator_voice_samples`'s genre
+ * column; see `operator-profile.ts`'s `importVoiceMessages` and
+ * `schema.ts`'s own comment on `operator_voice_messages` for why it gets
+ * its own table instead. */
+export type ImportedVoiceMessage = {
+  /** Deterministic - see `deriveMessageExternalId`. */
+  externalId: string;
+  text: string;
+  postedAt: string | null;
+};
+
+/** Ceiling on a single imported item's stored text, shared with the
+ * extension's passive LinkedIn capture (`MAX_POST_TEXT_LEN` in
+ * `web/.../api/extension/operator-profile/+server.ts`) - both feed the
+ * same voice corpus, from a page's DOM or a data export's CSV, and
+ * neither has a length contract with its source, so one ceiling for both
+ * rather than two independently-chosen numbers. */
+export const MAX_VOICE_SAMPLE_TEXT_CHARS = 3000;
+
+function clampVoiceSampleText(text: string): string {
+  return text.length > MAX_VOICE_SAMPLE_TEXT_CHARS
+    ? text.slice(0, MAX_VOICE_SAMPLE_TEXT_CHARS)
+    : text;
+}
+
 /** One row of a parsed CSV: raw string cells, in file order. */
 type CsvRow = string[];
 
@@ -202,6 +229,25 @@ const COMMENTS_COLUMNS: readonly ColumnSpec[] = [
   },
 ];
 
+// messages.csv's real header, verified against a real "Basic"
+// LinkedIn export (LOR-267): CONVERSATION ID, CONVERSATION TITLE, FROM,
+// SENDER PROFILE URL, TO, RECIPIENT PROFILE URLS, DATE, SUBJECT, CONTENT,
+// FOLDER, ATTACHMENTS, IS MESSAGE DRAFT. Only the five this parser
+// actually needs are resolved; `FROM`/`TO` are not among them -
+// `identifyOperatorProfileUrl` derives who the operator is from
+// `senderProfileUrl`/`conversationId` alone (see its own comment), never
+// from a display name, which is not guaranteed unique.
+const MESSAGES_COLUMNS: readonly ColumnSpec[] = [
+  { role: 'conversationId', aliases: ['conversationid'], required: true },
+  { role: 'senderProfileUrl', aliases: ['senderprofileurl'], required: true },
+  { role: 'content', aliases: ['content'], required: true },
+  { role: 'date', aliases: ['date'], required: false },
+  // Absent in older exports with no draft-message feature at all - a
+  // missing column reads as "not a draft" for every row, never as a
+  // reason to throw.
+  { role: 'isDraft', aliases: ['ismessagedraft'], required: false },
+];
+
 /** Counts from parsing one CSV: how many data rows it had (excluding the
  * header), how many turned into an `ImportedVoiceItem`, and how many were
  * dropped for having no text - a bare repost in Shares.csv, or a reaction
@@ -303,11 +349,115 @@ export function parseCommentsCsvStats(csvText: string): CsvParseStats {
   return parseCommentsRows(csvText).stats;
 }
 
-/** Whether `csvText`'s header row matches Shares.csv's or Comments.csv's
- * required columns - for a caller that received one bare CSV file (not a
- * zip) and has to tell which schema it is before it can parse it. Null
- * when it matches neither. */
-export function detectCsvKind(csvText: string): 'shares' | 'comments' | null {
+/**
+ * `messages.csv` mixes the operator's own sent messages with everyone
+ * they ever corresponded with in one file, and carries no flag saying
+ * which is which - so this derives it from the file's own structure:
+ * in a personal export, the account owner is a party to every
+ * conversation, while any other single correspondent only ever appears
+ * in the conversation(s) they are personally part of. The `SENDER
+ * PROFILE URL` that sends in the most distinct `CONVERSATION ID`s is
+ * therefore the operator - a coincidentally-shared display name never
+ * comes into it, which is why this reads `senderProfileUrl`, not `FROM`.
+ *
+ * Conservative on purpose: a blank profile URL (LinkedIn's placeholder
+ * for a company page or a removed account) is never a candidate, and the
+ * winner must clear the runner-up outright. A tie, or a file with no
+ * non-blank sender at all, returns null - "cannot attribute" - rather
+ * than guessing, which is what a single-conversation file (operator and
+ * one correspondent, one conversation apiece) genuinely is.
+ */
+function identifyOperatorProfileUrl(body: CsvRow[], cols: Map<string, number>): string | null {
+  const conversationsByUrl = new Map<string, Set<string>>();
+  for (const row of body) {
+    const url = cell(row, cols.get('senderProfileUrl'));
+    if (!url) continue;
+    let conversations = conversationsByUrl.get(url);
+    if (!conversations) {
+      conversations = new Set();
+      conversationsByUrl.set(url, conversations);
+    }
+    conversations.add(cell(row, cols.get('conversationId')));
+  }
+  const ranked = [...conversationsByUrl.entries()]
+    .map(([url, conversations]) => [url, conversations.size] as const)
+    .sort((a, b) => b[1] - a[1]);
+  if (ranked.length === 0) return null;
+  const [topUrl, topCount] = ranked[0]!;
+  const runnerUpCount = ranked[1]?.[1] ?? 0;
+  return topCount > runnerUpCount ? topUrl : null;
+}
+
+/** Same "hash the stable identity, prefix by source" shape as
+ * `deriveExternalId`, kept separate rather than widening
+ * `ImportedVoiceGenre` to a third value: a message has no genre, and
+ * `operator_profile.ts`'s `importVoiceSamples`/`byGenre` accounting stays
+ * exactly `post`/`comment`. Hashes the conversation id alongside the
+ * sender and text (not just url+text, `deriveExternalId`'s own inputs) -
+ * `SENDER PROFILE URL` is the same for every message the operator ever
+ * sent, so without the conversation id two different messages with the
+ * same wording to two different people would collide. */
+function deriveMessageExternalId(conversationId: string, senderUrl: string, text: string): string {
+  const hash = createHash('sha256')
+    .update(`${conversationId}\u0000${senderUrl}\u0000${text}`)
+    .digest('hex')
+    .slice(0, 24);
+  return `li-import-message:${hash}`;
+}
+
+/**
+ * Parses `messages.csv` into the operator's own sent DMs. Skips, never
+ * guesses: a row from anyone else, a draft (`IS MESSAGE DRAFT` - an
+ * unsent draft is not how this person writes when they press send), and
+ * an empty body are all counted as `skipped`, same accounting
+ * `parseSharesRows`/`parseCommentsRows` already use. When
+ * `identifyOperatorProfileUrl` cannot attribute the file at all, every
+ * row is skipped rather than one being guessed at.
+ */
+function parseMessagesRows(csvText: string): {
+  items: ImportedVoiceMessage[];
+  stats: CsvParseStats;
+} {
+  const rows = parseCsvRows(csvText);
+  if (rows.length === 0) return { items: [], stats: { totalRows: 0, imported: 0, skipped: 0 } };
+  const [header, ...body] = rows;
+  const cols = resolveColumns(header!, MESSAGES_COLUMNS);
+  const operatorUrl = identifyOperatorProfileUrl(body, cols);
+
+  const items: ImportedVoiceMessage[] = [];
+  let skipped = 0;
+  for (const row of body) {
+    const text = cell(row, cols.get('content'));
+    const senderUrl = cell(row, cols.get('senderProfileUrl'));
+    const isDraft = cell(row, cols.get('isDraft')).toLowerCase() === 'yes';
+    if (!text || !operatorUrl || senderUrl !== operatorUrl || isDraft) {
+      skipped += 1;
+      continue;
+    }
+    items.push({
+      externalId: deriveMessageExternalId(cell(row, cols.get('conversationId')), senderUrl, text),
+      text: clampVoiceSampleText(text),
+      postedAt: normalizeDate(cell(row, cols.get('date'))),
+    });
+  }
+  return { items, stats: { totalRows: body.length, imported: items.length, skipped } };
+}
+
+export function parseMessagesCsv(csvText: string): ImportedVoiceMessage[] {
+  return parseMessagesRows(csvText).items;
+}
+
+/** Same parse as `parseMessagesCsv`, plus the row counts described on
+ * `CsvParseStats`. */
+export function parseMessagesCsvStats(csvText: string): CsvParseStats {
+  return parseMessagesRows(csvText).stats;
+}
+
+/** Whether `csvText`'s header row matches Shares.csv's, Comments.csv's or
+ * messages.csv's required columns - for a caller that received one bare
+ * CSV file (not a zip) and has to tell which schema it is before it can
+ * parse it. Null when it matches none of the three. */
+export function detectCsvKind(csvText: string): 'shares' | 'comments' | 'messages' | null {
   const [header] = parseCsvRows(csvText);
   if (!header) return null;
   try {
@@ -319,6 +469,12 @@ export function detectCsvKind(csvText: string): 'shares' | 'comments' | null {
   try {
     resolveColumns(header, COMMENTS_COLUMNS);
     return 'comments';
+  } catch {
+    // fall through
+  }
+  try {
+    resolveColumns(header, MESSAGES_COLUMNS);
+    return 'messages';
   } catch {
     return null;
   }

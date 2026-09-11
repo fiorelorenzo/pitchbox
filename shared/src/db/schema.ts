@@ -1267,6 +1267,43 @@ export const operatorVoiceSamples = pgTable(
   }),
 );
 
+// LinkedIn DM import (LOR-267): a message the operator sent, read from a
+// data export's messages.csv. Deliberately its own table rather than a
+// fourth `operator_voice_samples.genre` value: a DM is not a post, a
+// comment or a reply, and `assist/voice-profile.ts`'s per-genre
+// measurement (`measureVoiceCorpusByGenre`) is built around exactly those
+// three - a `genre: 'message'` row would either need a fourth genre that
+// axis was never designed for or would silently mislabel one it isn't.
+// Read back by `operator-voice-profile.ts`'s `gatherVoiceCorpus` as
+// `kind: 'message'` corpus items instead, the same corpus kind a sent
+// Reddit/HN DM (`messages`/`contact_history`) already contributes - a DM
+// is a DM regardless of which platform it went out on. Same dedup shape
+// as `operator_voice_samples`: `external_id` is deterministic per row
+// (`voice-import.ts`'s `deriveMessageExternalId`), so re-importing the
+// same archive writes nothing new.
+export const operatorVoiceMessages = pgTable(
+  'operator_voice_messages',
+  {
+    id: serial('id').primaryKey(),
+    organizationId: integer('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    externalId: text('external_id').notNull(),
+    platformId: integer('platform_id')
+      .notNull()
+      .references(() => platforms.id),
+    text: text('text').notNull(),
+    postedAt: timestamp('posted_at', { withTimezone: true }),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byOrgExternal: uniqueIndex('operator_voice_messages_org_external_unique').on(
+      t.organizationId,
+      t.externalId,
+    ),
+  }),
+);
+
 // The operator's voice, derived from what they have actually written
 // (#407): the same voice samples above, the messages and sent drafts that
 // went out, and the project templates - a measurement, not a model call,
