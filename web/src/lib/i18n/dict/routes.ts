@@ -184,7 +184,8 @@ export const routesEn = {
   'playbooks.back-button': 'Back',
   'playbooks.duplicate-button': 'Duplicate',
   'playbooks.save-button': 'Save',
-  'playbooks.builtin-notice': 'This is a built-in playbook and cannot be edited in place. Duplicate it to customise.',
+  'playbooks.builtin-notice':
+    'This is a built-in playbook and cannot be edited in place. Duplicate it to customise.',
   'playbooks.non-admin-notice': 'You need admin access to edit this playbook.',
   'playbooks.detail-seo-title': 'Playbook · {name}',
   'playbooks.detail-seo-description': 'Edit a Pitchbox playbook.',
@@ -273,9 +274,11 @@ export const routesEn = {
   'verify.toast-verified-title': 'Email verified',
   'verify.toast-verified-body': 'You can now start runs on this account.',
   'verify.failed-title': 'Link no longer valid',
-  'verify.failed-body': 'It may have expired or already been used. Request a new link from Settings.',
+  'verify.failed-body':
+    'It may have expired or already been used. Request a new link from Settings.',
   'verify.toast-failed-title': 'This link is no longer valid',
-  'verify.toast-failed-body': 'It may have expired or already been used - request a new one from Settings.',
+  'verify.toast-failed-body':
+    'It may have expired or already been used - request a new one from Settings.',
   'verify.title': 'Verify your email',
   'verify.body': 'Confirm this address to start running campaigns.',
   'verify.verifying-button': 'Verifying…',
@@ -372,7 +375,8 @@ export const routesIt = {
   'blocklist.header-description':
     'Subreddit, utenti e parole chiave che le campagne salteranno. Limita a un progetto o applica globalmente a tutti i progetti.',
   'blocklist.add-entry-title': 'Aggiungi voce',
-  'blocklist.add-entry-description': 'Gli scout salteranno le corrispondenze prima di scrivere una bozza.',
+  'blocklist.add-entry-description':
+    'Gli scout salteranno le corrispondenze prima di scrivere una bozza.',
   'blocklist.label-platform': 'Piattaforma',
   'blocklist.label-kind': 'Tipo',
   'blocklist.label-value': 'Valore',
@@ -395,7 +399,7 @@ export const routesIt = {
   'blocklist.entries-total': '{n} totali',
   'blocklist.empty-title': 'Blocklist vuota',
   'blocklist.empty-body':
-    "Blocca nomi utente, subreddit o parole chiave qui. Sia la pipeline delle bozze sia il percorso di invio consultano la blocklist prima che qualsiasi outreach parta.",
+    'Blocca nomi utente, subreddit o parole chiave qui. Sia la pipeline delle bozze sia il percorso di invio consultano la blocklist prima che qualsiasi outreach parta.',
   'blocklist.col-kind': 'Tipo',
   'blocklist.col-value': 'Valore',
   'blocklist.col-platform': 'Piattaforma',
@@ -416,7 +420,7 @@ export const routesIt = {
   'playbooks.seo-description': 'Modifica o crea i playbook markdown eseguiti dal runner agente.',
   'playbooks.title': 'Playbook',
   'playbooks.header-description':
-    "Istruzioni in markdown eseguite dal runner agente. Le voci predefinite sono di sola lettura: duplicale per personalizzarle.",
+    'Istruzioni in markdown eseguite dal runner agente. Le voci predefinite sono di sola lettura: duplicale per personalizzarle.',
   'playbooks.new-button': 'Nuovo playbook',
   'playbooks.builtin-badge': 'predefinito',
   'playbooks.updated-at': 'Aggiornato {when}',
@@ -437,7 +441,7 @@ export const routesIt = {
   'playbooks.create-button': 'Crea',
   'playbooks.delete-dialog-title': 'Eliminare "{name}"?',
   'playbooks.delete-dialog-description':
-    "Questo rimuove il playbook. Le campagne che usano il suo slug di skill avranno bisogno di un altro playbook prima di poter essere eseguite di nuovo.",
+    'Questo rimuove il playbook. Le campagne che usano il suo slug di skill avranno bisogno di un altro playbook prima di poter essere eseguite di nuovo.',
   'playbooks.delete-confirm-button': 'Elimina playbook',
   'playbooks.deleting-button': 'Eliminazione…',
   'playbooks.error-admin-required': "Serve l'accesso da amministratore per questa azione",
@@ -536,16 +540,18 @@ export const routesIt = {
 
   // ---- /verify/[token] ------------------------------------------------
   'verify.seo-title': 'Verifica email',
-  'verify.seo-description': 'Verifica l\'indirizzo email del tuo account Pitchbox.',
+  'verify.seo-description': "Verifica l'indirizzo email del tuo account Pitchbox.",
   'verify.verified-title': 'Email verificata',
   'verify.verified-body': 'Il tuo account ora può avviare run.',
   'verify.go-to-dashboard': 'Vai alla dashboard',
   'verify.toast-verified-title': 'Email verificata',
   'verify.toast-verified-body': 'Ora puoi avviare run su questo account.',
   'verify.failed-title': 'Il link non è più valido',
-  'verify.failed-body': 'Potrebbe essere scaduto o già usato. Richiedi un nuovo link dalle Impostazioni.',
+  'verify.failed-body':
+    'Potrebbe essere scaduto o già usato. Richiedi un nuovo link dalle Impostazioni.',
   'verify.toast-failed-title': 'Questo link non è più valido',
-  'verify.toast-failed-body': 'Potrebbe essere scaduto o già usato: richiedine uno nuovo dalle Impostazioni.',
+  'verify.toast-failed-body':
+    'Potrebbe essere scaduto o già usato: richiedine uno nuovo dalle Impostazioni.',
   'verify.title': 'Verifica la tua email',
   'verify.body': 'Conferma questo indirizzo per iniziare a eseguire campagne.',
   'verify.verifying-button': 'Verifica in corso…',

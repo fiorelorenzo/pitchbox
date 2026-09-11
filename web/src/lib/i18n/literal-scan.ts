@@ -37,10 +37,7 @@ const COMMENT_RE = /<!--[\s\S]*?-->/g;
 const SCANNED_ATTRS = ['title', 'placeholder', 'aria-label', 'alt', 'description'];
 
 const TEXT_NODE_RE = />([^<>{}]*[A-Za-z]{2,}[^<>{}]*)</g;
-const ATTR_RE = new RegExp(
-  `\\b(?:${SCANNED_ATTRS.join('|')})="([^"{}]*[A-Za-z]{2,}[^"{}]*)"`,
-  'g',
-);
+const ATTR_RE = new RegExp(`\\b(?:${SCANNED_ATTRS.join('|')})="([^"{}]*[A-Za-z]{2,}[^"{}]*)"`, 'g');
 
 export type Literal = { kind: 'text' | 'attr'; value: string };
 
