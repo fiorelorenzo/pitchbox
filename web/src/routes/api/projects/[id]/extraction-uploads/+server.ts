@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { requireOrgId } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
+import { createProjectSource } from '@pitchbox/shared/project-sources';
 import { t } from '@pitchbox/shared/messages';
 
 const MAX_FILES = 200;
@@ -185,5 +186,14 @@ export async function POST(event: RequestEvent) {
     bytes += buf.length;
   }
 
-  return json({ path: root, files: accepted.length, bytes }, { status: 201 });
+  // The upload is a source of this project, not a one-shot argument to one
+  // run: a description run reads the project's whole active source set, so
+  // a path returned and never recorded would be read by nothing. The row
+  // is what makes the uploaded folder show up in the sources panel and be
+  // read again the next time the description is written.
+  const source = await createProjectSource(getDb(), orgId, id, 'upload', { value: root });
+  return json(
+    { path: root, files: accepted.length, bytes, sourceId: source?.id ?? null },
+    { status: 201 },
+  );
 }

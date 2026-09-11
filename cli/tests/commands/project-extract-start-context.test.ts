@@ -4,6 +4,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
+import { createProjectSource } from '@pitchbox/shared/project-sources';
 import { eq, sql } from 'drizzle-orm';
 
 function cli(args: string): string {
@@ -61,6 +62,7 @@ describe('pitchbox project:extract:start - recommendations context', () => {
       params: { scenario: 'reddit-scout', objective: 'find rpg players' },
     });
 
+    const source = await createProjectSource(db, org.id, projectId, 'folder', { value: folder });
     const [run] = await db
       .insert(schema.runs)
       .values({
@@ -68,7 +70,7 @@ describe('pitchbox project:extract:start - recommendations context', () => {
         projectId,
         trigger: 'manual',
         status: 'running',
-        params: { source: { kind: 'folder', value: folder } },
+        params: { sourceIds: [source!.id] },
       })
       .returning();
     runId = run.id;

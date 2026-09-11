@@ -14,20 +14,30 @@ import { schema, type Db } from './db/client.js';
 import { projectBelongsToOrg } from './orgs.js';
 
 /**
- * Today's extraction inputs (`folder`, `git`, `upload`) and the GitHub cache
- * (`github`), plus `website` (#433), the three LinkedIn shapes #435 is
- * spiking (a company page, a profile, a single post), and two adapters this
- * repo already talks to reused read-only (#437): `mastodon_account` (a
- * Mastodon account's own public posts, no credential) and
- * `hackernews_author` (an HN user's own submissions, no credential). A kind
- * nobody implements yet is a valid value here; siblings import this union
- * rather than keeping their own copy of the list.
+ * Today's extraction inputs (`folder`, `git`, `upload`), plus `website`
+ * (#433), the three LinkedIn shapes #435 is spiking (a company page, a
+ * profile, a single post), and two adapters this repo already talks to
+ * reused read-only (#437): `mastodon_account` (a Mastodon account's own
+ * public posts, no credential) and `hackernews_author` (an HN user's own
+ * submissions, no credential). A kind nobody implements yet is a valid
+ * value here; siblings import this union rather than keeping their own copy
+ * of the list.
+ *
+ * There is exactly one repository kind, `git`, and that is deliberate: a
+ * repository used to be addable twice, as `git` (a clone URL an extraction
+ * run reads in full) and as `github` (the same repository read shallowly
+ * through the API into a cached README excerpt). The two were one thing
+ * wearing two names, so a person adding "their repo" had to guess which
+ * half of the product would read it. `git` now covers both: its re-sync
+ * caches the GitHub metadata when the URL is a GitHub one, and a
+ * description run clones the tree whatever the host is. Migration
+ * 0038_project_sources_git_unification rewrote every existing `github` row
+ * into a `git` one.
  */
 export const PROJECT_SOURCE_KINDS = [
   'folder',
   'git',
   'upload',
-  'github',
   'website',
   'linkedin_company',
   'linkedin_profile',

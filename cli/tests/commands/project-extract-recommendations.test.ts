@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterAll } from 'vitest';
 import { execSync } from 'node:child_process';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
+import { createProjectSource } from '@pitchbox/shared/project-sources';
 import { eq, sql } from 'drizzle-orm';
 
 function cliWithStdin(args: string, input: string): string {
@@ -34,6 +35,7 @@ async function setup() {
     .insert(schema.projects)
     .values({ organizationId: org.id, slug: 'p', name: 'P' })
     .returning();
+  const source = await createProjectSource(db, org.id, project.id, 'folder', { value: '/tmp/x' });
   const [run] = await db
     .insert(schema.runs)
     .values({
@@ -41,10 +43,10 @@ async function setup() {
       projectId: project.id,
       trigger: 'manual',
       status: 'running',
-      params: { source: { kind: 'folder', value: '/tmp/x' } },
+      params: { sourceIds: [source!.id] },
     })
     .returning();
-  return { project, run };
+  return { project, run, sourceId: source!.id };
 }
 
 describe('pitchbox project:extract:finish - recommendations payload', () => {
@@ -67,7 +69,7 @@ describe('pitchbox project:extract:finish - recommendations payload', () => {
   });
 
   it('replaces previous recommendations on re-extract', async () => {
-    const { project, run } = await setup();
+    const { project, run, sourceId } = await setup();
     cliWithStdin(
       `project:extract:finish --run=${run.id}`,
       JSON.stringify({ description: '## D', recommendations: [VALID_REC, VALID_REC] }),
@@ -80,7 +82,7 @@ describe('pitchbox project:extract:finish - recommendations payload', () => {
         projectId: project.id,
         trigger: 'manual',
         status: 'running',
-        params: { source: { kind: 'folder', value: '/tmp/x' } },
+        params: { sourceIds: [sourceId] },
       })
       .returning();
     cliWithStdin(

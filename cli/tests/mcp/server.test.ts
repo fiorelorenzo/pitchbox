@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
 import { encrypt } from '@pitchbox/shared/crypto';
+import { createProjectSource } from '@pitchbox/shared/project-sources';
 import { eq, sql } from 'drizzle-orm';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -527,7 +528,7 @@ describe('pitchbox MCP server (project + skill tools)', () => {
     await reset();
   });
 
-  it('project_extract_start exposes the source path; finish persists the description', async () => {
+  it('project_extract_start lists the project source; finish persists the description', async () => {
     const db = getDb();
     const [org] = await db
       .select({ id: schema.organizations.id })
@@ -539,6 +540,7 @@ describe('pitchbox MCP server (project + skill tools)', () => {
       .returning();
     const dir = mkdtempSync(join(tmpdir(), 'pb-src-'));
     writeFileSync(join(dir, 'README.md'), '# Cool Product\nDoes things.', 'utf8');
+    const source = await createProjectSource(db, org.id, project.id, 'folder', { value: dir });
     const [run] = await db
       .insert(schema.runs)
       .values({
@@ -546,16 +548,17 @@ describe('pitchbox MCP server (project + skill tools)', () => {
         projectId: project.id,
         trigger: 'manual',
         status: 'running',
-        params: { source: { kind: 'folder', value: dir } },
+        params: { sourceIds: [source!.id] },
       })
       .returning();
 
     const client = await connectClient();
     const start = parse(await call(client, 'project_extract_start', { runId: run.id })) as {
-      sourcePath: string;
+      sources: Array<{ kind: string; label: string }>;
       scenarios: unknown[];
     };
-    expect(start.sourcePath).toBe(dir);
+    expect(start.sources).toHaveLength(1);
+    expect(start.sources[0]).toMatchObject({ kind: 'folder', label: dir });
     expect(start.scenarios.length).toBeGreaterThan(0);
 
     const fin = parse(
@@ -587,6 +590,7 @@ describe('pitchbox MCP server (project + skill tools)', () => {
       .returning();
     const dir = mkdtempSync(join(tmpdir(), 'pb-src-'));
     writeFileSync(join(dir, 'README.md'), '# Cool Product\nDoes things.', 'utf8');
+    const source = await createProjectSource(db, org.id, project.id, 'folder', { value: dir });
     const [run] = await db
       .insert(schema.runs)
       .values({
@@ -594,7 +598,7 @@ describe('pitchbox MCP server (project + skill tools)', () => {
         projectId: project.id,
         trigger: 'manual',
         status: 'running',
-        params: { source: { kind: 'folder', value: dir } },
+        params: { sourceIds: [source!.id] },
       })
       .returning();
 

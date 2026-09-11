@@ -7,6 +7,7 @@ import { mkdtemp, mkdir, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
+import { createProjectSource } from '@pitchbox/shared/project-sources';
 import { sql } from 'drizzle-orm';
 import { projectExtractListFiles, projectExtractReadFile } from '../../src/commands/project.js';
 
@@ -41,6 +42,7 @@ describe('project extraction source access (#220)', () => {
       .insert(schema.projects)
       .values({ organizationId: org.id, slug: 'p1', name: 'P1' })
       .returning();
+    const source = await createProjectSource(db, org.id, project.id, 'folder', { value: folder });
     const [run] = await db
       .insert(schema.runs)
       .values({
@@ -48,7 +50,7 @@ describe('project extraction source access (#220)', () => {
         projectId: project.id,
         trigger: 'manual',
         status: 'running',
-        params: { source: { kind: 'folder', value: folder } },
+        params: { sourceIds: [source!.id] },
       })
       .returning();
     runId = run.id;

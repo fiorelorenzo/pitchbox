@@ -387,12 +387,7 @@ export const campaignsEn = {
   'projects.toast-saved': 'Saved',
   'projects.error-delete-failed': 'Failed to delete',
   'projects.toast-deleted': 'Project deleted',
-  'projects.error-proposal-conflict':
-    'The sources changed since this was proposed - reopen it to see the new diff',
-  'projects.error-proposal-apply-failed': 'Failed to apply the proposed description',
   'projects.toast-description-updated': 'Description updated',
-  'projects.error-proposal-already-changed': 'The sources already changed again',
-  'projects.error-proposal-decline-failed': 'Failed to decline',
   'projects.view-diff-button': 'View diff',
   'projects.slug-immutable-hint': 'Slug cannot be changed.',
   'projects.admin-required-tooltip': 'Admin access required',
@@ -406,13 +401,16 @@ export const campaignsEn = {
   'projects.edit-button': 'Edit',
   'projects.preview-button': 'Preview',
   'projects.manage-sources-button': 'Manage sources',
-  'projects.proposal-ready-body': 'Your sources changed - a new description is ready to review.',
-  'projects.review-button': 'Review',
+  'projects.regenerate-description-button': 'Write from sources',
+  'projects.regenerate-description-hint':
+    'The agent reads every active source and rewrites this description from what it found.',
+  'projects.error-no-sources': 'Add a source first: there is nothing to read yet.',
+  'projects.regenerate-now-action': 'Write it now',
   'projects.extraction-running-body':
-    'An extraction is running - editing is locked until it finishes.',
+    'The agent is reading your sources and rewriting the description - editing is locked until it finishes.',
   'projects.no-description-title': 'No description yet',
   'projects.no-description-body':
-    'The description grounds the agent during scouting and drafting. Add a source below and run an extraction, or start from a blank template.',
+    'The description grounds the agent during scouting and drafting. Add a source below, then write it from your sources, or start from a blank template.',
   'projects.start-from-template-button': 'Start from template',
   'projects.suggested-campaigns-title': 'Suggested campaigns',
   'projects.suggested-campaigns-body':
@@ -516,9 +514,8 @@ export const campaignsEn = {
 
   // ProjectSourcesPanel.svelte
   'projects.source-kind.folder': 'Local folder',
-  'projects.source-kind.git': 'Git repository',
   'projects.source-kind.upload': 'Uploaded folder',
-  'projects.source-kind.github': 'GitHub repository',
+  'projects.source-kind.git': 'Repository',
   'projects.source-kind.website': 'Website',
   'projects.source-kind.linkedin_company': 'LinkedIn company page',
   'projects.source-kind.linkedin_profile': 'LinkedIn profile',
@@ -541,17 +538,16 @@ export const campaignsEn = {
   'projects.toast-source-removed': 'Source removed',
   'projects.sources-panel-title': 'Sources',
   'projects.sources-panel-description':
-    'What the description is grounded in. Add a source, see when it was last fetched, re-sync it, or remove it - a removed source is never used again.',
+    'What the description is written from. Add a source, see when it was last read, re-read it, or remove it - a removed source is never used again.',
   'projects.source-kind-label': 'Kind',
   'projects.source-value-label': 'Value',
   'projects.add-source-button': 'Add source',
   'projects.sources-empty':
-    'No sources yet. Add a URL above, or start an extraction from a local folder.',
+    'No sources yet. Add a repository URL, a website, or a social account above: the description is written from whatever is listed here.',
   'projects.status-label': 'Status',
-  'projects.last-fetched-label': 'Last fetched',
+  'projects.last-fetched-label': 'Last read',
   'projects.actions-label': 'Actions',
   'projects.never-label': 'never',
-  'projects.run-extraction-aria': 'Run extraction with this source',
   'projects.resync-aria': 'Re-sync',
   'projects.remove-aria': 'Remove',
   'projects.remove-source-title': 'Remove this {kind}?',
@@ -566,6 +562,7 @@ export const campaignsEn = {
     'Could not load more extractions. Please try again.',
   'projects.error-load-more-extractions': 'Could not load more extractions.',
   'projects.source-badge-uploaded-folder': 'uploaded folder',
+  'projects.source-badge-count': '{count} sources',
   'projects.extraction-history-title': 'Extraction history',
   'projects.extraction-history-count': 'Showing {shown} of {total} extractions',
   'projects.no-extractions-title': 'No extractions yet',
@@ -969,12 +966,7 @@ export const campaignsIt = {
   'projects.toast-saved': 'Salvato',
   'projects.error-delete-failed': 'Eliminazione non riuscita',
   'projects.toast-deleted': 'Progetto eliminato',
-  'projects.error-proposal-conflict':
-    'Le fonti sono cambiate da quando è stata proposta, riaprila per vedere il nuovo confronto',
-  'projects.error-proposal-apply-failed': 'Applicazione della descrizione proposta non riuscita',
   'projects.toast-description-updated': 'Descrizione aggiornata',
-  'projects.error-proposal-already-changed': 'Le fonti sono già cambiate di nuovo',
-  'projects.error-proposal-decline-failed': 'Rifiuto non riuscito',
   'projects.view-diff-button': 'Vedi confronto',
   'projects.slug-immutable-hint': 'Lo slug non può essere modificato.',
   'projects.admin-required-tooltip': 'Serve accesso da amministratore',
@@ -989,14 +981,16 @@ export const campaignsIt = {
   'projects.edit-button': 'Modifica',
   'projects.preview-button': 'Anteprima',
   'projects.manage-sources-button': 'Gestisci fonti',
-  'projects.proposal-ready-body':
-    'Le tue fonti sono cambiate: una nuova descrizione è pronta da rivedere.',
-  'projects.review-button': 'Rivedi',
+  'projects.regenerate-description-button': 'Scrivi dalle fonti',
+  'projects.regenerate-description-hint':
+    "L'agente legge tutte le fonti attive e riscrive questa descrizione con quello che ha trovato.",
+  'projects.error-no-sources': "Aggiungi prima una fonte: non c'è ancora niente da leggere.",
+  'projects.regenerate-now-action': 'Scrivila adesso',
   'projects.extraction-running-body':
-    "Un'estrazione è in corso, la modifica è bloccata finché non finisce.",
+    "L'agente sta leggendo le fonti e riscrivendo la descrizione, la modifica è bloccata finché non finisce.",
   'projects.no-description-title': 'Ancora nessuna descrizione',
   'projects.no-description-body':
-    "La descrizione fornisce il contesto all'agente durante la ricerca e la scrittura. Aggiungi una fonte qui sotto e avvia un'estrazione, oppure parti da un modello vuoto.",
+    "La descrizione fornisce il contesto all'agente durante la ricerca e la scrittura. Aggiungi una fonte qui sotto e fatti scrivere la descrizione dalle fonti, oppure parti da un modello vuoto.",
   'projects.start-from-template-button': 'Parti da un modello',
   'projects.suggested-campaigns-title': 'Campagne suggerite',
   'projects.suggested-campaigns-body':
@@ -1103,9 +1097,8 @@ export const campaignsIt = {
 
   // ProjectSourcesPanel.svelte
   'projects.source-kind.folder': 'Cartella locale',
-  'projects.source-kind.git': 'Repository Git',
   'projects.source-kind.upload': 'Cartella caricata',
-  'projects.source-kind.github': 'Repository GitHub',
+  'projects.source-kind.git': 'Repository',
   'projects.source-kind.website': 'Sito web',
   'projects.source-kind.linkedin_company': 'Pagina aziendale LinkedIn',
   'projects.source-kind.linkedin_profile': 'Profilo LinkedIn',
@@ -1129,17 +1122,16 @@ export const campaignsIt = {
   'projects.toast-source-removed': 'Fonte rimossa',
   'projects.sources-panel-title': 'Fonti',
   'projects.sources-panel-description':
-    "Su cosa si basa la descrizione. Aggiungi una fonte, guarda quando è stata sincronizzata l'ultima volta, risincronizzala o rimuovila: una fonte rimossa non viene più usata.",
+    "Da cosa viene scritta la descrizione. Aggiungi una fonte, guarda quando è stata letta l'ultima volta, rileggila o rimuovila: una fonte rimossa non viene più usata.",
   'projects.source-kind-label': 'Tipo',
   'projects.source-value-label': 'Valore',
   'projects.add-source-button': 'Aggiungi fonte',
   'projects.sources-empty':
-    "Ancora nessuna fonte. Aggiungi un URL qui sopra, oppure avvia un'estrazione da una cartella locale.",
+    "Ancora nessuna fonte. Aggiungi l'URL di un repository, un sito o un account social qui sopra: la descrizione viene scritta da quello che è elencato qui.",
   'projects.status-label': 'Stato',
-  'projects.last-fetched-label': 'Ultima sincronizzazione',
+  'projects.last-fetched-label': 'Ultima lettura',
   'projects.actions-label': 'Azioni',
   'projects.never-label': 'mai',
-  'projects.run-extraction-aria': 'Avvia estrazione da questa fonte',
   'projects.resync-aria': 'Risincronizza',
   'projects.remove-aria': 'Rimuovi',
   'projects.remove-source-title': 'Rimuovere questa {kind}?',
@@ -1154,6 +1146,7 @@ export const campaignsIt = {
     'Non è stato possibile caricare altre estrazioni. Riprova.',
   'projects.error-load-more-extractions': 'Non è stato possibile caricare altre estrazioni.',
   'projects.source-badge-uploaded-folder': 'cartella caricata',
+  'projects.source-badge-count': '{count} fonti',
   'projects.extraction-history-title': 'Cronologia estrazioni',
   'projects.extraction-history-count': 'Mostrate {shown} di {total} estrazioni',
   'projects.no-extractions-title': 'Ancora nessuna estrazione',

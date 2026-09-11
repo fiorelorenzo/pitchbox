@@ -22,6 +22,7 @@ import {
 } from '@pitchbox/shared/draft-regenerate';
 import { startReplyDrafting } from '@pitchbox/shared/reply-drafter';
 import { getRunOrgId } from '@pitchbox/shared/orgs';
+import { listProjectSources } from '@pitchbox/shared/project-sources';
 import {
   getOrgQuotaSnapshot,
   assertOrgConcurrencyAdmitted,
@@ -770,14 +771,26 @@ export async function runCampaign(
   return { runId: run.id };
 }
 
+/**
+ * Starts a description run over the project's whole active source set.
+ *
+ * It used to take one source per run, picked in the dashboard, which is why
+ * the sources panel grew a play button per row. The set is the unit now:
+ * the human curates it, the agent reads all of it
+ * (cli/src/commands/project.ts's `projectExtractStart` resolves it from the
+ * project, so nothing about the choice lives in `runs.params`), and a
+ * project with a repository plus a website gets one description grounded in
+ * both instead of two runs fighting over the same column.
+ *
+ * Returns `noSources: true` without inserting a run when the project has
+ * nothing active to read - the caller turns that into a refusal the
+ * operator can act on, since an agent asked to describe nothing would
+ * either invent a product or fail on its first tool call.
+ */
 export async function runProjectExtraction(
   projectId: number,
-  source:
-    | { kind: 'folder'; value: string }
-    | { kind: 'git'; value: string }
-    | { kind: 'upload'; value: string },
   trigger: string = 'manual',
-): Promise<{ runId: number; alreadyRunning?: boolean }> {
+): Promise<{ runId?: number; alreadyRunning?: boolean; noSources?: boolean }> {
   const db = getDb();
   const [project] = await db
     .select()
@@ -800,6 +813,10 @@ export async function runProjectExtraction(
     .limit(1);
   if (existing) return { runId: existing.id, alreadyRunning: true };
 
+  const sources = await listProjectSources(db, project.organizationId, projectId);
+  const activeSourceIds = sources.filter((s) => s.active).map((s) => s.id);
+  if (activeSourceIds.length === 0) return { noSources: true };
+
   const [run] = await db
     .insert(schema.runs)
     .values({
@@ -808,7 +825,11 @@ export async function runProjectExtraction(
       agentRunner: project.defaultAgentRunner,
       trigger,
       status: 'running',
-      params: { source },
+      // Which sources existed when the run started, for the run log only.
+      // The agent resolves the set itself at tool-call time, so a source
+      // added mid-run is read rather than ignored; this is the record of
+      // what the operator was looking at when they pressed the button.
+      params: { sourceIds: activeSourceIds },
     })
     .returning();
 

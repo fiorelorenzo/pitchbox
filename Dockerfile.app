@@ -16,6 +16,16 @@ FROM node:22-bookworm-slim AS app
 # Global pnpm (no corepack: it writes to HOME at runtime, which the non-root user
 # can't always do).
 RUN npm install -g pnpm@9.15.9 && npm cache clean --force
+
+# git, which `node:22-bookworm-slim` does not carry. A `git` project source
+# is read by cloning it (cli/src/lib/git-clone.ts) and proved reachable with
+# `git ls-remote` (shared/src/project-extraction/git-remote.ts), so without
+# this every description run over a repository source fails on a missing
+# binary - on the deployed cloud edition only, which is exactly where nobody
+# was looking.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 # 1) Install deps from manifests first (better layer caching). Hoisted node-linker

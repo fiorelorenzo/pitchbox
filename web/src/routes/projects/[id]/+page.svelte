@@ -94,7 +94,6 @@
     {highlightRunId}
     runners={data.runners}
     sources={data.sources}
-    descriptionProposal={data.descriptionProposal}
   />
 {:else if tab === 'accounts'}
   <ProjectAccountsTab

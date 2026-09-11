@@ -1,13 +1,12 @@
 import { Command } from 'commander';
-import { getDb, schema, type Db } from '@pitchbox/shared/db';
+import { getDb, schema } from '@pitchbox/shared/db';
 import { DESCRIPTION_SCAFFOLD } from '@pitchbox/shared/project-extraction';
 import { SCENARIO_META, RecommendationItemSchema } from '@pitchbox/shared/campaigns';
+import { listProjectSources, type ProjectSourceRow } from '@pitchbox/shared/project-sources';
 import {
-  createProjectSource,
-  listProjectSources,
-  updateProjectSource,
-  type ProjectSourceKind,
-} from '@pitchbox/shared/project-sources';
+  viewProjectSourceForAgent,
+  SOURCE_CONTENT_MAX_CHARS,
+} from '@pitchbox/shared/project-source-content';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { readFile, readdir, realpath, stat, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -42,57 +41,15 @@ const MAX_LIST_ENTRIES = 2_000;
  * flooding the agent's context (and the run log) with a generated bundle. */
 const MAX_READ_BYTES = 200_000;
 
-type Source =
-  | { kind: 'folder'; value: string }
-  | { kind: 'git'; value: string }
-  | { kind: 'upload'; value: string };
+/** The kinds whose content is a directory the agent walks, rather than a
+ * cached read `project_extract_sources` hands over as text. */
+const TREE_KINDS = ['folder', 'git', 'upload'] as const;
+type TreeSourceKind = (typeof TREE_KINDS)[number];
 
-/**
- * Reads and validates the `source` a run's `params` jsonb carries. `params`
- * is `unknown` at the type level (it is stored data, not compiler-checked),
- * so this narrows with `in`/`typeof` rather than trusting a cast; returns
- * undefined when the field is missing or does not match `Source`'s shape.
- */
-function readRunSource(params: unknown): Source | undefined {
-  if (!params || typeof params !== 'object' || !('source' in params)) return undefined;
-  const source = params.source;
-  if (!source || typeof source !== 'object' || !('kind' in source) || !('value' in source)) {
-    return undefined;
-  }
-  const { kind, value } = source;
-  if (typeof value !== 'string') return undefined;
-  if (kind === 'folder' || kind === 'git' || kind === 'upload') return { kind, value };
-  return undefined;
-}
-
-/**
- * Where this run's source tree lives ON THE CLIENT. `clone: true` is the
- * extraction's first call, which materialises a git source; every later call
- * (list/read) resolves the same path without touching the network.
- */
-async function resolveSourcePath(
-  run: typeof schema.runs.$inferSelect,
-  opts: { clone?: boolean } = {},
-): Promise<string> {
-  const source = readRunSource(run.params);
-  if (!source) throw new Error('run has no source in params');
-
-  if (source.kind === 'git') {
-    const path = `/tmp/pitchbox-extract-${run.id}`;
-    if (opts.clone) {
-      await rm(path, { recursive: true, force: true });
-      await shallowClone(source.value, path);
-    }
-    return path;
-  }
-  if (source.kind === 'folder' || source.kind === 'upload') {
-    if (!isAbsolute(source.value)) throw new Error(`${source.kind} path must be absolute`);
-    const s = await stat(source.value).catch(() => null);
-    if (!s || !s.isDirectory())
-      throw new Error(`${source.kind} ${source.value} is not a readable directory`);
-    return source.value;
-  }
-  throw new Error('unsupported source kind');
+function isTreeSource(source: ProjectSourceRow): source is ProjectSourceRow & {
+  kind: TreeSourceKind;
+} {
+  return (TREE_KINDS as readonly string[]).includes(source.kind);
 }
 
 /** Load the extraction run behind a source-access call, or explain why it isn't one. */
@@ -106,40 +63,90 @@ async function loadExtractionRun(runId: number): Promise<typeof schema.runs.$inf
 }
 
 /**
- * Records the source an extraction run used as a `project_sources` row
- * (#431), so it survives past this one run instead of living only in
- * `runs.params`, which the caller clears once the run's temp dir is
- * cleaned up. Re-running from the same folder/git URL/upload path updates
- * the existing row's `fetchedAt` rather than piling up a duplicate.
+ * The run's project plus every active source on it. A description run reads
+ * the project's whole source set (#431/#434 replaced the one-source-per-run
+ * model): the human curates the set in the dashboard, the agent reads all
+ * of it, so adding a second source does not mean choosing which one counts.
  */
-async function recordExtractionSource(
-  db: Db,
-  organizationId: number,
-  projectId: number,
-  source: Source,
-): Promise<void> {
-  const kind: ProjectSourceKind = source.kind;
-  const existing = await listProjectSources(db, organizationId, projectId);
-  const match = existing.find((s) => {
-    if (s.kind !== kind) return false;
-    const config = s.config;
-    return (
-      !!config && typeof config === 'object' && 'value' in config && config.value === source.value
-    );
-  });
-  if (match) {
-    await updateProjectSource(db, organizationId, match.id, {
-      fetchedAt: new Date(),
-      fetchError: null,
-    });
-  } else {
-    const created = await createProjectSource(db, organizationId, projectId, kind, {
-      value: source.value,
-    });
-    if (created) {
-      await updateProjectSource(db, organizationId, created.id, { fetchedAt: new Date() });
-    }
+async function loadRunContext(run: typeof schema.runs.$inferSelect): Promise<{
+  project: typeof schema.projects.$inferSelect;
+  sources: ProjectSourceRow[];
+}> {
+  const db = getDb();
+  if (!run.projectId) throw new Error(`run ${run.id} has no project_id`);
+  const [project] = await db
+    .select()
+    .from(schema.projects)
+    .where(eq(schema.projects.id, run.projectId));
+  if (!project) throw new Error(`project ${run.projectId} not found`);
+  const sources = await listProjectSources(db, project.organizationId, project.id);
+  return { project, sources: sources.filter((s) => s.active) };
+}
+
+/**
+ * Where one tree source lives ON THE CLIENT. A `git` source is cloned once
+ * per run into a path keyed by run and source, so a project with two
+ * repositories keeps them apart and a second `files`/`read` call on the
+ * same source costs nothing. `folder`/`upload` are already paths.
+ *
+ * A clone failure is thrown, not swallowed: the caller is a tool call the
+ * agent made about this specific source, and it has other sources to fall
+ * back on.
+ */
+const clonedRoots = new Map<string, string>();
+
+async function resolveTreeSourcePath(
+  run: typeof schema.runs.$inferSelect,
+  source: ProjectSourceRow,
+): Promise<string> {
+  const config = (source.config ?? {}) as Record<string, unknown>;
+  const value = typeof config.value === 'string' ? config.value.trim() : '';
+  if (!value) throw new Error(`source ${source.id} carries no path or URL`);
+
+  if (source.kind === 'git') {
+    const key = `${run.id}:${source.id}`;
+    const cached = clonedRoots.get(key);
+    if (cached) return cached;
+    const path = `/tmp/pitchbox-extract-${run.id}-${source.id}`;
+    await rm(path, { recursive: true, force: true });
+    await shallowClone(value, path);
+    clonedRoots.set(key, path);
+    return path;
   }
+
+  if (!isAbsolute(value)) throw new Error(`${source.kind} path must be absolute`);
+  const s = await stat(value).catch(() => null);
+  if (!s || !s.isDirectory())
+    throw new Error(`${source.kind} ${value} is not a readable directory`);
+  return value;
+}
+
+/**
+ * The tree source a `files`/`read` call is about. With one tree source on
+ * the project, `sourceId` is optional and that source is it; with several,
+ * an omitted `sourceId` is an error naming the candidates rather than a
+ * silent pick, since reading the wrong repository would produce a
+ * confidently wrong description.
+ */
+async function resolveTreeSource(
+  run: typeof schema.runs.$inferSelect,
+  sourceId?: number,
+): Promise<ProjectSourceRow> {
+  const { sources } = await loadRunContext(run);
+  const trees = sources.filter(isTreeSource);
+  if (trees.length === 0) {
+    throw new Error(
+      'this project has no folder, repository or upload source to read as a file tree - use project_extract_sources for what its other sources fetched',
+    );
+  }
+  if (sourceId === undefined) {
+    if (trees.length === 1) return trees[0];
+    const ids = trees.map((s) => `${s.id} (${s.kind})`).join(', ');
+    throw new Error(`this project has several file-tree sources, pass sourceId: ${ids}`);
+  }
+  const match = trees.find((s) => s.id === sourceId);
+  if (!match) throw new Error(`source ${sourceId} is not a file-tree source of this run's project`);
+  return match;
 }
 
 // Core project-extraction / insights logic, extracted so both the CLI and the
@@ -148,17 +155,7 @@ async function recordExtractionSource(
 export async function projectExtractStart(runId: number) {
   const db = getDb();
   const run = await loadExtractionRun(runId);
-  if (!run.projectId) throw new Error(`run ${runId} has no project_id`);
-
-  const [project] = await db
-    .select()
-    .from(schema.projects)
-    .where(eq(schema.projects.id, run.projectId));
-  if (!project) throw new Error(`project ${run.projectId} not found`);
-
-  const sourcePath = await resolveSourcePath(run, { clone: true });
-  const source = readRunSource(run.params);
-  if (source) await recordExtractionSource(db, project.organizationId, project.id, source);
+  const { project, sources } = await loadRunContext(run);
 
   const scenarios = SCENARIO_META.map((s) => ({
     slug: s.slug,
@@ -170,24 +167,64 @@ export async function projectExtractStart(runId: number) {
   return {
     runId,
     projectId: project.id,
-    sourcePath,
     scaffoldTemplate: DESCRIPTION_SCAFFOLD,
     currentDescription: project.description ?? '',
     scenarios,
     existingCampaigns,
+    // The set, without its content: one line per source so the agent knows
+    // what it is about to read and can say in the description where a claim
+    // came from. The content itself arrives from `project_extract_sources`
+    // (cached reads) and `project_extract_files`/`_read` (trees), which
+    // keeps this first call small even on a project with a 40k-character
+    // website crawl.
+    sources: sources.map((source) => {
+      const view = viewProjectSourceForAgent(source);
+      return {
+        id: view.id,
+        kind: view.kind,
+        label: view.label,
+        readsAsTree: view.readsAsTree,
+        fetchedAt: view.fetchedAt,
+        fetchError: view.fetchError,
+        hasContent: view.content !== null,
+      };
+    }),
   };
 }
 
 /**
- * List the run's source tree, client-side (#220). The agent runs on the cloud
- * runner and has no access to this filesystem, so it navigates the source
- * through this tool and `projectExtractReadFile` instead of its own Read/Bash.
- * Paths come back relative to the source root - the agent never needs, and
- * never gets, an absolute path on the client.
+ * Every non-tree source's cached read, as text (#434). This is what grounds
+ * the description in a website, a Mastodon account, an HN profile or a
+ * LinkedIn capture: the fetchers already flattened each one into
+ * `project_sources.output`, and `viewProjectSourceForAgent` renders that
+ * jsonb into prose the agent can quote. A source nothing has filled yet
+ * comes back with `content: null` and whatever `fetchError` explains it,
+ * rather than being hidden - the agent is told to write around a gap, not
+ * to invent over it.
  */
-export async function projectExtractListFiles(runId: number) {
+export async function projectExtractSources(runId: number) {
   const run = await loadExtractionRun(runId);
-  const root = await realpath(await resolveSourcePath(run));
+  const { sources } = await loadRunContext(run);
+  return {
+    runId: run.id,
+    maxCharsPerSource: SOURCE_CONTENT_MAX_CHARS,
+    sources: sources.map(viewProjectSourceForAgent),
+  };
+}
+
+/**
+ * List one file-tree source's files, client-side (#220). The agent runs on
+ * the cloud runner and has no access to this filesystem, so it navigates
+ * the source through this tool and `projectExtractReadFile` instead of its
+ * own Read/Bash. Paths come back relative to that source's root - the agent
+ * never needs, and never gets, an absolute path on the client. `sourceId`
+ * may be omitted only when the project has exactly one file-tree source;
+ * with several, omitting it is an error rather than a silent pick.
+ */
+export async function projectExtractListFiles(runId: number, sourceId?: number) {
+  const run = await loadExtractionRun(runId);
+  const source = await resolveTreeSource(run, sourceId);
+  const root = await realpath(await resolveTreeSourcePath(run, source));
 
   const files: Array<{ path: string; bytes: number }> = [];
   let truncated = false;
@@ -219,6 +256,8 @@ export async function projectExtractListFiles(runId: number) {
 
   return {
     runId: run.id,
+    sourceId: source.id,
+    kind: source.kind,
     fileCount: files.length,
     truncated,
     maxBytesPerRead: MAX_READ_BYTES,
@@ -227,14 +266,17 @@ export async function projectExtractListFiles(runId: number) {
 }
 
 /**
- * Read one file from the run's source tree, client-side (#220). `path` is
- * relative to the source root; anything resolving outside it - `..`, an
- * absolute path, a symlink pointing away - is refused rather than clamped, so
- * a playbook (or a prompt-injected agent) cannot walk the client's disk.
+ * Read one file from one of the run's file-tree sources, client-side
+ * (#220). `path` is relative to that source's root; anything resolving
+ * outside it - `..`, an absolute path, a symlink pointing away - is refused
+ * rather than clamped, so a playbook (or a prompt-injected agent) cannot
+ * walk the client's disk. `sourceId` may be omitted only when the project
+ * has exactly one file-tree source.
  */
-export async function projectExtractReadFile(runId: number, path: string) {
+export async function projectExtractReadFile(runId: number, path: string, sourceId?: number) {
   const run = await loadExtractionRun(runId);
-  const root = await realpath(await resolveSourcePath(run));
+  const source = await resolveTreeSource(run, sourceId);
+  const root = await realpath(await resolveTreeSourcePath(run, source));
 
   if (isAbsolute(path)) throw new Error('path must be relative to the source root');
   const target = resolve(root, path);
@@ -253,6 +295,7 @@ export async function projectExtractReadFile(runId: number, path: string) {
   const slice = buf.subarray(0, MAX_READ_BYTES);
   return {
     runId: run.id,
+    sourceId: source.id,
     path: relative(root, real),
     bytes: s.size,
     truncated: s.size > MAX_READ_BYTES,
@@ -318,12 +361,17 @@ export async function projectExtractFinish(
       .where(eq(schema.runs.id, runId));
   });
 
-  // Best-effort cleanup of any temp dir created for the run.
-  const source = readRunSource(run.params);
-  if (source?.kind === 'git') {
-    await rm(`/tmp/pitchbox-extract-${runId}`, { recursive: true, force: true }).catch(() => {});
-  } else if (source?.kind === 'upload') {
-    await rm(source.value, { recursive: true, force: true }).catch(() => {});
+  // Best-effort cleanup of the clone directories this run materialised. An
+  // `upload` source's directory is deliberately left in place: it is the
+  // content of a source row that outlives this run, so deleting it would
+  // empty the source rather than free a cache. Keyed by run and source so a
+  // concurrent run on another project never removes a tree in use.
+  const { sources } = await loadRunContext(run);
+  for (const source of sources) {
+    if (source.kind !== 'git') continue;
+    const path = `/tmp/pitchbox-extract-${runId}-${source.id}`;
+    await rm(path, { recursive: true, force: true }).catch(() => {});
+    clonedRoots.delete(`${runId}:${source.id}`);
   }
 
   return {
@@ -444,11 +492,28 @@ export function registerProjectCommands(program: Command) {
     });
 
   program
-    .command('project:extract:files')
+    .command('project:extract:sources')
     .requiredOption('--run <id>', 'run id')
     .action(async (opts: { run: string }) => {
       try {
-        ok(await projectExtractListFiles(Number(opts.run)));
+        ok(await projectExtractSources(Number(opts.run)));
+      } catch (err) {
+        fail(String(err instanceof Error ? err.message : err));
+      }
+    });
+
+  program
+    .command('project:extract:files')
+    .requiredOption('--run <id>', 'run id')
+    .option('--source <id>', 'project source id (required when the project has several trees)')
+    .action(async (opts: { run: string; source?: string }) => {
+      try {
+        ok(
+          await projectExtractListFiles(
+            Number(opts.run),
+            opts.source === undefined ? undefined : Number(opts.source),
+          ),
+        );
       } catch (err) {
         fail(String(err instanceof Error ? err.message : err));
       }
@@ -458,9 +523,16 @@ export function registerProjectCommands(program: Command) {
     .command('project:extract:read')
     .requiredOption('--run <id>', 'run id')
     .requiredOption('--path <path>', 'path relative to the source root')
-    .action(async (opts: { run: string; path: string }) => {
+    .option('--source <id>', 'project source id (required when the project has several trees)')
+    .action(async (opts: { run: string; path: string; source?: string }) => {
       try {
-        ok(await projectExtractReadFile(Number(opts.run), opts.path));
+        ok(
+          await projectExtractReadFile(
+            Number(opts.run),
+            opts.path,
+            opts.source === undefined ? undefined : Number(opts.source),
+          ),
+        );
       } catch (err) {
         fail(String(err instanceof Error ? err.message : err));
       }

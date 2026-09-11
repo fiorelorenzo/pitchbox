@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
+import { createProjectSource } from '@pitchbox/shared/project-sources';
 import { eq, sql } from 'drizzle-orm';
 
 function cli(args: string, input?: string): string {
@@ -29,7 +30,7 @@ async function exists(path: string): Promise<boolean> {
 describe('project_extraction with kind=upload', () => {
   beforeEach(reset);
 
-  it('start returns sourcePath; finish writes description and removes the temp dir', async () => {
+  it('start lists the upload source; finish writes the description and leaves the upload directory in place', async () => {
     const upload = await mkdtemp(join(tmpdir(), 'pitchbox-upload-'));
     await writeFile(join(upload, 'README.md'), '# Demo\nA demo product.\n');
 
@@ -42,6 +43,7 @@ describe('project_extraction with kind=upload', () => {
       .insert(schema.projects)
       .values({ organizationId: org.id, slug: 'p', name: 'P' })
       .returning();
+    const source = await createProjectSource(db, org.id, project.id, 'upload', { value: upload });
     const [run] = await db
       .insert(schema.runs)
       .values({
@@ -49,7 +51,7 @@ describe('project_extraction with kind=upload', () => {
         projectId: project.id,
         trigger: 'manual',
         status: 'running',
-        params: { source: { kind: 'upload', value: upload } },
+        params: { sourceIds: [source!.id] },
       })
       .returning();
 
@@ -57,7 +59,8 @@ describe('project_extraction with kind=upload', () => {
       cli(`project:extract:start --run=${run.id}`).trim().split('\n').at(-1)!,
     );
     expect(startOut.ok).toBe(true);
-    expect(startOut.data.sourcePath).toBe(upload);
+    expect(startOut.data.sources).toHaveLength(1);
+    expect(startOut.data.sources[0]).toMatchObject({ kind: 'upload', label: upload });
 
     const md = `## Product\n\nDemo.\n`;
     const finishOut = JSON.parse(
@@ -71,8 +74,10 @@ describe('project_extraction with kind=upload', () => {
     const [r] = await db.select().from(schema.runs).where(eq(schema.runs.id, run.id));
     expect(r.status).toBe('success');
 
-    // Most important assertion of this test: the temp dir is gone.
-    expect(await exists(upload)).toBe(false);
+    // Most important assertion of this test: an upload source's directory
+    // is the content of a project_sources row that outlives this run, so
+    // finish must not delete it (unlike a `git` clone's scratch directory).
+    expect(await exists(upload)).toBe(true);
   });
 });
 

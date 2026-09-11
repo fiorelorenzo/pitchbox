@@ -10,6 +10,8 @@ import {
   type ProjectSourceConfig,
 } from '@pitchbox/shared/project-sources';
 import { syncProjectSource } from '@pitchbox/shared/project-source-sync';
+import { parseRepoUrl } from '@pitchbox/shared/github-sources';
+import { assertSafeGitCloneUrl } from '@pitchbox/shared/project-extraction';
 import { addWebsiteSource } from '@pitchbox/shared/website-source';
 import { addMastodonAccountSource } from '@pitchbox/shared/mastodon-source';
 import { addHackernewsAuthorSource } from '@pitchbox/shared/hackernews-source';
@@ -36,7 +38,6 @@ import {
 // reader and `linkedin-source-capture.ts` matches it.
 const ADDABLE_KINDS = [
   'git',
-  'github',
   'website',
   'linkedin_profile',
   'linkedin_post',
@@ -47,8 +48,8 @@ const ADDABLE_KINDS = [
 // `website`/`mastodon_account`/`hackernews_author` each need real parsing of
 // the single `value` string (a URL split into instance+handle for Mastodon,
 // a username-or-profile-URL for HN) into their own `config` shape - the
-// generic `{ value }` row below only ever suits `github`/`git`, whose sync
-// re-parses `config.value` itself (`syncGithub`). `linkedin_post`/
+// generic `{ value }` row below only ever suits `git`, whose sync
+// re-parses `config.value` itself (`syncGit`). `linkedin_post`/
 // `linkedin_profile` also go through the generic path below, but with a
 // `config.identifier` `buildSourceConfig` derives right here (see its own
 // doc comment) rather than through a dedicated `add*Source`, since there is
@@ -99,6 +100,24 @@ function buildSourceConfig(
       };
     }
     return { config: { value, identifier } };
+  }
+  if (kind === 'git') {
+    // A GitHub shorthand (`owner/repo`) is the most natural thing to type
+    // and the one thing `git clone` refuses, so it is normalised to the
+    // https URL here rather than failing at run time, hours later, inside
+    // an agent's first tool call. Anything `parseRepoUrl` does not
+    // recognise (a self-hosted GitLab, an ssh remote) is stored as typed:
+    // `syncGit` proves that one with `git ls-remote` instead.
+    const parsed = parseRepoUrl(value);
+    if (parsed.ok) return { config: { value: parsed.url } };
+    // Not a GitHub URL: it has to be something `git` itself will accept,
+    // or the row would sit there until a description run failed on it.
+    try {
+      assertSafeGitCloneUrl(value);
+    } catch (e) {
+      return { error: (e as Error).message };
+    }
+    return { config: { value } };
   }
   return { config: { value } };
 }

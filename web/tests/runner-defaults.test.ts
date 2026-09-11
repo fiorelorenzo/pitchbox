@@ -27,6 +27,7 @@ import {
 } from '../src/routes/api/projects/[id]/+server.js';
 import { PUT as defaultRunnerPut } from '../src/routes/api/settings/default-runner/+server.js';
 import { runProjectExtraction } from '../src/lib/server/runner.js';
+import { createProjectSource } from '@pitchbox/shared/project-sources';
 
 async function reset() {
   const db = getDb();
@@ -198,11 +199,17 @@ describe('dispatch refuses a runner this deployment cannot launch (#219)', () =>
     const projectId = await createProject('Unlaunchable', { defaultAgentRunner: 'cloud' });
 
     const started = Date.now();
-    const { runId } = await runProjectExtraction(projectId, { kind: 'folder', value: '/tmp' });
+    // A description run reads the project's source set, so the project needs
+    // one active source for there to be a run at all.
+    await createProjectSource(getDb(), await defaultOrgId(), projectId, 'folder', {
+      value: '/tmp',
+    });
+    const { runId } = await runProjectExtraction(projectId);
+    expect(runId).toBeDefined();
     const [run] = await getDb()
       .select({ status: schema.runs.status, error: schema.runs.error })
       .from(schema.runs)
-      .where(eq(schema.runs.id, runId));
+      .where(eq(schema.runs.id, runId!));
 
     expect(run.status).toBe('failed');
     expect(run.error).toMatch(/cloud/);
@@ -327,11 +334,15 @@ describe('an existing local snapshot survives the cloud edition guard (#410)', (
     clearDetectionCache();
 
     const started = Date.now();
-    const { runId } = await runProjectExtraction(projectId, { kind: 'folder', value: '/tmp' });
+    await createProjectSource(getDb(), await defaultOrgId(), projectId, 'folder', {
+      value: '/tmp',
+    });
+    const { runId } = await runProjectExtraction(projectId);
+    expect(runId).toBeDefined();
     const [run] = await getDb()
       .select({ status: schema.runs.status, error: schema.runs.error })
       .from(schema.runs)
-      .where(eq(schema.runs.id, runId));
+      .where(eq(schema.runs.id, runId!));
 
     expect(run.status).toBe('failed');
     expect(run.error).toMatch(/claude-code/);

@@ -1,49 +1,32 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
-import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
 import { getDb, schema } from '$lib/server/db.js';
 import { runProjectExtraction } from '$lib/server/runner.js';
 import { requireOrgId, requireVerifiedEmail } from '$lib/server/auth.js';
 import { projectBelongsToOrg } from '@pitchbox/shared/orgs';
-import { assertSafeGitCloneUrl } from '@pitchbox/shared/project-extraction';
-
-const SourceSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('folder'), value: z.string().min(1) }),
-  z.object({ kind: z.literal('git'), value: z.string().min(1) }),
-  z.object({ kind: z.literal('upload'), value: z.string().min(1) }),
-]);
-const PostBody = z.object({ source: SourceSchema });
 
 function parseId(idParam: string | undefined): number | null {
   const n = Number(idParam);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
+/**
+ * Starts a description run. It takes no body: the run reads the project's
+ * whole active source set, so there is nothing left to choose here. It used
+ * to require one `{ kind, value }` source, which is what made adding a
+ * source and then describing the project two unrelated gestures.
+ */
 export async function POST(event: RequestEvent) {
-  const { params, request } = event;
+  const { params } = event;
   const id = parseId(params.id);
   if (!id) return json({ error: 'invalid_id' }, { status: 400 });
   const orgId = await requireOrgId(event);
   if (!(await projectBelongsToOrg(getDb(), id, orgId))) throw error(404, 'not_found');
   await requireVerifiedEmail(event);
-  const raw = await request.json().catch(() => null);
-  const parsed = PostBody.safeParse(raw);
-  if (!parsed.success) {
-    return json({ error: 'invalid_body', issues: parsed.error.issues }, { status: 400 });
-  }
-  if (parsed.data.source.kind === 'git') {
-    try {
-      assertSafeGitCloneUrl(parsed.data.source.value);
-    } catch (e) {
-      return json(
-        { error: 'invalid_git_url', message: String((e as Error).message) },
-        { status: 400 },
-      );
-    }
-  }
   try {
-    const out = await runProjectExtraction(id, parsed.data.source);
+    const out = await runProjectExtraction(id);
+    if (out.noSources) return json({ error: 'no_sources' }, { status: 400 });
     if (out.alreadyRunning) {
       return json({ error: 'already_running', runId: out.runId }, { status: 409 });
     }

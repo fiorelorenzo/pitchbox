@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterAll } from 'vitest';
 import { execSync } from 'node:child_process';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
+import { createProjectSource } from '@pitchbox/shared/project-sources';
 import { eq, sql } from 'drizzle-orm';
 
 function cliWithStdin(args: string, input: string): string {
@@ -32,6 +33,7 @@ describe('pitchbox project:extract:finish', () => {
       .values({ organizationId: org.id, slug: 'p1', name: 'P1' })
       .returning();
     projectId = project.id;
+    const source = await createProjectSource(db, org.id, projectId, 'folder', { value: '/tmp/x' });
     const [run] = await db
       .insert(schema.runs)
       .values({
@@ -39,7 +41,7 @@ describe('pitchbox project:extract:finish', () => {
         projectId,
         trigger: 'manual',
         status: 'running',
-        params: { source: { kind: 'folder', value: '/tmp/x' } },
+        params: { sourceIds: [source!.id] },
       })
       .returning();
     runId = run.id;

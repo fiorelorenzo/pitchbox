@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDb, getPool, schema } from '@pitchbox/shared/db';
+import { createProjectSource } from '@pitchbox/shared/project-sources';
 import { eq, sql } from 'drizzle-orm';
 
 function cli(args: string, input?: string): string {
@@ -35,6 +36,7 @@ describe('project_extraction e2e with recommendations', () => {
       .insert(schema.projects)
       .values({ organizationId: org.id, slug: 'p', name: 'P' })
       .returning();
+    const source = await createProjectSource(db, org.id, project.id, 'folder', { value: folder });
     const [run] = await db
       .insert(schema.runs)
       .values({
@@ -42,7 +44,7 @@ describe('project_extraction e2e with recommendations', () => {
         projectId: project.id,
         trigger: 'manual',
         status: 'running',
-        params: { source: { kind: 'folder', value: folder } },
+        params: { sourceIds: [source!.id] },
       })
       .returning();
 

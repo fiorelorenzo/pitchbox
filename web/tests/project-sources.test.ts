@@ -91,12 +91,12 @@ describe('api/projects/[id]/sources', () => {
       const { orgId, projectId } = await seedOrgWithProject(`ps-get-${Date.now()}`);
       await getDb()
         .insert(schema.projectSources)
-        .values({ projectId, kind: 'github', config: { value: 'acme/widget' } });
+        .values({ projectId, kind: 'git', config: { value: 'acme/widget' } });
 
       const res = await GET(ev(orgId, 'member', projectId));
       const body = (await res.json()) as { sources: Array<{ kind: string }> };
       expect(body.sources).toHaveLength(1);
-      expect(body.sources[0].kind).toBe('github');
+      expect(body.sources[0].kind).toBe('git');
     });
 
     it("never returns another project's sources, and 404s a foreign project id", async () => {
@@ -106,7 +106,7 @@ describe('api/projects/[id]/sources', () => {
       const { projectId: projectB } = await seedOrgWithProject(`ps-scope-b-${Date.now()}`);
       await getDb()
         .insert(schema.projectSources)
-        .values({ projectId: projectB, kind: 'github', config: { value: 'acme/widget' } });
+        .values({ projectId: projectB, kind: 'git', config: { value: 'acme/widget' } });
 
       await expect(GET(ev(orgA, 'member', projectB))).rejects.toMatchObject({ status: 404 });
       const res = await GET(ev(orgA, 'member', projectA));
@@ -120,7 +120,7 @@ describe('api/projects/[id]/sources', () => {
       const { orgId, projectId } = await seedOrgWithProject(`ps-post-member-${Date.now()}`);
       const event = ev(orgId, 'member', projectId, {
         method: 'POST',
-        body: { kind: 'github', value: 'acme/widget' },
+        body: { kind: 'git', value: 'acme/widget' },
       });
       await expect(POST(event)).rejects.toMatchObject({ status: 403 });
       expect(await countSources(projectId)).toBe(0);
@@ -130,7 +130,7 @@ describe('api/projects/[id]/sources', () => {
       const { orgId, projectId } = await seedOrgWithProject(`ps-post-admin-${Date.now()}`);
       const event = ev(orgId, 'admin', projectId, {
         method: 'POST',
-        body: { kind: 'github', value: 'https://github.com/acme/widget' },
+        body: { kind: 'git', value: 'https://github.com/acme/widget' },
       });
       const res = await POST(event);
       expect(res.status).toBe(201);
@@ -139,6 +139,31 @@ describe('api/projects/[id]/sources', () => {
       };
       expect(body.source.fetchError).toBeNull();
       expect(body.source.output?.description).toBe('A test repo');
+    });
+
+    it('stores a GitHub shorthand as the https URL a clone can actually use', async () => {
+      // `owner/repo` is the natural thing to type and the one thing `git
+      // clone` refuses, so a row that syncs through the API but cannot be
+      // cloned is the exact trap this normalisation removes.
+      const { orgId, projectId } = await seedOrgWithProject(`ps-post-shorthand-${Date.now()}`);
+      const event = ev(orgId, 'admin', projectId, {
+        method: 'POST',
+        body: { kind: 'git', value: 'acme/widget' },
+      });
+      const res = await POST(event);
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { source: { config: { value: string } } };
+      expect(body.source.config.value).toBe('https://github.com/acme/widget');
+    });
+
+    it('refuses a repository value git itself would reject, creating nothing', async () => {
+      const { orgId, projectId } = await seedOrgWithProject(`ps-post-badrepo-${Date.now()}`);
+      const event = ev(orgId, 'admin', projectId, {
+        method: 'POST',
+        body: { kind: 'git', value: 'ext::sh -c whoami' },
+      });
+      await expect(POST(event)).rejects.toMatchObject({ status: 400 });
+      expect(await countSources(projectId)).toBe(0);
     });
 
     it('rejects folder/upload kinds - not addable through this endpoint', async () => {
@@ -156,7 +181,7 @@ describe('api/projects/[id]/sources', () => {
       const { projectId: projectB } = await seedOrgWithProject(`ps-post-scope-b-${Date.now()}`);
       const event = ev(orgA, 'admin', projectB, {
         method: 'POST',
-        body: { kind: 'github', value: 'acme/widget' },
+        body: { kind: 'git', value: 'acme/widget' },
       });
       await expect(POST(event)).rejects.toMatchObject({ status: 404 });
       expect(await countSources(projectB)).toBe(0);
@@ -309,7 +334,7 @@ describe('api/projects/[id]/sources', () => {
       const { orgId, projectId } = await seedOrgWithProject(`ps-sync-member-${Date.now()}`);
       const [source] = await getDb()
         .insert(schema.projectSources)
-        .values({ projectId, kind: 'github', config: { value: 'acme/widget' } })
+        .values({ projectId, kind: 'git', config: { value: 'acme/widget' } })
         .returning();
       const event = ev(orgId, 'member', projectId, { method: 'POST', sourceId: String(source.id) });
       await expect(SYNC(event)).rejects.toMatchObject({ status: 403 });
@@ -319,7 +344,7 @@ describe('api/projects/[id]/sources', () => {
       const { orgId, projectId } = await seedOrgWithProject(`ps-sync-admin-${Date.now()}`);
       const [source] = await getDb()
         .insert(schema.projectSources)
-        .values({ projectId, kind: 'github', config: { value: 'acme/widget' } })
+        .values({ projectId, kind: 'git', config: { value: 'acme/widget' } })
         .returning();
       const event = ev(orgId, 'admin', projectId, { method: 'POST', sourceId: String(source.id) });
       const res = await SYNC(event);
@@ -334,7 +359,7 @@ describe('api/projects/[id]/sources', () => {
       const { orgId, projectId } = await seedOrgWithProject(`ps-del-member-${Date.now()}`);
       const [source] = await getDb()
         .insert(schema.projectSources)
-        .values({ projectId, kind: 'github', config: { value: 'acme/widget' } })
+        .values({ projectId, kind: 'git', config: { value: 'acme/widget' } })
         .returning();
       const event = ev(orgId, 'member', projectId, {
         method: 'DELETE',
@@ -348,7 +373,7 @@ describe('api/projects/[id]/sources', () => {
       const { orgId, projectId } = await seedOrgWithProject(`ps-del-admin-${Date.now()}`);
       const [source] = await getDb()
         .insert(schema.projectSources)
-        .values({ projectId, kind: 'github', config: { value: 'acme/widget' } })
+        .values({ projectId, kind: 'git', config: { value: 'acme/widget' } })
         .returning();
       const event = ev(orgId, 'admin', projectId, {
         method: 'DELETE',
@@ -364,7 +389,7 @@ describe('api/projects/[id]/sources', () => {
       const { orgId: orgB } = await seedOrgWithProject(`ps-del-scope-b-${Date.now()}`);
       const [source] = await getDb()
         .insert(schema.projectSources)
-        .values({ projectId: projectA, kind: 'github', config: { value: 'acme/widget' } })
+        .values({ projectId: projectA, kind: 'git', config: { value: 'acme/widget' } })
         .returning();
       const event = ev(orgB, 'admin', projectA, { method: 'DELETE', sourceId: String(source.id) });
       await expect(DELETE(event)).rejects.toMatchObject({ status: 404 });

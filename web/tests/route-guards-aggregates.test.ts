@@ -49,7 +49,7 @@ async function seedOrgWithProject(slug: string) {
   // through), same posture as every other fixture below it.
   await db.insert(schema.projectSources).values({
     projectId: project.id,
-    kind: 'github',
+    kind: 'git',
     config: { value: `${slug}/repo` },
   });
   const [platform] = await db

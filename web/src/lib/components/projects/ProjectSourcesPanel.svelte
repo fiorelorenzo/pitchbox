@@ -1,21 +1,32 @@
 <script lang="ts">
-  // The sources a project's description is grounded in (#432). Replaces
-  // ExtractDescriptionDialog's "pick one source for one run, remember the
-  // last tab" model: a source is now a row in a set a person manages - add
-  // it, see when it was last fetched and why it failed if it did, re-sync
-  // it, remove it. `folder`/`git`/`upload` still originate from running an
-  // extraction (cli/src/commands/project.ts's recordExtractionSource, via
-  // "Run extraction" below for `git`, or the CLI for a local folder) since
-  // their config is a local/ephemeral path with nothing to fetch on its
-  // own; every other kind is addable here directly by a single string value.
+  // The sources a project's description is written from (#432/#434).
+  //
+  // A source is a row in a set a person manages: add it, see when it was
+  // last read and why it failed if it did, re-read it, remove it. The
+  // description itself is written by the extractor agent over the whole
+  // set, which is what the one primary action in this card's header does -
+  // there is no per-row "run with this source" any more, because a project
+  // with a repository and a website wants one description grounded in
+  // both, not two runs fighting over the same column.
+  //
+  // `folder`/`upload` still originate elsewhere (the CLI for a local
+  // folder, the uploads endpoint for a zip) since their config is a path on
+  // the machine running Pitchbox; every other kind is addable here by a
+  // single string value.
+  //
+  // `git` is the one repository kind, and its re-read picks its own
+  // mechanism (GitHub API or `git ls-remote`, see
+  // shared/src/project-source-sync.ts). It used to be two kinds, `git` and
+  // `github`, which asked the person adding "my repo" to guess which half
+  // of the product would read it.
   //
   // `website`, `mastodon_account` and `hackernews_author` (#472, #437) all
-  // have a real fetcher wired up (shared/src/project-source-sync.ts).
+  // have a real fetcher wired up.
   //
   // `linkedin_post`/`linkedin_profile` (#436, spike #435) are different: a
   // fresh one is honestly pending, never failed - nothing here fetches it,
   // the extension's own content script fills it the next time the human
-  // opens the matching LinkedIn page, and a re-sync click can only clear an
+  // opens the matching LinkedIn page, and a re-read click can only clear an
   // already-filled row back to pending for a second visit, never fetch
   // anything itself. `linkedin_company` is a real `ProjectSourceKind` but
   // deliberately left out of `ADD_KIND_OPTIONS` below - the selector work to
@@ -31,9 +42,10 @@
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import { relativeTime } from '$lib/utils/time';
   import { toast } from 'svelte-sonner';
-  import { Trash2, RefreshCw, Play } from '@lucide/svelte';
+  import { Trash2, RefreshCw, Sparkles } from '@lucide/svelte';
   import type { ProjectSourceKind } from '@pitchbox/shared/project-sources';
   import { t, type Locale } from '$lib/i18n/index.js';
+  import { TONE_TEXT_CLASS } from '$lib/config/status-badges';
 
   // Re-exported so a consumer (the project page's load function/props) can
   // still name this type off the panel, without this panel keeping its own
@@ -58,9 +70,23 @@
     projectId: number;
     sources: ProjectSource[];
     isAdmin: boolean;
+    /** True while a description run for this project is in flight, so the
+     * one primary action here cannot start a second one. */
+    extractionRunning: boolean;
     onExtractionLaunched: (runId: number) => void;
+    /** Adding or removing a source changes what the next description will
+     * be written from, and the page above shows that: it reloads rather
+     * than this card holding a second, quietly diverging copy of the set. */
+    onSourcesChanged: () => void;
   };
-  let { projectId, sources, isAdmin, onExtractionLaunched }: Props = $props();
+  let {
+    projectId,
+    sources,
+    isAdmin,
+    extractionRunning,
+    onExtractionLaunched,
+    onSourcesChanged,
+  }: Props = $props();
 
   const locale = $derived($page.data.locale as Locale);
 
@@ -70,11 +96,15 @@
     sourcesState = sources;
   });
 
+  // Only an active source is read by a description run, so the action's
+  // availability follows the same count the server checks rather than the
+  // number of rows on screen.
+  const activeSourceCount = $derived(sourcesState.filter((s) => s.active).length);
+
   const KIND_LABEL = $derived<Record<ProjectSourceKind, string>>({
     folder: t(locale, 'projects.source-kind.folder'),
     git: t(locale, 'projects.source-kind.git'),
     upload: t(locale, 'projects.source-kind.upload'),
-    github: t(locale, 'projects.source-kind.github'),
     website: t(locale, 'projects.source-kind.website'),
     linkedin_company: t(locale, 'projects.source-kind.linkedin_company'),
     linkedin_profile: t(locale, 'projects.source-kind.linkedin_profile'),
@@ -88,7 +118,6 @@
   // `linkedin_company` is excluded too, on purpose - see the same comment.
   const ADD_KIND_OPTIONS = $derived<Array<{ value: ProjectSourceKind; label: string }>>([
     { value: 'git', label: KIND_LABEL.git },
-    { value: 'github', label: KIND_LABEL.github },
     { value: 'website', label: KIND_LABEL.website },
     { value: 'mastodon_account', label: KIND_LABEL.mastodon_account },
     { value: 'hackernews_author', label: KIND_LABEL.hackernews_author },
@@ -97,8 +126,7 @@
   ]);
 
   const VALUE_PLACEHOLDER: Partial<Record<ProjectSourceKind, string>> = {
-    git: 'https://github.com/owner/repo.git or git@host:owner/repo.git',
-    github: 'https://github.com/owner/repo or owner/repo',
+    git: 'https://github.com/owner/repo or git@host:owner/repo.git',
     website: 'https://example.com',
     mastodon_account: 'https://mastodon.social/@handle',
     hackernews_author: 'pg or https://news.ycombinator.com/user?id=pg',
@@ -147,7 +175,7 @@
   let addValue = $state('');
   let adding = $state(false);
   let syncingId = $state<number | null>(null);
-  let runningFromId = $state<number | null>(null);
+  let starting = $state(false);
   let removeTarget = $state<ProjectSource | null>(null);
   let removing = $state(false);
 
@@ -175,13 +203,26 @@
       }
       sourcesState = [...sourcesState, body.source as ProjectSource];
       addValue = '';
+      // The description the agent would now write differs from the one on
+      // screen, and the action that closes that gap is one click away in
+      // this card's header. Offering it on the toast is what turns "add a
+      // source" into a finished gesture rather than the first of three.
+      const action = extractionRunning
+        ? undefined
+        : {
+            label: t(locale, 'projects.regenerate-now-action'),
+            onClick: () => void writeFromSources(),
+          };
       if (isPassivelyFilledLinkedInSource(body.source?.kind)) {
         toast.info(t(locale, 'projects.toast-linkedin-waiting'));
       } else if (body.source?.fetchError) {
-        toast.warning(t(locale, 'projects.toast-added-sync-failed', { error: body.source.fetchError }));
+        toast.warning(t(locale, 'projects.toast-added-sync-failed', { error: body.source.fetchError }), {
+          action,
+        });
       } else {
-        toast.success(t(locale, 'projects.toast-source-added'));
+        toast.success(t(locale, 'projects.toast-source-added'), { action });
       }
+      onSourcesChanged();
     } finally {
       adding = false;
     }
@@ -217,17 +258,22 @@
     }
   }
 
-  async function runExtraction(source: ProjectSource) {
-    runningFromId = source.id;
+  /**
+   * Starts the description run over the whole active set. The endpoint
+   * takes no body: it resolves the set itself, so this cannot disagree with
+   * what the agent will read.
+   */
+  async function writeFromSources() {
+    starting = true;
     try {
-      const res = await fetch(`/api/projects/${projectId}/runs`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ source: { kind: 'git', value: sourceValue(source) } }),
-      });
+      const res = await fetch(`/api/projects/${projectId}/runs`, { method: 'POST' });
       const body = await res.json().catch(() => ({}));
       if (res.status === 409) {
         toast.error(t(locale, 'projects.error-extraction-already-running'));
+        return;
+      }
+      if (body?.error === 'no_sources') {
+        toast.error(t(locale, 'projects.error-no-sources'));
         return;
       }
       if (!res.ok) {
@@ -237,7 +283,7 @@
       toast.success(t(locale, 'projects.toast-extraction-started', { runId: body.runId }));
       onExtractionLaunched(body.runId);
     } finally {
-      runningFromId = null;
+      starting = false;
     }
   }
 
@@ -259,6 +305,7 @@
       sourcesState = sourcesState.filter((s) => s.id !== removeTarget!.id);
       toast.success(t(locale, 'projects.toast-source-removed'));
       removeTarget = null;
+      onSourcesChanged();
     } finally {
       removing = false;
     }
@@ -266,11 +313,30 @@
 </script>
 
 <Card.Root size="sm">
-  <Card.Header>
-    <Card.Title class="text-base">{t(locale, 'projects.sources-panel-title')}</Card.Title>
-    <Card.Description class="text-xs">
-      {t(locale, 'projects.sources-panel-description')}
-    </Card.Description>
+  <Card.Header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div class="flex min-w-0 flex-col gap-1">
+      <Card.Title class="text-base">{t(locale, 'projects.sources-panel-title')}</Card.Title>
+      <Card.Description class="text-xs">
+        {t(locale, 'projects.sources-panel-description')}
+      </Card.Description>
+    </div>
+    {#if isAdmin}
+      <div class="flex flex-none flex-col items-start gap-1 sm:items-end">
+        <Button
+          type="button"
+          onclick={writeFromSources}
+          loading={starting}
+          disabled={extractionRunning || activeSourceCount === 0}
+          title={activeSourceCount === 0 ? t(locale, 'projects.error-no-sources') : undefined}
+        >
+          <Sparkles class="size-4" />
+          {t(locale, 'projects.regenerate-description-button')}
+        </Button>
+        <span class="max-w-72 text-xs text-muted-foreground sm:text-right">
+          {t(locale, 'projects.regenerate-description-hint')}
+        </span>
+      </div>
+    {/if}
   </Card.Header>
   <Card.Content class="flex flex-col gap-4">
     {#if isAdmin}
@@ -321,14 +387,20 @@
                 {sourceValue(s) || '-'}
               </Table.Cell>
               <Table.Cell>
-                <div class="flex flex-col gap-1">
+                <!-- `items-start`, or the flex column stretches the badge to
+                     the whole column and it reads as a coloured banner
+                     across the row rather than as a status chip. -->
+                <div class="flex min-w-0 flex-col items-start gap-1">
                   <StatusBadge domain="project-source-status" value={status(s)} />
                   {#if s.fetchError}
-                    <span class="max-w-64 text-[11px] text-rose-600 dark:text-rose-400" title={s.fetchError}>
+                    <span
+                      class="max-w-56 truncate text-xs {TONE_TEXT_CLASS.rose}"
+                      title={s.fetchError}
+                    >
                       {s.fetchError}
                     </span>
                   {:else if status(s) === 'pending' && isPassivelyFilledLinkedInSource(s.kind)}
-                    <span class="max-w-64 text-[11px] text-muted-foreground">
+                    <span class="max-w-56 truncate text-xs text-muted-foreground" title={t(locale, 'projects.toast-linkedin-waiting')}>
                       {t(locale, 'projects.toast-linkedin-waiting')}
                     </span>
                   {/if}
@@ -340,18 +412,6 @@
               <Table.Cell class="text-right">
                 {#if isAdmin}
                   <div class="flex justify-end gap-1">
-                    {#if s.kind === 'git'}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={t(locale, 'projects.run-extraction-aria')}
-                        title={t(locale, 'projects.run-extraction-aria')}
-                        onclick={() => runExtraction(s)}
-                        disabled={runningFromId === s.id}
-                      >
-                        <Play class="size-4" />
-                      </Button>
-                    {/if}
                     <Button
                       variant="ghost"
                       size="icon"
