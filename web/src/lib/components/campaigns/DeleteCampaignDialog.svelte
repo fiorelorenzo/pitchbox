@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
   import { Input } from '$lib/components/ui/input';
 
   type Props = {
@@ -9,6 +11,8 @@
     onClose: () => void;
   };
   let { open = $bindable(), name, onConfirm, onClose }: Props = $props();
+
+  const locale = $derived($page.data.locale as Locale);
   let typed = $state('');
   let busy = $state(false);
 
@@ -29,25 +33,25 @@
     onclick={onClose}
     role="button"
     tabindex="-1"
-    aria-label="Close dialog"
+    aria-label={t(locale, 'campaigns.delete-dialog.close-aria')}
     onkeydown={(e) => e.key === 'Escape' && onClose()}
   ></div>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
     <div
       class="bg-background border border-border rounded-lg p-6 w-full max-w-md pointer-events-auto space-y-4"
     >
-      <h3 class="font-medium">Delete campaign</h3>
+      <h3 class="font-medium">{t(locale, 'campaigns.detail.delete-campaign-button')}</h3>
       <p class="text-sm text-muted-foreground">
-        This deletes the campaign with its runs, drafts and keyword watches. Contact history is
-        kept, so people this campaign already reached stay off the list for future campaigns. Type
-        the campaign name <code class="bg-muted px-1 rounded">{name}</code> to confirm.
+        {t(locale, 'campaigns.delete-dialog.body-intro')}
+        <code class="bg-muted px-1 rounded">{name}</code>
+        {t(locale, 'campaigns.delete-dialog.body-confirm-suffix')}
       </p>
       <label class="flex flex-col gap-1 text-xs">
-        Name
+        {t(locale, 'campaigns.new.field-name')}
         <Input bind:value={typed} />
       </label>
       <div class="flex justify-end gap-2">
-        <Button variant="ghost" type="button" onclick={onClose}>Cancel</Button>
+        <Button variant="ghost" type="button" onclick={onClose}>{t(locale, 'campaigns.cancel')}</Button>
         <Button
           type="button"
           variant="destructive"
@@ -55,7 +59,7 @@
           loading={busy}
           onclick={confirm}
         >
-          Delete campaign
+          {t(locale, 'campaigns.detail.delete-campaign-button')}
         </Button>
       </div>
     </div>

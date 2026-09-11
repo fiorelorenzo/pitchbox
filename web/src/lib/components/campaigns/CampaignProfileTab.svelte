@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
   import { invalidateAll } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
@@ -28,6 +30,8 @@
   };
   let { campaignId, scenarioSlug, initialConfig, skillRuns }: Props = $props();
 
+  const locale = $derived($page.data.locale as Locale);
+
   // svelte-ignore state_referenced_locally
   let config = $state<Record<string, unknown>>(structuredClone(initialConfig));
   let saving = $state(false);
@@ -55,7 +59,7 @@
       if (scenarioSchema) {
         const validated = scenarioSchema.safeParse(config);
         if (!validated.success) {
-          toast.error('Profile is invalid - fix the highlighted fields');
+          toast.error(t(locale, 'campaigns.profile-tab.error-invalid'));
           return;
         }
         configToSave = validated.data;
@@ -67,10 +71,10 @@
       });
       const body = await res.json();
       if (!res.ok) {
-        toast.error(body.error ?? 'Save failed');
+        toast.error(body.error ?? t(locale, 'campaigns.profile-tab.error-save-failed'));
         return;
       }
-      toast.success('Profile saved');
+      toast.success(t(locale, 'campaigns.profile-tab.toast-saved'));
       await invalidateAll();
     } finally {
       saving = false;
@@ -91,7 +95,7 @@
         if (runningRunId !== null && payload.runId === runningRunId) {
           runningRunId = null;
           await invalidateAll();
-          toast.success('Profile generated');
+          toast.success(t(locale, 'campaigns.profile-tab.toast-generated'));
         }
       }),
     );
@@ -105,14 +109,14 @@
     <div
       class="rounded-md border px-3 py-2 text-xs {TONE_BANNER_CLASS.amber}"
     >
-      Generation running - profile is locked until it finishes.
+      {t(locale, 'campaigns.profile-tab.generation-running')}
     </div>
   {/if}
 
   <div class="flex justify-between items-center">
-    <h2 class="text-lg font-semibold">Profile</h2>
+    <h2 class="text-lg font-semibold">{t(locale, 'campaigns.detail.tab-profile')}</h2>
     <Button variant="outline" onclick={() => (regenOpen = true)} disabled={generationRunning}>
-      Regenerate
+      {t(locale, 'campaigns.profile-tab.regenerate-button')}
     </Button>
   </div>
 
@@ -213,7 +217,7 @@
   />
 
   <div class="pt-2 border-t flex justify-end">
-    <Button onclick={save} disabled={generationRunning} loading={saving}>Save</Button>
+    <Button onclick={save} disabled={generationRunning} loading={saving}>{t(locale, 'campaigns.detail.save-button')}</Button>
   </div>
 </div>
 
