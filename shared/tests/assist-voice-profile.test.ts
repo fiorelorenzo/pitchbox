@@ -469,6 +469,83 @@ describe('describeVoiceProfile', () => {
     };
     expect(describeVoiceProfile(tooSmall)).toBeNull();
   });
+
+  // LOR-296: the same measurement, composed in Italian - not the English
+  // sentences with words swapped, so these assert genuinely Italian
+  // phrasing (own word order, own connectives) rather than a substring of
+  // the English test above translated word for word.
+  it('composes the same measurement into Italian, not a translated fragment swap', () => {
+    const described = describeVoiceProfile(BASE, 'it')!;
+    expect(described).toMatch(/12 testi propri/);
+    expect(described).toMatch(/640 parole/);
+    expect(described).toMatch(/la prima persona, in modo diretto/);
+    expect(described).toMatch(/in media 9 parole a frase/);
+    expect(described).toContain('Apre spesso con "Just shipped"');
+    expect(described).toContain('Chiude spesso con "what you think."');
+    expect(described).toContain('team, shipped');
+    expect(described).not.toMatch(/Tende a/);
+    expect(described).not.toMatch(/Usa queste emoji/);
+    expect(described).not.toMatch(/Non usa mai/);
+    expect(described).not.toMatch(/Scrive soprattutto/);
+  });
+
+  it('adds the Italian ending/emoji/hashtag/avoided-word/language sentences only when they say something, data left untranslated', () => {
+    const rich: VoiceMeasurement = {
+      ...BASE,
+      shape: {
+        ...EMPTY_SHAPE,
+        emoji: ['\u{1F680}'],
+        hashtags: ['#buildinpublic'],
+        ending: 'claim',
+      },
+      lexicon: { avoidedWords: ['leverage', 'seamless'] },
+      language: { primary: 'mixed', englishRatio: 0.5, italianRatio: 0.4, byKind: {} },
+    };
+    const described = describeVoiceProfile(rich, 'it')!;
+    expect(described).toContain("Tende a chiudere con un'affermazione.");
+    expect(described).toContain('Usa queste emoji: \u{1F680}.');
+    expect(described).toContain('Usa questi hashtag: #buildinpublic.');
+    expect(described).toContain('Non usa mai: leverage, seamless.');
+    expect(described).toContain('Scrive soprattutto in inglese e italiano.');
+  });
+
+  it('reads as an Italian sentence for every ending, including the absence of one', () => {
+    const ending = (e: 'question' | 'claim' | 'none') =>
+      describeVoiceProfile({ ...BASE, shape: { ...EMPTY_SHAPE, ending: e } }, 'it')!;
+
+    expect(ending('question')).toContain('Tende a chiudere con una domanda.');
+    expect(ending('claim')).toContain("Tende a chiudere con un'affermazione.");
+    expect(ending('none')).toContain(
+      "Tende a lasciare la frase in sospeso, invece di chiudere con una domanda o un'affermazione.",
+    );
+  });
+
+  it('says nothing in Italian either when the corpus was measurable but had no dominant trait, phrase or word', () => {
+    const flat: VoiceMeasurement = {
+      ...BASE,
+      traits: [],
+      wordsPerSentence: 0,
+      openings: [],
+      closings: [],
+      commonWords: [],
+    };
+    expect(describeVoiceProfile(flat, 'it')).toBeNull();
+  });
+
+  it('returns null in Italian for an unmeasurable corpus - the floor is not a translated empty sentence', () => {
+    const tooSmall: VoiceMeasurement = {
+      ...BASE,
+      itemCount: 2,
+      wordCount: 40,
+      measurable: false,
+      traits: [],
+      wordsPerSentence: 0,
+      openings: [],
+      closings: [],
+      commonWords: [],
+    };
+    expect(describeVoiceProfile(tooSmall, 'it')).toBeNull();
+  });
 });
 
 // LOR-223: a post and a comment are different genres of writing, not the
@@ -591,6 +668,14 @@ describe('describeVoiceProfileForGenre', () => {
   it('returns null for a genre with nothing measurable, same as the pooled describeVoiceProfile', () => {
     const byGenre = measureVoiceCorpusByGenre(MIXED_GENRE_CORPUS);
     expect(describeVoiceProfileForGenre('reply', byGenre.reply)).toBeNull();
+  });
+
+  it('words the leading sentence per genre in Italian too, with its own noun rather than the English one', () => {
+    const byGenre = measureVoiceCorpusByGenre(MIXED_GENRE_CORPUS);
+    const postDescription = describeVoiceProfileForGenre('post', byGenre.post, 'it');
+    const commentDescription = describeVoiceProfileForGenre('comment', byGenre.comment, 'it');
+    expect(postDescription).toMatch(/^In base a 3 post propri /);
+    expect(commentDescription).toMatch(/^In base a 5 commenti propri /);
   });
 });
 
@@ -970,5 +1055,48 @@ describe('measureEditSignature', () => {
     // Only 2 of the 3 pairs are real edits - below the floor once the
     // identical one is discarded.
     expect(measureEditSignature(pairs).measurable).toBe(false);
+  });
+
+  // LOR-296: the edit signature composed in Italian - own coordinated
+  // list ("e" before the last cut) rather than the English comma join,
+  // and the deleted-phrase text itself stays verbatim (data, never
+  // translated).
+  it('composes the edit signature into Italian too, not a translated fragment swap', () => {
+    const pairs = [
+      pair(
+        1,
+        'Great question! I think this is really cool, thanks so much for sharing this with everyone.',
+        'Cool, thanks for sharing.',
+      ),
+      pair(
+        2,
+        'Great question! I appreciate you writing this, it truly resonates with me a lot.',
+        'This resonates with me.',
+      ),
+      pair(
+        3,
+        'Nice post here, I think this is fantastic and I love reading things like this honestly.',
+        'Nice post.',
+      ),
+    ];
+    const signature = measureEditSignature(pairs);
+    const described = describeEditSignature(signature, 'it')!;
+    expect(described).toContain('"Great question!"');
+    expect(described).toContain('In base a 3 suggerimenti modificati');
+    expect(described).toContain('lo accorcia');
+    expect(described).toContain('toglie la riga iniziale');
+    expect(described).toContain('taglia le frasi di cautela');
+    // Coordinated Italian list: "e" before the last cut, not a bare comma
+    // join like the English sentence uses.
+    expect(described).toContain('la riga finale e taglia le frasi di cautela.');
+  });
+
+  it('returns null in Italian too below MIN_EDIT_PAIRS_TO_DERIVE - the floor is not a translated empty sentence', () => {
+    const pairs = [
+      pair(1, 'Great question! Thanks for reading, appreciate it.', 'Thanks for reading.'),
+      pair(2, 'Great question! Nice work here.', 'Nice work here.'),
+    ];
+    const signature = measureEditSignature(pairs);
+    expect(describeEditSignature(signature, 'it')).toBeNull();
   });
 });

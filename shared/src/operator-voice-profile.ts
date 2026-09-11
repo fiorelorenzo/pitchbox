@@ -40,6 +40,7 @@ import {
   MIN_ITEMS_TO_DERIVE,
   VOICE_CORPUS_ITEM_GENRES,
   type VoiceCorpusItem,
+  type VoiceMeasurement,
   type VoiceCorpusItemGenre,
   type EditPair,
   type EditSignature,
@@ -97,6 +98,11 @@ export type VoiceCorpusProvenance = {
  * exactly what they mean on the pooled `VoiceMeasurement`: this genre has
  * not cleared `MIN_ITEMS_TO_DERIVE` yet, so nothing here is a guess. */
 export type VoiceGenreSummary = {
+  /** Baked at the last real derivation (English only) - kept as a fallback
+   * for a row written before `measurement` below existed (LOR-296). Once
+   * `measurement` is present, a reader-locale caller composes fresh from
+   * it instead and this string goes unused; it is still written on every
+   * refresh so an old client reading this column directly is unaffected. */
   summary: string | null;
   itemCount: number;
   measurable: boolean;
@@ -106,6 +112,15 @@ export type VoiceGenreSummary = {
    * prose `summary` already carries it in. */
   medianItemWords: number;
   itemWordsSpread: number;
+  /** The full per-genre measurement `summary` above was composed from
+   * (LOR-296), so a reader-locale caller can compose the sentence fresh
+   * instead of trusting the baked English string - the same reasoning
+   * `shared/src/notifications.ts`'s `renderNotification` already applies
+   * to a stored fact rendered at read time. Null on a row derived before
+   * this field existed; a caller falls back to `summary`, and only for
+   * the English locale, rather than showing English prose inside a page
+   * rendered in another language. */
+  measurement: VoiceMeasurement | null;
 };
 
 /** What a stored row carries about its own derivation: the provenance
@@ -174,6 +189,7 @@ const EMPTY_GENRE_SUMMARY: VoiceGenreSummary = {
   measurable: false,
   medianItemWords: 0,
   itemWordsSpread: 0,
+  measurement: null,
 };
 
 const EMPTY_GENRE_SUMMARIES: Record<VoiceCorpusItemGenre, VoiceGenreSummary> = {
@@ -481,6 +497,7 @@ export async function refreshVoiceProfile(
       measurable: genreMeasurement.measurable,
       medianItemWords: genreMeasurement.rhythm.medianItemWords,
       itemWordsSpread: genreMeasurement.rhythm.itemWordsSpread,
+      measurement: genreMeasurement,
     };
   }
 
