@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { sql, eq } from 'drizzle-orm';
 import type { RequestEvent } from '@sveltejs/kit';
 import { getDb, schema } from '@pitchbox/shared/db';
-import { createSession, hashPassword } from '@pitchbox/shared/auth';
+import { createSession, hashPassword, setUserLocale } from '@pitchbox/shared/auth';
 import { POST as forgotPassword } from '../src/routes/api/auth/password/forgot/+server.js';
 import { POST as resetPassword } from '../src/routes/api/auth/password/reset/+server.js';
 import { POST as login } from '../src/routes/api/auth/login/+server.js';
@@ -49,6 +49,33 @@ async function seedUser(): Promise<{ userId: number }> {
   await db
     .insert(schema.memberships)
     .values({ organizationId: org.id, userId: row.id, role: 'owner' })
+    .onConflictDoNothing();
+  return { userId: row.id };
+}
+
+/** Same as `seedUser`, but for the locale test below: its own username/email
+ * so it can coexist with `seedUser`'s fixed EMAIL within one test, and an
+ * explicit stored locale via `setUserLocale` (LOR-262) - the single writer
+ * `getUserLocale` reads back from. */
+async function seedUserWithLocale(
+  username: string,
+  email: string,
+  locale: 'en' | 'it' | null,
+): Promise<{ userId: number }> {
+  const db = getDb();
+  const hash = await hashPassword(PASSWORD);
+  const [row] = await db
+    .insert(schema.users)
+    .values({ username, passwordHash: hash, email })
+    .returning();
+  if (locale) await setUserLocale(db, row.id, locale);
+  const [org] = await db
+    .select()
+    .from(schema.organizations)
+    .where(sql`slug = 'default'`);
+  await db
+    .insert(schema.memberships)
+    .values({ organizationId: org.id, userId: row.id, role: 'member' })
     .onConflictDoNothing();
   return { userId: row.id };
 }
@@ -254,6 +281,25 @@ describe('forgot/reset password', () => {
     }
     const { res } = await requestReset(EMAIL, '10.9.8.90');
     expect(res.status).toBe(429);
+  });
+
+  it("renders in the target account's own stored language, not the anonymous requester's (LOR-264)", async () => {
+    await seedUser();
+    await seedUserWithLocale('giulia', 'giulia@example.com', 'it');
+    await seedUserWithLocale('marco', 'marco@example.com', null);
+
+    const italian = await requestReset('giulia@example.com', '10.9.9.1');
+    expect(italian.logged).toContain('Qualcuno ha chiesto di reimpostare');
+    expect(italian.logged).not.toContain('Someone asked to reset');
+
+    const english = await requestReset('marco@example.com', '10.9.9.2');
+    expect(english.logged).toContain('Someone asked to reset');
+    expect(english.logged).not.toContain('Qualcuno ha chiesto');
+
+    // Both still carry a real, redeemable token - translating the body
+    // never touched the link.
+    expect(italian.token).toBeTruthy();
+    expect(english.token).toBeTruthy();
   });
 });
 

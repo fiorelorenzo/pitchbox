@@ -142,6 +142,27 @@ describe('email verification (#514)', () => {
     expect(user.emailVerifiedAt).toBeNull();
   });
 
+  it('a token-less registration renders the welcome/verify mail in the negotiated language (LOR-264)', async () => {
+    const jar: CookieJar = { store: new Map() };
+    const { res, logged } = await callAndCaptureMail(
+      new Request('http://localhost/api/auth/register', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'accept-language': 'it' },
+        body: JSON.stringify({
+          username: 'firmaitaliana',
+          email: 'italiano@example.com',
+          password: 'a-very-long-password',
+        }),
+      }),
+      registerPost,
+      jar,
+      '10.30.0.2',
+    );
+    expect(res.status).toBe(200);
+    expect(logged).toContain('Benvenuto su Pitchbox');
+    expect(logged).not.toContain('Welcome to Pitchbox');
+  });
+
   it('an invite carrying the same address is born verified and sends no mail', async () => {
     const [admin] = await getDb()
       .insert(schema.users)
@@ -292,6 +313,28 @@ describe('email verification (#514)', () => {
       expect(r.status).toBe(200);
       expect((await r.json()).alreadyVerified).toBe(true);
     }
+  });
+
+  it('resend renders the verification mail in the language the request negotiates (LOR-264)', async () => {
+    const { userId } = await seedOrgUser({
+      username: 'resenditaliano',
+      email: 'resend-it@example.com',
+      verified: false,
+    });
+    const session = await createSession(getDb(), userId);
+    const jar: CookieJar = { store: new Map([['pitchbox_session', { value: session.id }]]) };
+    const { res, logged } = await callAndCaptureMail(
+      new Request('http://localhost/api/auth/verify/resend', {
+        method: 'POST',
+        headers: { 'accept-language': 'it' },
+      }),
+      verifyResend,
+      jar,
+      '10.30.6.1',
+    );
+    expect(res.status).toBe(200);
+    expect(logged).toContain('Conferma questo indirizzo');
+    expect(logged).not.toContain('Confirm this address');
   });
 
   it("an unverified account's run dispatch is refused server-side with a distinct reason, a verified one is admitted past the gate", async () => {

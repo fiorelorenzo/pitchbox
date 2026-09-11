@@ -59,9 +59,10 @@ function ev(
   slug: string,
   body: unknown,
   origin = 'https://app.pitchbox.app',
+  locale: 'en' | 'it' = 'en',
 ): RequestEvent {
   return {
-    locals: { user: { id: userId, username: 'x' } },
+    locals: { user: { id: userId, username: 'x' }, locale },
     params: { slug },
     request: new Request(`${origin}/api/orgs/${slug}/invites`, {
       method: 'POST',
@@ -87,6 +88,24 @@ describe('POST /api/orgs/[slug]/invites - email delivery (#510)', () => {
     expect(sent[0].text).toContain('Acme Inc');
     expect(sent[0].text).toContain('admin');
     expect(body.emailSent).toBe(true);
+  });
+
+  it("sends the caller's own locale, translated (LOR-264), keeping the org/role/link intact", async () => {
+    const a = await seed('owner5', 'inv-f', 'Zeta Srl', 'owner');
+    const res = await POST(
+      ev(a.userId, 'inv-f', { email: 'amico@example.com', role: 'admin' }, undefined, 'it'),
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { url: string; emailSent: boolean };
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].subject).toContain('Zeta Srl');
+    expect(sent[0].subject).not.toMatch(/invited/i);
+    expect(sent[0].text).toContain(body.url);
+    expect(sent[0].text).toContain('Zeta Srl');
+    expect(sent[0].text).toContain('admin');
+    expect(sent[0].text).toContain('invitato');
+    expect(sent[0].text).not.toMatch(/invited/i);
   });
 
   it('sends nothing and still returns the link when no address is given', async () => {

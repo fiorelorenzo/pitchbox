@@ -31,7 +31,7 @@ async function seedOrgProject(slug: string) {
 
 function patchEvent(orgId: number, projectId: number, body: unknown): RequestEvent {
   return {
-    locals: { org: { id: orgId, slug: 'x', role: 'admin' } },
+    locals: { org: { id: orgId, slug: 'x', role: 'admin' }, locale: 'en' },
     params: { id: String(projectId) },
     request: new Request('http://x/', { method: 'PATCH', body: JSON.stringify(body) }),
   } as unknown as RequestEvent;

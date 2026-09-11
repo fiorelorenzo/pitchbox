@@ -10,6 +10,7 @@ import { billingPeriodFor } from '@pitchbox/shared/org-quota';
 import { getOrgUsage } from '@pitchbox/shared/usage';
 import { checkUsageThresholds } from '@pitchbox/shared/usage-notifications';
 import { isOrgReadOnly } from '@pitchbox/shared/plans';
+import { t } from '@pitchbox/shared/messages';
 
 const slugRegex = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
@@ -66,7 +67,9 @@ export async function POST(event) {
     return json(
       {
         error: 'runner_not_allowed',
-        message: `Agent runner "${body.defaultAgentRunner}" is not available in this deployment's edition.`,
+        message: t(event.locals.locale, 'api.runner_not_allowed', {
+          runner: body.defaultAgentRunner,
+        }),
       },
       { status: 400 },
     );

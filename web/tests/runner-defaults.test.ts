@@ -50,7 +50,10 @@ async function defaultOrgId(): Promise<number> {
 // `Parameters<typeof handler>[0]` seam the extension-dm-sync tests use.
 function postEvent<T>(orgId: number, body: unknown): T {
   return {
-    locals: { org: { id: orgId, slug: 'default', role: 'owner' } },
+    // `locale` matches what hooks.server.ts always populates in production
+    // (LOR-260); the runner_not_allowed message is resolved through it, so
+    // an event missing it would crash rather than silently rendering English.
+    locals: { org: { id: orgId, slug: 'default', role: 'owner' }, locale: 'en' },
     request: new Request('http://x/', { method: 'POST', body: JSON.stringify(body) }),
   } as unknown as T;
 }
@@ -80,7 +83,7 @@ async function runnerOf(projectId: number): Promise<string> {
 
 function patchEvent<T>(orgId: number, id: number, body: unknown): T {
   return {
-    locals: { org: { id: orgId, slug: 'default', role: 'owner' } },
+    locals: { org: { id: orgId, slug: 'default', role: 'owner' }, locale: 'en' },
     params: { id: String(id) },
     request: new Request(`http://x/${id}`, {
       method: 'PATCH',

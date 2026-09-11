@@ -9,7 +9,7 @@ import {
 } from '@pitchbox/shared/auth';
 import { createMailTransport } from '@pitchbox/shared/mail/registry';
 import { loadMailEnv } from '@pitchbox/shared/mail/env';
-import { renderPlainTextMail } from '@pitchbox/shared/mail/template';
+import { verifyEmailMail } from '@pitchbox/shared/mail/templates';
 
 /**
  * Resends the verification mail for the signed-in caller's own account
@@ -79,12 +79,11 @@ export async function POST(event: RequestEvent) {
 
   const { token } = await createEmailVerificationToken(db, user.id);
   const verifyUrl = `${event.url.origin}/verify/${token}`;
-  const rendered = renderPlainTextMail(
-    'Verify your Pitchbox email address',
-    `Confirm this address to start running campaigns.\n\n` +
-      `Open this link within 48 hours to verify:\n${verifyUrl}\n\n` +
-      `If you didn't request this, ignore this message.`,
-  );
+  // The caller is signed in, so `event.locals.locale` already carries this
+  // account's own stored preference (hooks.server.ts's LOR-262 attach
+  // point) rather than a guess - no separate lookup needed here, unlike
+  // the forgot-password route where the request has no session behind it.
+  const rendered = verifyEmailMail(event.locals.locale, 'resend', verifyUrl);
   const transport = createMailTransport(loadMailEnv());
   await transport.send({ to: row.email, ...rendered });
 
