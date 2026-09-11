@@ -93,7 +93,7 @@ export const load: PageServerLoad = async (event) => {
     nextAttemptAfter: w.nextAttemptAfter ? new Date(w.nextAttemptAfter).toISOString() : null,
     createdAt: new Date(w.createdAt).toISOString(),
   }));
-  const readiness = await getCampaignReadiness(id);
+  const readiness = await getCampaignReadiness(id, event.locals.locale);
   return {
     campaign,
     project: project ?? null,
