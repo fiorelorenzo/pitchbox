@@ -30,15 +30,19 @@
 
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
+import type { DraftKind } from './quota-types.js';
 import {
   measureVoiceCorpus,
   measureVoiceCorpusByGenre,
+  measureEditSignature,
   describeVoiceProfile,
   describeVoiceProfileForGenre,
   MIN_ITEMS_TO_DERIVE,
   VOICE_CORPUS_ITEM_GENRES,
   type VoiceCorpusItem,
   type VoiceCorpusItemGenre,
+  type EditPair,
+  type EditSignature,
   type RhythmProfile,
   type PunctuationProfile,
   type ShapeProfile,
@@ -53,6 +57,7 @@ import {
   EMPTY_VOICE_MARKERS,
   EMPTY_LEXICON,
   EMPTY_LANGUAGE,
+  EMPTY_EDIT_SIGNATURE,
 } from './assist/voice-profile.js';
 import { DEFAULT_VOICE_PROFILE, type DefaultVoiceProfile } from './assist/voice-defaults.js';
 import type { RegisterTrait } from './assist/register.js';
@@ -67,7 +72,22 @@ export type VoiceCorpusProvenance = {
   messageIds: number[];
   draftIds: number[];
   templateIds: number[];
-  counts: { voiceSamples: number; messages: number; drafts: number; templates: number };
+  /** Accepted suggestions read as corpus (LOR-227) - only those with no
+   * `edited_from` are counted here; an edited one is provenance for the
+   * edit signature instead (see `editPairIds` below), not for this axis's
+   * "posted text" evidence, to avoid double-claiming one row for two kinds
+   * of proof. */
+  acceptedSuggestionIds: number[];
+  /** `assist_accepted_suggestions` rows with `edited_from` present - what
+   * `measureEditSignature` was actually derived from. */
+  editPairIds: number[];
+  counts: {
+    voiceSamples: number;
+    messages: number;
+    drafts: number;
+    templates: number;
+    acceptedSuggestions: number;
+  };
 };
 
 /** One genre's own share of the derivation, alongside the pooled one -
@@ -104,6 +124,20 @@ export type VoiceProfileEvidence = VoiceCorpusProvenance & {
   lexicon: LexiconProfile;
   language: LanguageProfile;
   genres: Record<VoiceCorpusItemGenre, VoiceGenreSummary>;
+  /** What this operator habitually cuts before publishing a suggestion
+   * (LOR-227), derived from accepted-suggestion pairs where they edited
+   * the draft before posting. Recomputed on every real derivation, same as
+   * every axis above - stored under its own key rather than folded into
+   * one of them so a caller can reason about "how they write" and "what
+   * they cut from a draft" as two separate things. */
+  editSignature: EditSignature;
+  /** A human's own "hide this" toggle (Settings, the same exclude control
+   * voice samples already have) - deliberately NOT recomputed by a
+   * refresh: a manual exclusion is a judgement about the signature, not a
+   * measurement, so it survives every recompute the way `source: 'manual'`
+   * protects the whole summary, at the granularity of this one section
+   * instead of the whole row. */
+  editSignatureExcluded: boolean;
 };
 
 export type OperatorVoiceProfileRow = {
@@ -129,7 +163,9 @@ const EMPTY_PROVENANCE: VoiceCorpusProvenance = {
   messageIds: [],
   draftIds: [],
   templateIds: [],
-  counts: { voiceSamples: 0, messages: 0, drafts: 0, templates: 0 },
+  acceptedSuggestionIds: [],
+  editPairIds: [],
+  counts: { voiceSamples: 0, messages: 0, drafts: 0, templates: 0, acceptedSuggestions: 0 },
 };
 
 const EMPTY_GENRE_SUMMARY: VoiceGenreSummary = {
@@ -156,6 +192,8 @@ const EMPTY_EVIDENCE: VoiceProfileEvidence = {
   lexicon: EMPTY_LEXICON,
   language: EMPTY_LANGUAGE,
   genres: EMPTY_GENRE_SUMMARIES,
+  editSignature: EMPTY_EDIT_SIGNATURE,
+  editSignatureExcluded: false,
 };
 
 /** `genres` merged field-by-field against `EMPTY_GENRE_SUMMARY`, not just
@@ -189,7 +227,12 @@ function normalizeEvidence(raw: unknown): VoiceProfileEvidence {
     messageIds: r.messageIds ?? [],
     draftIds: r.draftIds ?? [],
     templateIds: r.templateIds ?? [],
-    counts: r.counts ?? EMPTY_PROVENANCE.counts,
+    acceptedSuggestionIds: r.acceptedSuggestionIds ?? [],
+    editPairIds: r.editPairIds ?? [],
+    // Merged field-by-field, not substituted whole when absent - the same
+    // reason `normalizeGenreSummaries` merges: a row from before LOR-227
+    // has a `counts` object present but missing `acceptedSuggestions`.
+    counts: { ...EMPTY_PROVENANCE.counts, ...(r.counts ?? {}) },
     rhythm: r.rhythm ?? EMPTY_RHYTHM,
     punctuation: r.punctuation ?? EMPTY_PUNCTUATION,
     shape: r.shape ?? EMPTY_SHAPE,
@@ -197,6 +240,8 @@ function normalizeEvidence(raw: unknown): VoiceProfileEvidence {
     lexicon: r.lexicon ?? EMPTY_LEXICON,
     language: r.language ?? EMPTY_LANGUAGE,
     genres: normalizeGenreSummaries(r.genres),
+    editSignature: r.editSignature ?? EMPTY_EDIT_SIGNATURE,
+    editSignatureExcluded: r.editSignatureExcluded === true,
   };
 }
 
@@ -223,19 +268,43 @@ export async function loadVoiceProfile(
   return row ? toRow(row) : null;
 }
 
+/** Maps `assist_accepted_suggestions.kind` (a `DraftKind` - only `post` and
+ * `post_comment` reach the suggest plane today, per suggest-prompt.ts's own
+ * `SuggestionKind`) onto the corpus's own genre vocabulary (LOR-223) rather
+ * than inventing a third one: a `post_comment` suggestion is a comment, a
+ * `post` suggestion is a post. Anything else has no genre, the same way a
+ * message/draft/template has none. */
+function acceptedSuggestionGenre(kind: DraftKind | string): VoiceCorpusItemGenre | undefined {
+  switch (kind) {
+    case 'post':
+      return 'post';
+    case 'post_comment':
+      return 'comment';
+    default:
+      return undefined;
+  }
+}
+
 /**
  * Every org-scoped piece of writing the derivation is allowed to read:
  * non-excluded voice samples, outbound messages, sent drafts (their
  * `sent_content` when the human edited before sending, their `body`
- * otherwise - the same fallback the send routes themselves use), and every
- * project's templates. Nothing here crosses an organization boundary: each
- * query filters on `organization_id` directly or through the row's project.
+ * otherwise - the same fallback the send routes themselves use), every
+ * project's templates, and (LOR-227) accepted suggestions - what the
+ * operator actually posted, and, for the ones they edited first, the pair
+ * `measureEditSignature` reads. Nothing here crosses an organization
+ * boundary: each query filters on `organization_id` directly or through
+ * the row's project.
  */
 async function gatherVoiceCorpus(
   db: Db,
   organizationId: number,
-): Promise<{ corpus: VoiceCorpusItem[]; evidence: VoiceCorpusProvenance }> {
-  const [sampleRows, messageRows, draftRows, templateRows] = await Promise.all([
+): Promise<{
+  corpus: VoiceCorpusItem[];
+  editPairs: EditPair[];
+  evidence: VoiceCorpusProvenance;
+}> {
+  const [sampleRows, messageRows, draftRows, templateRows, acceptedRows] = await Promise.all([
     db
       .select({
         id: schema.operatorVoiceSamples.id,
@@ -283,6 +352,17 @@ async function gatherVoiceCorpus(
       .where(eq(schema.projects.organizationId, organizationId))
       .orderBy(desc(schema.templates.updatedAt))
       .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
+    db
+      .select({
+        id: schema.assistAcceptedSuggestions.id,
+        kind: schema.assistAcceptedSuggestions.kind,
+        body: schema.assistAcceptedSuggestions.body,
+        editedFrom: schema.assistAcceptedSuggestions.editedFrom,
+      })
+      .from(schema.assistAcceptedSuggestions)
+      .where(eq(schema.assistAcceptedSuggestions.organizationId, organizationId))
+      .orderBy(desc(schema.assistAcceptedSuggestions.createdAt))
+      .limit(MAX_CORPUS_ITEMS_PER_SOURCE),
   ]);
 
   const corpus: VoiceCorpusItem[] = [
@@ -295,22 +375,44 @@ async function gatherVoiceCorpus(
     ...messageRows.map((r) => ({ id: r.id, kind: 'message' as const, text: r.text })),
     ...draftRows.map((r) => ({ id: r.id, kind: 'draft' as const, text: r.sentContent ?? r.body })),
     ...templateRows.map((r) => ({ id: r.id, kind: 'template' as const, text: r.text })),
+    // Posted text outranks captured text as evidence of voice: it is what
+    // the operator was willing to publish under their own name, not merely
+    // draft, DM or template text nobody outside the org ever saw. It still
+    // does not get pooled flat with the rest - `voice-profile.ts`'s
+    // CORPUS_KIND_WEIGHT gives this kind extra weight in what counts as
+    // recurring, applied uniformly by `measureVoiceCorpus` itself.
+    ...acceptedRows.map((r) => ({
+      id: r.id,
+      kind: 'accepted_suggestion' as const,
+      genre: acceptedSuggestionGenre(r.kind),
+      text: r.body,
+    })),
   ];
+
+  // The edit half of the evidence (LOR-227): only rows the operator
+  // actually changed before posting - an unedited accept says nothing
+  // about what this operator removes, and `edited_from` is null for one.
+  const editPairs: EditPair[] = acceptedRows
+    .filter((r) => r.editedFrom != null)
+    .map((r) => ({ id: r.id, draft: r.editedFrom!, final: r.body }));
 
   const evidence: VoiceCorpusProvenance = {
     voiceSampleIds: sampleRows.map((r) => r.id),
     messageIds: messageRows.map((r) => r.id),
     draftIds: draftRows.map((r) => r.id),
     templateIds: templateRows.map((r) => r.id),
+    acceptedSuggestionIds: acceptedRows.map((r) => r.id),
+    editPairIds: editPairs.map((p) => p.id),
     counts: {
       voiceSamples: sampleRows.length,
       messages: messageRows.length,
       drafts: draftRows.length,
       templates: templateRows.length,
+      acceptedSuggestions: acceptedRows.length,
     },
   };
 
-  return { corpus, evidence };
+  return { corpus, editPairs, evidence };
 }
 
 /**
@@ -340,7 +442,7 @@ export async function refreshVoiceProfile(
     return existing;
   }
 
-  const { corpus, evidence: provenance } = await gatherVoiceCorpus(db, organizationId);
+  const { corpus, editPairs, evidence: provenance } = await gatherVoiceCorpus(db, organizationId);
   const measurement = measureVoiceCorpus(corpus);
   const summary = describeVoiceProfile(measurement) ?? '';
 
@@ -362,6 +464,11 @@ export async function refreshVoiceProfile(
     };
   }
 
+  // LOR-227: recomputed every time, same as every axis above -
+  // `editSignatureExcluded` is the one field that is not a measurement and
+  // is carried forward instead, below.
+  const editSignature = measureEditSignature(editPairs);
+
   const evidence: VoiceProfileEvidence = {
     ...provenance,
     version: (existing?.evidence.version ?? 0) + 1,
@@ -372,6 +479,8 @@ export async function refreshVoiceProfile(
     lexicon: measurement.lexicon,
     language: measurement.language,
     genres,
+    editSignature,
+    editSignatureExcluded: existing?.evidence.editSignatureExcluded ?? false,
   };
 
   const values = {
@@ -442,6 +551,37 @@ export async function resetVoiceProfileToDerived(
   return refreshVoiceProfile(db, organizationId, { overwrite: true });
 }
 
+/**
+ * Settings' exclude control for the edit signature (LOR-227), the same
+ * shape voice samples already have (`setVoiceSampleExcluded`,
+ * `operator-profile.ts`) - a human hiding a signature they think is wrong
+ * or too thin, reversibly, without waiting for or forcing a full
+ * recompute. Updates only `editSignatureExcluded`; the measured signature
+ * itself is untouched, so flipping this back on shows the same numbers a
+ * later refresh would have kept anyway.
+ *
+ * Derives a profile first when none is on file yet - the same "always
+ * returns a row" contract `saveVoiceProfileSummary` holds for a fresh org.
+ */
+export async function setEditSignatureExcluded(
+  db: Db,
+  organizationId: number,
+  excluded: boolean,
+): Promise<OperatorVoiceProfileRow> {
+  const existing =
+    (await loadVoiceProfile(db, organizationId)) ?? (await refreshVoiceProfile(db, organizationId));
+
+  const [row] = await db
+    .update(schema.operatorVoiceProfiles)
+    .set({
+      evidence: { ...existing.evidence, editSignatureExcluded: excluded },
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.operatorVoiceProfiles.organizationId, organizationId))
+    .returning();
+  return toRow(row);
+}
+
 // ---------------------------------------------------------------------------
 // #571: resolving "how the operator writes" honestly - the real measurement
 // once there is enough of it, DEFAULT_VOICE_PROFILE otherwise, always
@@ -480,6 +620,16 @@ export type ResolvedOperatorVoiceProfile = {
   version: number;
   derivedAt: string | null;
   itemCount: number;
+  /** What this operator habitually cuts before publishing (LOR-227) - the
+   * last real derivation's signature regardless of `status`, since an org
+   * can clear the edit-pair floor on accepted suggestions alone before its
+   * pooled corpus clears MIN_ITEMS_TO_DERIVE, or the other way around.
+   * `EMPTY_EDIT_SIGNATURE` when there is no row yet or a refresh has never
+   * run - never invented. */
+  editSignature: EditSignature;
+  /** The human's own exclude toggle - true hides `editSignature` from the
+   * next prompt even when it is otherwise non-empty. */
+  editSignatureExcluded: boolean;
   /** What a thin corpus still needs, e.g. "2 more pieces of their own
    * writing...". Null once `status` is 'measured'. */
   gap: string | null;
@@ -533,6 +683,8 @@ export function resolveVoiceProfile(
       version: row.evidence.version,
       derivedAt: row.derivedAt ? row.derivedAt.toISOString() : null,
       itemCount,
+      editSignature: row.evidence.editSignature,
+      editSignatureExcluded: row.evidence.editSignatureExcluded,
       gap: null,
     };
   }
@@ -547,6 +699,8 @@ export function resolveVoiceProfile(
     version: row?.evidence.version ?? 0,
     derivedAt: row?.derivedAt ? row.derivedAt.toISOString() : null,
     itemCount,
+    editSignature: row?.evidence.editSignature ?? EMPTY_EDIT_SIGNATURE,
+    editSignatureExcluded: row?.evidence.editSignatureExcluded ?? false,
     gap: describeVoiceProfileGap(itemCount),
   };
 }

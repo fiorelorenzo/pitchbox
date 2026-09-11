@@ -47,6 +47,7 @@
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { schema, type Db } from '../db/client.js';
 import { loadVoiceProfile } from '../operator-voice-profile.js';
+import { describeEditSignature } from './voice-profile.js';
 
 export type PersonaExperience = {
   title?: string;
@@ -80,6 +81,12 @@ export type VoiceProfileSummary = {
    * the model the operator "usually writes with hashtags" and "closes
    * with #BuildInPublic" when writing a comment neither is true of. */
   commentSummary: string | null;
+  /** What this operator habitually cuts from a draft before posting it
+   * (LOR-227), as prose - null whenever there is nothing to say (too few
+   * edited pairs, a signature that says nothing dominant) or the operator
+   * excluded it in Settings, the same "hide this" control voice samples
+   * already have. */
+  editSignature: string | null;
 };
 
 export type ProjectBrief = {
@@ -240,6 +247,9 @@ export async function loadCompanionContext(
       ? {
           summary: voiceProfileRow.summary,
           commentSummary: voiceProfileRow.evidence.genres.comment.summary,
+          editSignature: voiceProfileRow.evidence.editSignatureExcluded
+            ? null
+            : describeEditSignature(voiceProfileRow.evidence.editSignature),
         }
       : null,
     projects: projectRows.map((p) => ({

@@ -16,9 +16,11 @@ import {
   refreshVoiceProfile,
   saveVoiceProfileSummary,
   resetVoiceProfileToDerived,
+  setEditSignatureExcluded,
   type OperatorVoiceProfileRow,
   type VoiceGenreSummary,
 } from '@pitchbox/shared/operator-voice-profile';
+import { describeEditSignature, type EditSignature } from '@pitchbox/shared/assist/voice-profile';
 
 // Companion -> Voice ("how you write"), split out of the old three-card
 // settings/companion page (LOR-178/LOR-179, docs/design/DECISIONS.md D35).
@@ -56,7 +58,13 @@ export type CompanionVoiceProfile = {
   wordsPerSentence: number;
   itemCount: number;
   wordCount: number;
-  evidenceCounts: { voiceSamples: number; messages: number; drafts: number; templates: number };
+  evidenceCounts: {
+    voiceSamples: number;
+    messages: number;
+    drafts: number;
+    templates: number;
+    acceptedSuggestions: number;
+  };
   /** Each genre's own description, alongside the pooled one above
    * (LOR-223) - a post and a comment are different genres of writing, so
    * "how you write" is worth reading per genre as well as pooled. */
@@ -64,6 +72,13 @@ export type CompanionVoiceProfile = {
   source: 'derived' | 'manual';
   derivedAt: string | null;
   updatedAt: string;
+  /** What this operator habitually cuts from a draft before posting it
+   * (LOR-227) - the raw measurement, plus its prose (null below the
+   * derivation floor or when it says nothing dominant) and the human's own
+   * exclude toggle, the same shape voice samples already have. */
+  editSignature: EditSignature;
+  editSignatureDescription: string | null;
+  editSignatureExcluded: boolean;
 };
 
 const MAX_VOICE_IMPORT_BYTES = 20 * 1024 * 1024;
@@ -83,6 +98,9 @@ function toVoiceProfile(row: OperatorVoiceProfileRow): CompanionVoiceProfile {
     source: row.source,
     derivedAt: row.derivedAt ? row.derivedAt.toISOString() : null,
     updatedAt: row.updatedAt.toISOString(),
+    editSignature: row.evidence.editSignature,
+    editSignatureDescription: describeEditSignature(row.evidence.editSignature),
+    editSignatureExcluded: row.evidence.editSignatureExcluded,
   };
 }
 
@@ -134,6 +152,22 @@ export const actions: Actions = {
     await setVoiceSampleExcluded(getDb(), orgId, sampleId, excluded);
     const voiceProfile = await refreshVoiceProfile(getDb(), orgId);
     return { toggledSampleId: sampleId, voiceProfile: toVoiceProfile(voiceProfile) };
+  },
+
+  // The edit signature's own exclude control (LOR-227) - the same "hide
+  // this" reversibility voice samples already have, at the granularity of
+  // the whole signature rather than one row: a signature derived from a
+  // few unusual edits should be dismissable without touching the database
+  // by hand. Does not re-derive anything; a later refresh recomputes the
+  // signature but carries this flag forward (`refreshVoiceProfile`'s own
+  // comment).
+  toggleEditSignature: async (event) => {
+    requireRole(event, 'admin');
+    const orgId = await requireOrgId(event);
+    const form = await event.request.formData();
+    const excluded = form.get('excluded') === 'true';
+    const voiceProfile = await setEditSignatureExcluded(getDb(), orgId, excluded);
+    return { voiceProfile: toVoiceProfile(voiceProfile) };
   },
 
   // Re-derives from the current corpus. A no-op on a `source: 'manual'` row

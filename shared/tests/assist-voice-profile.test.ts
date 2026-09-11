@@ -8,16 +8,22 @@ import {
   describeVoiceProfileForGenre,
   measureOneText,
   classifyLanguage,
+  measureEditSignature,
+  describeEditSignature,
+  hasEditSignatureContent,
   MIN_ITEMS_TO_DERIVE,
+  MIN_EDIT_PAIRS_TO_DERIVE,
   EMPTY_RHYTHM,
   EMPTY_PUNCTUATION,
   EMPTY_SHAPE,
   EMPTY_VOICE_MARKERS,
   EMPTY_LEXICON,
   EMPTY_LANGUAGE,
+  EMPTY_EDIT_SIGNATURE,
   type VoiceCorpusItem,
   type VoiceCorpusItemGenre,
   type VoiceMeasurement,
+  type EditPair,
 } from '../src/assist/voice-profile.js';
 
 // #407: the operator's own voice, derived from what they have actually
@@ -664,5 +670,160 @@ describe('classifyLanguage (exported for style-check.ts and voice-metrics.ts)', 
     expect(classifyLanguage('This is the plan for the week and it is going well.')).toBe('en');
     expect(classifyLanguage("che bello, non vedo l'ora!")).toBe('it');
     expect(classifyLanguage('Grande!')).toBe('unknown');
+  });
+});
+
+// LOR-227: an accepted suggestion is text the operator was willing to
+// publish, so it counts more than once toward what `measureVoiceCorpus`
+// derives - never toward itemCount/wordCount themselves, which stay the
+// real, unweighted count of distinct pieces of writing gathered.
+describe('accepted_suggestion corpus weighting (LOR-227)', () => {
+  it('a corpus with accepted suggestions produces a different profile than the same corpus without them', () => {
+    // Two 20-word voice samples and one 4-word accepted suggestion: 3 real
+    // items (clears MIN_ITEMS_TO_DERIVE), so itemCount/wordCount are exact.
+    // Weighted 2x, the accepted suggestion's 4-word length enters the
+    // median twice - [20, 20, 4, 4] medians to 12 - where pooling it flat
+    // ([20, 20, 4]) would median to 20. The two corpora below differ only
+    // in whether that one item is present at all.
+    const voiceSampleA =
+      'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty';
+    const voiceSampleB =
+      'twenty nineteen eighteen seventeen sixteen fifteen fourteen thirteen twelve eleven ten nine eight seven six five four three two one';
+    const withoutAccepted: VoiceCorpusItem[] = [
+      { id: 1, kind: 'voice_sample', text: voiceSampleA },
+      { id: 2, kind: 'voice_sample', text: voiceSampleB },
+    ];
+    const withAccepted: VoiceCorpusItem[] = [
+      ...withoutAccepted,
+      { id: 3, kind: 'accepted_suggestion', genre: 'post', text: 'quick short update today' },
+    ];
+
+    // Below MIN_ITEMS_TO_DERIVE without the accepted suggestion - nothing
+    // to compare a "different profile" against otherwise.
+    expect(measureVoiceCorpus(withoutAccepted).measurable).toBe(false);
+
+    const measured = measureVoiceCorpus(withAccepted);
+    expect(measured.measurable).toBe(true);
+    // itemCount/wordCount are the real, unweighted counts - not inflated by
+    // the accepted suggestion's extra weight.
+    expect(measured.itemCount).toBe(3);
+    expect(measured.wordCount).toBe(44);
+    // The weighted median (12) differs from what flat pooling would have
+    // produced (20) - the observable proof the weighting is applied.
+    expect(measured.rhythm.medianItemWords).toBe(12);
+  });
+});
+
+// LOR-227: the edit signature - what an operator habitually cuts between
+// the model's own draft (`edited_from`) and what they actually posted
+// (`body`). Same discipline as measureVoiceCorpus: a floor before anything
+// is reported, and a phrase named only once it recurs across separate
+// pairs.
+describe('measureEditSignature', () => {
+  function pair(id: number, draft: string, final: string): EditPair {
+    return { id, draft, final };
+  }
+
+  it('reports nothing below MIN_EDIT_PAIRS_TO_DERIVE', () => {
+    const pairs = [
+      pair(1, 'Great question! Thanks for reading, appreciate it.', 'Thanks for reading.'),
+      pair(2, 'Great question! Nice work here.', 'Nice work here.'),
+    ];
+    expect(pairs.length).toBeLessThan(MIN_EDIT_PAIRS_TO_DERIVE);
+    const signature = measureEditSignature(pairs);
+    expect(signature).toEqual({ ...EMPTY_EDIT_SIGNATURE, pairCount: 2 });
+    expect(hasEditSignatureContent(signature)).toBe(false);
+    expect(describeEditSignature(signature)).toBeNull();
+  });
+
+  it('names a phrase deleted in two or more pairs, and nothing from a single pair', () => {
+    const pairs = [
+      pair(
+        1,
+        'Great question! I think this is really cool, thanks so much for sharing this with everyone.',
+        'Cool, thanks for sharing.',
+      ),
+      pair(
+        2,
+        'Great question! I appreciate you writing this, it truly resonates with me a lot.',
+        'This resonates with me.',
+      ),
+      // This third draft's own opener ("Nice post here") is unique to this
+      // one pair - it must not appear in bannedPhrases.
+      pair(
+        3,
+        'Nice post here, I think this is fantastic and I love reading things like this honestly.',
+        'Nice post.',
+      ),
+    ];
+    const signature = measureEditSignature(pairs);
+    expect(signature.measurable).toBe(true);
+    expect(signature.pairCount).toBe(3);
+    expect(signature.bannedPhrases).toEqual(['Great question!']);
+    expect(signature.shortensText).toBe(true);
+    expect(signature.dropsOpening).toBe(true);
+    expect(signature.dropsClosingSentence).toBe(true);
+    expect(signature.cutsHedges).toBe(true);
+    expect(describeEditSignature(signature)).toContain('"Great question!"');
+    expect(describeEditSignature(signature)).toContain('Based on 3 edited suggestions');
+  });
+
+  it('derives stripsEmoji and changesLanguage independently of the other axes', () => {
+    const emojiPairs = [
+      pair(
+        1,
+        'This is great work here honestly, love seeing it happen this way today 🎉🔥',
+        'This is great work here honestly, love seeing it happen this way today.',
+      ),
+      pair(
+        2,
+        'Nice update on the project this week, really appreciate the effort put in 🚀',
+        'Nice update on the project this week, really appreciate the effort put in.',
+      ),
+      pair(
+        3,
+        'Solid progress overall friend, keep it up because it matters a lot to us 🙌',
+        'Solid progress overall friend, keep it up because it matters a lot to us.',
+      ),
+    ];
+    const emojiSignature = measureEditSignature(emojiPairs);
+    expect(emojiSignature.stripsEmoji).toBe(true);
+    expect(emojiSignature.changesLanguage).toBe(false);
+
+    const languagePairs = [
+      pair(
+        1,
+        'This is a great update about the project and the team this week honestly.',
+        'Questo è un buon aggiornamento sul progetto di questa settimana onestamente.',
+      ),
+      pair(
+        2,
+        'The results are looking really strong for this quarter across every team.',
+        'I risultati sembrano davvero forti per questo trimestre in ogni squadra.',
+      ),
+      pair(
+        3,
+        'We shipped a new feature today that the whole team is excited about.',
+        'Abbiamo lanciato una nuova funzione oggi di cui tutto il team è entusiasta.',
+      ),
+    ];
+    const languageSignature = measureEditSignature(languagePairs);
+    expect(languageSignature.changesLanguage).toBe(true);
+    expect(languageSignature.stripsEmoji).toBe(false);
+  });
+
+  it('ignores an unedited pair (identical draft and final)', () => {
+    const pairs = [
+      pair(
+        1,
+        'Same text both times, nothing changed at all here today.',
+        'Same text both times, nothing changed at all here today.',
+      ),
+      pair(2, 'Another edited draft that becomes something shorter.', 'Something shorter.'),
+      pair(3, 'A third edited draft that also becomes shorter text.', 'Shorter text.'),
+    ];
+    // Only 2 of the 3 pairs are real edits - below the floor once the
+    // identical one is discarded.
+    expect(measureEditSignature(pairs).measurable).toBe(false);
   });
 });

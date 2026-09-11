@@ -29,14 +29,51 @@
 
 import { readPostRegister, type PostRegister, type RegisterTrait } from './register.js';
 
-export type VoiceCorpusItemKind = 'voice_sample' | 'message' | 'draft' | 'template';
+export type VoiceCorpusItemKind =
+  'voice_sample' | 'message' | 'draft' | 'template' | 'accepted_suggestion';
 
 const VOICE_CORPUS_ITEM_KINDS: readonly VoiceCorpusItemKind[] = [
   'voice_sample',
   'message',
   'draft',
   'template',
+  'accepted_suggestion',
 ];
+
+/** How many times a corpus item's own text counts toward the axes below
+ * that derive a habit from repetition across items - traits, openings,
+ * closings, reused words, and every rate/spread axis (rhythm, punctuation,
+ * shape, voice markers, lexicon, language). Never applied to `itemCount`/
+ * `wordCount`/the `MIN_ITEMS_TO_DERIVE` floor itself: those describe how
+ * much material this org has actually produced, and inflating them would
+ * let two accepted suggestions pass the floor as if they were four pieces
+ * of writing.
+ *
+ * An accepted suggestion (LOR-227) is text the operator was willing to
+ * publish under their own name - stronger evidence of their voice than a
+ * private draft, a sent DM or a template nobody outside the org ever saw,
+ * all of which the operator could still walk back before anyone read them.
+ * Weighted 2x rather than pooled flat with the rest: enough to move what
+ * counts as recurring without one published post alone manufacturing a
+ * "recurring" phrase out of a corpus of otherwise-unrelated writing (it
+ * still needs a second, independently-weighted item to clear
+ * MIN_PHRASE_REPEATS/MIN_WORD_ITEM_COVERAGE below). */
+const CORPUS_KIND_WEIGHT: Record<VoiceCorpusItemKind, number> = {
+  voice_sample: 1,
+  message: 1,
+  draft: 1,
+  template: 1,
+  accepted_suggestion: 2,
+};
+
+function expandByCorpusWeight<T extends { kind: VoiceCorpusItemKind }>(items: T[]): T[] {
+  const out: T[] = [];
+  for (const item of items) {
+    const weight = CORPUS_KIND_WEIGHT[item.kind];
+    for (let i = 0; i < weight; i += 1) out.push(item);
+  }
+  return out;
+}
 
 /** The genre of a piece of writing - a post, a top-level comment or a
  * reply to a comment (LOR-223). Only `voice_sample` items carry one today
@@ -830,11 +867,20 @@ export function measureVoiceCorpus(corpus: VoiceCorpusItem[]): VoiceMeasurement 
     };
   }
 
+  // Weighted view (LOR-227): some kinds count more than once toward what
+  // counts as recurring below - see CORPUS_KIND_WEIGHT. Never rebuilt from
+  // itemCount/wordCount above, which stay the real, unweighted count of
+  // distinct pieces of writing this org has actually produced.
+  const weightedItems = expandByCorpusWeight(items);
+  const weightedTexts = weightedItems.map((i) => i.text);
+  const weightedWordLists = weightedTexts.map((t) => t.split(/\s+/u).filter(Boolean));
+  const weightedWordCount = weightedWordLists.reduce((sum, w) => sum + w.length, 0);
+
   // Register traits and sentence length need each item to individually
   // clear register.ts's own floor (MIN_WORDS_TO_DESCRIBE) - a corpus of
   // long posts and one-line drafts should not have the one-liners drag an
   // average down when they carry no measurable register of their own.
-  const registers = texts.map((t) => readPostRegister(t)).filter((r) => r !== null);
+  const registers = weightedTexts.map((t) => readPostRegister(t)).filter((r) => r !== null);
   let traits: RegisterTrait[] = [];
   let wordsPerSentence = 0;
   if (registers.length >= MIN_ITEMS_TO_DERIVE) {
@@ -858,15 +904,15 @@ export function measureVoiceCorpus(corpus: VoiceCorpusItem[]): VoiceMeasurement 
     measurable: true,
     traits,
     wordsPerSentence,
-    openings: topRepeatedPhrases(wordLists, OPENING_WORDS, false),
-    closings: topRepeatedPhrases(wordLists, CLOSING_WORDS, true),
-    commonWords: topCommonWords(wordLists),
-    rhythm: measureRhythm(texts),
-    punctuation: measurePunctuation(texts, wordCount),
-    shape: measureShape(texts, traits.includes('list-layout')),
-    voiceMarkers: measureVoiceMarkers(texts, wordCount),
-    lexicon: measureLexicon(texts.join(' '), wordCount),
-    language: measureLanguage(items),
+    openings: topRepeatedPhrases(weightedWordLists, OPENING_WORDS, false),
+    closings: topRepeatedPhrases(weightedWordLists, CLOSING_WORDS, true),
+    commonWords: topCommonWords(weightedWordLists),
+    rhythm: measureRhythm(weightedTexts),
+    punctuation: measurePunctuation(weightedTexts, weightedWordCount),
+    shape: measureShape(weightedTexts, traits.includes('list-layout')),
+    voiceMarkers: measureVoiceMarkers(weightedTexts, weightedWordCount),
+    lexicon: measureLexicon(weightedTexts.join(' '), weightedWordCount),
+    language: measureLanguage(weightedItems),
   };
 }
 
@@ -1072,4 +1118,240 @@ export function describeVoiceProfileForGenre(
   m: VoiceMeasurement,
 ): string | null {
   return describeVoiceProfile(m, GENRE_NOUN[genre]);
+}
+
+// ---------------------------------------------------------------------------
+// Edit signature (LOR-227): what habitually changes between the model's own
+// draft and what the operator actually published, when they edited before
+// accepting. `assist_accepted_suggestions.edited_from`/`.body` is the
+// strongest signal this product records and, until now, the one thing
+// nothing ever read back - a human rewrote the model's output, every
+// single time, and the profile learned nothing from the rewrite itself.
+//
+// Same discipline as everything above: countable, no model call, a named
+// floor, and an empty result rather than a guess when there is not enough
+// to say something honest - applied to a different shape of corpus (pairs,
+// not standalone pieces of writing) so it gets its own floor name
+// (MIN_EDIT_PAIRS_TO_DERIVE) even though the number is the same one:
+// two edited pairs is not a pattern, the same way two posts sharing an
+// opening word is not.
+// ---------------------------------------------------------------------------
+
+/** One accepted suggestion the operator edited before posting: the model's
+ * own draft and what they actually published. Only ever built for a
+ * suggestion where `edited_from` is present - an unedited accept says
+ * nothing about what this operator removes, and is not a pair. */
+export type EditPair = {
+  id: number;
+  draft: string;
+  final: string;
+};
+
+export type EditSignature = {
+  /** How many edit pairs this was derived from - the real count, not a
+   * weighted one; there is nothing to weight here, every pair is the same
+   * kind of evidence. */
+  pairCount: number;
+  /** False below MIN_EDIT_PAIRS_TO_DERIVE - every field below is empty/
+   * false rather than a guess. */
+  measurable: boolean;
+  /** The final text ran shorter than the draft in a dominant majority of
+   * pairs (TRAIT_DOMINANCE_RATIO of pairCount, the same threshold traits
+   * use). */
+  shortensText: boolean;
+  /** The draft's own last sentence does not survive into the final text,
+   * in the same dominant-majority sense. */
+  dropsClosingSentence: boolean;
+  /** The final text carries fewer hedge words (register.ts's own list)
+   * than the draft, dominantly. */
+  cutsHedges: boolean;
+  /** The draft's own first sentence does not survive into the final text,
+   * dominantly. */
+  dropsOpening: boolean;
+  /** The draft carried emoji the final text has fewer of, dominantly. */
+  stripsEmoji: boolean;
+  /** The draft and the final text classify to two different languages
+   * (both classified - see classifyLanguage), dominantly. */
+  changesLanguage: boolean;
+  /** Whole sentences (normalized) the operator deleted in at least
+   * MIN_PHRASE_REPEATS separate pairs - a personal ban list derived from
+   * behaviour rather than a hardcoded puffery list. A sentence deleted in
+   * only one pair names nothing here: one edit is a choice about one
+   * draft, not a habit. Capped at MAX_BANNED_PHRASES. */
+  bannedPhrases: string[];
+};
+
+export const EMPTY_EDIT_SIGNATURE: EditSignature = {
+  pairCount: 0,
+  measurable: false,
+  shortensText: false,
+  dropsClosingSentence: false,
+  cutsHedges: false,
+  dropsOpening: false,
+  stripsEmoji: false,
+  changesLanguage: false,
+  bannedPhrases: [],
+};
+
+/** Equal to MIN_ITEMS_TO_DERIVE (two edit pairs is not a pattern, the same
+ * reason two posts are not), named for what this corpus actually is - a
+ * set of edited pairs, not pieces of writing - so a reader of
+ * `measureEditSignature` never has to go check what the shared constant
+ * means for this different kind of floor. */
+export const MIN_EDIT_PAIRS_TO_DERIVE = MIN_ITEMS_TO_DERIVE;
+
+/** Same cap discipline as MAX_COMMON_WORDS: past a handful, a ban list
+ * reads as a dump of every edit ever made rather than the few phrases that
+ * actually keep coming back. */
+const MAX_BANNED_PHRASES = 5;
+
+function normalizeSentenceForCompare(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+/** Sentences in `draft` with no normalized match anywhere among `final`'s
+ * own sentences - gone whole, not merely reworded. A lightly-edited
+ * sentence still has a near neighbor in `final` and is deliberately not
+ * counted: this looks for what disappears entirely, the same thing a
+ * personal ban list needs to name. */
+function removedSentences(draft: string, final: string): string[] {
+  const finalNormalized = new Set(splitSentences(final).map(normalizeSentenceForCompare));
+  return splitSentences(draft)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && !finalNormalized.has(normalizeSentenceForCompare(s)));
+}
+
+/**
+ * Derives what this operator habitually cuts from `pairs`. Pure and
+ * synchronous - no model, no I/O, same as `measureVoiceCorpus`.
+ */
+export function measureEditSignature(pairs: EditPair[]): EditSignature {
+  const usable = pairs
+    .map((p) => ({ ...p, draft: p.draft.trim(), final: p.final.trim() }))
+    .filter((p) => p.draft && p.final && p.draft !== p.final);
+  const pairCount = usable.length;
+
+  if (pairCount < MIN_EDIT_PAIRS_TO_DERIVE) {
+    return { ...EMPTY_EDIT_SIGNATURE, pairCount };
+  }
+
+  let shortens = 0;
+  let dropsClosing = 0;
+  let cutsHedgesCount = 0;
+  let dropsOpeningCount = 0;
+  let stripsEmojiCount = 0;
+  let changesLanguageCount = 0;
+  const phraseCounts = new Map<string, { count: number; display: string }>();
+
+  for (const pair of usable) {
+    const draftWords = pair.draft.split(/\s+/u).filter(Boolean).length;
+    const finalWords = pair.final.split(/\s+/u).filter(Boolean).length;
+    if (finalWords < draftWords) shortens += 1;
+
+    const draftSentences = splitSentences(pair.draft)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const finalSentenceSet = new Set(splitSentences(pair.final).map(normalizeSentenceForCompare));
+    if (draftSentences.length > 0) {
+      const first = normalizeSentenceForCompare(draftSentences[0]!);
+      const last = normalizeSentenceForCompare(draftSentences[draftSentences.length - 1]!);
+      if (!finalSentenceSet.has(first)) dropsOpeningCount += 1;
+      if (!finalSentenceSet.has(last)) dropsClosing += 1;
+    }
+
+    const draftHedges = (pair.draft.match(HEDGE_GLOBAL) ?? []).length;
+    const finalHedges = (pair.final.match(HEDGE_GLOBAL) ?? []).length;
+    if (finalHedges < draftHedges) cutsHedgesCount += 1;
+
+    const draftEmoji = (pair.draft.match(EMOJI_GLOBAL) ?? []).length;
+    const finalEmoji = (pair.final.match(EMOJI_GLOBAL) ?? []).length;
+    if (draftEmoji > 0 && finalEmoji < draftEmoji) stripsEmojiCount += 1;
+
+    const draftLang = classifyLanguage(pair.draft);
+    const finalLang = classifyLanguage(pair.final);
+    if (draftLang !== 'unknown' && finalLang !== 'unknown' && draftLang !== finalLang) {
+      changesLanguageCount += 1;
+    }
+
+    const seenInPair = new Set<string>();
+    for (const removed of removedSentences(pair.draft, pair.final)) {
+      const key = normalizeSentenceForCompare(removed);
+      if (!key || seenInPair.has(key)) continue;
+      seenInPair.add(key);
+      const existing = phraseCounts.get(key);
+      if (existing) existing.count += 1;
+      else phraseCounts.set(key, { count: 1, display: removed });
+    }
+  }
+
+  const dominanceThreshold = pairCount * TRAIT_DOMINANCE_RATIO;
+  const bannedPhrases = [...phraseCounts.values()]
+    .filter((v) => v.count >= MIN_PHRASE_REPEATS)
+    .sort((a, b) => b.count - a.count || a.display.localeCompare(b.display))
+    .slice(0, MAX_BANNED_PHRASES)
+    .map((v) => v.display);
+
+  return {
+    pairCount,
+    measurable: true,
+    shortensText: shortens >= dominanceThreshold,
+    dropsClosingSentence: dropsClosing >= dominanceThreshold,
+    cutsHedges: cutsHedgesCount >= dominanceThreshold,
+    dropsOpening: dropsOpeningCount >= dominanceThreshold,
+    stripsEmoji: stripsEmojiCount >= dominanceThreshold,
+    changesLanguage: changesLanguageCount >= dominanceThreshold,
+    bannedPhrases,
+  };
+}
+
+/** True when `measureEditSignature` found something worth telling a model
+ * or a human about - `measurable` alone is not enough, since a corpus of
+ * edits that happens to cut nothing dominantly and repeats no phrase is
+ * measurable and still says nothing. Callers (the prompt, Settings) use
+ * this to decide whether the signature exists at all, never rendering an
+ * empty heading. */
+export function hasEditSignatureContent(s: EditSignature): boolean {
+  return (
+    s.measurable &&
+    (s.shortensText ||
+      s.dropsClosingSentence ||
+      s.cutsHedges ||
+      s.dropsOpening ||
+      s.stripsEmoji ||
+      s.changesLanguage ||
+      s.bannedPhrases.length > 0)
+  );
+}
+
+/** The edit signature as prose, for the prompt and for Settings - same
+ * split as `describeVoiceProfile` and for the same reason: the numbers can
+ * be asserted without pinning the English. Null whenever
+ * `hasEditSignatureContent` is false, which the caller renders as no
+ * section at all. */
+export function describeEditSignature(s: EditSignature): string | null {
+  if (!hasEditSignatureContent(s)) return null;
+
+  const cuts: string[] = [];
+  if (s.shortensText) cuts.push('shortens it');
+  if (s.dropsOpening) cuts.push('drops the opening line');
+  if (s.dropsClosingSentence) cuts.push('drops the closing line');
+  if (s.cutsHedges) cuts.push('cuts hedging phrases');
+  if (s.stripsEmoji) cuts.push('strips emoji');
+  if (s.changesLanguage) cuts.push('rewrites it into a different language');
+
+  const sentences: string[] = [];
+  if (cuts.length > 0) {
+    sentences.push(`Before posting a draft, this operator usually ${cuts.join(', ')}.`);
+  }
+  if (s.bannedPhrases.length > 0) {
+    sentences.push(
+      `Phrases they have deleted from a draft more than once: "${s.bannedPhrases.join('", "')}".`,
+    );
+  }
+
+  return `Based on ${s.pairCount} edited suggestions. ${sentences.join(' ')}`;
 }
