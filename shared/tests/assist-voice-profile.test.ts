@@ -736,6 +736,72 @@ describe('classifyLanguage (exported for style-check.ts and voice-metrics.ts)', 
   });
 });
 
+// LOR-286: a marker-count floor cannot classify a short reply whose only
+// Italian content is one word the fixed lists have never heard of - the
+// structural cause behind LOR-268's own remaining ~15% `unknown` rate on
+// real short writing. These fixtures are invented, not copied from
+// `private/voice-eval/cases.json` (never quoted here), but each isolates
+// one of the concrete failure shapes that corpus's hand labels turned up:
+// a subjunctive verb, a superlative, a past participle, an unlisted
+// future-tense form - every one a single word with no other marker in the
+// sentence, which is exactly what the old flat count could never resolve.
+describe('classifyLanguage: structural evidence beyond the fixed lists (LOR-286)', () => {
+  it('classifies a subjunctive verb form the marker list has never listed', () => {
+    // "sapessi" is in neither list; the old count is zero regardless of
+    // vocabulary size. Its ending is Italian-only structure, not a word.
+    expect(classifyLanguage('Sapessi cucinare.')).toBe('it');
+  });
+
+  it('classifies an unlisted superlative from its ending alone', () => {
+    // "interessantissimo" is not "interessante" (already listed) - a
+    // different word, and the list was never going to enumerate every
+    // superlative of every adjective it already has.
+    expect(classifyLanguage('Interessantissimo!')).toBe('it');
+  });
+
+  it('classifies an unlisted past participle from its ending alone', () => {
+    expect(classifyLanguage('Sconosciuto.')).toBe('it');
+    expect(classifyLanguage('Sconosciuta.')).toBe('it');
+  });
+
+  it('classifies an unlisted future-tense verb from its accented ending', () => {
+    // "arriverà" is a real conjugation of "arrivare", not a fixed marker -
+    // the accent itself is the evidence a list-based count could never
+    // carry, the same way LOR-234's boundary fix let existing markers be
+    // seen at all.
+    expect(classifyLanguage('Arriverà.')).toBe('it');
+  });
+
+  it('does not let an accented English loanword alone read as Italian', () => {
+    // "café" ends in an accented vowel too - the one collision the
+    // accent-based signal cannot tell apart structurally, so it is
+    // excluded by name. Without that exclusion this reads as confidently
+    // Italian, which is the exact regression this issue must not cause.
+    expect(classifyLanguage('My café.')).toBe('unknown');
+    expect(classifyLanguage('I had a good café today, thanks.')).toBe('en');
+  });
+
+  it('still returns unknown for text that carries no language marker at all', () => {
+    expect(classifyLanguage('👍')).toBe('unknown');
+    expect(classifyLanguage('Mario Rossi.')).toBe('unknown');
+  });
+
+  it('still returns unknown for a genuinely ambiguous single word', () => {
+    // "Grande!" carries no listed marker and no covered morphology ending
+    // - unlike "Certamente!" below, there is no structural evidence to
+    // find, so it stays exactly as ambiguous as it always was.
+    expect(classifyLanguage('Grande!')).toBe('unknown');
+  });
+
+  it('still returns unknown for a single listed word - no double-counting through its own ending', () => {
+    // "certamente" is a marker-list entry AND ends in "-mente" - the two
+    // signals are the same word, not two words, so it still carries the
+    // flat weight of one hit it always had, not the two a naive sum of
+    // "listed" plus "structural" would have given it.
+    expect(classifyLanguage('Certamente!')).toBe('unknown');
+  });
+});
+
 // LOR-234: `\b` is defined against the ASCII word-character class, so it
 // never treats an accented letter like `è` as a word character - `\bè\b`
 // could never match, making that stopword (and any other accented entry)

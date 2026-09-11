@@ -751,8 +751,30 @@ export type LanguageProfile = LanguageMix & {
 // dependency - the same tradeoff register.ts's FORMAL_WORDS makes. Enough
 // to tell "the update shipped today" from "l'aggiornamento è uscito oggi"
 // without claiming to be a general-purpose language detector.
-const EN_STOPWORDS_GLOBAL =
-  /\b(?:the|and|of|to|is|that|with|for|this|was|are|it's|i'm|we|you)\b/giu;
+// Both lists are arrays, not bare regex literals, so `classifyLanguage`
+// (LOR-286) can also test a single word for exact membership - the
+// generalised morphology scoring below needs to know a word is already
+// accounted for by one of these lists before it goes looking for
+// structural evidence of its own, or a listed word like "certamente"
+// would get counted twice through its own "-mente" ending.
+const EN_STOPWORD_WORDS = [
+  'the',
+  'and',
+  'of',
+  'to',
+  'is',
+  'that',
+  'with',
+  'for',
+  'this',
+  'was',
+  'are',
+  "it's",
+  "i'm",
+  'we',
+  'you',
+];
+const EN_STOPWORDS_GLOBAL = new RegExp(`\\b(?:${EN_STOPWORD_WORDS.join('|')})\\b`, 'giu');
 // `\b` is defined against the ASCII word-character class ([A-Za-z0-9_])
 // regardless of the `u` flag, so it never sees an accented letter like `è`
 // as a word character: the boundary between a space and `è` does not exist
@@ -761,8 +783,28 @@ const EN_STOPWORDS_GLOBAL =
 // Unicode-aware lookaround boundaries fix it, matching the
 // `(?![\p{L}\p{N}_])` convention style-check.ts's own accented rules
 // already use for the same reason.
-export const IT_STOPWORDS_GLOBAL =
-  /(?<![\p{L}\p{N}_])(?:il|la|di|che|per|con|un|una|è|non|questo|questa|sono|abbiamo|nel|della)(?![\p{L}\p{N}_])/giu;
+const IT_STOPWORD_WORDS = [
+  'il',
+  'la',
+  'di',
+  'che',
+  'per',
+  'con',
+  'un',
+  'una',
+  'è',
+  'non',
+  'questo',
+  'questa',
+  'sono',
+  'abbiamo',
+  'nel',
+  'della',
+];
+export const IT_STOPWORDS_GLOBAL = new RegExp(
+  `(?<![\\p{L}\\p{N}_])(?:${IT_STOPWORD_WORDS.join('|')})(?![\\p{L}\\p{N}_])`,
+  'giu',
+);
 
 // LOR-268: a fixed grammatical-stopword list is a poor detector on short
 // text, because stopwords are exactly the words a short message omits - a
@@ -1183,11 +1225,114 @@ const IT_ELISION_GLOBAL = new RegExp(
   'giu',
 );
 
-/** Below this many marker hits (stopwords, common words and Italian
- * elisions combined), a text has not said enough to classify - one stray
- * "the" in an otherwise Italian post is not evidence. Left at 2 rather than
- * lowered (LOR-268): the fix for short-text blindness is a richer marker
- * vocabulary, not a lower bar for a thin one. */
+// LOR-286: a fixed word carries no evidence for a form the list has never
+// seen - a subjunctive ("sapessi"), a superlative ("curiosissimo"), a
+// participle ("benvenuta") - and no list is ever going to enumerate every
+// conjugation. These endings are close to Italian-only regardless of
+// vocabulary, so a single occurrence is strong evidence on its own, the
+// structural fix LOR-234 (a boundary bug) and LOR-268 (a wider list)
+// could not be: both still asked "how many listed words appear", and a
+// three-word reply whose only Italian content is one unlisted, inflected
+// word can never answer that question twice.
+//
+// Deliberately excludes the past-participle "-ato"/"-ata" family (too
+// close to everyday English/loanword nouns - "data", "tomato", "potato",
+// "strata" would all match) and "-ite" (an entirely different, extremely
+// common English suffix - "site", "quite", "invite", "polite"). A minimum
+// length on every remaining family keeps a short coincidence ("auto") from
+// qualifying, and a handful of French/Spanish loanwords ordinary English
+// writing already uses (`café`, `déjà vu`) are excluded from the accented-
+// ending check by name rather than by pattern, since there is no
+// structural way to tell them apart from the Italian word they resemble.
+const ENGLISH_ACCENTED_LOANWORDS: Record<string, true> = {
+  cafe: true,
+  café: true,
+  resume: true,
+  résumé: true,
+  fiance: true,
+  fiancé: true,
+  fiancee: true,
+  fiancée: true,
+  cliche: true,
+  cliché: true,
+  nee: true,
+  née: true,
+  passe: true,
+  passé: true,
+  protege: true,
+  protégé: true,
+  expose: true,
+  exposé: true,
+  entree: true,
+  entrée: true,
+  matinee: true,
+  matinée: true,
+  soiree: true,
+  soirée: true,
+  rose: true,
+  rosé: true,
+  attache: true,
+  attaché: true,
+  touche: true,
+  touché: true,
+  deja: true,
+  déjà: true,
+};
+
+/** A word's own structural evidence for Italian, checked only when
+ * `italianScore` below has already established the word is not one of the
+ * fixed stopword/marker list's own entries - a listed word like
+ * "certamente" keeps the flat weight of one hit it always had rather than
+ * double-counting through this function too. 2 for a family with
+ * essentially no English collision, 1 for the one family (the "-ito"/
+ * "-ita" participle) that has a handful of common English loanwords
+ * ("mosquito", "burrito") sharing its ending. */
+function italianMorphologyWeight(word: string): 0 | 1 | 2 {
+  if (/(?:issimo|issima|issimi|issime|zione|zioni|mente)$/u.test(word) && word.length >= 6) {
+    return 2;
+  }
+  if (/(?:ando|endo)$/u.test(word) && word.length >= 6) return 2;
+  if (/(?:assi|essi|issi)$/u.test(word) && word.length >= 5) return 2;
+  if (/(?:uto|uta)$/u.test(word) && word.length >= 5) return 2;
+  if (/[àèéìòù]$/u.test(word) && word.length >= 2 && !ENGLISH_ACCENTED_LOANWORDS[word]) return 2;
+  if (/(?:ito|ita)$/u.test(word) && word.length >= 5) return 1;
+  return 0;
+}
+
+const IT_LEXICAL_WORDS: Record<string, true> = Object.fromEntries(
+  [...IT_STOPWORD_WORDS, ...IT_MARKER_WORDS].map((w) => [w.toLowerCase(), true]),
+);
+const EN_LEXICAL_WORDS: Record<string, true> = Object.fromEntries(
+  [...EN_STOPWORD_WORDS, ...EN_MARKER_WORDS].map((w) => [w.toLowerCase(), true]),
+);
+const WORD_GLOBAL = /\p{L}+/gu;
+
+/** The evidence weight for Italian: the fixed lists' own hit count (one
+ * point each, unchanged from before) plus, for every word neither list
+ * already accounts for, whatever `italianMorphologyWeight` finds. */
+function italianScore(text: string): number {
+  let score =
+    (text.match(IT_STOPWORDS_GLOBAL) ?? []).length +
+    (text.match(IT_MARKERS_GLOBAL) ?? []).length +
+    (text.match(IT_ELISION_GLOBAL) ?? []).length;
+  for (const raw of text.match(WORD_GLOBAL) ?? []) {
+    const word = raw.toLowerCase();
+    if (IT_LEXICAL_WORDS[word] || EN_LEXICAL_WORDS[word]) continue;
+    score += italianMorphologyWeight(word);
+  }
+  return score;
+}
+
+/** Below this evidence score (the fixed lists' own hit count plus
+ * `italianMorphologyWeight`'s structural evidence for Italian - see
+ * `italianScore` above; English is unchanged, a flat hit count), a text
+ * has not said enough to classify - one stray "the" in an otherwise
+ * Italian post is not evidence. Still 2, the same number LOR-268 left the
+ * raw hit count at - not a lower bar, but a score a single unambiguous
+ * structural marker (a subjunctive verb, a superlative, an elided
+ * function word) can now reach on its own (weight 2) where a single
+ * ordinary listed word still cannot (weight 1), the distinction LOR-286
+ * makes structural instead of asking for a longer list. */
 const LANGUAGE_MARKER_MIN = 2;
 /** Above this share, one language is called primary outright rather than
  * "mixed" - the split has to be lopsided, not just plurality. */
@@ -1203,10 +1348,7 @@ export const EMPTY_LANGUAGE: LanguageProfile = {
 export function classifyLanguage(text: string): 'en' | 'it' | 'unknown' {
   const en =
     (text.match(EN_STOPWORDS_GLOBAL) ?? []).length + (text.match(EN_MARKERS_GLOBAL) ?? []).length;
-  const it =
-    (text.match(IT_STOPWORDS_GLOBAL) ?? []).length +
-    (text.match(IT_MARKERS_GLOBAL) ?? []).length +
-    (text.match(IT_ELISION_GLOBAL) ?? []).length;
+  const it = italianScore(text);
   if (en >= LANGUAGE_MARKER_MIN && en > it) return 'en';
   if (it >= LANGUAGE_MARKER_MIN && it > en) return 'it';
   return 'unknown';
