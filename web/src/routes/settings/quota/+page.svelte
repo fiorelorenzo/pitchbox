@@ -2,6 +2,7 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Info } from '@lucide/svelte';
+	import { page } from '$app/stores';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import SettingsQuotaCard from '$lib/components/SettingsQuotaCard.svelte';
@@ -10,6 +11,7 @@
 	import { fly } from 'svelte/transition';
 	import { untrack } from 'svelte';
 	import PageContainer from '$lib/components/PageContainer.svelte';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	type QuotaWindow = { perDay: number; perWeek: number };
 	type PlatformQuota = { dm: QuotaWindow; comment: QuotaWindow; post: QuotaWindow };
@@ -20,6 +22,7 @@
 
 	let { data }: { data: PageData } = $props();
 	const isAdmin = $derived(data.isAdmin);
+	const locale = $derived($page.data.locale as Locale);
 
 	const DEFAULTS: PlatformQuota = {
 		dm: { perDay: 10, perWeek: 50 },
@@ -48,12 +51,12 @@
 			});
 			if (res.ok) {
 				initial = structuredClone(q);
-				toast.success('Limits saved');
+				toast.success(t(locale, 'settings.quota.success-saved'));
 			} else if (res.status === 403) {
-				toast.error('You need admin access for that');
+				toast.error(t(locale, 'settings.quota.error-admin-required'));
 			} else {
 				const text = await res.text();
-				toast.error('Save failed', { description: text });
+				toast.error(t(locale, 'settings.quota.error-save-failed'), { description: text });
 			}
 		} finally {
 			saving = false;
@@ -65,11 +68,17 @@
 	}
 </script>
 
-<Seo title="Settings - Quota" description="Posting quota defaults per platform." />
+<Seo
+	title={t(locale, 'settings.quota.seo-title')}
+	description={t(locale, 'settings.quota.seo-description')}
+/>
 
 <Tooltip.Provider>
 	<PageContainer size="default">
-		<PageHeader title="Quota" description="Default posting limits per platform, per day and per week." />
+		<PageHeader
+			title={t(locale, 'settings.quota.title')}
+			description={t(locale, 'settings.quota.description')}
+		/>
 
 		<div class="max-w-2xl flex flex-col gap-4">
 			{#if isAdmin}
@@ -84,8 +93,8 @@
 			{:else}
 				<Alert.Root>
 					<Info class="size-4" />
-					<Alert.Title>Admin access required</Alert.Title>
-					<Alert.Description>Posting quotas are visible to org admins and owners.</Alert.Description>
+					<Alert.Title>{t(locale, 'settings.quota.admin-required-title')}</Alert.Title>
+					<Alert.Description>{t(locale, 'settings.quota.admin-required-description')}</Alert.Description>
 				</Alert.Root>
 			{/if}
 		</div>
@@ -97,10 +106,12 @@
 		class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-lg border bg-background px-4 py-2 shadow-lg"
 		transition:fly={{ y: 20, duration: 150 }}
 	>
-		<span class="text-sm">You have unsaved changes</span>
-		<Button variant="outline" size="sm" onclick={discard}>Discard</Button>
+		<span class="text-sm">{t(locale, 'settings.quota.unsaved-changes')}</span>
+		<Button variant="outline" size="sm" onclick={discard}
+			>{t(locale, 'settings.quota.discard')}</Button
+		>
 		{#if isAdmin}
-			<Button size="sm" onclick={save} disabled={saving}>Save</Button>
+			<Button size="sm" onclick={save} disabled={saving}>{t(locale, 'settings.quota.save')}</Button>
 		{/if}
 	</div>
 {/if}

@@ -6,10 +6,14 @@
   import PageContainer from '$lib/components/PageContainer.svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
+  import { page } from '$app/stores';
   import type { Locale } from '$lib/i18n.js';
+  import { t } from '$lib/i18n/index.js';
 
   type PageData = { locale: Locale };
   let { data }: { data: PageData } = $props();
+
+  const locale = $derived($page.data.locale as Locale);
 
   const LOCALE_OPTIONS: { value: Locale; label: string }[] = [
     { value: 'en', label: 'English' },
@@ -17,7 +21,7 @@
   ];
 
   // svelte-ignore state_referenced_locally
-  let locale = $state<Locale>(data.locale);
+  let localeVal = $state<Locale>(data.locale);
   let saving = $state(false);
 
   // LOR-262: the account's language override. One account, one value - this
@@ -27,8 +31,8 @@
   // POST /api/extension/locale, so changing it here is what that picker
   // reads back on its next handshake, and vice versa.
   async function saveLocale(next: Locale) {
-    const previous = locale;
-    locale = next;
+    const previous = localeVal;
+    localeVal = next;
     saving = true;
     try {
       const res = await fetch('/api/auth/locale', {
@@ -37,43 +41,46 @@
         body: JSON.stringify({ locale: next }),
       });
       if (!res.ok) {
-        locale = previous;
-        toast.error('Could not save the language');
+        localeVal = previous;
+        toast.error(t(locale, 'settings.language.error-save-failed'));
         return;
       }
-      toast.success('Language saved');
+      toast.success(t(locale, 'settings.language.success-saved'));
       // Re-runs every load function for this request, hooks.server.ts
       // included - the very next request picks up the account preference
       // this just wrote, so <html lang> and every loader agree immediately
       // rather than waiting for the next navigation.
       await invalidateAll();
     } catch {
-      locale = previous;
-      toast.error('Could not save the language');
+      localeVal = previous;
+      toast.error(t(locale, 'settings.language.error-save-failed'));
     } finally {
       saving = false;
     }
   }
 </script>
 
-<Seo title="Settings - Language" description="Choose the dashboard's display language." />
+<Seo
+  title={t(locale, 'settings.language.seo-title')}
+  description={t(locale, 'settings.language.seo-description')}
+/>
 
 <PageHeader
-  title="Language"
-  description="Applies to the dashboard and, on its next handshake, the browser extension - one account setting, not one per surface."
+  title={t(locale, 'settings.language.title')}
+  description={t(locale, 'settings.language.description')}
 />
 
 <div class="mt-4 grid gap-4">
   <Card.Root>
     <Card.Header>
-      <Card.Title>Display language</Card.Title>
+      <Card.Title>{t(locale, 'settings.language.display-language-title')}</Card.Title>
       <Card.Description>
-        Signed-out pages keep using your browser's language until you sign in.
+        {t(locale, 'settings.language.display-language-description')}
       </Card.Description>
     </Card.Header>
     <Card.Content class="max-w-xs">
       <SelectField
-        value={locale}
+        value={localeVal}
         onValueChange={(v) => saveLocale(v as Locale)}
         options={LOCALE_OPTIONS}
         disabled={saving}

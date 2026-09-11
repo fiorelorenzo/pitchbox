@@ -17,8 +17,11 @@
     Sparkles,
     ShieldCog,
   } from '@lucide/svelte';
+  import { t, type Locale } from '$lib/i18n/index.js';
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
+
+  const locale = $derived($page.data.locale as Locale);
 
   // Flat rail of twelve (#254 shipped seven; LI-19/#316 added LinkedIn assist;
   // 2026-09-07's companion decisions added Companion, moved to its own
@@ -49,38 +52,78 @@
   // exactly as before.
   const items = $derived(
     [
-      { href: '/settings/general', label: 'General', icon: Activity, show: true },
-      { href: '/settings/onboarding', label: 'Onboarding', icon: ListChecks, show: true },
+      {
+        href: '/settings/general',
+        label: t(locale, 'settings.nav.general'),
+        icon: Activity,
+        show: true,
+      },
+      {
+        href: '/settings/onboarding',
+        label: t(locale, 'settings.nav.onboarding'),
+        icon: ListChecks,
+        show: true,
+      },
       {
         href: '/settings/runners',
-        label: 'Agent runners',
+        label: t(locale, 'settings.nav.runners'),
         icon: Bot,
         show: !data.isCloud,
       },
-      { href: '/settings/extension', label: 'Browser extension', icon: Puzzle, show: true },
-      { href: '/settings/quota', label: 'Quota', icon: Gauge, show: !data.isCloud },
-      { href: '/settings/password', label: 'Password', icon: KeyRound, show: data.signedIn },
-      { href: '/settings/language', label: 'Language', icon: Languages, show: data.signedIn },
+      {
+        href: '/settings/extension',
+        label: t(locale, 'settings.nav.extension'),
+        icon: Puzzle,
+        show: true,
+      },
+      {
+        href: '/settings/quota',
+        label: t(locale, 'settings.nav.quota'),
+        icon: Gauge,
+        show: !data.isCloud,
+      },
+      {
+        href: '/settings/password',
+        label: t(locale, 'settings.nav.password'),
+        icon: KeyRound,
+        show: data.signedIn,
+      },
+      {
+        href: '/settings/language',
+        label: t(locale, 'settings.nav.language'),
+        icon: Languages,
+        show: data.signedIn,
+      },
       {
         href: '/settings/linkedin-assist',
-        label: 'LinkedIn assist',
+        label: t(locale, 'settings.nav.linkedin-assist'),
         icon: Sparkles,
         show: data.isAdmin,
       },
-      { href: '/settings/organization', label: 'Organization', icon: Building2, show: data.authOn },
+      {
+        href: '/settings/organization',
+        label: t(locale, 'settings.nav.organization'),
+        icon: Building2,
+        show: data.authOn,
+      },
       {
         href: '/settings/billing',
-        label: 'Billing',
+        label: t(locale, 'settings.nav.billing'),
         icon: CreditCard,
         show: data.isAdmin && data.isCloud,
       },
       {
         href: '/settings/retention',
-        label: 'Retention',
+        label: t(locale, 'settings.nav.retention'),
         icon: Archive,
         show: data.isAdmin && !data.isCloud,
       },
-      { href: '/settings/security', label: 'Security', icon: ShieldCheck, show: data.isAdmin },
+      {
+        href: '/settings/security',
+        label: t(locale, 'settings.nav.security'),
+        icon: ShieldCheck,
+        show: data.isAdmin,
+      },
     ].filter((i) => i.show),
   );
 
@@ -107,12 +150,12 @@
   -->
   <nav
     class="flex flex-wrap gap-1 border-b border-border pb-2 md:w-48 md:flex-none md:flex-col md:flex-nowrap md:border-b-0 md:pb-0"
-    aria-label="Settings sections"
+    aria-label={t(locale, 'settings.rail.aria-label')}
   >
     <p
       class="hidden px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground md:block"
     >
-      Settings
+      {t(locale, 'settings.rail.section-label')}
     </p>
     {#each items as item (item.href)}
       {@const Icon = item.icon}
@@ -134,7 +177,7 @@
       <p
         class="hidden px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground md:block"
       >
-        Instance admin
+        {t(locale, 'settings.rail.admin-section-label')}
       </p>
       <a
         href="/settings/admin"
@@ -146,7 +189,7 @@
         }`}
       >
         <ShieldCog class="size-4 flex-none" />
-        Instance admin
+        {t(locale, 'settings.nav.admin')}
       </a>
     {/if}
   </nav>

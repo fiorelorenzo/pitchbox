@@ -6,12 +6,17 @@
   import { Button } from '$lib/components/ui/button';
   import { SelectField } from '$lib/components/ui/select-field';
   import { Info } from '@lucide/svelte';
+  import { page } from '$app/stores';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import PageContainer from '$lib/components/PageContainer.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
-  import { ADMIN_LINKS } from './admin-links.js';
+  import { adminLinks } from './admin-links.js';
+  import { t, type Locale } from '$lib/i18n/index.js';
+
+  const locale = $derived($page.data.locale as Locale);
+  const links = $derived(adminLinks(locale));
 
   type AdminUser = { id: number; username: string; isInstanceAdmin: boolean };
   type RegistrationPolicy = 'open' | 'invite' | 'off';
@@ -29,23 +34,23 @@
         body: JSON.stringify({ userId }),
       });
       if (!res.ok) {
-        toast.error('Could not promote that user');
+        toast.error(t(locale, 'settings.admin.error-promote-failed'));
         return;
       }
-      toast.success('Promoted to instance admin');
+      toast.success(t(locale, 'settings.admin.promoted'));
       await invalidateAll();
     } catch {
-      toast.error('Could not promote that user');
+      toast.error(t(locale, 'settings.admin.error-promote-failed'));
     } finally {
       promoting = null;
     }
   }
 
-  const REGISTRATION_POLICY_OPTIONS: { value: RegistrationPolicy; label: string }[] = [
-    { value: 'open', label: 'Open - anyone can register' },
-    { value: 'invite', label: 'Invite-only - a valid invite token is required' },
-    { value: 'off', label: 'Off - no registration at all' },
-  ];
+  const REGISTRATION_POLICY_OPTIONS = $derived<{ value: RegistrationPolicy; label: string }[]>([
+    { value: 'open', label: t(locale, 'settings.admin.registration.option-open') },
+    { value: 'invite', label: t(locale, 'settings.admin.registration.option-invite') },
+    { value: 'off', label: t(locale, 'settings.admin.registration.option-off') },
+  ]);
   // svelte-ignore state_referenced_locally
   let registrationPolicy = $state<RegistrationPolicy>(data.registrationPolicy);
   let savingRegistrationPolicy = $state(false);
@@ -62,48 +67,46 @@
       });
       if (!res.ok) {
         registrationPolicy = previous;
-        toast.error('Could not save the registration policy');
+        toast.error(t(locale, 'settings.admin.registration.error-save-failed'));
         return;
       }
-      toast.success('Registration policy saved');
+      toast.success(t(locale, 'settings.admin.registration.success-saved'));
     } catch {
       registrationPolicy = previous;
-      toast.error('Could not save the registration policy');
+      toast.error(t(locale, 'settings.admin.registration.error-save-failed'));
     } finally {
       savingRegistrationPolicy = false;
     }
   }
 </script>
 
-<Seo title="Settings - Instance admin" description="Instance-wide configuration for the operator of this deployment." />
+<Seo
+  title={t(locale, 'settings.admin.seo-title')}
+  description={t(locale, 'settings.admin.seo-description')}
+/>
 
 <PageContainer size="default">
   <PageHeader
-    title="Instance admin"
-    description="Configuration that belongs to the operator of this deployment, not to any one organization."
+    title={t(locale, 'settings.admin.title')}
+    description={t(locale, 'settings.admin.description')}
   />
 
   {#if !data.authOn}
     <Alert.Root class="mb-6">
       <Info class="size-4" />
-      <Alert.Title>PITCHBOX_AUTH is off</Alert.Title>
+      <Alert.Title>{t(locale, 'settings.admin.auth-off-title')}</Alert.Title>
       <Alert.Description>
-        This instance has no sign-in, so there is only one operator and this area is always
-        reachable - the same reason organization settings disappear from the rail.
+        {t(locale, 'settings.admin.auth-off-description')}
       </Alert.Description>
     </Alert.Root>
   {/if}
 
   <p class="mb-6 max-w-2xl text-sm text-muted-foreground">
-    A few settings are instance-wide rather than per-organization: any user can create their own
-    organization and become its admin, but that must never grant them the config below, which
-    every organization on this deployment shares. Those pages already existed before this area
-    did and keep their own write gate; this is a landing spot that points at them rather than a
-    second copy of them.
+    {t(locale, 'settings.admin.intro')}
   </p>
 
   <div class="grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
-    {#each ADMIN_LINKS as link (link.href)}
+    {#each links as link (link.href)}
       {@const Icon = link.icon}
       <a href={link.href} class="block">
         <Card.Root size="sm" class="h-full transition-colors hover:bg-accent/50">
@@ -121,11 +124,9 @@
 
   <Card.Root class="mt-8 max-w-3xl">
     <Card.Header>
-      <Card.Title>Registration policy</Card.Title>
+      <Card.Title>{t(locale, 'settings.admin.registration.title')}</Card.Title>
       <Card.Description>
-        Whether POST /api/auth/register accepts a new account, and whether it needs a valid
-        invite token. Read fresh on every request, so a change here takes effect without a
-        redeploy. Code default is invite-only.
+        {t(locale, 'settings.admin.registration.description')}
       </Card.Description>
     </Card.Header>
     <Card.Content class="flex flex-col gap-2 sm:max-w-sm">
@@ -141,20 +142,18 @@
 
   <Card.Root class="mt-8 max-w-3xl">
     <Card.Header>
-      <Card.Title>Instance admins</Card.Title>
+      <Card.Title>{t(locale, 'settings.admin.instance-admins.title')}</Card.Title>
       <Card.Description>
-        Every user on this deployment and whether they hold the instance-admin flag. Promoting a
-        user here is the supported way to grant it once the deployment's first account has
-        already claimed it (#413) - the only other way is `seed:owner` before anyone signs up.
+        {t(locale, 'settings.admin.instance-admins.description')}
       </Card.Description>
     </Card.Header>
     <Card.Content>
       <Table.Root>
         <Table.Header>
           <Table.Row>
-            <Table.Head>User</Table.Head>
-            <Table.Head>Instance admin</Table.Head>
-            <Table.Head class="text-right">Action</Table.Head>
+            <Table.Head>{t(locale, 'settings.admin.instance-admins.column-user')}</Table.Head>
+            <Table.Head>{t(locale, 'settings.admin.instance-admins.column-instance-admin')}</Table.Head>
+            <Table.Head class="text-right">{t(locale, 'settings.admin.instance-admins.column-action')}</Table.Head>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -163,9 +162,11 @@
               <Table.Cell class="font-medium">{u.username}</Table.Cell>
               <Table.Cell>
                 {#if u.isInstanceAdmin}
-                  <Badge variant="default">Instance admin</Badge>
+                  <Badge variant="default">{t(locale, 'settings.admin.instance-admins.badge-admin')}</Badge>
                 {:else}
-                  <Badge variant="outline" class="text-muted-foreground">Member</Badge>
+                  <Badge variant="outline" class="text-muted-foreground"
+                    >{t(locale, 'settings.admin.instance-admins.badge-member')}</Badge
+                  >
                 {/if}
               </Table.Cell>
               <Table.Cell class="text-right">
@@ -176,7 +177,7 @@
                     onclick={() => promote(u.id)}
                     loading={promoting === u.id}
                   >
-                    Promote
+                    {t(locale, 'settings.admin.instance-admins.promote')}
                   </Button>
                 {/if}
               </Table.Cell>

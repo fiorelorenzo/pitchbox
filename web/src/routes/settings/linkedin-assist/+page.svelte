@@ -6,6 +6,7 @@
 	import { SelectField } from '$lib/components/ui/select-field';
 	import { Button } from '$lib/components/ui/button';
 	import { Info, TriangleAlert, RadioTower } from '@lucide/svelte';
+	import { page } from '$app/stores';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import PageContainer from '$lib/components/PageContainer.svelte';
@@ -13,31 +14,46 @@
 	import { fly } from 'svelte/transition';
 	import { untrack } from 'svelte';
 	import { ASSIST_TONE_NOTES_MAX, type AssistTone } from '@pitchbox/shared/assist/tone';
+	import { t, type Locale } from '$lib/i18n/index.js';
+
+	const locale = $derived($page.data.locale as Locale);
 
 	// One line each, in the order they escalate away from the default: what the
 	// room is doing, then the fixed registers, then the operator's own words.
 	// The copy is the whole feature from where the operator sits - the prompt
 	// instruction behind each option lives in shared/src/assist/suggest-prompt.ts.
-	const toneOptions: Array<{ value: AssistTone; label: string; hint: string }> = [
+	const toneOptions = $derived<Array<{ value: AssistTone; label: string; hint: string }>>([
 		{
 			value: 'match-room',
-			label: 'Match the room',
-			hint: "Mixes the post's own register with your voice. The default, and what a person actually does."
+			label: t(locale, 'settings.linkedin-assist.tone.option-match-room-label'),
+			hint: t(locale, 'settings.linkedin-assist.tone.option-match-room-hint'),
 		},
 		{
 			value: 'professional',
-			label: 'Professional',
-			hint: 'Full sentences, no slang, and no corporate filler either.'
+			label: t(locale, 'settings.linkedin-assist.tone.option-professional-label'),
+			hint: t(locale, 'settings.linkedin-assist.tone.option-professional-hint'),
 		},
-		{ value: 'plain', label: 'Plain', hint: 'Short sentences and ordinary words.' },
-		{ value: 'warm', label: 'Warm', hint: 'Addresses the author as a person, without exclamation marks.' },
+		{
+			value: 'plain',
+			label: t(locale, 'settings.linkedin-assist.tone.option-plain-label'),
+			hint: t(locale, 'settings.linkedin-assist.tone.option-plain-hint'),
+		},
+		{
+			value: 'warm',
+			label: t(locale, 'settings.linkedin-assist.tone.option-warm-label'),
+			hint: t(locale, 'settings.linkedin-assist.tone.option-warm-hint'),
+		},
 		{
 			value: 'technical',
-			label: 'Technical',
-			hint: 'Specific about mechanisms, numbers and tradeoffs.'
+			label: t(locale, 'settings.linkedin-assist.tone.option-technical-label'),
+			hint: t(locale, 'settings.linkedin-assist.tone.option-technical-hint'),
 		},
-		{ value: 'custom', label: 'In my own words', hint: 'Describe the tone yourself, below.' }
-	];
+		{
+			value: 'custom',
+			label: t(locale, 'settings.linkedin-assist.tone.option-custom-label'),
+			hint: t(locale, 'settings.linkedin-assist.tone.option-custom-hint'),
+		},
+	]);
 	const toneHint = $derived(toneOptions.find((o) => o.value === s.tone)?.hint ?? '');
 
 	type Settings = {
@@ -80,7 +96,7 @@
 
 	async function save() {
 		if (s.tone === 'custom' && !s.toneNotes.trim()) {
-			toast.error('Describe the tone you want, or pick one of the named options');
+			toast.error(t(locale, 'settings.linkedin-assist.error-tone-required'));
 			return;
 		}
 		saving = true;
@@ -92,11 +108,13 @@
 			});
 			if (res.ok) {
 				initial = structuredClone(s);
-				toast.success('LinkedIn assist settings saved');
+				toast.success(t(locale, 'settings.linkedin-assist.success-saved'));
 			} else if (res.status === 403) {
-				toast.error('You need admin access for that');
+				toast.error(t(locale, 'settings.linkedin-assist.error-admin-required'));
 			} else {
-				toast.error('Save failed', { description: await res.text() });
+				toast.error(t(locale, 'settings.linkedin-assist.error-save-failed'), {
+					description: await res.text(),
+				});
 			}
 		} finally {
 			saving = false;
@@ -105,23 +123,22 @@
 </script>
 
 <Seo
-	title="Settings - LinkedIn assist"
-	description="On/off, daily caps and the kill switch for the in-page LinkedIn assistant."
+	title={t(locale, 'settings.linkedin-assist.seo-title')}
+	description={t(locale, 'settings.linkedin-assist.seo-description')}
 />
 
 <PageContainer size="default">
 	<PageHeader
-		title="LinkedIn assist"
-		description="Controls the in-page assistant on linkedin.com: how much it may send, and a kill switch that applies immediately."
+		title={t(locale, 'settings.linkedin-assist.title')}
+		description={t(locale, 'settings.linkedin-assist.description')}
 	/>
 
 	{#if s.killSwitch}
 		<Alert.Root variant="destructive" class="mb-4">
 			<TriangleAlert class="size-4" />
-			<Alert.Title>Kill switch is on</Alert.Title>
+			<Alert.Title>{t(locale, 'settings.linkedin-assist.kill-switch-banner-title')}</Alert.Title>
 			<Alert.Description>
-				Suggestions and observation collection are stopped for every device in this
-				organization, regardless of the settings below.
+				{t(locale, 'settings.linkedin-assist.kill-switch-banner-description')}
 			</Alert.Description>
 		</Alert.Root>
 	{/if}
@@ -129,38 +146,36 @@
 	<div class="max-w-2xl flex flex-col gap-4">
 		<Card.Root>
 			<Card.Header>
-				<Card.Title>Assist</Card.Title>
+				<Card.Title>{t(locale, 'settings.linkedin-assist.assist.title')}</Card.Title>
 				<Card.Description>
-					Off by default. Writes as you, the operator - it decides which of your projects (if
-					any) a suggestion is actually about from the post itself, so there is nothing to bind
-					here.
+					{t(locale, 'settings.linkedin-assist.assist.description')}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
 				<label class="flex items-center gap-2 text-sm">
 					<Checkbox checked={s.enabled} onCheckedChange={(v) => (s.enabled = !!v)} />
-					Assist enabled
+					{t(locale, 'settings.linkedin-assist.assist.enabled-label')}
 				</label>
 				<label class="flex items-center gap-2 text-sm">
 					<Checkbox
 						checked={s.collectorEnabled}
 						onCheckedChange={(v) => (s.collectorEnabled = !!v)}
 					/>
-					Observation collector enabled
+					{t(locale, 'settings.linkedin-assist.assist.collector-enabled-label')}
 				</label>
 				<div class="grid gap-1.5">
-					<span class="text-sm font-medium">Collector attributes sightings to</span>
+					<span class="text-sm font-medium"
+						>{t(locale, 'settings.linkedin-assist.assist.project-label')}</span
+					>
 					<SelectField
 						value={s.projectId ?? undefined}
 						onValueChange={(v) => (s.projectId = v as number)}
 						options={projectOptions}
-						placeholder="No project bound"
+						placeholder={t(locale, 'settings.linkedin-assist.assist.project-placeholder')}
 						fullWidth
 					/>
 					<p class="text-xs text-muted-foreground">
-						Only used by the observation collector, to file what it scrolls past under one of
-						your projects for that project's own campaigns to draw candidates from. Unrelated to
-						what a suggestion writes about.
+						{t(locale, 'settings.linkedin-assist.assist.project-description')}
 					</p>
 				</div>
 			</Card.Content>
@@ -168,18 +183,14 @@
 
 		<Card.Root>
 			<Card.Header>
-				<Card.Title>Tone</Card.Title>
+				<Card.Title>{t(locale, 'settings.linkedin-assist.tone.title')}</Card.Title>
 				<Card.Description>
-					How a suggestion should sound, by default. The house style outranks every option here,
-					so none of them can ask for the typography Pitchbox never emits, and a tone sent by the
-					extension is ignored: this page and the project page are where it is decided. Any
-					project can override this for itself - open the project and look for Voice - so a
-					product does not have to sound like your personal account.
+					{t(locale, 'settings.linkedin-assist.tone.description')}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
 				<div class="grid gap-1.5">
-					<span class="text-sm font-medium">Register</span>
+					<span class="text-sm font-medium">{t(locale, 'settings.linkedin-assist.tone.register-label')}</span>
 					<SelectField
 						value={s.tone}
 						onValueChange={(v) => (s.tone = v as AssistTone)}
@@ -190,16 +201,20 @@
 				</div>
 				{#if s.tone === 'custom'}
 					<div class="grid gap-1.5">
-						<label class="text-sm font-medium" for="toneNotes">In your own words</label>
+						<label class="text-sm font-medium" for="toneNotes"
+							>{t(locale, 'settings.linkedin-assist.tone.custom-label')}</label
+						>
 						<Input
 							id="toneNotes"
 							maxlength={ASSIST_TONE_NOTES_MAX}
-							placeholder="Direct, a bit dry, no enthusiasm I would not say out loud"
+							placeholder={t(locale, 'settings.linkedin-assist.tone.custom-placeholder')}
 							value={s.toneNotes}
 							oninput={(e) => (s.toneNotes = e.currentTarget.value)}
 						/>
 						<p class="text-xs text-muted-foreground">
-							Goes into the prompt as you wrote it, up to {ASSIST_TONE_NOTES_MAX} characters.
+							{t(locale, 'settings.linkedin-assist.tone.custom-description', {
+								max: ASSIST_TONE_NOTES_MAX,
+							})}
 						</p>
 					</div>
 				{/if}
@@ -208,15 +223,16 @@
 
 		<Card.Root>
 			<Card.Header>
-				<Card.Title>Daily caps</Card.Title>
+				<Card.Title>{t(locale, 'settings.linkedin-assist.caps.title')}</Card.Title>
 				<Card.Description>
-					Can be lowered, never raised past the code ceiling: LinkedIn's velocity monitoring
-					treats a high-volume account as a bot regardless of how carefully it was written.
+					{t(locale, 'settings.linkedin-assist.caps.description')}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-4 sm:grid-cols-2">
 				<div class="grid gap-1.5">
-					<label class="text-sm font-medium" for="dailyCommentCap">Comments / day</label>
+					<label class="text-sm font-medium" for="dailyCommentCap"
+						>{t(locale, 'settings.linkedin-assist.caps.comments-label')}</label
+					>
 					<Input
 						id="dailyCommentCap"
 						type="number"
@@ -225,10 +241,14 @@
 						value={s.dailyCommentCap}
 						oninput={(e) => (s.dailyCommentCap = Number(e.currentTarget.value))}
 					/>
-					<p class="text-xs text-muted-foreground">Ceiling: {data.ceilings.comment} / day</p>
+					<p class="text-xs text-muted-foreground">
+						{t(locale, 'settings.linkedin-assist.caps.ceiling', { n: data.ceilings.comment })}
+					</p>
 				</div>
 				<div class="grid gap-1.5">
-					<label class="text-sm font-medium" for="dailyPostCap">Posts / day</label>
+					<label class="text-sm font-medium" for="dailyPostCap"
+						>{t(locale, 'settings.linkedin-assist.caps.posts-label')}</label
+					>
 					<Input
 						id="dailyPostCap"
 						type="number"
@@ -237,44 +257,44 @@
 						value={s.dailyPostCap}
 						oninput={(e) => (s.dailyPostCap = Number(e.currentTarget.value))}
 					/>
-					<p class="text-xs text-muted-foreground">Ceiling: {data.ceilings.post} / day</p>
+					<p class="text-xs text-muted-foreground">
+						{t(locale, 'settings.linkedin-assist.caps.ceiling', { n: data.ceilings.post })}
+					</p>
 				</div>
 			</Card.Content>
 		</Card.Root>
 
 		<Card.Root class="border-destructive/40">
 			<Card.Header>
-				<Card.Title>Kill switch</Card.Title>
+				<Card.Title>{t(locale, 'settings.linkedin-assist.kill-switch.title')}</Card.Title>
 				<Card.Description>
-					Stops both collection and suggestion immediately, on every device, without waiting for
-					the next alarm. Separate from turning assist off: use this for "something is wrong right
-					now", not for routine pausing.
+					{t(locale, 'settings.linkedin-assist.kill-switch.description')}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
 				<label class="flex items-center gap-2 text-sm">
 					<Checkbox checked={s.killSwitch} onCheckedChange={(v) => (s.killSwitch = !!v)} />
-					Kill switch engaged
+					{t(locale, 'settings.linkedin-assist.kill-switch.engaged-label')}
 				</label>
 			</Card.Content>
 		</Card.Root>
 
 		<Card.Root>
 			<Card.Header>
-				<Card.Title class="flex items-center gap-2"><RadioTower class="size-4" /> Selector health</Card.Title>
+				<Card.Title class="flex items-center gap-2"
+					><RadioTower class="size-4" />
+					{t(locale, 'settings.linkedin-assist.selector-health.title')}</Card.Title
+				>
 				<Card.Description>
-					Whether the extension can still find LinkedIn's feed, composer and submit controls
-					(LI-6, #303). The failure mode this guards against is silent breakage: an assistant
-					that quietly stops finding posts looks identical to a quiet week.
+					{t(locale, 'settings.linkedin-assist.selector-health.description')}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
 				<Alert.Root>
 					<Info class="size-4" />
-					<Alert.Title>No reports yet</Alert.Title>
+					<Alert.Title>{t(locale, 'settings.linkedin-assist.selector-health.empty-title')}</Alert.Title>
 					<Alert.Description>
-						Nothing has been reported by an installed extension. This card will populate once
-						the collector (#302) ships and starts reporting selector health here.
+						{t(locale, 'settings.linkedin-assist.selector-health.empty-description')}
 					</Alert.Description>
 				</Alert.Root>
 			</Card.Content>
@@ -287,8 +307,12 @@
 		class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-lg border bg-background px-4 py-2 shadow-lg"
 		transition:fly={{ y: 20, duration: 150 }}
 	>
-		<span class="text-sm">You have unsaved changes</span>
-		<Button variant="outline" size="sm" onclick={discard}>Discard</Button>
-		<Button size="sm" onclick={save} disabled={saving}>Save</Button>
+		<span class="text-sm">{t(locale, 'settings.linkedin-assist.unsaved-changes')}</span>
+		<Button variant="outline" size="sm" onclick={discard}
+			>{t(locale, 'settings.linkedin-assist.discard')}</Button
+		>
+		<Button size="sm" onclick={save} disabled={saving}
+			>{t(locale, 'settings.linkedin-assist.save')}</Button
+		>
 	</div>
 {/if}

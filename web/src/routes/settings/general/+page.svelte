@@ -2,6 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Info, Activity } from '@lucide/svelte';
+	import { page } from '$app/stores';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -9,24 +10,36 @@
 	import { daemonStatus } from '$lib/stores/daemon';
 	import { PULSE_DOT_CLASS } from '$lib/config/status-badges';
 	import PageContainer from '$lib/components/PageContainer.svelte';
+	import { t, type Locale } from '$lib/i18n/index.js';
+
+	const locale = $derived($page.data.locale as Locale);
 
 	function formatAge(seconds: number): string {
-		if (seconds < 60) return `${seconds}s ago`;
-		if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-		return `${Math.floor(seconds / 3600)}h ago`;
+		if (seconds < 60) return t(locale, 'settings.general.daemon.age-seconds', { n: seconds });
+		if (seconds < 3600)
+			return t(locale, 'settings.general.daemon.age-minutes', { n: Math.floor(seconds / 60) });
+		return t(locale, 'settings.general.daemon.age-hours', { n: Math.floor(seconds / 3600) });
 	}
 </script>
 
-<Seo title="Settings - General" description="Daemon status and dashboard appearance." />
+<Seo
+	title={t(locale, 'settings.general.seo-title')}
+	description={t(locale, 'settings.general.seo-description')}
+/>
 
 <PageContainer size="default">
-	<PageHeader title="General" description="Daemon health and dashboard appearance." />
+	<PageHeader
+		title={t(locale, 'settings.general.title')}
+		description={t(locale, 'settings.general.description')}
+	/>
 
 	<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-4xl">
 		<Card.Root size="sm">
 			<Card.Header class="flex flex-row flex-nowrap items-center gap-2 space-y-0">
 				<Activity class="size-4 shrink-0 text-muted-foreground" />
-				<Card.Title class="text-base min-w-0 flex-1 truncate">Daemon</Card.Title>
+				<Card.Title class="text-base min-w-0 flex-1 truncate"
+					>{t(locale, 'settings.general.daemon.title')}</Card.Title
+				>
 				{#if $daemonStatus.permitted}
 					<StatusBadge
 						class="shrink-0"
@@ -43,33 +56,30 @@
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-3">
 				<p class="text-xs text-muted-foreground">
-					The daemon wakes up on schedule, triggers campaigns that have a cron expression, and
-					polls sent DMs for replies.
+					{t(locale, 'settings.general.daemon.description')}
 				</p>
 				{#if !$daemonStatus.permitted}
 					<Alert.Root>
 						<Info class="size-4" />
-						<Alert.Title>Instance admin access required</Alert.Title>
+						<Alert.Title>{t(locale, 'settings.general.daemon.admin-required-title')}</Alert.Title>
 						<Alert.Description>
-							Daemon health describes the whole deployment, not any one organization, so it's
-							visible to the instance admin only.
+							{t(locale, 'settings.general.daemon.admin-required-description')}
 						</Alert.Description>
 					</Alert.Root>
 				{:else if !$daemonStatus.reachable && !$daemonStatus.loading}
 					<Alert.Root>
 						<Info class="size-4" />
-						<Alert.Title>Status unavailable</Alert.Title>
+						<Alert.Title>{t(locale, 'settings.general.daemon.unavailable-title')}</Alert.Title>
 						<Alert.Description>
-							The status endpoint could not be read, so this says nothing about the daemon
-							itself. If your session expired, sign in again and reload.
+							{t(locale, 'settings.general.daemon.unavailable-description')}
 						</Alert.Description>
 					</Alert.Root>
 				{:else if $daemonStatus.modules.length === 0 && !$daemonStatus.loading}
 					<Alert.Root>
 						<Info class="size-4" />
-						<Alert.Title>Not running</Alert.Title>
+						<Alert.Title>{t(locale, 'settings.general.daemon.not-running-title')}</Alert.Title>
 						<Alert.Description>
-							Start it from the repo root with
+							{t(locale, 'settings.general.daemon.not-running-description')}
 							<code class="text-xs font-mono">pnpm -F daemon dev</code>.
 						</Alert.Description>
 					</Alert.Root>

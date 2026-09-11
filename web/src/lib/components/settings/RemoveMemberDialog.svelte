@@ -1,7 +1,10 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
 
+  const locale = $derived($page.data.locale as Locale);
   type Props = {
     open: boolean;
     name: string;
@@ -30,23 +33,27 @@
     onclick={onClose}
     role="button"
     tabindex="-1"
-    aria-label="Close dialog"
+    aria-label={t(locale, 'settings.organization.close-dialog-aria')}
     onkeydown={(e) => e.key === 'Escape' && onClose()}
   ></div>
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
     <div class="bg-background border border-border rounded-lg p-6 w-full max-w-md pointer-events-auto space-y-4">
-      <h3 class="font-medium">Remove member</h3>
+      <h3 class="font-medium">{t(locale, 'settings.organization.remove-member-title')}</h3>
       <p class="text-sm text-muted-foreground">
-        This removes <code class="bg-muted px-1 rounded">{name}</code> from {orgName}. They lose access
-        to every project in the organization immediately. Type their username
-        <code class="bg-muted px-1 rounded">{name}</code> to confirm.
+        {t(locale, 'settings.organization.remove-member-description-lead')}
+        <code class="bg-muted px-1 rounded">{name}</code>
+        {t(locale, 'settings.organization.remove-member-description-mid', { org: orgName })}
+        <code class="bg-muted px-1 rounded">{name}</code>
+        {t(locale, 'settings.organization.remove-member-description-tail')}
       </p>
       <label class="flex flex-col gap-1 text-xs">
-        Username
+        {t(locale, 'settings.organization.username-label')}
         <Input bind:value={typed} />
       </label>
       <div class="flex justify-end gap-2">
-        <Button variant="ghost" type="button" onclick={onClose}>Cancel</Button>
+        <Button variant="ghost" type="button" onclick={onClose}
+          >{t(locale, 'settings.organization.cancel')}</Button
+        >
         <Button
           type="button"
           variant="destructive"
@@ -54,7 +61,7 @@
           loading={busy}
           onclick={confirm}
         >
-          Remove member
+          {t(locale, 'settings.organization.remove-member-title')}
         </Button>
       </div>
     </div>

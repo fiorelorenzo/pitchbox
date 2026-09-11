@@ -4,6 +4,7 @@
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import { page } from '$app/stores';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import Seo from '$lib/components/Seo.svelte';
   import { toast } from 'svelte-sonner';
@@ -14,7 +15,9 @@
   import PageContainer from '$lib/components/PageContainer.svelte';
   import RemoveMemberDialog from '$lib/components/settings/RemoveMemberDialog.svelte';
   import LeaveOrgDialog from '$lib/components/settings/LeaveOrgDialog.svelte';
+  import { t, tn, type Locale } from '$lib/i18n/index.js';
 
+  const locale = $derived($page.data.locale as Locale);
   type Member = {
     userId: number;
     username: string;
@@ -51,30 +54,30 @@
   };
   let { data }: { data: PageData } = $props();
 
-  const ROLE_CAPS = [
+  const ROLE_CAPS = $derived([
     {
       role: 'member',
-      can: 'Work campaigns and drafts, run agents, manage keyword watches and templates.',
-      cant: 'Manage projects, accounts, org settings, or members.',
+      can: t(locale, 'settings.organization.role-caps.member-can'),
+      cant: t(locale, 'settings.organization.role-caps.member-cant'),
     },
     {
       role: 'admin',
-      can: 'Everything a member can, plus projects, accounts, deletes, org settings, and members.',
-      cant: 'Manage owners or delete the organization.',
+      can: t(locale, 'settings.organization.role-caps.admin-can'),
+      cant: t(locale, 'settings.organization.role-caps.admin-cant'),
     },
     {
       role: 'owner',
-      can: 'Full control: everything an admin can, plus managing owners and deleting the org.',
-      cant: null,
+      can: t(locale, 'settings.organization.role-caps.owner-can'),
+      cant: null as string | null,
     },
-  ] as const;
+  ]);
 
   const ROLES = ['member', 'admin', 'owner'] as const;
-  const ROLE_HINT: Record<string, string> = {
-    member: 'Can view and work in the organization.',
-    admin: 'Can also invite people and manage members.',
-    owner: 'Full control, including managing owners and deleting the org.',
-  };
+  const ROLE_HINT = $derived<Record<string, string>>({
+    member: t(locale, 'settings.organization.role-hint.member'),
+    admin: t(locale, 'settings.organization.role-hint.admin'),
+    owner: t(locale, 'settings.organization.role-hint.owner'),
+  });
 
   function initials(name: string): string {
     return (name.trim().slice(0, 2) || '?').toUpperCase();
@@ -84,8 +87,8 @@
   }
   function expiresLabel(iso: string): string {
     const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
-    if (days <= 0) return 'soon';
-    return `in ${days} day${days === 1 ? '' : 's'}`;
+    if (days <= 0) return t(locale, 'settings.organization.expires-soon');
+    return tn(locale, 'settings.organization.expires-in-days', days);
   }
   function inviteLink(token: string): string {
     return `${location.origin}/invite/${token}`;
@@ -93,9 +96,9 @@
   async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success('Invite link copied');
+      toast.success(t(locale, 'settings.organization.invite-link-copied'));
     } catch {
-      toast.error('Could not copy, select the link and copy it manually');
+      toast.error(t(locale, 'settings.organization.copy-failed'));
     }
   }
 
@@ -135,20 +138,21 @@
       if (!res.ok) {
         toast.error(
           body?.error === 'not_found'
-            ? 'Only owners and admins can invite people'
+            ? t(locale, 'settings.organization.error-invite-forbidden')
             : body?.error === 'invalid_body'
-              ? 'Enter a valid email address'
-              : 'Could not create the invite',
+              ? t(locale, 'settings.organization.error-invalid-email')
+              : t(locale, 'settings.organization.error-invite-failed'),
         );
         return;
       }
       generatedUrl = body.url ?? '';
       generatedEmail = email;
       generatedEmailSent = body.emailSent ?? false;
-      if (generatedEmailSent) toast.success(`Invite sent to ${email}`);
+      if (generatedEmailSent)
+        toast.success(t(locale, 'settings.organization.invite-sent-to', { email }));
       await invalidateAll();
     } catch {
-      toast.error('Could not create the invite');
+      toast.error(t(locale, 'settings.organization.error-invite-failed'));
     } finally {
       generating = false;
     }
@@ -161,13 +165,13 @@
     try {
       const res = await fetch(`/api/orgs/${data.org.slug}/invites/${token}`, { method: 'DELETE' });
       if (!res.ok) {
-        toast.error('Could not revoke the invite');
+        toast.error(t(locale, 'settings.organization.error-revoke-invite-failed'));
         return;
       }
-      toast.success('Invite revoked');
+      toast.success(t(locale, 'settings.organization.invite-revoked'));
       await invalidateAll();
     } catch {
-      toast.error('Could not revoke the invite');
+      toast.error(t(locale, 'settings.organization.error-revoke-invite-failed'));
     } finally {
       revoking = null;
     }
@@ -198,14 +202,16 @@
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         toast.error(
-          res.status === 403 || res.status === 400 ? (body.error ?? 'Not allowed') : 'Could not change the role',
+          res.status === 403 || res.status === 400
+            ? (body.error ?? t(locale, 'settings.organization.error-not-allowed'))
+            : t(locale, 'settings.organization.error-change-role-failed'),
         );
         return;
       }
-      toast.success('Role updated');
+      toast.success(t(locale, 'settings.organization.role-updated'));
       await invalidateAll();
     } catch {
-      toast.error('Could not change the role');
+      toast.error(t(locale, 'settings.organization.error-change-role-failed'));
     } finally {
       acting = null;
     }
@@ -228,16 +234,18 @@
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         toast.error(
-          res.status === 403 || res.status === 400 ? (body.error ?? 'Not allowed') : 'Could not remove the member',
+          res.status === 403 || res.status === 400
+            ? (body.error ?? t(locale, 'settings.organization.error-not-allowed'))
+            : t(locale, 'settings.organization.error-remove-member-failed'),
         );
         return;
       }
-      toast.success(`${username} removed`);
+      toast.success(t(locale, 'settings.organization.member-removed', { username }));
       removeMemberDialogOpen = false;
       removeMemberTarget = null;
       await invalidateAll();
     } catch {
-      toast.error('Could not remove the member');
+      toast.error(t(locale, 'settings.organization.error-remove-member-failed'));
     } finally {
       acting = null;
     }
@@ -255,7 +263,7 @@
     if (!data.org || renaming) return;
     const name = nameDraft.trim();
     if (!name) {
-      toast.error('Enter an organization name');
+      toast.error(t(locale, 'settings.organization.error-name-required'));
       return;
     }
     renaming = true;
@@ -267,14 +275,18 @@
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        toast.error(res.status === 404 ? 'You need admin access to rename' : (body.error ?? 'Could not rename'));
+        toast.error(
+          res.status === 404
+            ? t(locale, 'settings.organization.error-admin-required-rename')
+            : (body.error ?? t(locale, 'settings.organization.error-rename-failed')),
+        );
         return;
       }
-      toast.success('Organization renamed');
+      toast.success(t(locale, 'settings.organization.org-renamed'));
       editingName = false;
       await invalidateAll();
     } catch {
-      toast.error('Could not rename the organization');
+      toast.error(t(locale, 'settings.organization.error-rename-failed'));
     } finally {
       renaming = false;
     }
@@ -300,11 +312,11 @@
     const budgetRaw = budgetDraft.trim();
     const capRaw = capDraft.trim();
     if (budgetRaw !== '' && Number(budgetRaw) < 0) {
-      toast.error('Monthly budget cannot be negative');
+      toast.error(t(locale, 'settings.organization.error-budget-negative'));
       return;
     }
     if (capRaw !== '' && Number(capRaw) < 0) {
-      toast.error('Max concurrent runs cannot be negative');
+      toast.error(t(locale, 'settings.organization.error-cap-negative'));
       return;
     }
     savingQuota = true;
@@ -318,13 +330,17 @@
         }),
       });
       if (!res.ok) {
-        toast.error(res.status === 403 ? 'You need admin access for that' : 'Could not save quota');
+        toast.error(
+          res.status === 403
+            ? t(locale, 'settings.organization.error-admin-required')
+            : t(locale, 'settings.organization.error-quota-save-failed'),
+        );
         return;
       }
-      toast.success('Quota saved');
+      toast.success(t(locale, 'settings.organization.quota-saved'));
       await invalidateAll();
     } catch {
-      toast.error('Could not save quota');
+      toast.error(t(locale, 'settings.organization.error-quota-save-failed'));
     } finally {
       savingQuota = false;
     }
@@ -340,14 +356,18 @@
       const res = await fetch(`/api/orgs/${data.org.slug}/leave`, { method: 'POST' });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        toast.error(res.status === 400 ? (body.error ?? 'Cannot leave') : 'Could not leave the organization');
+        toast.error(
+          res.status === 400
+            ? (body.error ?? t(locale, 'settings.organization.error-cannot-leave'))
+            : t(locale, 'settings.organization.error-leave-failed'),
+        );
         return;
       }
-      toast.success('You left the organization');
+      toast.success(t(locale, 'settings.organization.left-org'));
       leaveDialogOpen = false;
       await goto('/', { invalidateAll: true });
     } catch {
-      toast.error('Could not leave the organization');
+      toast.error(t(locale, 'settings.organization.error-leave-failed'));
     } finally {
       leaving = false;
     }
@@ -366,16 +386,16 @@
       if (!res.ok) {
         toast.error(
           res.status === 403
-            ? 'Only an owner can delete the organization'
-            : (body.error ?? 'Could not delete the organization'),
+            ? t(locale, 'settings.organization.error-only-owner-deletes')
+            : (body.error ?? t(locale, 'settings.organization.error-delete-failed')),
         );
         return;
       }
-      toast.success('Organization deleted');
+      toast.success(t(locale, 'settings.organization.org-deleted'));
       deleteOpen = false;
       await goto('/', { invalidateAll: true });
     } catch {
-      toast.error('Could not delete the organization');
+      toast.error(t(locale, 'settings.organization.error-delete-failed'));
     } finally {
       deleting = false;
     }
@@ -384,29 +404,30 @@
 
 <PageContainer size="default">
 <Seo
-  title="Settings - Organization"
-  description="Organization name, roles, members, invites, and danger zone."
+  title={t(locale, 'settings.organization.seo-title')}
+  description={t(locale, 'settings.organization.seo-description')}
 />
 
 <PageHeader
-  title="Organization"
-  description={data.org ? data.org.name : 'Your organization settings.'}
+  title={t(locale, 'settings.organization.title')}
+  description={data.org ? data.org.name : t(locale, 'settings.organization.description-no-org')}
 />
 
 {#if !data.org}
   <Card.Root class="mt-4">
     <Card.Content class="py-6 text-sm text-muted-foreground">
       {#if data.authOn}
-        Sign in to see and manage the people in your organization.
+        {t(locale, 'settings.organization.sign-in-prompt')}
       {:else}
-        This instance runs with PITCHBOX_AUTH off, so there are no organizations or membership roles
-        to manage. Set PITCHBOX_AUTH=on in your environment to enable them; see the
+        {t(locale, 'settings.organization.auth-off-lead')}
         <a
           href="{DOCS_URL}auth"
           target="_blank"
           rel="noopener"
           class="underline hover:no-underline"
-        >authentication docs</a> for how to turn it on.
+          >{t(locale, 'settings.organization.auth-off-link')}</a
+        >
+        {t(locale, 'settings.organization.auth-off-tail')}
       {/if}
     </Card.Content>
   </Card.Root>
@@ -414,11 +435,11 @@
   <div class="mt-4 flex flex-col gap-4">
     <Card.Root>
       <Card.Header>
-        <Card.Title class="text-base">Organization</Card.Title>
+        <Card.Title class="text-base">{t(locale, 'settings.organization.card-title')}</Card.Title>
       </Card.Header>
       <Card.Content class="flex flex-col gap-4">
         <div class="flex flex-col gap-1.5">
-          <span class="text-sm font-medium">Name</span>
+          <span class="text-sm font-medium">{t(locale, 'settings.organization.name-label')}</span>
           {#if data.canManage && editingName}
             <div class="flex flex-wrap gap-2">
               <Input
@@ -430,9 +451,11 @@
                   if (e.key === 'Escape') editingName = false;
                 }}
               />
-              <Button onclick={saveName} loading={renaming}>Save</Button>
+              <Button onclick={saveName} loading={renaming}
+                >{t(locale, 'settings.organization.save')}</Button
+              >
               <Button variant="ghost" onclick={() => (editingName = false)} disabled={renaming}>
-                Cancel
+                {t(locale, 'settings.organization.cancel')}
               </Button>
             </div>
           {:else}
@@ -441,14 +464,14 @@
               {#if data.canManage}
                 <Button variant="ghost" size="sm" onclick={startRename}>
                   <Pencil class="size-3.5" />
-                  Rename
+                  {t(locale, 'settings.organization.rename')}
                 </Button>
               {/if}
             </div>
           {/if}
         </div>
         <div class="flex flex-col gap-1">
-          <span class="text-sm font-medium">URL slug</span>
+          <span class="text-sm font-medium">{t(locale, 'settings.organization.url-slug-label')}</span>
           <span class="font-mono text-xs text-muted-foreground">{data.org.slug}</span>
         </div>
       </Card.Content>
@@ -457,61 +480,69 @@
     {#if data.canManage && data.quota}
       <Card.Root>
         <Card.Header>
-          <Card.Title class="text-base">Quota &amp; budget</Card.Title>
+          <Card.Title class="text-base">{t(locale, 'settings.organization.quota-title')}</Card.Title>
           <p class="text-sm text-muted-foreground">
-            Cap this organization's cloud-runner spend and concurrency. Leave a field blank for
-            unlimited.
+            {t(locale, 'settings.organization.quota-description')}
           </p>
         </Card.Header>
         <Card.Content class="flex flex-col gap-4">
           <div class="grid gap-4 sm:grid-cols-2">
             <div class="flex flex-col gap-1.5">
-              <label class="text-sm font-medium" for="monthly-budget">Monthly run budget (USD)</label>
+              <label class="text-sm font-medium" for="monthly-budget"
+                >{t(locale, 'settings.organization.monthly-budget-label')}</label
+              >
               <Input
                 id="monthly-budget"
                 type="number"
                 min="0"
                 step="0.01"
-                placeholder="Unlimited"
+                placeholder={t(locale, 'settings.organization.unlimited')}
                 bind:value={budgetDraft}
               />
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-sm font-medium" for="max-concurrent-runs">Max concurrent runs</label>
+              <label class="text-sm font-medium" for="max-concurrent-runs"
+                >{t(locale, 'settings.organization.max-concurrent-label')}</label
+              >
               <Input
                 id="max-concurrent-runs"
                 type="number"
                 min="0"
                 step="1"
-                placeholder="Unlimited"
+                placeholder={t(locale, 'settings.organization.unlimited')}
                 bind:value={capDraft}
               />
             </div>
           </div>
           <div class="grid gap-4 sm:grid-cols-2">
             <div class="flex flex-col gap-1">
-              <span class="text-sm font-medium">Month-to-date spend</span>
+              <span class="text-sm font-medium">{t(locale, 'settings.organization.month-to-date-label')}</span>
               <span class="text-sm text-muted-foreground">{money(data.quota.monthToDateCostUsd)}</span>
             </div>
             <div class="flex flex-col gap-1">
-              <span class="text-sm font-medium">Remaining budget</span>
+              <span class="text-sm font-medium">{t(locale, 'settings.organization.remaining-budget-label')}</span>
               <span class="text-sm text-muted-foreground">
-                {data.quota.remainingUsd == null ? 'Unlimited' : money(data.quota.remainingUsd)}
+                {data.quota.remainingUsd == null
+                  ? t(locale, 'settings.organization.unlimited')
+                  : money(data.quota.remainingUsd)}
               </span>
             </div>
             <div class="flex flex-col gap-1">
-              <span class="text-sm font-medium">Campaign spend</span>
+              <span class="text-sm font-medium">{t(locale, 'settings.organization.campaign-spend-label')}</span>
               <span class="text-sm text-muted-foreground">{money(data.quota.campaignUsd)}</span>
             </div>
             <div class="flex flex-col gap-1">
-              <span class="text-sm font-medium">Assistant spend</span>
+              <span class="text-sm font-medium">{t(locale, 'settings.organization.assistant-spend-label')}</span>
               <span class="text-sm text-muted-foreground">
-                {money(data.quota.assistantUsd)} - LinkedIn suggestions, not campaign runs
+                {money(data.quota.assistantUsd)}
+                {t(locale, 'settings.organization.assistant-spend-note')}
               </span>
             </div>
           </div>
           <div>
-            <Button onclick={saveQuota} loading={savingQuota}>Save</Button>
+            <Button onclick={saveQuota} loading={savingQuota}
+              >{t(locale, 'settings.organization.save')}</Button
+            >
           </div>
         </Card.Content>
       </Card.Root>
@@ -519,8 +550,8 @@
 
     <Card.Root>
       <Card.Header>
-        <Card.Title class="text-base">Roles</Card.Title>
-        <p class="text-sm text-muted-foreground">What each role can do in this organization.</p>
+        <Card.Title class="text-base">{t(locale, 'settings.organization.roles-title')}</Card.Title>
+        <p class="text-sm text-muted-foreground">{t(locale, 'settings.organization.roles-description')}</p>
       </Card.Header>
       <Card.Content class="flex flex-col divide-y divide-border">
         {#each ROLE_CAPS as rc (rc.role)}
@@ -532,7 +563,10 @@
             </span>
             <p class="text-sm">{rc.can}</p>
             {#if rc.cant}
-              <p class="text-xs text-muted-foreground">Cannot: {rc.cant}</p>
+              <p class="text-xs text-muted-foreground">
+                {t(locale, 'settings.organization.cannot-prefix')}
+                {rc.cant}
+              </p>
             {/if}
           </div>
         {/each}
@@ -542,16 +576,17 @@
     <Card.Root>
       <Card.Header class="flex flex-row items-center justify-between space-y-0">
         <div class="min-w-0">
-          <Card.Title class="text-base">Members</Card.Title>
+          <Card.Title class="text-base">{t(locale, 'settings.organization.members-title')}</Card.Title>
           <p class="text-sm text-muted-foreground">
             {data.members.length}
-            {data.members.length === 1 ? 'person' : 'people'} in {data.org.name}
+            {tn(locale, 'settings.organization.people-count', data.members.length)}
+            {t(locale, 'settings.organization.people-in-org', { org: data.org.name })}
           </p>
         </div>
         {#if data.canManage}
           <Button size="sm" onclick={openInvite}>
             <UserPlus class="size-4" />
-            Invite member
+            {t(locale, 'settings.organization.invite-member')}
           </Button>
         {/if}
       </Card.Header>
@@ -567,7 +602,9 @@
               <span class="block truncate text-sm font-medium">
                 {m.username}
                 {#if m.userId === data.currentUserId}
-                  <span class="font-normal text-muted-foreground">(you)</span>
+                  <span class="font-normal text-muted-foreground"
+                    >{t(locale, 'settings.organization.you-suffix')}</span
+                  >
                 {/if}
               </span>
               {#if m.email}
@@ -580,7 +617,7 @@
               {m.role}
             </span>
             <span class="hidden text-xs text-muted-foreground sm:inline"
-              >joined {joinedLabel(m.joinedAt)}</span
+              >{t(locale, 'settings.organization.joined-on', { date: joinedLabel(m.joinedAt) })}</span
             >
             {#if m.userId !== data.currentUserId && canActOn(m.role)}
               <DropdownMenu.Root>
@@ -589,7 +626,7 @@
                     <button
                       {...props}
                       class="grid size-7 flex-none place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                      aria-label={`Manage ${m.username}`}
+                      aria-label={t(locale, 'settings.organization.manage-member', { name: m.username })}
                     >
                       <MoreHorizontal class="size-4" />
                     </button>
@@ -597,12 +634,12 @@
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Content align="end" class="w-52">
                   <DropdownMenu.Label class="text-xs font-normal text-muted-foreground">
-                    Change role
+                    {t(locale, 'settings.organization.change-role')}
                   </DropdownMenu.Label>
                   {#each assignableRoles() as r (r)}
                     {#if r !== m.role}
                       <DropdownMenu.Item class="capitalize" onclick={() => changeRole(m.userId, r)}>
-                        Make {r}
+                        {t(locale, 'settings.organization.make-role', { role: r })}
                       </DropdownMenu.Item>
                     {/if}
                   {/each}
@@ -612,7 +649,7 @@
                     onclick={() => openRemoveMemberDialog(m.userId, m.username)}
                   >
                     <Trash2 class="size-4" />
-                    Remove from organization
+                    {t(locale, 'settings.organization.remove-from-org')}
                   </DropdownMenu.Item>
                 </DropdownMenu.Content>
               </DropdownMenu.Root>
@@ -625,12 +662,12 @@
     {#if data.canManage}
       <Card.Root>
         <Card.Header>
-          <Card.Title class="text-base">Pending invites</Card.Title>
-          <p class="text-sm text-muted-foreground">Links that have not been accepted yet.</p>
+          <Card.Title class="text-base">{t(locale, 'settings.organization.pending-invites-title')}</Card.Title>
+          <p class="text-sm text-muted-foreground">{t(locale, 'settings.organization.pending-invites-description')}</p>
         </Card.Header>
         <Card.Content>
           {#if data.invites.length === 0}
-            <p class="py-1 text-sm text-muted-foreground">No pending invites.</p>
+            <p class="py-1 text-sm text-muted-foreground">{t(locale, 'settings.organization.no-pending-invites')}</p>
           {:else}
             <div class="flex flex-col divide-y divide-border">
               {#each data.invites as inv (inv.token)}
@@ -641,11 +678,11 @@
                     {inv.role}
                   </span>
                   <span class="flex-1 truncate text-sm text-muted-foreground">
-                    expires {expiresLabel(inv.expiresAt)}
+                    {t(locale, 'settings.organization.expires-label', { time: expiresLabel(inv.expiresAt) })}
                   </span>
                   <Button variant="ghost" size="sm" onclick={() => copy(inviteLink(inv.token))}>
                     <Copy class="size-3.5" />
-                    Copy link
+                    {t(locale, 'settings.organization.copy-link')}
                   </Button>
                   <Button
                     variant="ghost"
@@ -655,7 +692,7 @@
                     loading={revoking === inv.token}
                   >
                     <Trash2 class="size-3.5" />
-                    Revoke
+                    {t(locale, 'settings.organization.revoke')}
                   </Button>
                 </div>
               {/each}
@@ -667,24 +704,30 @@
 
     <Card.Root class="border-destructive/40">
       <Card.Header>
-        <Card.Title class="text-base text-destructive">Danger zone</Card.Title>
+        <Card.Title class="text-base text-destructive">{t(locale, 'settings.organization.danger-zone-title')}</Card.Title>
       </Card.Header>
       <Card.Content class="flex flex-col gap-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="min-w-0">
-            <p class="text-sm font-medium">Leave organization</p>
-            <p class="text-xs text-muted-foreground">Remove yourself from {data.org.name}.</p>
+            <p class="text-sm font-medium">{t(locale, 'settings.organization.leave-org-title')}</p>
+            <p class="text-xs text-muted-foreground">
+              {t(locale, 'settings.organization.leave-org-description', { org: data.org.name })}
+            </p>
           </div>
-          <Button variant="outline" onclick={() => (leaveDialogOpen = true)} loading={leaving}>Leave</Button>
+          <Button variant="outline" onclick={() => (leaveDialogOpen = true)} loading={leaving}
+            >{t(locale, 'settings.organization.leave')}</Button
+          >
         </div>
         {#if data.isOwner && data.org.slug !== 'default'}
           <div
             class="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3"
           >
             <div class="min-w-0">
-              <p class="text-sm font-medium text-destructive">Delete organization</p>
+              <p class="text-sm font-medium text-destructive">
+                {t(locale, 'settings.organization.delete-org-title')}
+              </p>
               <p class="text-xs text-muted-foreground">
-                Permanently delete {data.org.name} and all its projects, campaigns, and drafts.
+                {t(locale, 'settings.organization.delete-org-description', { org: data.org.name })}
               </p>
             </div>
             <Button
@@ -695,7 +738,7 @@
                 deleteOpen = true;
               }}
             >
-              Delete
+              {t(locale, 'settings.organization.delete')}
             </Button>
           </div>
         {/if}
@@ -707,14 +750,14 @@
 <Dialog.Root bind:open={inviteOpen}>
   <Dialog.Content class="sm:max-w-md">
     <Dialog.Header>
-      <Dialog.Title>Invite a member</Dialog.Title>
+      <Dialog.Title>{t(locale, 'settings.organization.invite-dialog-title')}</Dialog.Title>
       <Dialog.Description>
-        Pick a role and, if you have it, an email address. It expires in 7 days.
+        {t(locale, 'settings.organization.invite-dialog-description')}
       </Dialog.Description>
     </Dialog.Header>
     <div class="flex flex-col gap-4 py-2">
       <div class="flex flex-col gap-2">
-        <span class="text-sm font-medium">Role</span>
+        <span class="text-sm font-medium">{t(locale, 'settings.organization.role-label')}</span>
         <div class="grid grid-cols-3 gap-2">
           {#each ROLES as r (r)}
             <button
@@ -734,7 +777,7 @@
       </div>
 
       <div class="flex flex-col gap-2">
-        <span class="text-sm font-medium">Email (optional)</span>
+        <span class="text-sm font-medium">{t(locale, 'settings.organization.email-optional-label')}</span>
         <Input
           type="email"
           placeholder="person@example.com"
@@ -742,27 +785,31 @@
           disabled={!!generatedUrl}
         />
         <p class="text-xs text-muted-foreground">
-          If mail isn't set up on this deployment, you'll still get a link to share by hand.
+          {t(locale, 'settings.organization.email-not-configured-note')}
         </p>
       </div>
 
       {#if generatedUrl}
         <div class="flex flex-col gap-2">
-          <span class="text-sm font-medium">Invite link</span>
+          <span class="text-sm font-medium">{t(locale, 'settings.organization.invite-link-label')}</span>
           <div class="flex gap-2">
             <Input value={generatedUrl} readonly onfocus={(e) => e.currentTarget.select()} />
-            <Button variant="outline" onclick={() => copy(generatedUrl)} aria-label="Copy link">
+            <Button
+              variant="outline"
+              onclick={() => copy(generatedUrl)}
+              aria-label={t(locale, 'settings.organization.copy-link-aria')}
+            >
               <Copy class="size-4" />
             </Button>
           </div>
           <p class="text-xs text-muted-foreground">
             {#if generatedEmail && generatedEmailSent}
-              Sent to {generatedEmail}. If it doesn't arrive, share this link instead.
+              {t(locale, 'settings.organization.invite-sent-note', { email: generatedEmail })}
             {:else if generatedEmail && !generatedEmailSent}
-              Mail isn't configured on this deployment, so share this link with {generatedEmail}
-              yourself.
+              {t(locale, 'settings.organization.invite-mail-not-configured', { email: generatedEmail })}
             {:else}
-              Anyone with this link can join as <span class="capitalize">{inviteRole}</span>.
+              {t(locale, 'settings.organization.invite-anyone-note-lead')}
+              <span class="capitalize">{inviteRole}</span>.
             {/if}
           </p>
         </div>
@@ -770,12 +817,18 @@
     </div>
     <Dialog.Footer>
       {#if generatedUrl}
-        <Button variant="ghost" onclick={() => (generatedUrl = '')}>Generate another</Button>
-        <Button onclick={() => (inviteOpen = false)}>Done</Button>
+        <Button variant="ghost" onclick={() => (generatedUrl = '')}
+          >{t(locale, 'settings.organization.generate-another')}</Button
+        >
+        <Button onclick={() => (inviteOpen = false)}>{t(locale, 'settings.organization.done')}</Button>
       {:else}
-        <Button variant="ghost" onclick={() => (inviteOpen = false)}>Cancel</Button>
+        <Button variant="ghost" onclick={() => (inviteOpen = false)}
+          >{t(locale, 'settings.organization.cancel')}</Button
+        >
         <Button onclick={generateInvite} loading={generating}>
-          {inviteEmail.trim() ? 'Send invite' : 'Generate link'}
+          {inviteEmail.trim()
+            ? t(locale, 'settings.organization.send-invite')
+            : t(locale, 'settings.organization.generate-link')}
         </Button>
       {/if}
     </Dialog.Footer>
@@ -785,27 +838,30 @@
 <Dialog.Root bind:open={deleteOpen}>
   <Dialog.Content class="sm:max-w-md">
     <Dialog.Header>
-      <Dialog.Title>Delete organization</Dialog.Title>
+      <Dialog.Title>{t(locale, 'settings.organization.delete-org-title')}</Dialog.Title>
       <Dialog.Description>
-        This permanently deletes {data.org?.name} and all its projects, campaigns, and drafts. This
-        cannot be undone.
+        {t(locale, 'settings.organization.delete-dialog-description', { org: data.org?.name ?? '' })}
       </Dialog.Description>
     </Dialog.Header>
     <div class="flex flex-col gap-2 py-2">
       <label for="del-confirm" class="text-sm">
-        Type <span class="font-medium">{data.org?.name}</span> to confirm
+        {t(locale, 'settings.organization.type-to-confirm-lead')}
+        <span class="font-medium">{data.org?.name}</span>
+        {t(locale, 'settings.organization.type-to-confirm-tail')}
       </label>
       <Input id="del-confirm" bind:value={deleteConfirm} placeholder={data.org?.name} />
     </div>
     <Dialog.Footer>
-      <Button variant="ghost" onclick={() => (deleteOpen = false)} disabled={deleting}>Cancel</Button>
+      <Button variant="ghost" onclick={() => (deleteOpen = false)} disabled={deleting}
+        >{t(locale, 'settings.organization.cancel')}</Button
+      >
       <Button
         variant="destructive"
         onclick={deleteOrg}
         loading={deleting}
         disabled={deleteConfirm !== data.org?.name}
       >
-        Delete organization
+        {t(locale, 'settings.organization.delete-org-title')}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

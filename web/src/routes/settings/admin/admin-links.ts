@@ -8,6 +8,7 @@ import {
   Cpu,
   CreditCard,
 } from '@lucide/svelte';
+import { t, type Locale } from '$lib/i18n/index.js';
 
 export type AdminLink = {
   href: string;
@@ -30,58 +31,59 @@ export type AdminLink = {
  * config. That entry's copy is reworded below so it no longer reads that
  * way, and `models` gets its own entry. #187 adds `plan-grants` the same
  * way `spend-ceiling` was added alongside `models`.
+ *
+ * LOR-263: labels and descriptions now resolve from the catalogue, so the
+ * grid is a function of locale rather than a static array.
  */
-export const ADMIN_LINKS: AdminLink[] = [
-  {
-    href: '/settings/runners',
-    icon: Bot,
-    label: 'Agent runners',
-    description:
-      'Default runner and per-runner config for every organization - not where a function\u2019s model is set (see Model configuration).',
-  },
-  {
-    href: '/settings/admin/models',
-    icon: Cpu,
-    label: 'Model configuration',
-    description:
-      'Which Gateway model runs each of the five AI functions - drafting, the in-page assist, project extraction and insights, and campaign-profile generation.',
-  },
-  {
-    href: '/settings/quota',
-    icon: Gauge,
-    label: 'Quota',
-    description: 'Per-platform posting quota defaults shared by every organization.',
-  },
-  {
-    href: '/settings/admin/spend-ceiling',
-    icon: CircleDollarSign,
-    label: 'Spend ceiling',
-    description:
-      'Instance-wide Gateway ceiling and the caps a self-registered organization starts with.',
-  },
-  {
-    href: '/settings/admin/plan-grants',
-    icon: CreditCard,
-    label: 'Plan grants',
-    description:
-      'Set or revoke a plan on any organization directly, bypassing Stripe - the self-host fallback and any hand-granted org.',
-  },
-  {
-    href: '/settings/retention',
-    icon: Archive,
-    label: 'Retention',
-    description: 'How long drafts, run events and webhook deliveries are kept.',
-  },
-  {
-    href: '/notifications',
-    icon: Webhook,
-    label: 'Outgoing webhook',
-    description: 'The dashboard-wide notification webhook URL and its delivery log.',
-  },
-  {
-    href: '/settings/admin/audit',
-    icon: ScrollText,
-    label: 'Audit log',
-    description: 'Who changed instance-wide configuration, when, and from what to what.',
-  },
-];
+export function adminLinks(locale: Locale | null | undefined): AdminLink[] {
+  return [
+    {
+      href: '/settings/runners',
+      icon: Bot,
+      label: t(locale, 'settings.admin.links.runners-label'),
+      description: t(locale, 'settings.admin.links.runners-description'),
+    },
+    {
+      href: '/settings/admin/models',
+      icon: Cpu,
+      label: t(locale, 'settings.admin.links.models-label'),
+      description: t(locale, 'settings.admin.links.models-description'),
+    },
+    {
+      href: '/settings/quota',
+      icon: Gauge,
+      label: t(locale, 'settings.admin.links.quota-label'),
+      description: t(locale, 'settings.admin.links.quota-description'),
+    },
+    {
+      href: '/settings/admin/spend-ceiling',
+      icon: CircleDollarSign,
+      label: t(locale, 'settings.admin.links.spend-ceiling-label'),
+      description: t(locale, 'settings.admin.links.spend-ceiling-description'),
+    },
+    {
+      href: '/settings/admin/plan-grants',
+      icon: CreditCard,
+      label: t(locale, 'settings.admin.links.plan-grants-label'),
+      description: t(locale, 'settings.admin.links.plan-grants-description'),
+    },
+    {
+      href: '/settings/retention',
+      icon: Archive,
+      label: t(locale, 'settings.admin.links.retention-label'),
+      description: t(locale, 'settings.admin.links.retention-description'),
+    },
+    {
+      href: '/notifications',
+      icon: Webhook,
+      label: t(locale, 'settings.admin.links.webhook-label'),
+      description: t(locale, 'settings.admin.links.webhook-description'),
+    },
+    {
+      href: '/settings/admin/audit',
+      icon: ScrollText,
+      label: t(locale, 'settings.admin.links.audit-label'),
+      description: t(locale, 'settings.admin.links.audit-description'),
+    },
+  ];
+}

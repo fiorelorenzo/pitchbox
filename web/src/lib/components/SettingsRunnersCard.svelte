@@ -2,7 +2,11 @@
 	import { Button } from '$lib/components/ui/button';
 	import { RefreshCw, Inbox } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
+	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 	import RunnerCard from '$lib/components/RunnerCard.svelte';
+
+	const locale = $derived($page.data.locale as Locale);
 
 	type RunnerConfig = {
 		model?: string;
@@ -40,7 +44,11 @@
 		try {
 			const res = await fetch('/api/runners', { method: 'POST' });
 			if (!res.ok) {
-				toast.error(res.status === 403 ? 'You need admin access for that' : 'Re-detection failed');
+				toast.error(
+					res.status === 403
+						? t(locale, 'settings.runners.card.error-admin-required')
+						: t(locale, 'settings.runners.card.error-redetect-failed'),
+				);
 				return;
 			}
 			const body = await res.json();
@@ -48,7 +56,7 @@
 				...r,
 				config: runners.find((cur) => cur.slug === r.slug)?.config ?? {},
 			}));
-			toast.success('Runners re-detected');
+			toast.success(t(locale, 'settings.runners.card.success-redetected'));
 		} finally {
 			detecting = false;
 		}
@@ -61,11 +69,15 @@
 			body: JSON.stringify({ slug }),
 		});
 		if (!res.ok) {
-			toast.error(res.status === 403 ? 'You need admin access for that' : 'Failed to set default');
+			toast.error(
+				res.status === 403
+					? t(locale, 'settings.runners.card.error-admin-required')
+					: t(locale, 'settings.runners.card.error-set-default-failed'),
+			);
 			return;
 		}
 		defaultRunner = slug;
-		toast.success(`${slug} is now the default runner`);
+		toast.success(t(locale, 'settings.runners.card.success-set-default', { slug }));
 	}
 
 	const usable = $derived(runners.filter((r) => r.implemented && r.available));
@@ -75,15 +87,15 @@
 <section class="flex flex-col gap-3">
 	<header class="flex items-start justify-between gap-2">
 		<div>
-			<h2 class="text-base font-semibold">Agent runners</h2>
+			<h2 class="text-base font-semibold">{t(locale, 'settings.runners.title')}</h2>
 			<p class="text-xs text-muted-foreground">
-				Detected by probing each runner CLI at startup. Re-detect after installing or upgrading.
+				{t(locale, 'settings.runners.card.description')}
 			</p>
 		</div>
 		{#if isAdmin}
 			<Button variant="outline" size="sm" onclick={redetect} disabled={detecting}>
 				<RefreshCw class="size-3 {detecting ? 'animate-spin' : ''}" />
-				Re-detect
+				{t(locale, 'settings.runners.card.redetect')}
 			</Button>
 		{/if}
 	</header>
@@ -91,10 +103,12 @@
 	{#if usable.length === 0}
 		<div class="rounded-md border border-dashed border-border/60 px-4 py-6 text-center">
 			<Inbox class="mx-auto size-6 text-muted-foreground" />
-			<p class="mt-2 text-sm font-medium">No agent runner installed</p>
+			<p class="mt-2 text-sm font-medium">{t(locale, 'settings.runners.card.empty-title')}</p>
 			<p class="mt-1 text-xs text-muted-foreground">
-				Install one of the supported CLIs - e.g.
-				<code class="rounded bg-muted px-1.5 py-0.5">claude</code> - and click <em>Re-detect</em>.
+				{t(locale, 'settings.runners.card.empty-install-lead')}
+				<code class="rounded bg-muted px-1.5 py-0.5">claude</code>
+				{t(locale, 'settings.runners.card.empty-install-tail')}
+				<em>{t(locale, 'settings.runners.card.redetect')}</em>.
 			</p>
 		</div>
 	{:else}
