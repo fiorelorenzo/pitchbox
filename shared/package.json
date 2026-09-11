@@ -44,6 +44,8 @@
     "./assist/session": "./src/assist/session.ts",
     "./operator-profile": "./src/operator-profile.ts",
     "./operator-voice-profile": "./src/operator-voice-profile.ts",
+    "./voice-import": "./src/voice-import.ts",
+    "./voice-import-archive": "./src/voice-import-archive.ts",
     "./github-sources": "./src/github-sources.ts",
     "./github-app": "./src/github-app.ts",
     "./project-sources": "./src/project-sources.ts",
@@ -115,6 +117,7 @@
     "@agentclientprotocol/sdk": "^1.1.0",
     "@ai-sdk/gateway": "^4.0.75",
     "@ai-sdk/mcp": "^2.0.45",
+    "adm-zip": "^0.6.0",
     "ai": "^7.0.93",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
@@ -129,6 +132,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/html-to-text": "^9.0.4",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",

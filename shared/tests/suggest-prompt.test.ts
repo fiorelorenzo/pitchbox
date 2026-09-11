@@ -62,6 +62,7 @@ const persona: OperatorPersona = {
 const voiceProfile: VoiceProfileSummary = {
   summary:
     'Based on 12 pieces of their own writing (640 words). Usually writes with short sentences, close to speech, first person, speaking as themselves, about 11 words per sentence. Often opens with "Shipped the". Reuses these words often: shipped, team, campaign.',
+  commentSummary: null,
 };
 
 const projects: ProjectBrief[] = [
@@ -252,6 +253,52 @@ describe('buildSuggestionPrompt', () => {
       expect(prompt).toContain('Fix ranking for multi-word queries');
     });
 
+    it('LOR-223: a post_comment suggestion prefers the comment-genre voice summary over the pooled one', () => {
+      const genreVoiceProfile: VoiceProfileSummary = {
+        summary:
+          'Based on 12 pieces of their own writing (640 words). Often closes with "#BuildInPublic".',
+        commentSummary:
+          'Based on 27 of their own comments (190 words). Usually writes one short sentence.',
+      };
+      const commentPrompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        persona: null,
+        voiceProfile: genreVoiceProfile,
+        projects: [],
+        repos: [],
+      });
+      expect(commentPrompt).toContain('Usually writes one short sentence.');
+      expect(commentPrompt).not.toContain('#BuildInPublic');
+      expect(commentPrompt).toMatch(/How the operator writes when commenting/);
+
+      // A `post` suggestion has no comment to write - it keeps the pooled
+      // summary regardless of whether a comment-genre one exists.
+      const postPrompt = buildSuggestionPrompt({
+        kind: 'post',
+        post,
+        persona: null,
+        voiceProfile: genreVoiceProfile,
+        projects: [],
+        repos: [],
+      });
+      expect(postPrompt).toContain('#BuildInPublic');
+      expect(postPrompt).not.toContain('Usually writes one short sentence.');
+    });
+
+    it('LOR-223: a post_comment suggestion falls back to the pooled summary when no comment-genre one was derived', () => {
+      const prompt = buildSuggestionPrompt({
+        kind: 'post_comment',
+        post,
+        persona: null,
+        voiceProfile,
+        projects: [],
+        repos: [],
+      });
+      expect(prompt).toContain(voiceProfile.summary);
+      expect(prompt).toMatch(/How the operator writes, based on what they have actually written/);
+    });
+
     it('omits each section entirely, not as an empty heading, when its source is missing', () => {
       const prompt = buildSuggestionPrompt({
         kind: 'post_comment',
@@ -327,7 +374,7 @@ describe('buildSuggestionPrompt', () => {
         kind: 'post_comment',
         post,
         persona: null,
-        voiceProfile: { summary: justOver },
+        voiceProfile: { summary: justOver, commentSummary: null },
         projects: [],
         repos: [],
       });
@@ -335,7 +382,7 @@ describe('buildSuggestionPrompt', () => {
         kind: 'post_comment',
         post,
         persona: null,
-        voiceProfile: { summary: wayOver },
+        voiceProfile: { summary: wayOver, commentSummary: null },
         projects: [],
         repos: [],
       });

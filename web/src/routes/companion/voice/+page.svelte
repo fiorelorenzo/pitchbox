@@ -4,7 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Mic, RefreshCw, RotateCcw } from '@lucide/svelte';
+	import { Mic, RefreshCw, RotateCcw, Upload } from '@lucide/svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import Seo from '$lib/components/Seo.svelte';
 	import PageContainer from '$lib/components/PageContainer.svelte';
@@ -16,6 +16,15 @@
 
 	// Companion -> Voice (LOR-178/LOR-179, docs/design/DECISIONS.md D35),
 	// split out of the old three-card settings/companion page.
+	//
+	// LOR-223: a voice sample now carries a genre (post/comment/reply) and a
+	// source (captured passively, imported from a LinkedIn export, or typed
+	// by hand), and the derived profile carries a description per genre
+	// alongside the pooled one - a post and a comment are different genres
+	// of writing, not the same voice at a different length.
+
+	type VoiceSampleGenre = 'post' | 'comment' | 'reply';
+	type VoiceSampleSource = 'capture' | 'import' | 'manual';
 
 	type VoiceSample = {
 		id: number;
@@ -23,8 +32,12 @@
 		url: string | null;
 		postedAt: string | null;
 		excluded: boolean;
+		genre: VoiceSampleGenre;
+		source: VoiceSampleSource;
+		context: string | null;
 		capturedAt: string;
 	};
+	type GenreSummary = { summary: string | null; itemCount: number; measurable: boolean };
 	type VoiceProfile = {
 		summary: string;
 		traits: string[];
@@ -35,6 +48,7 @@
 		itemCount: number;
 		wordCount: number;
 		evidenceCounts: { voiceSamples: number; messages: number; drafts: number; templates: number };
+		genres: Record<VoiceSampleGenre, GenreSummary>;
 		source: 'derived' | 'manual';
 		derivedAt: string | null;
 		updatedAt: string;
@@ -43,7 +57,9 @@
 	type FormResult = {
 		toggledSampleId?: number;
 		voiceProfile?: VoiceProfile;
+		imported?: { inserted: number; byGenre: { post: number; comment: number } };
 		error?: string;
+		importError?: string;
 	} | null;
 
 	let { data, form }: { data: PageData; form: FormResult } = $props();
@@ -53,10 +69,23 @@
 	let savingVoiceProfile = $state(false);
 	let refreshingVoiceProfile = $state(false);
 	let resettingVoiceProfile = $state(false);
+	let importingVoice = $state(false);
 	const includedSampleCount = $derived(data.voiceSamples.filter((s) => !s.excluded).length);
 
+	const GENRE_LABEL: Record<VoiceSampleGenre, string> = {
+		post: 'Post',
+		comment: 'Comment',
+		reply: 'Reply',
+	};
+	const SOURCE_LABEL: Record<VoiceSampleSource, string> = {
+		capture: 'Captured',
+		import: 'Imported',
+		manual: 'Manual',
+	};
+	const GENRE_ORDER: VoiceSampleGenre[] = ['post', 'comment', 'reply'];
+
 	$effect(() => {
-		if (form?.voiceProfile) {
+		if (form?.voiceProfile && !form?.imported) {
 			voiceProfileSummary = form.voiceProfile.summary;
 			toast.success(
 				form.voiceProfile.source === 'manual' ? 'Voice description saved' : 'Voice profile refreshed',
@@ -64,8 +93,25 @@
 		}
 	});
 
+	$effect(() => {
+		if (form?.imported) {
+			voiceProfileSummary = form.voiceProfile?.summary ?? voiceProfileSummary;
+			const { inserted, byGenre } = form.imported;
+			toast.success(
+				inserted === 0
+					? 'Nothing new in that export - already imported'
+					: `Imported ${inserted} sample${inserted === 1 ? '' : 's'} (${byGenre.post} post${byGenre.post === 1 ? '' : 's'}, ${byGenre.comment} comment${byGenre.comment === 1 ? '' : 's'})`,
+			);
+		}
+	});
+
+	$effect(() => {
+		if (form?.importError) toast.error(form.importError);
+	});
+
 	let voiceFormRefs: Record<number, HTMLFormElement> = $state({});
 	let togglingSampleId = $state<number | null>(null);
+	let importFileInput: HTMLInputElement | undefined = $state();
 </script>
 
 <Seo
@@ -78,6 +124,46 @@
 		title="Voice"
 		description="How you write, derived from what you have actually written - your voice samples, outbound messages, sent drafts and project templates - rather than a raw list of posts."
 	/>
+
+	<Card.Root>
+		<Card.Header>
+			<Card.Title class="flex items-center gap-2"><Upload class="size-4" /> Import from LinkedIn</Card.Title>
+			<Card.Description>
+				Upload the "Shares.csv"/"Comments.csv" from LinkedIn's own "Get a copy of your data"
+				export (the zip works too) to fill the corpus with your posts and comments in one step,
+				instead of waiting on passive capture. Re-uploading the same export changes nothing - it
+				only ever adds what is not already on file.
+			</Card.Description>
+		</Card.Header>
+		<Card.Content>
+			<form
+				method="POST"
+				action="?/importVoice"
+				enctype="multipart/form-data"
+				use:enhance={() => {
+					importingVoice = true;
+					return async ({ update }) => {
+						await update();
+						importingVoice = false;
+						if (importFileInput) importFileInput.value = '';
+					};
+				}}
+				class="flex flex-wrap items-center gap-2"
+			>
+				<input
+					bind:this={importFileInput}
+					type="file"
+					name="file"
+					accept=".zip,.csv"
+					required
+					class="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium"
+				/>
+				<Button type="submit" size="sm" disabled={importingVoice}>
+					<Upload class="size-4" /> {importingVoice ? 'Importing...' : 'Import'}
+				</Button>
+			</form>
+		</Card.Content>
+	</Card.Root>
 
 	<div class="grid items-start gap-4 xl:grid-cols-2">
 		<Card.Root>
@@ -186,6 +272,18 @@
 							{/if}
 						</p>
 					{/if}
+
+					{#if voiceProfile}
+						{#each GENRE_ORDER as genre (genre)}
+							{@const g = voiceProfile.genres[genre]}
+							{#if g.summary}
+								<div class="rounded-md border border-border/60 bg-muted/30 p-2 text-xs">
+									<span class="font-medium">{GENRE_LABEL[genre]}s:</span>
+									<span class="text-muted-foreground">{g.summary}</span>
+								</div>
+							{/if}
+						{/each}
+					{/if}
 				</div>
 			</Card.Content>
 		</Card.Root>
@@ -194,9 +292,10 @@
 			<Card.Header>
 				<Card.Title>Voice samples</Card.Title>
 				<Card.Description>
-					Your own recent posts, captured passively. {includedSampleCount} of {data.voiceSamples
-						.length} feed the derived voice beside this - excluding a sample keeps it here, it just
-					stops contributing, because a delete would come back on the next capture.
+					Your own posts and comments, captured passively or imported from a LinkedIn export.
+					{includedSampleCount} of {data.voiceSamples.length} feed the derived voice beside this -
+					excluding a sample keeps it here, it just stops contributing, because a delete would come
+					back on the next capture or import.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
@@ -204,16 +303,23 @@
 					<EmptyState
 						icon={Mic}
 						title="No voice samples yet"
-						description="Captured passively when you browse your own recent activity on LinkedIn with the extension installed."
+						description="Captured passively when you browse your own recent activity on LinkedIn with the extension installed, or filled in one step above from a LinkedIn data export."
 					/>
 				{:else}
 					<div class="flex flex-col divide-y divide-border">
 						{#each data.voiceSamples as sample (sample.id)}
 							<div class="flex items-start justify-between gap-3 py-3">
 								<div class="min-w-0 flex-1">
+									{#if sample.genre === 'comment' && sample.context}
+										<p class="mb-1 truncate text-xs text-muted-foreground">
+											Replying to <a href={sample.context} target="_blank" rel="noreferrer" class="underline">{sample.context}</a>
+										</p>
+									{/if}
 									<p class="text-sm whitespace-pre-wrap">{sample.text}</p>
 									<div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
 										<span>{relativeTime(sample.postedAt ?? sample.capturedAt)}</span>
+										<Badge variant="outline">{GENRE_LABEL[sample.genre]}</Badge>
+										<Badge variant="outline">{SOURCE_LABEL[sample.source]}</Badge>
 										{#if sample.excluded}
 											<Badge variant="outline">Excluded</Badge>
 										{:else}

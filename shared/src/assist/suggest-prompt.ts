@@ -410,10 +410,22 @@ export function buildSuggestionPrompt(args: {
   // them (#407). No "do not reuse the content" guard here, unlike the
   // few-shot examples below - there is no content to reuse, only a
   // description of a pattern.
-  if (voiceProfile?.summary.trim()) {
-    parts.push(
-      `How the operator writes, based on what they have actually written: ${clamp(voiceProfile.summary, VOICE_PROFILE_MAX)}`,
-    );
+  //
+  // A `post_comment` suggestion prefers the comment-genre description over
+  // the pooled one when the corpus has enough comments to have derived one
+  // (LOR-223): the pooled description is dominated by posts, which
+  // outnumber and outrun comments in most corpora, so it tells the model
+  // things true of a post ("usually writes with hashtags", "about 16 words
+  // per sentence") that are false of the one-line comment it is about to
+  // write. Falls back to the pooled summary when the corpus has not
+  // measured comments on their own yet.
+  const commentVoice = kind === 'post_comment' ? voiceProfile?.commentSummary?.trim() : undefined;
+  const voiceProfileText = commentVoice || voiceProfile?.summary.trim();
+  if (voiceProfileText) {
+    const lead = commentVoice
+      ? 'How the operator writes when commenting, based on their own comments'
+      : 'How the operator writes, based on what they have actually written';
+    parts.push(`${lead}: ${clamp(voiceProfileText, VOICE_PROFILE_MAX)}`);
   }
 
   // What they are building: every project in the organization, with its own

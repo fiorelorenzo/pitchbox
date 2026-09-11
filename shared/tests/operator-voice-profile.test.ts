@@ -385,6 +385,106 @@ describe('shared/src/operator-voice-profile', () => {
   });
 });
 
+describe('per-genre derivation (LOR-223)', () => {
+  beforeEach(reset);
+
+  it('derives a comment-genre description that differs from the post-genre one, on a corpus containing both', async () => {
+    const orgId = await ensureOrg('vp-org-genres');
+    const linkedin = await platformId('linkedin');
+    await recordVoiceSamples(getDb(), orgId, linkedin, [
+      {
+        externalId: 'g-post-1',
+        text: 'Shipped a brand new onboarding flow this week after months of customer interviews and design review.',
+        genre: 'post',
+      },
+      {
+        externalId: 'g-post-2',
+        text: 'Just wrapped up a long migration project and the whole team is relieved it finally landed cleanly.',
+        genre: 'post',
+      },
+      {
+        externalId: 'g-post-3',
+        text: 'Spent the week debugging a nasty race condition in the scheduler and finally found the root cause today.',
+        genre: 'post',
+      },
+      {
+        externalId: 'g-comment-1',
+        text: 'Nice work',
+        genre: 'comment',
+        context: 'https://www.linkedin.com/feed/update/urn:li:activity:1',
+      },
+      {
+        externalId: 'g-comment-2',
+        text: 'Love this',
+        genre: 'comment',
+        context: 'https://www.linkedin.com/feed/update/urn:li:activity:2',
+      },
+      {
+        externalId: 'g-comment-3',
+        text: 'So true',
+        genre: 'comment',
+        context: 'https://www.linkedin.com/feed/update/urn:li:activity:3',
+      },
+    ]);
+
+    const row = await refreshVoiceProfile(getDb(), orgId);
+    expect(row.evidence.genres.post.measurable).toBe(true);
+    expect(row.evidence.genres.comment.measurable).toBe(true);
+    expect(row.evidence.genres.post.summary).not.toBeNull();
+    expect(row.evidence.genres.comment.summary).not.toBeNull();
+    expect(row.evidence.genres.post.summary).not.toBe(row.evidence.genres.comment.summary);
+    expect(row.evidence.genres.post.summary).toMatch(/^Based on 3 of their own posts /);
+    expect(row.evidence.genres.comment.summary).toMatch(/^Based on 3 of their own comments /);
+    expect(row.evidence.genres.reply.measurable).toBe(false);
+  });
+
+  it('a genre with too few items stays unmeasurable even when the pooled corpus is measurable', async () => {
+    const orgId = await ensureOrg('vp-org-genre-thin');
+    const linkedin = await platformId('linkedin');
+    await recordVoiceSamples(getDb(), orgId, linkedin, [
+      {
+        externalId: 'thin-post-1',
+        text: 'Shipped a brand new onboarding flow this week after months of customer interviews and design review.',
+        genre: 'post',
+      },
+      {
+        externalId: 'thin-post-2',
+        text: 'Just wrapped up a long migration project and the whole team is relieved it finally landed cleanly.',
+        genre: 'post',
+      },
+      {
+        externalId: 'thin-post-3',
+        text: 'Spent the week debugging a nasty race condition in the scheduler and finally found the root cause today.',
+        genre: 'post',
+      },
+      { externalId: 'thin-comment-1', text: 'Nice work', genre: 'comment' },
+    ]);
+
+    const row = await refreshVoiceProfile(getDb(), orgId);
+    expect(row.itemCount).toBe(4);
+    expect(row.evidence.genres.post.measurable).toBe(true);
+    expect(row.evidence.genres.comment.measurable).toBe(false);
+    expect(row.evidence.genres.comment.summary).toBeNull();
+    expect(row.evidence.genres.comment.itemCount).toBe(1);
+  });
+
+  it('a passive capture with no genre specified defaults to post/capture with no context', async () => {
+    const orgId = await ensureOrg('vp-org-genre-defaults');
+    const linkedin = await platformId('linkedin');
+    await recordVoiceSamples(getDb(), orgId, linkedin, [
+      { externalId: 'default-1', text: 'A plain captured post with no genre specified at all.' },
+    ]);
+    const rows = await getDb()
+      .select()
+      .from(schema.operatorVoiceSamples)
+      .where(eq(schema.operatorVoiceSamples.organizationId, orgId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].genre).toBe('post');
+    expect(rows[0].source).toBe('capture');
+    expect(rows[0].context).toBeNull();
+  });
+});
+
 describe('resolveOperatorVoiceProfile', () => {
   beforeEach(reset);
 

@@ -10,6 +10,7 @@
 
 import { and, desc, eq } from 'drizzle-orm';
 import { schema, type Db } from './db/client.js';
+import type { ImportedVoiceItem } from './voice-import.js';
 
 export type OperatorProfileSource = 'linkedin_capture' | 'manual';
 
@@ -35,6 +36,15 @@ export type OperatorProfileRow = {
   updatedAt: Date;
 };
 
+/** A voice sample's genre - `post` (a LinkedIn share), `comment` (a
+ * top-level comment) or `reply` (a reply to a comment). See
+ * `schema.ts`'s own comment on `operator_voice_samples.genre` (LOR-223). */
+export type VoiceSampleGenre = 'post' | 'comment' | 'reply';
+
+/** Where a voice sample came from: the extension's passive capture, a
+ * LinkedIn data-export import, or typed by hand. */
+export type VoiceSampleSource = 'capture' | 'import' | 'manual';
+
 export type OperatorVoiceSampleRow = {
   id: number;
   organizationId: number;
@@ -44,6 +54,9 @@ export type OperatorVoiceSampleRow = {
   url: string | null;
   postedAt: Date | null;
   excluded: boolean;
+  genre: VoiceSampleGenre;
+  source: VoiceSampleSource;
+  context: string | null;
   capturedAt: Date;
 };
 
@@ -167,6 +180,13 @@ export type IncomingVoiceSample = {
   text: string;
   url?: string | null;
   postedAt?: string | null;
+  /** Defaults to `post` - every call site before LOR-223 only ever
+   * captured posts, so an omitted genre must keep meaning exactly that. */
+  genre?: VoiceSampleGenre;
+  /** Defaults to `capture` - the extension's passive read is the only
+   * caller that omits this. */
+  source?: VoiceSampleSource;
+  context?: string | null;
 };
 
 /**
@@ -195,6 +215,9 @@ export async function recordVoiceSamples(
         text: s.text,
         url: s.url ?? null,
         postedAt: s.postedAt ? new Date(s.postedAt) : null,
+        genre: s.genre ?? 'post',
+        source: s.source ?? 'capture',
+        context: s.context ?? null,
       })),
     )
     .onConflictDoNothing({
@@ -202,4 +225,54 @@ export async function recordVoiceSamples(
     })
     .returning({ id: schema.operatorVoiceSamples.id });
   return inserted.length;
+}
+
+export type VoiceImportResult = {
+  /** New rows actually written - a re-import of the same export returns 0
+   * here, since `parseLinkedinVoiceExport`'s external ids are deterministic
+   * and the unique index does the rest. */
+  inserted: number;
+  byGenre: { post: number; comment: number };
+};
+
+/**
+ * Persists a parsed LinkedIn export (`voice-import.ts`'s
+ * `ImportedVoiceItem[]`) the same way `recordVoiceSamples` persists a
+ * passive capture - same table, same dedup index - but tagged
+ * `source: 'import'` so the Voice page and the derivation's provenance can
+ * tell the two apart, and carrying each item's genre and, for a comment,
+ * its context (the post it replied to).
+ */
+export async function importVoiceSamples(
+  db: Db,
+  organizationId: number,
+  platformId: number,
+  items: ImportedVoiceItem[],
+): Promise<VoiceImportResult> {
+  if (items.length === 0) return { inserted: 0, byGenre: { post: 0, comment: 0 } };
+  const inserted = await db
+    .insert(schema.operatorVoiceSamples)
+    .values(
+      items.map((item) => ({
+        organizationId,
+        platformId,
+        externalId: item.externalId,
+        text: item.text,
+        url: item.url,
+        postedAt: item.postedAt ? new Date(item.postedAt) : null,
+        genre: item.genre,
+        source: 'import' as const,
+        context: item.context,
+      })),
+    )
+    .onConflictDoNothing({
+      target: [schema.operatorVoiceSamples.organizationId, schema.operatorVoiceSamples.externalId],
+    })
+    .returning({ id: schema.operatorVoiceSamples.id, genre: schema.operatorVoiceSamples.genre });
+
+  const byGenre = { post: 0, comment: 0 };
+  for (const row of inserted) {
+    if (row.genre === 'post' || row.genre === 'comment') byGenre[row.genre] += 1;
+  }
+  return { inserted: inserted.length, byGenre };
 }

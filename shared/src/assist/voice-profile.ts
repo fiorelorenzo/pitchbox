@@ -38,12 +38,33 @@ const VOICE_CORPUS_ITEM_KINDS: readonly VoiceCorpusItemKind[] = [
   'template',
 ];
 
+/** The genre of a piece of writing - a post, a top-level comment or a
+ * reply to a comment (LOR-223). Only `voice_sample` items carry one today
+ * (`operator_voice_samples.genre`): a message, a sent draft or a template
+ * is outreach, not a LinkedIn post or comment, so it has no genre of this
+ * kind and is left out of the per-genre split below, while still counting
+ * toward the pooled corpus `measureVoiceCorpus` already produces. A post
+ * and a comment are not the same voice at a different length - Lorenzo's
+ * own corpus runs a median 122 words per post against a median 7 words per
+ * comment, sixteen of twenty-seven comments under ten words - so pooling
+ * them is what makes a comment suggestion come out as a paragraph. */
+export type VoiceCorpusItemGenre = 'post' | 'comment' | 'reply';
+
+export const VOICE_CORPUS_ITEM_GENRES: readonly VoiceCorpusItemGenre[] = [
+  'post',
+  'comment',
+  'reply',
+];
+
 /** One piece of the operator's own writing, tagged with where it came from
  * and its id, so the caller can turn a measurement back into evidence
- * (which ids it was derived from) without re-deriving it. */
+ * (which ids it was derived from) without re-deriving it. `genre` is
+ * absent for a corpus item with no genre of its own (message, draft,
+ * template) - see `VoiceCorpusItemGenre`'s own comment. */
 export type VoiceCorpusItem = {
   id: number;
   kind: VoiceCorpusItemKind;
+  genre?: VoiceCorpusItemGenre;
   text: string;
 };
 
@@ -865,8 +886,17 @@ const LANGUAGE_PROSE: Record<Exclude<LanguageMix['primary'], null>, string> = {
  * when the corpus said nothing worth reporting - too small, or measurable
  * but with no dominant trait, phrase or reused word - which the prompt
  * renders as no voice-profile section at all rather than an empty one.
+ *
+ * `noun` names what was counted in the leading sentence - "pieces of their
+ * own writing" for the pooled corpus, "of their own posts"/"comments" for
+ * a genre-scoped one (LOR-223's `describeVoiceProfileForGenre`) - so the
+ * same renderer works for both without the caller reaching into the
+ * string afterward.
  */
-export function describeVoiceProfile(m: VoiceMeasurement): string | null {
+export function describeVoiceProfile(
+  m: VoiceMeasurement,
+  noun = 'pieces of their own writing',
+): string | null {
   if (!m.measurable) return null;
 
   const sentences: string[] = [];
@@ -905,5 +935,62 @@ export function describeVoiceProfile(m: VoiceMeasurement): string | null {
   }
 
   if (sentences.length === 0) return null;
-  return `Based on ${m.itemCount} pieces of their own writing (${m.wordCount} words). ${sentences.join(' ')}`;
+  return `Based on ${m.itemCount} ${noun} (${m.wordCount} words). ${sentences.join(' ')}`;
+}
+
+// ---------------------------------------------------------------------------
+// Per-genre measurement (LOR-223): a post and a comment are different
+// genres of writing, not the same voice at a different length, so each gets
+// its own measurement rather than one pooled average diluting both. The
+// pooled `measureVoiceCorpus` above is unchanged and still the right call
+// for "how does this person write, overall" - this is the addition, not a
+// replacement.
+// ---------------------------------------------------------------------------
+
+const GENRE_NOUN: Record<VoiceCorpusItemGenre, string> = {
+  post: 'of their own posts',
+  comment: 'of their own comments',
+  reply: 'of their own replies',
+};
+
+/**
+ * `measureVoiceCorpus`, once per genre, over only the corpus items that
+ * carry one (a message, sent draft or template has no genre and is simply
+ * absent from every bucket - it already counts toward the pooled
+ * measurement). Every genre in `VOICE_CORPUS_ITEM_GENRES` is always a key
+ * in the result, `measurable: false` when that genre's own item count has
+ * not cleared `MIN_ITEMS_TO_DERIVE` - the same "say nothing rather than
+ * guess" discipline the pooled measurement already applies, now per genre
+ * rather than only across the whole corpus.
+ *
+ * A genre whose items are individually short (LinkedIn comments run a
+ * median of a handful of words - well under `register.ts`'s own floor for
+ * a single item to carry a register, and often under the two stopword hits
+ * `measureLanguage` needs to classify one) is not the same thing as a
+ * genre with too few items: `MIN_ITEMS_TO_DERIVE` gates on `itemCount`,
+ * every other floor below it (register's word count, the language
+ * classifier's stopword count, lexicon's 200-word floor) is already
+ * per-item or per-corpus-word-count rather than per-genre, so a comment
+ * corpus large enough in item count still reports rhythm and shape
+ * honestly even when few individual comments clear register.ts's floor -
+ * it just reports an empty `traits`/`wordsPerSentence` rather than one
+ * derived from too little.
+ */
+export function measureVoiceCorpusByGenre(
+  corpus: VoiceCorpusItem[],
+): Record<VoiceCorpusItemGenre, VoiceMeasurement> {
+  const result = {} as Record<VoiceCorpusItemGenre, VoiceMeasurement>;
+  for (const genre of VOICE_CORPUS_ITEM_GENRES) {
+    result[genre] = measureVoiceCorpus(corpus.filter((item) => item.genre === genre));
+  }
+  return result;
+}
+
+/** `describeVoiceProfile`, worded for one genre ("Based on 12 of their own
+ * comments" rather than "12 pieces of their own writing"). */
+export function describeVoiceProfileForGenre(
+  genre: VoiceCorpusItemGenre,
+  m: VoiceMeasurement,
+): string | null {
+  return describeVoiceProfile(m, GENRE_NOUN[genre]);
 }
