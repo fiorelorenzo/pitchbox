@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 	import { toast } from 'svelte-sonner';
 	import { Plus, Trash2, Shield } from '@lucide/svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
@@ -13,6 +15,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { relativeTime } from '$lib/utils/time';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import { badgeLabel } from '$lib/config/status-badges';
 	import PageContainer from '$lib/components/PageContainer.svelte';
 
 	type Entry = {
@@ -36,12 +39,13 @@
 		data: { entries: Entry[]; platforms: Platform[]; projects: Project[]; isAdmin?: boolean };
 	} = $props();
 	const isAdmin = $derived(data.isAdmin ?? true);
+	const locale = $derived($page.data.locale as Locale);
 
-	const KINDS = [
-		{ value: 'subreddit', label: 'Subreddit' },
-		{ value: 'user', label: 'User' },
-		{ value: 'keyword', label: 'Keyword' },
-	];
+	const KINDS = $derived([
+		{ value: 'subreddit', label: badgeLabel(locale, 'blocklist-kind', 'subreddit') },
+		{ value: 'user', label: badgeLabel(locale, 'blocklist-kind', 'user') },
+		{ value: 'keyword', label: badgeLabel(locale, 'blocklist-kind', 'keyword') },
+	]);
 
 	let platformId = $state<number | undefined>(undefined);
 	$effect(() => {
@@ -62,15 +66,15 @@
 	const projectOptions = $derived(
 		data.projects.map((p) => ({ value: p.id, label: p.name })),
 	);
-	const scopeOptions = [
-		{ value: 'global', label: 'Global (all projects)' },
-		{ value: 'project', label: 'Project' },
-	];
+	const scopeOptions = $derived([
+		{ value: 'global', label: t(locale, 'blocklist.scope-option-global') },
+		{ value: 'project', label: t(locale, 'blocklist.scope-option-project') },
+	]);
 
 	async function submit(e: Event) {
 		e.preventDefault();
 		if (!platformId || !value.trim()) {
-			toast.error('Platform and value are required');
+			toast.error(t(locale, 'blocklist.error-required-fields'));
 			return;
 		}
 		saving = true;
@@ -88,12 +92,12 @@
 				}),
 			});
 			if (!res.ok) throw new Error(await res.text());
-			toast.success('Added');
+			toast.success(t(locale, 'blocklist.toast-added'));
 			value = '';
 			reason = '';
 			await invalidateAll();
 		} catch (err) {
-			toast.error('Failed', { description: (err as Error).message });
+			toast.error(t(locale, 'blocklist.toast-failed-title'), { description: (err as Error).message });
 		} finally {
 			saving = false;
 		}
@@ -121,17 +125,17 @@
 			const res = await fetch(`/api/blocklist/${deleteTarget.id}`, { method: 'DELETE' });
 			if (!res.ok) {
 				if (res.status === 403) {
-					toast.error('You need admin access for that');
+					toast.error(t(locale, 'blocklist.error-admin-required'));
 					return;
 				}
 				throw new Error(await res.text());
 			}
-			toast.success('Removed');
+			toast.success(t(locale, 'blocklist.toast-removed'));
 			deleteDialogOpen = false;
 			deleteTarget = null;
 			await invalidateAll();
 		} catch (err) {
-			toast.error('Failed', { description: (err as Error).message });
+			toast.error(t(locale, 'blocklist.toast-failed-title'), { description: (err as Error).message });
 		} finally {
 			removing = false;
 		}
@@ -141,66 +145,66 @@
 
 <PageContainer size="default">
 <Seo
-	title="Blocklist"
-	description="Subreddits, users and keywords that campaigns will skip during outreach."
+	title={t(locale, 'blocklist.seo-title')}
+	description={t(locale, 'blocklist.seo-description')}
 />
 
 <PageHeader
-	title="Blocklist"
-	description="Subreddits, users and keywords that campaigns will skip. Scope to one project or apply globally across all projects."
+	title={t(locale, 'blocklist.title')}
+	description={t(locale, 'blocklist.header-description')}
 />
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
 	<Card.Root class="lg:col-span-1">
 		<Card.Header>
-			<Card.Title class="text-base">Add entry</Card.Title>
+			<Card.Title class="text-base">{t(locale, 'blocklist.add-entry-title')}</Card.Title>
 			<Card.Description class="text-xs">
-				Scouts will skip matches before drafting.
+				{t(locale, 'blocklist.add-entry-description')}
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>
 			<form onsubmit={submit} class="flex flex-col gap-3">
 				<label class="flex flex-col gap-1 text-xs">
-					<span class="text-muted-foreground">Platform</span>
+					<span class="text-muted-foreground">{t(locale, 'blocklist.label-platform')}</span>
 					<SelectField bind:value={platformId} options={platformOptions} fullWidth />
 				</label>
 				<label class="flex flex-col gap-1 text-xs">
-					<span class="text-muted-foreground">Kind</span>
+					<span class="text-muted-foreground">{t(locale, 'blocklist.label-kind')}</span>
 					<SelectField bind:value={kind} options={KINDS} fullWidth />
 				</label>
 				<label class="flex flex-col gap-1 text-xs">
-					<span class="text-muted-foreground">Value</span>
+					<span class="text-muted-foreground">{t(locale, 'blocklist.label-value')}</span>
 					<Input
 						bind:value
 						placeholder={kind === 'subreddit'
-							? 'r/example (or just example)'
+							? t(locale, 'blocklist.value-placeholder-subreddit')
 							: kind === 'user'
-								? 'u/example'
-								: 'spam keyword'}
+								? t(locale, 'blocklist.value-placeholder-user')
+								: t(locale, 'blocklist.value-placeholder-keyword')}
 					/>
 				</label>
 				<label class="flex flex-col gap-1 text-xs">
-					<span class="text-muted-foreground">Reason (optional)</span>
-					<Input bind:value={reason} placeholder="e.g. off-topic, banned sub, …" />
+					<span class="text-muted-foreground">{t(locale, 'blocklist.label-reason')}</span>
+					<Input bind:value={reason} placeholder={t(locale, 'blocklist.reason-placeholder')} />
 				</label>
 				<label class="flex flex-col gap-1 text-xs">
-					<span class="text-muted-foreground">Scope</span>
+					<span class="text-muted-foreground">{t(locale, 'blocklist.label-scope')}</span>
 					<SelectField bind:value={scope} options={scopeOptions} fullWidth />
 				</label>
 				{#if scope === 'project'}
 					<label class="flex flex-col gap-1 text-xs">
-						<span class="text-muted-foreground">Project</span>
+						<span class="text-muted-foreground">{t(locale, 'blocklist.label-project')}</span>
 						<SelectField
 							bind:value={projectId}
 							options={projectOptions}
-							placeholder="- choose -"
+							placeholder={t(locale, 'blocklist.choose-placeholder')}
 							fullWidth
 						/>
 					</label>
 				{/if}
 				<Button type="submit" loading={saving}>
 					<Plus class="size-4" />
-					Add to blocklist
+					{t(locale, 'blocklist.add-button')}
 				</Button>
 			</form>
 		</Card.Content>
@@ -208,26 +212,26 @@
 
 	<Card.Root class="lg:col-span-2">
 		<Card.Header>
-			<Card.Title class="text-base">Entries</Card.Title>
-			<Card.Description class="text-xs">{data.entries.length} total</Card.Description>
+			<Card.Title class="text-base">{t(locale, 'blocklist.entries-title')}</Card.Title>
+			<Card.Description class="text-xs">{t(locale, 'blocklist.entries-total', { n: data.entries.length })}</Card.Description>
 		</Card.Header>
 		<Card.Content>
 			{#if data.entries.length === 0}
 				<EmptyState
 					icon={Shield}
-					title="Empty blocklist"
-					description="Block usernames, subreddits, or keywords here. The drafts pipeline and the send path both consult the blocklist before any outreach goes out."
+					title={t(locale, 'blocklist.empty-title')}
+					description={t(locale, 'blocklist.empty-body')}
 					size="sm"
 				/>
 			{:else}
 				<Table.Root>
 					<Table.Header>
 						<Table.Row>
-							<Table.Head>Kind</Table.Head>
-							<Table.Head>Value</Table.Head>
-							<Table.Head>Platform</Table.Head>
-							<Table.Head>Scope</Table.Head>
-							<Table.Head>Added</Table.Head>
+							<Table.Head>{t(locale, 'blocklist.col-kind')}</Table.Head>
+							<Table.Head>{t(locale, 'blocklist.col-value')}</Table.Head>
+							<Table.Head>{t(locale, 'blocklist.col-platform')}</Table.Head>
+							<Table.Head>{t(locale, 'blocklist.col-scope')}</Table.Head>
+							<Table.Head>{t(locale, 'blocklist.col-added')}</Table.Head>
 							<Table.Head class="w-12"></Table.Head>
 						</Table.Row>
 					</Table.Header>
@@ -252,7 +256,7 @@
 										<Button
 											variant="ghost"
 											size="icon"
-											aria-label="Remove"
+											aria-label={t(locale, 'blocklist.aria-remove')}
 											onclick={() => openDeleteDialog(e)}
 											class="text-muted-foreground hover:text-destructive"
 										>
@@ -272,18 +276,17 @@
 <AlertDialog.Root bind:open={deleteDialogOpen}>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>
-				Remove {deleteTarget ? entryLabel(deleteTarget) : 'this entry'} from the blocklist?
-			</AlertDialog.Title>
-			<AlertDialog.Description>
-				Campaigns will be able to contact {deleteTarget ? entryLabel(deleteTarget) : 'this entry'} again
-				immediately. There is no undo.
-			</AlertDialog.Description>
+		<AlertDialog.Title>
+			{t(locale, 'blocklist.delete-title', { label: deleteTarget ? entryLabel(deleteTarget) : t(locale, 'blocklist.default-entry-label') })}
+		</AlertDialog.Title>
+		<AlertDialog.Description>
+			{t(locale, 'blocklist.delete-description', { label: deleteTarget ? entryLabel(deleteTarget) : t(locale, 'blocklist.default-entry-label') })}
+		</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel onclick={() => (deleteDialogOpen = false)}>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Cancel onclick={() => (deleteDialogOpen = false)}>{t(locale, 'blocklist.cancel-button')}</AlertDialog.Cancel>
 			<AlertDialog.Action onclick={confirmRemove} disabled={removing}>
-				{removing ? 'Removing…' : 'Remove'}
+				{removing ? t(locale, 'blocklist.removing-button') : t(locale, 'blocklist.remove-button')}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>

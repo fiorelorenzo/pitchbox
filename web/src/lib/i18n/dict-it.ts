@@ -1,5 +1,6 @@
 import type { Dict } from './types.js';
 import { timeIt } from './dict/time.js';
+import { routesIt } from './dict/routes.js';
 
 /**
  * Glossary decisions, recorded in `docs/design/DECISIONS.md`: "draft"
@@ -9,6 +10,7 @@ import { timeIt } from './dict/time.js';
  */
 export const it = {
   ...timeIt,
+  ...routesIt,
 
   'auth.disabled-title': 'Autenticazione disattivata',
   'auth.disabled-seo-title': 'Autenticazione disattivata',

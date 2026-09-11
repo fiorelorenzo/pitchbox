@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 	import { Button } from '$lib/components/ui/button';
 	import PageContainer from '$lib/components/PageContainer.svelte';
 	import { toast } from 'svelte-sonner';
 	import Seo from '$lib/components/Seo.svelte';
 
 	let { data }: { data: { authOn: boolean; token: string } } = $props();
+	const locale = $derived($page.data.locale as Locale);
 
 	let busy = $state(false);
 	let verified = $state(false);
@@ -26,23 +29,23 @@
 			});
 			if (res.ok) {
 				verified = true;
-				toast.success('Email verified', {
-					description: 'You can now start runs on this account.',
+				toast.success(t(locale, 'verify.toast-verified-title'), {
+					description: t(locale, 'verify.toast-verified-body'),
 				});
 				return;
 			}
 			if (res.status === 429) {
 				const body = (await res.json()) as { retry_after_seconds?: number };
-				toast.error('Too many attempts', {
+				toast.error(t(locale, 'reset.error-too-many-attempts'), {
 					description: body.retry_after_seconds
-						? `Try again in ${body.retry_after_seconds}s`
+						? t(locale, 'reset.error-retry-in', { seconds: body.retry_after_seconds })
 						: undefined,
 				});
 				return;
 			}
 			failed = true;
-			toast.error('This link is no longer valid', {
-				description: 'It may have expired or already been used - request a new one from Settings.',
+			toast.error(t(locale, 'verify.toast-failed-title'), {
+				description: t(locale, 'verify.toast-failed-body'),
 			});
 		} finally {
 			busy = false;
@@ -50,23 +53,23 @@
 	}
 </script>
 
-<Seo title="Verify email - Pitchbox" description="Verify your Pitchbox account email address." />
+<Seo title={t(locale, 'verify.seo-title')} description={t(locale, 'verify.seo-description')} />
 
 <PageContainer size="narrow" class="text-center">
 	{#if verified}
-		<h1 class="text-xl font-semibold">Email verified</h1>
-		<p class="mt-2 text-muted-foreground">Your account can now start runs.</p>
-		<Button class="mt-6" onclick={() => goto('/')}>Go to dashboard</Button>
+		<h1 class="text-xl font-semibold">{t(locale, 'verify.verified-title')}</h1>
+		<p class="mt-2 text-muted-foreground">{t(locale, 'verify.verified-body')}</p>
+		<Button class="mt-6" onclick={() => goto('/')}>{t(locale, 'verify.go-to-dashboard')}</Button>
 	{:else if failed}
-		<h1 class="text-xl font-semibold">Link no longer valid</h1>
+		<h1 class="text-xl font-semibold">{t(locale, 'verify.failed-title')}</h1>
 		<p class="mt-2 text-muted-foreground">
-			It may have expired or already been used. Request a new link from Settings.
+			{t(locale, 'verify.failed-body')}
 		</p>
 	{:else}
-		<h1 class="text-xl font-semibold">Verify your email</h1>
-		<p class="mt-2 text-muted-foreground">Confirm this address to start running campaigns.</p>
+		<h1 class="text-xl font-semibold">{t(locale, 'verify.title')}</h1>
+		<p class="mt-2 text-muted-foreground">{t(locale, 'verify.body')}</p>
 		<Button class="mt-6" onclick={verify} disabled={busy}>
-			{busy ? 'Verifying…' : 'Verify email'}
+			{busy ? t(locale, 'verify.verifying-button') : t(locale, 'verify.verify-button')}
 		</Button>
 	{/if}
 </PageContainer>
