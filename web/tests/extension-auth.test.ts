@@ -45,9 +45,13 @@ describe('extension auth', () => {
       .values({ label: 'test device', tokenHash: hashToken(token) })
       .returning();
 
+    // `userId` joined the result when the locale override became an account
+    // setting (LOR-262): a device paired through a session carries the user it
+    // was bound to, and one registered by hand carries none.
     await expect(requireExtensionAuth(authedRequest(token))).resolves.toEqual({
       deviceId: row.id,
       organizationId: null,
+      userId: null,
     });
 
     const [fresh] = await getDb()
@@ -86,6 +90,7 @@ describe('extension auth', () => {
     await expect(requireExtensionAuth(authedRequest(token))).resolves.toEqual({
       deviceId: row.id,
       organizationId: null,
+      userId: null,
     });
   });
 

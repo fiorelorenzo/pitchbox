@@ -58,6 +58,7 @@ describe('POST /api/extension/rotate', () => {
     await expect(requireExtensionAuth(bearerRequest(body.token))).resolves.toEqual({
       deviceId: row.id,
       organizationId: null,
+      userId: null,
     });
 
     const [fresh] = await getDb()
