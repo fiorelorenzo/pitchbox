@@ -313,7 +313,7 @@ interface CaseA {
   post: { urn: string; author: string; text: string; url: string; words: number; language: string };
   reference: string;
   referenceWords: number;
-  referenceLanguage: string;
+  referenceLanguageLabel: string;
   selfAuthoredPost: boolean;
   tags: string[];
 }
