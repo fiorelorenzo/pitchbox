@@ -289,13 +289,11 @@ export type ImportedMessagesResult = {
  * `ImportedVoiceMessage[]`, from `messages.csv`) into their own table,
  * deduped on `(organization_id, external_id)` the same way
  * `importVoiceSamples` dedupes posts/comments - but deliberately NOT into
- * `operator_voice_samples` itself: a DM is not a post, a comment or a
- * reply, and folding it into that table's `genre` column would either
- * invent a fourth value `assist/voice-profile.ts`'s per-genre measurement
- * was never built for or silently mislabel it as one it isn't. See
- * `operator-voice-profile.ts`'s `gatherVoiceCorpus`, which reads this
- * table as `kind: 'message'` corpus items - the same kind a sent
- * Reddit/HN DM already contributes.
+ * `operator_voice_samples` itself. See `schema.ts`'s own comment on
+ * `operator_voice_messages` for the full argument: a DM is a genre-LESS
+ * corpus kind, the same architectural category `drafts` and `templates`
+ * already occupy in their own tables rather than in this one, not merely
+ * a value this table's `genre` column happens to lack yet.
  */
 export async function importVoiceMessages(
   db: Db,
