@@ -27,6 +27,7 @@
 	import { SelectField } from '$lib/components/ui/select-field';
 	import { interpretDraftPatchResponse, DraftVersionConflictError } from '$lib/utils/draft-patch-response';
 	import { TONE_BANNER_CLASS } from '$lib/config/status-badges';
+	import { t, tn, type Locale } from '$lib/i18n/index.js';
 
 	import type { UsageByKind, QuotaLimits } from '@pitchbox/shared/quota-types';
 	import PageContainer from '$lib/components/PageContainer.svelte';
@@ -86,6 +87,8 @@
 			campaignFilterInvalid?: string | null;
 		};
 	} = $props();
+
+	const locale = $derived($page.data.locale as Locale);
 
 	let selectedId = $state<number | null>(null);
 	// Bindable "please open the inline editor" signal for the `e` shortcut - see
@@ -150,16 +153,24 @@
 	let warnedInvalidFilters: string | null = null;
 	$effect(() => {
 		const invalid = [
-			data.stateFilterInvalid != null ? `state "${data.stateFilterInvalid}"` : null,
-			data.kindFilterInvalid != null ? `kind "${data.kindFilterInvalid}"` : null,
-			data.runFilterInvalid != null ? `run "${data.runFilterInvalid}"` : null,
-			data.campaignFilterInvalid != null ? `campaign "${data.campaignFilterInvalid}"` : null,
+			data.stateFilterInvalid != null
+				? `${t(locale, 'inbox.filter-name.state')} "${data.stateFilterInvalid}"`
+				: null,
+			data.kindFilterInvalid != null
+				? `${t(locale, 'inbox.filter-name.kind')} "${data.kindFilterInvalid}"`
+				: null,
+			data.runFilterInvalid != null
+				? `${t(locale, 'inbox.filter-name.run')} "${data.runFilterInvalid}"`
+				: null,
+			data.campaignFilterInvalid != null
+				? `${t(locale, 'inbox.filter-name.campaign')} "${data.campaignFilterInvalid}"`
+				: null,
 		].filter((v): v is string => v != null);
 		const key = invalid.join(',');
 		if (key && key !== warnedInvalidFilters) {
 			warnedInvalidFilters = key;
-			toast.warning('Filter ignored', {
-				description: `Unrecognized ${invalid.join(', ')} - showing the default view instead.`,
+			toast.warning(t(locale, 'inbox.filter-ignored-title'), {
+				description: t(locale, 'inbox.filter-ignored-body', { list: invalid.join(', ') }),
 			});
 		} else if (!key) {
 			warnedInvalidFilters = null;
@@ -182,24 +193,24 @@
 	// both panes are always shown side-by-side.
 	let mobileDetailOpen = $state(false);
 
-	const KINDS = [
-		{ value: null, label: 'All' },
-		{ value: 'dm', label: 'DMs' },
-		{ value: 'post', label: 'Posts' },
-		{ value: 'post_comment', label: 'Comments' },
-		{ value: 'comment_reply', label: 'Replies' },
-	];
+	const KINDS = $derived([
+		{ value: null, label: t(locale, 'inbox.filter-all') },
+		{ value: 'dm', label: t(locale, 'inbox.kind.dm') },
+		{ value: 'post', label: t(locale, 'inbox.kind.post') },
+		{ value: 'post_comment', label: t(locale, 'inbox.kind.post_comment') },
+		{ value: 'comment_reply', label: t(locale, 'inbox.kind.comment_reply') },
+	]);
 
-	const STATES = [
-		{ value: 'pending_review', label: 'Pending review' },
-		{ value: 'approved', label: 'Approved' },
-		{ value: 'sent', label: 'Sent' },
-		{ value: 'rejected', label: 'Rejected' },
-		{ value: 'undeliverable', label: 'Undeliverable' },
-		{ value: 'all', label: 'All' },
-	];
+	const STATES = $derived([
+		{ value: 'pending_review', label: t(locale, 'inbox.state.pending_review') },
+		{ value: 'approved', label: t(locale, 'inbox.state.approved') },
+		{ value: 'sent', label: t(locale, 'inbox.state.sent') },
+		{ value: 'rejected', label: t(locale, 'inbox.state.rejected') },
+		{ value: 'undeliverable', label: t(locale, 'inbox.state.undeliverable') },
+		{ value: 'all', label: t(locale, 'inbox.filter-all') },
+	]);
 
-	let kindLabel = $derived(KINDS.find((k) => k.value === data.kind)?.label ?? 'All');
+	let kindLabel = $derived(KINDS.find((k) => k.value === data.kind)?.label ?? t(locale, 'inbox.filter-all'));
 	let isNavigating = $derived($navigating != null);
 
 	function navigate(params: Record<string, string | null>) {
@@ -247,8 +258,8 @@
 				const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
 				const message =
 					res.status >= 500
-						? 'Could not load more drafts. Please try again.'
-						: (body.error ?? body.message ?? 'Could not load more drafts.');
+						? t(locale, 'inbox.error-load-more-generic')
+						: (body.error ?? body.message ?? t(locale, 'inbox.error-load-more'));
 				if (res.status >= 500) console.error('failed to load more drafts', res.status, body);
 				loadMoreError = message;
 				toast.error(message);
@@ -267,7 +278,7 @@
 			itemsNextCursor = nextPage.nextCursor;
 			itemsTotalCount = nextPage.totalCount;
 		} catch {
-			loadMoreError = 'Could not reach the server. Check your connection and try again.';
+			loadMoreError = t(locale, 'inbox.error-network');
 			toast.error(loadMoreError);
 		} finally {
 			loadingMore = false;
@@ -294,7 +305,7 @@
 		const outcome = await interpretDraftPatchResponse(res);
 		if (outcome.kind === 'version_conflict') {
 			await invalidateAll();
-			toast.info('This draft changed elsewhere, reloaded.');
+			toast.info(t(locale, 'inbox.toast-version-conflict'));
 			throw new DraftVersionConflictError();
 		}
 		if (outcome.kind === 'error') throw new Error(outcome.message);
@@ -303,27 +314,37 @@
 	async function approveSingle(id: number) {
 		try {
 			await patchDraft(id, { state: 'approved' });
-			toast.success('Approved', { description: 'Open compose to send it.' });
+			toast.success(t(locale, 'inbox.state.approved'), { description: t(locale, 'inbox.toast-approved-body') });
 			await invalidateAll();
 		} catch (e) {
 			if (e instanceof DraftVersionConflictError) return;
-			toast.error('Action failed', { description: (e as Error).message });
+			toast.error(t(locale, 'inbox.toast-action-failed-title'), { description: (e as Error).message });
 		}
 	}
 
 	async function rejectSingle(id: number) {
 		try {
 			await patchDraft(id, { state: 'rejected' });
-			toast.success('Rejected');
+			toast.success(t(locale, 'inbox.state.rejected'));
 			await invalidateAll();
 		} catch (e) {
 			if (e instanceof DraftVersionConflictError) return;
-			toast.error('Action failed', { description: (e as Error).message });
+			toast.error(t(locale, 'inbox.toast-action-failed-title'), { description: (e as Error).message });
 		}
 	}
 
 	let bulkApproving = $state(false);
 	let bulkRejecting = $state(false);
+
+	// One local composition point for the "N approved, M skipped"-shaped bulk
+	// toasts (approve/reschedule/reject below): English never changes the noun
+	// with the count, but Italian past participles do (bozza/bozze), so this
+	// leans on `tn()` rather than string-templating the count in directly.
+	function bulkSummary(mainKey: string, mainCount: number, extraKey: string, extraCount: number): string {
+		const main = tn(locale, mainKey, mainCount);
+		const extra = extraCount > 0 ? tn(locale, extraKey, extraCount) : '';
+		return main + extra;
+	}
 
 	async function bulkApprove() {
 		bulkApproving = true;
@@ -343,11 +364,11 @@
 			};
 			const ok = data.results.filter((r) => r.status === 'ok').length;
 			const skipped = data.results.length - ok;
-			toast.success(`${ok} approved${skipped > 0 ? `, ${skipped} skipped` : ''}`);
+			toast.success(bulkSummary('inbox.bulk-approved-count', ok, 'inbox.bulk-skipped-count', skipped));
 			checkedIds = new Set();
 			await invalidateAll();
 		} catch (e) {
-			toast.error('Bulk approve failed', { description: (e as Error).message });
+			toast.error(t(locale, 'inbox.toast-bulk-approve-failed-title'), { description: (e as Error).message });
 		} finally {
 			bulkApproving = false;
 		}
@@ -386,12 +407,12 @@
 			};
 			const ok = data.results.filter((r) => r.status === 'ok').length;
 			const skipped = data.results.length - ok;
-			toast.success(`${ok} rescheduled${skipped > 0 ? `, ${skipped} skipped` : ''}`);
+			toast.success(bulkSummary('inbox.bulk-rescheduled-count', ok, 'inbox.bulk-skipped-count', skipped));
 			rescheduleDialogOpen = false;
 			checkedIds = new Set();
 			await invalidateAll();
 		} catch (e) {
-			toast.error('Bulk reschedule failed', { description: (e as Error).message });
+			toast.error(t(locale, 'inbox.toast-bulk-reschedule-failed-title'), { description: (e as Error).message });
 		} finally {
 			bulkRescheduling = false;
 		}
@@ -422,7 +443,7 @@
 							.catch(() => fail++)
 					)
 				);
-				toast.success(`${ok} rejected${fail > 0 ? `, ${fail} failed` : ''}`);
+				toast.success(bulkSummary('inbox.bulk-rejected-count', ok, 'inbox.bulk-failed-count', fail));
 				checkedIds = new Set();
 				await invalidateAll();
 			} finally {
@@ -493,14 +514,13 @@
 
 <PageContainer size="full">
 <Seo
-	title={pendingCount > 0 ? `Inbox (${pendingCount})` : 'Inbox'}
-	description="Review and approve drafts generated by campaign runs. Human-in-the-loop outreach."
+	title={pendingCount > 0
+		? t(locale, 'inbox.seo-title-count', { count: pendingCount })
+		: t(locale, 'nav.inbox')}
+	description={t(locale, 'inbox.seo-description')}
 />
 
-<PageHeader
-	title="Inbox"
-	description="Review drafts generated by campaign runs. Approve to unlock the compose URL, reject to dismiss. Nothing is ever sent automatically - every action goes through you."
-/>
+<PageHeader title={t(locale, 'nav.inbox')} description={t(locale, 'inbox.page-description')} />
 
 <ChatSyncStalledBanner show={!!data.chatSyncUnauthorized} />
 <ExtensionDeviceNudgeBanner kind={data.extensionNudge?.kind ?? null} orgId={data.orgId ?? null} />
@@ -515,7 +535,7 @@
 				<button
 					onclick={() => navigate({ project: null })}
 					class="hover:text-foreground text-muted-foreground ml-0.5"
-					aria-label="Clear project filter"
+					aria-label={t(locale, 'inbox.clear-project-filter')}
 				>
 					<X class="size-3" />
 				</button>
@@ -523,34 +543,53 @@
 		{/if}
 		{#if data.run && data.runInfo}
 			<Badge variant="outline" class="flex items-center gap-1.5 pr-1">
-				<span>Run #{data.run}{data.runInfo.campaignName ? ` from ${data.runInfo.campaignName}` : ''}</span>
+				<span
+					>{data.runInfo.campaignName
+						? t(locale, 'inbox.run-badge-with-campaign', {
+								run: data.run,
+								campaign: data.runInfo.campaignName,
+							})
+						: t(locale, 'inbox.run-badge', { run: data.run })}</span
+				>
 				<button
 					onclick={clearRunFilter}
 					class="hover:text-foreground text-muted-foreground ml-0.5"
-					aria-label="Clear run filter"
+					aria-label={t(locale, 'inbox.clear-run-filter')}
 				>
 					<X class="size-3" />
 				</button>
 			</Badge>
 		{:else if data.run}
 			<Badge variant="outline" class="flex items-center gap-1.5 pr-1">
-				<span>Run #{data.run}</span>
-				<button onclick={clearRunFilter} class="hover:text-foreground text-muted-foreground ml-0.5" aria-label="Clear run filter">
+				<span>{t(locale, 'inbox.run-badge', { run: data.run })}</span>
+				<button
+					onclick={clearRunFilter}
+					class="hover:text-foreground text-muted-foreground ml-0.5"
+					aria-label={t(locale, 'inbox.clear-run-filter')}
+				>
 					<X class="size-3" />
 				</button>
 			</Badge>
 		{/if}
 		{#if data.campaign && data.campaignInfo}
 			<Badge variant="outline" class="flex items-center gap-1.5 pr-1">
-				<span>Campaign: {data.campaignInfo.name}</span>
-				<button onclick={clearCampaignFilter} class="hover:text-foreground text-muted-foreground ml-0.5" aria-label="Clear campaign filter">
+				<span>{t(locale, 'inbox.campaign-label', { name: data.campaignInfo.name })}</span>
+				<button
+					onclick={clearCampaignFilter}
+					class="hover:text-foreground text-muted-foreground ml-0.5"
+					aria-label={t(locale, 'inbox.clear-campaign-filter')}
+				>
 					<X class="size-3" />
 				</button>
 			</Badge>
 		{:else if data.campaign}
 			<Badge variant="outline" class="flex items-center gap-1.5 pr-1">
-				<span>Campaign #{data.campaign}</span>
-				<button onclick={clearCampaignFilter} class="hover:text-foreground text-muted-foreground ml-0.5" aria-label="Clear campaign filter">
+				<span>{t(locale, 'inbox.campaign-badge', { id: data.campaign })}</span>
+				<button
+					onclick={clearCampaignFilter}
+					class="hover:text-foreground text-muted-foreground ml-0.5"
+					aria-label={t(locale, 'inbox.clear-campaign-filter')}
+				>
 					<X class="size-3" />
 				</button>
 			</Badge>
@@ -582,7 +621,7 @@
 			class="list-none inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border bg-background text-xs font-medium cursor-pointer hover:bg-accent/50 transition-colors [&::-webkit-details-marker]:hidden"
 		>
 			<SlidersHorizontal class="size-3.5" />
-			Filters
+			{t(locale, 'inbox.filters-summary')}
 		</summary>
 		<div
 			class="absolute right-0 mt-2 z-30 w-64 rounded-md border border-border bg-popover p-3 shadow-lg flex flex-col gap-2"
@@ -591,11 +630,11 @@
 				value={data.activeProject?.slug ?? ''}
 				onValueChange={(v) => navigate({ project: v || null })}
 				options={[
-					{ value: '', label: 'All projects' },
+					{ value: '', label: t(locale, 'inbox.all-projects') },
 					...data.projects.map((p) => ({ value: p.slug, label: p.name })),
 				]}
 				size="sm"
-				placeholder="All projects"
+				placeholder={t(locale, 'inbox.all-projects')}
 				fullWidth
 			/>
 			{#if data.platforms.length > 1}
@@ -603,11 +642,11 @@
 					value={data.activePlatform?.slug ?? ''}
 					onValueChange={(v) => navigate({ platform: v || null })}
 					options={[
-						{ value: '', label: 'All platforms' },
+						{ value: '', label: t(locale, 'inbox.all-platforms') },
 						...data.platforms.map((p) => ({ value: p.slug, label: p.slug })),
 					]}
 					size="sm"
-					placeholder="All platforms"
+					placeholder={t(locale, 'inbox.all-platforms')}
 					fullWidth
 				/>
 			{/if}
@@ -616,7 +655,7 @@
 				onValueChange={(v) => setKind(v || null)}
 				options={KINDS.map((k) => ({ value: k.value ?? '', label: k.label }))}
 				size="sm"
-				placeholder="Kind"
+				placeholder={t(locale, 'inbox.kind-placeholder')}
 				fullWidth
 			/>
 			<Button
@@ -626,7 +665,7 @@
 				class="justify-start"
 			>
 				<Keyboard class="size-4" />
-				Shortcuts
+				{t(locale, 'inbox.shortcuts-button')}
 			</Button>
 		</div>
 	</details>
@@ -642,7 +681,7 @@
 				...data.projects.map((p) => ({ value: p.slug, label: p.name })),
 			]}
 			size="sm"
-			placeholder="All projects"
+			placeholder={t(locale, 'inbox.all-projects')}
 		/>
 
 		{#if data.platforms.length > 1}
@@ -654,7 +693,7 @@
 					...data.platforms.map((p) => ({ value: p.slug, label: p.slug })),
 				]}
 				size="sm"
-				placeholder="All platforms"
+				placeholder={t(locale, 'inbox.all-platforms')}
 			/>
 		{/if}
 
@@ -662,7 +701,7 @@
 			<DropdownMenu.Trigger>
 				{#snippet child({ props })}
 					<Button {...props} variant="outline" size="sm">
-						Kind: {kindLabel}
+					{t(locale, 'inbox.kind-dropdown-label', { kind: kindLabel })}
 						<ChevronDown class="ml-1 size-3" />
 					</Button>
 				{/snippet}
@@ -680,7 +719,7 @@
 			variant="ghost"
 			size="sm"
 			onclick={() => (shortcutsOpen = true)}
-			aria-label="Show keyboard shortcuts"
+			aria-label={t(locale, 'inbox.aria-show-shortcuts')}
 		>
 			<Keyboard class="size-4" />
 		</Button>
@@ -695,20 +734,20 @@
 				window.location.href = `/api/export/drafts?${qs.toString()}`;
 			}}
 		>
-			Export CSV
+			{t(locale, 'inbox.export-csv')}
 		</Button>
 	</div>
 </div>
 
 <div class="mb-2 text-xs text-muted-foreground">
-	Showing {items.length} of {itemsTotalCount}
+	{t(locale, 'inbox.showing-count', { shown: items.length, total: itemsTotalCount })}
 </div>
 
 <Card.Root
 	class="grid grid-cols-1 lg:grid-cols-[360px_1fr] h-[calc(100vh-11rem)] min-h-[28rem] overflow-hidden"
 >
 	<aside
-		aria-label="Draft list"
+		aria-label={t(locale, 'inbox.aria-draft-list')}
 		class={[
 			'border-b lg:border-b-0 lg:border-r border-border overflow-auto relative',
 			// On < lg, hide the list when a draft is opened on the small screen.
@@ -724,11 +763,11 @@
 		{:else if items.length === 0}
 			<EmptyState
 				icon={Inbox}
-				title="No drafts yet"
-				description="Drafts land here as soon as a campaign produces them. Run a campaign or wait for the next scheduled tick."
+				title={t(locale, 'inbox.empty-title')}
+				description={t(locale, 'inbox.empty-body')}
 				class="h-full"
 			>
-				<Button variant="outline" size="sm" href="/campaigns">Go to Campaigns</Button>
+				<Button variant="outline" size="sm" href="/campaigns">{t(locale, 'inbox.go-to-campaigns')}</Button>
 			</EmptyState>
 		{:else}
 			{#each items as draft (draft.id)}
@@ -760,7 +799,7 @@
 						<Checkbox
 							checked={isChecked}
 							onCheckedChange={() => toggleCheck(draft.id)}
-							aria-label="Select draft {draft.id}"
+							aria-label={t(locale, 'inbox.aria-select-draft', { id: draft.id })}
 						/>
 					</div>
 					<div class="flex-1 min-w-0">
@@ -779,7 +818,9 @@
 			{/each}
 			{#if itemsNextCursor}
 				<div class="flex flex-col items-center gap-2 py-3">
-					<Button variant="outline" size="sm" onclick={loadMore} loading={loadingMore}>Load more</Button>
+					<Button variant="outline" size="sm" onclick={loadMore} loading={loadingMore}
+						>{t(locale, 'inbox.load-more')}</Button
+					>
 					{#if loadMoreError}
 						<div
 							role="alert"
@@ -814,10 +855,10 @@
 			type="button"
 			onclick={() => (mobileDetailOpen = false)}
 			class="lg:hidden mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-			aria-label="Back to draft list"
+			aria-label={t(locale, 'inbox.aria-back-to-list')}
 		>
 			<ArrowLeft class="size-4" />
-			Back to drafts
+			{t(locale, 'inbox.back-to-drafts')}
 		</button>
 		<DraftDetail
 			draft={selected}
@@ -834,7 +875,7 @@
 	<div
 		class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-popover border border-border rounded-xl shadow-lg px-4 py-2.5 text-sm"
 	>
-		<span class="text-muted-foreground font-medium">{checkedIds.size} selected</span>
+		<span class="text-muted-foreground font-medium">{t(locale, 'inbox.selected-count', { n: checkedIds.size })}</span>
 		<div class="w-px h-4 bg-border"></div>
 		<Button
 			size="sm"
@@ -843,9 +884,9 @@
 			disabled={bulkApproving || bulkRejecting}
 			class="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive"
 			onclick={confirmAndReject}
-			aria-label="Reject all selected drafts"
+			aria-label={t(locale, 'inbox.aria-reject-all')}
 		>
-			Reject all
+			{t(locale, 'inbox.reject-all')}
 		</Button>
 		<Button
 			size="sm"
@@ -853,19 +894,19 @@
 			loading={bulkApproving}
 			disabled={bulkApproving || bulkRejecting}
 			onclick={bulkApprove}
-			aria-label="Approve all selected drafts"
+			aria-label={t(locale, 'inbox.aria-approve-all')}
 		>
-			Approve all
+			{t(locale, 'inbox.approve-all')}
 		</Button>
-		<Button size="sm" variant="outline" onclick={openRescheduleDialog}>Reschedule</Button>
+		<Button size="sm" variant="outline" onclick={openRescheduleDialog}>{t(locale, 'inbox.reschedule')}</Button>
 		<Button
 			size="sm"
 			variant="ghost"
 			onclick={() => (checkedIds = new Set())}
-			aria-label="Cancel selection"
+			aria-label={t(locale, 'inbox.aria-cancel-selection')}
 		>
 			<X class="size-4" />
-			Cancel
+			{t(locale, 'inbox.cancel')}
 		</Button>
 	</div>
 {/if}
@@ -874,13 +915,13 @@
 <AlertDialog.Root bind:open={rescheduleDialogOpen}>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>Reschedule selected drafts</AlertDialog.Title>
+			<AlertDialog.Title>{t(locale, 'inbox.reschedule-dialog-title')}</AlertDialog.Title>
 			<AlertDialog.Description>
-				Hold {checkedIds.size} draft{checkedIds.size === 1 ? '' : 's'} back from "ready to send" until the chosen time.
+				{tn(locale, 'inbox.reschedule-dialog-body', checkedIds.size)}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<div class="mt-2">
-			<label for="reschedule-input" class="text-xs text-muted-foreground">Send after</label>
+			<label for="reschedule-input" class="text-xs text-muted-foreground">{t(locale, 'inbox.send-after-label')}</label>
 			<input
 				id="reschedule-input"
 				type="datetime-local"
@@ -889,9 +930,9 @@
 			/>
 		</div>
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Cancel>{t(locale, 'inbox.cancel')}</AlertDialog.Cancel>
 			<AlertDialog.Action onclick={bulkReschedule} disabled={bulkRescheduling}>
-				{bulkRescheduling ? 'Saving…' : 'Reschedule'}
+				{bulkRescheduling ? t(locale, 'inbox.reschedule-saving') : t(locale, 'inbox.reschedule')}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
@@ -901,18 +942,18 @@
 <AlertDialog.Root bind:open={rejectConfirmOpen}>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>Confirm rejection</AlertDialog.Title>
+			<AlertDialog.Title>{t(locale, 'inbox.reject-confirm-title')}</AlertDialog.Title>
 			<AlertDialog.Description>
 				{#if rejectBulk}
-					Reject {checkedIds.size} selected draft{checkedIds.size === 1 ? '' : 's'}? This cannot be undone.
+					{tn(locale, 'inbox.reject-confirm-bulk', checkedIds.size)}
 				{:else}
-					Reject this draft? This cannot be undone.
+					{t(locale, 'inbox.reject-confirm-single')}
 				{/if}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel onclick={() => (rejectConfirmOpen = false)}>Cancel</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={doReject} variant="destructive">Reject</AlertDialog.Action>
+			<AlertDialog.Cancel onclick={() => (rejectConfirmOpen = false)}>{t(locale, 'inbox.cancel')}</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={doReject} variant="destructive">{t(locale, 'inbox.reject-button')}</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
@@ -921,18 +962,18 @@
 <Dialog.Root bind:open={shortcutsOpen}>
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Keyboard shortcuts</Dialog.Title>
-			<Dialog.Description>Available in the inbox when not focused on an input.</Dialog.Description>
+			<Dialog.Title>{t(locale, 'inbox.shortcuts-title')}</Dialog.Title>
+			<Dialog.Description>{t(locale, 'inbox.shortcuts-description')}</Dialog.Description>
 		</Dialog.Header>
 		<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm mt-2">
 			{#each [
-				['j / ↓', 'Next draft'],
-				['k / ↑', 'Previous draft'],
-				['a', 'Approve current draft'],
-				['r', 'Reject current draft (confirm)'],
-				['e', 'Edit current draft'],
-				['o', 'Open compose URL'],
-				['?', 'Show this dialog'],
+				['j / ↓', t(locale, 'inbox.shortcut.next')],
+				['k / ↑', t(locale, 'inbox.shortcut.prev')],
+				['a', t(locale, 'inbox.shortcut.approve')],
+				['r', t(locale, 'inbox.shortcut.reject')],
+				['e', t(locale, 'inbox.shortcut.edit')],
+				['o', t(locale, 'inbox.shortcut.open-compose')],
+				['?', t(locale, 'inbox.shortcut.show-dialog')],
 			] as [key, desc] (key)}
 				<kbd class="font-mono text-xs bg-muted px-1.5 py-0.5 rounded border border-border self-center w-fit">{key}</kbd>
 				<span class="text-muted-foreground">{desc}</span>

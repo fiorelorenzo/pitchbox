@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
+  import type { Locale } from '$lib/i18n/index.js';
   import { Search, Users, MessageSquare, AlertTriangle } from '@lucide/svelte';
   import { toast } from 'svelte-sonner';
   import PageHeader from '$lib/components/PageHeader.svelte';
@@ -86,6 +87,8 @@
   };
 
   let { data }: { data: ContactsData | ThreadsData } = $props();
+
+  const locale = $derived($page.data.locale as Locale);
 
   // The tab lives in the URL (`?tab=contacts`, absent = threads) so it
   // survives reload and back/forward exactly like the filter/kind/q params
@@ -464,7 +467,7 @@
                 <span class="text-xs text-muted-foreground">
                   via {cp.userLabel(c.accountHandle)}
                   {#if subredditCtx}
-                    · {cp.primaryLabel({ kind: 'post_comment', targetUser: null, metadata: { subreddit: subredditCtx } })}
+                    · {cp.primaryLabel(locale, { kind: 'post_comment', targetUser: null, metadata: { subreddit: subredditCtx } })}
                   {:else}
                     · {c.platformSlug}
                   {/if}
@@ -487,7 +490,7 @@
                     onclick={(e) => e.stopPropagation()}
                     class="inline-flex items-center gap-1 rounded-md border border-border/60 px-2 py-0.5 text-foreground/80 transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-foreground"
                     title={c.draftKind === 'post_comment' && subredditCtx
-                      ? `Open the thread on ${cp.primaryLabel({ kind: 'post_comment', targetUser: null, metadata: { subreddit: subredditCtx } })}`
+                      ? `Open the thread on ${cp.primaryLabel(locale, { kind: 'post_comment', targetUser: null, metadata: { subreddit: subredditCtx } })}`
                       : c.chatRoomId
                         ? `Open chat with ${cp.userLabel(c.targetUser)}`
                         : `Open ${cp.userLabel(c.targetUser)}'s profile`}

@@ -17,11 +17,12 @@
  * "active" or "sent" stay static so the UI doesn't throb.
  */
 
+import { t, type Locale } from '$lib/i18n/index.js';
+
 export type Tone =
   'neutral' | 'muted' | 'emerald' | 'sky' | 'amber' | 'rose' | 'violet' | 'slate' | 'orange';
 
 export type BadgeStyle = {
-  label: string;
   tone: Tone;
   /** When true, adds a pulsing left dot (used for "running" / "active"). */
   pulse?: boolean;
@@ -111,41 +112,41 @@ export const TONE_BANNER_CLASS: Record<Tone, string> = {
 // Miss one and resolveBadge falls through to `{ label: value }`, which prints
 // the raw enum in the UI, so keep this in step with `ReplyKind` and `DraftKind`.
 export const DRAFT_KIND: Record<string, BadgeStyle> = {
-  dm: { label: 'DM', tone: 'sky' },
-  post: { label: 'Post', tone: 'violet' },
-  post_comment: { label: 'Comment', tone: 'orange' },
-  comment_reply: { label: 'Reply', tone: 'slate' },
-  reply_dm: { label: 'DM reply', tone: 'sky' },
-  reply_comment: { label: 'Comment reply', tone: 'slate' },
+  dm: { tone: 'sky' },
+  post: { tone: 'violet' },
+  post_comment: { tone: 'orange' },
+  comment_reply: { tone: 'slate' },
+  reply_dm: { tone: 'sky' },
+  reply_comment: { tone: 'slate' },
 };
 
 // The draft lifecycle: pending (amber) → approved (sky) → sent (emerald) ↗ replied (violet)
 // rejected (rose) branches off at any point.
 export const DRAFT_STATE: Record<string, BadgeStyle> = {
-  pending_review: { label: 'Pending', tone: 'amber' },
-  approved: { label: 'Approved', tone: 'sky' },
-  sent: { label: 'Sent', tone: 'emerald' },
-  replied: { label: 'Replied', tone: 'violet' },
-  rejected: { label: 'Rejected', tone: 'rose' },
+  pending_review: { tone: 'amber' },
+  approved: { tone: 'sky' },
+  sent: { tone: 'emerald' },
+  replied: { tone: 'violet' },
+  rejected: { tone: 'rose' },
   // Issue #335: the platform refused delivery, not the human - terminal like
   // rejected/sent, but slate rather than rose since nothing went wrong.
-  undeliverable: { label: 'Undeliverable', tone: 'slate' },
+  undeliverable: { tone: 'slate' },
 };
 
 // A run lifecycle mirrors draft state: queued/running → success (emerald) or
 // failed (rose). Cancelled is amber (user intervention, not an error).
 export const RUN_STATUS: Record<string, BadgeStyle> = {
-  queued: { label: 'Queued', tone: 'slate' },
-  running: { label: 'Running', tone: 'sky', pulse: true },
-  success: { label: 'Success', tone: 'emerald' },
-  failed: { label: 'Failed', tone: 'rose' },
-  cancelled: { label: 'Cancelled', tone: 'amber' },
+  queued: { tone: 'slate' },
+  running: { tone: 'sky', pulse: true },
+  success: { tone: 'emerald' },
+  failed: { tone: 'rose' },
+  cancelled: { tone: 'amber' },
 };
 
 export const CAMPAIGN_STATUS: Record<string, BadgeStyle> = {
-  active: { label: 'Active', tone: 'emerald' },
-  paused: { label: 'Paused', tone: 'slate' },
-  safety_braked: { label: 'Safety brake', tone: 'rose' },
+  active: { tone: 'emerald' },
+  paused: { tone: 'slate' },
+  safety_braked: { tone: 'rose' },
 };
 
 // A keyword watch is active by default; pausing it (isActive: false) is a
@@ -153,36 +154,36 @@ export const CAMPAIGN_STATUS: Record<string, BadgeStyle> = {
 // has hit its consecutive-failure threshold for r/{subreddit}/new.json and
 // is spacing out retries (`keyword_watches.next_attempt_after` is set).
 export const KEYWORD_WATCH_STATUS: Record<string, BadgeStyle> = {
-  active: { label: 'Active', tone: 'emerald' },
-  paused: { label: 'Paused', tone: 'slate' },
-  backing_off: { label: 'Backing off', tone: 'amber' },
+  active: { tone: 'emerald' },
+  paused: { tone: 'slate' },
+  backing_off: { tone: 'amber' },
 };
 
 // Contact history per-row status - `replied` gets its own violet so it stands
 // out from merely "sent" (the ultimate goal, not just delivery).
 export const CONTACT_STATUS: Record<string, BadgeStyle> = {
-  replied: { label: 'Replied', tone: 'violet' },
-  no_reply: { label: 'No reply yet', tone: 'muted' },
-  unchecked: { label: 'Unchecked', tone: 'muted' },
+  replied: { tone: 'violet' },
+  no_reply: { tone: 'muted' },
+  unchecked: { tone: 'muted' },
 };
 
 export const BLOCKLIST_KIND: Record<string, BadgeStyle> = {
-  subreddit: { label: 'Subreddit', tone: 'orange' },
-  user: { label: 'User', tone: 'sky' },
-  keyword: { label: 'Keyword', tone: 'slate' },
+  subreddit: { tone: 'orange' },
+  user: { tone: 'sky' },
+  keyword: { tone: 'slate' },
 };
 
 export const PLATFORM: Record<string, BadgeStyle> = {
-  reddit: { label: 'Reddit', tone: 'orange' },
+  reddit: { tone: 'orange' },
 };
 
 export const DAEMON_STATUS: Record<string, BadgeStyle> = {
-  online: { label: 'Online', tone: 'emerald' },
-  offline: { label: 'Offline', tone: 'slate' },
-  checking: { label: 'Checking…', tone: 'muted' },
+  online: { tone: 'emerald' },
+  offline: { tone: 'slate' },
+  checking: { tone: 'muted' },
   // The status poll itself could not be read (a lapsed session, a 5xx, a
   // dropped connection). That is not evidence the daemon is down.
-  unknown: { label: 'Unknown', tone: 'muted' },
+  unknown: { tone: 'muted' },
 };
 
 // The 8 timeline event kinds in the run log (runlog/EventRow.svelte and
@@ -190,59 +191,59 @@ export const DAEMON_STATUS: Record<string, BadgeStyle> = {
 // so tones are chosen to echo the concept elsewhere in the registry (e.g.
 // tool calls share the same sky as an in-flight run).
 export const EVENT_KIND: Record<string, BadgeStyle> = {
-  session: { label: 'Session', tone: 'violet' },
-  thinking: { label: 'Thinking', tone: 'slate' },
-  'tool-call': { label: 'Tool call', tone: 'sky' },
-  'tool-result': { label: 'Tool result', tone: 'emerald' },
-  assistant: { label: 'Assistant', tone: 'sky' },
-  'rate-limit': { label: 'Rate limit', tone: 'amber' },
-  unknown: { label: 'Unknown', tone: 'slate' },
+  session: { tone: 'violet' },
+  thinking: { tone: 'slate' },
+  'tool-call': { tone: 'sky' },
+  'tool-result': { tone: 'emerald' },
+  assistant: { tone: 'sky' },
+  'rate-limit': { tone: 'amber' },
+  unknown: { tone: 'slate' },
 };
 
 // Per-tool-call status inside a run log entry (ToolCallEvent.svelte), derived
 // client-side from whether a paired result has arrived yet and whether it
 // errored.
 export const TOOL_CALL_STATUS: Record<string, BadgeStyle> = {
-  pending: { label: 'Running', tone: 'amber', pulse: true },
-  ok: { label: 'OK', tone: 'emerald' },
-  error: { label: 'Error', tone: 'rose' },
+  pending: { tone: 'amber', pulse: true },
+  ok: { tone: 'emerald' },
+  error: { tone: 'rose' },
 };
 
 // Realtime connection health (daemon reachability, SSE stream), shared by
 // SystemStatusCard and SseIndicator so both read the same four-state palette
 // instead of each re-deriving it.
 export const CONNECTION_STATUS: Record<string, BadgeStyle> = {
-  live: { label: 'Live', tone: 'emerald', pulse: true },
-  warn: { label: 'Reconnecting', tone: 'amber', pulse: true },
-  down: { label: 'Offline', tone: 'rose' },
-  idle: { label: 'Connecting', tone: 'muted' },
+  live: { tone: 'emerald', pulse: true },
+  warn: { tone: 'amber', pulse: true },
+  down: { tone: 'rose' },
+  idle: { tone: 'muted' },
 };
 
 // RunLog's live SSE status text uses capitalised words, distinct casing from
 // the DB-driven `runs.status` column that RUN_STATUS above models, but the
 // same lifecycle and the same tones.
 export const RUN_LIVE_STATUS: Record<string, BadgeStyle> = {
-  Idle: { label: 'Idle', tone: 'slate' },
-  Running: { label: 'Running', tone: 'sky', pulse: true },
-  Finished: { label: 'Finished', tone: 'emerald' },
-  Failed: { label: 'Failed', tone: 'rose' },
-  Cancelled: { label: 'Cancelled', tone: 'amber' },
+  Idle: { tone: 'slate' },
+  Running: { tone: 'sky', pulse: true },
+  Finished: { tone: 'emerald' },
+  Failed: { tone: 'rose' },
+  Cancelled: { tone: 'amber' },
 };
 
 // Outgoing webhook delivery attempts (settings > notifications).
 export const WEBHOOK_DELIVERY_STATUS: Record<string, BadgeStyle> = {
-  pending: { label: 'Pending', tone: 'amber' },
-  delivered: { label: 'Delivered', tone: 'emerald' },
-  dead: { label: 'Dead', tone: 'rose' },
+  pending: { tone: 'amber' },
+  delivered: { tone: 'emerald' },
+  dead: { tone: 'rose' },
 };
 
 // Generic alert/banner severity. `info` stays neutral (no colour) to match
 // plain body text; only success/warning/error get a hue.
 export const ALERT_SEVERITY: Record<string, BadgeStyle> = {
-  info: { label: 'Info', tone: 'neutral' },
-  success: { label: 'Success', tone: 'emerald' },
-  warning: { label: 'Warning', tone: 'amber' },
-  error: { label: 'Error', tone: 'rose' },
+  info: { tone: 'neutral' },
+  success: { tone: 'emerald' },
+  warning: { tone: 'amber' },
+  error: { tone: 'rose' },
 };
 
 // A project source's own fetch state (#432, ProjectSourcesPanel.svelte):
@@ -250,9 +251,9 @@ export const ALERT_SEVERITY: Record<string, BadgeStyle> = {
 // fetch_error (including an unimplemented kind - see project-source-sync.ts),
 // 'pending' before it has ever been fetched.
 export const PROJECT_SOURCE_STATUS: Record<string, BadgeStyle> = {
-  synced: { label: 'Synced', tone: 'emerald' },
-  failed: { label: 'Failed', tone: 'rose' },
-  pending: { label: 'Never synced', tone: 'muted' },
+  synced: { tone: 'emerald' },
+  failed: { tone: 'rose' },
+  pending: { tone: 'muted' },
 };
 
 export type BadgeDomain =
@@ -292,9 +293,25 @@ export const BADGE_DOMAIN: Record<BadgeDomain, Record<string, BadgeStyle>> = {
   'project-source-status': PROJECT_SOURCE_STATUS,
 };
 
-/** Fallback for an unknown value - the raw string with neutral styling. */
+/** Fallback for an unknown value - neutral styling, no label opinion. */
 export function resolveBadge(domain: BadgeDomain, value: string): BadgeStyle {
-  return BADGE_DOMAIN[domain]?.[value] ?? { label: value, tone: 'muted' };
+  return BADGE_DOMAIN[domain]?.[value] ?? { tone: 'muted' };
+}
+
+/**
+ * The localized label for a domain/value pair (LOR-263: `badge.<domain>.<value>`
+ * in the dashboard catalogue). A value with no entry in `BADGE_DOMAIN` - an
+ * enum this registry hasn't caught up with yet - passes the raw identifier
+ * through rather than a translated guess, the same fallback `resolveBadge`
+ * already used for its tone.
+ */
+export function badgeLabel(
+  locale: Locale | null | undefined,
+  domain: BadgeDomain,
+  value: string,
+): string {
+  if (!BADGE_DOMAIN[domain]?.[value]) return value;
+  return t(locale, `badge.${domain}.${value}`);
 }
 
 /** Resolve just the tone for a domain/value pair, for callers that need the

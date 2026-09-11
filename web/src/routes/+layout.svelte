@@ -9,8 +9,11 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import { Menu, X } from '@lucide/svelte';
 	import { page } from '$app/stores';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	let { children, data } = $props();
+
+	const locale = $derived($page.data.locale as Locale);
 
 	// The app shell (navigation, sign-out, notification polling, daemon health,
 	// the SSE stream, the command palette) is for someone who is signed in. On
@@ -68,7 +71,7 @@
 			type="button"
 			onclick={() => (sidebarOpen = true)}
 			class="md:hidden fixed top-3 left-3 z-40 inline-flex items-center justify-center size-9 rounded-md border border-border bg-background/90 backdrop-blur shadow-sm hover:bg-accent/60 transition-colors"
-			aria-label="Open navigation"
+			aria-label={t(locale, 'nav.aria-open')}
 			aria-expanded={sidebarOpen}
 		>
 			<Menu class="size-4" />
@@ -78,7 +81,7 @@
 		{#if sidebarOpen}
 			<button
 				type="button"
-				aria-label="Close navigation"
+				aria-label={t(locale, 'nav.aria-close')}
 				onclick={() => (sidebarOpen = false)}
 				class="md:hidden fixed inset-0 z-40 bg-overlay/50 backdrop-blur-sm"
 			></button>
@@ -102,7 +105,7 @@
 					type="button"
 					onclick={() => (sidebarOpen = false)}
 					class="md:hidden absolute top-3 right-3 z-10 inline-flex items-center justify-center size-8 rounded-md hover:bg-accent/60 transition-colors"
-					aria-label="Close navigation"
+					aria-label={t(locale, 'nav.aria-close')}
 				>
 					<X class="size-4" />
 				</button>

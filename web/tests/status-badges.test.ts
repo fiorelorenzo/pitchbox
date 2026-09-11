@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { DRAFT_KINDS } from '@pitchbox/shared/quota-types';
 import { REPLY_KINDS } from '@pitchbox/shared/reply-drafter';
-import { DRAFT_KIND, resolveBadge, BADGE_DOMAIN } from '../src/lib/config/status-badges';
+import {
+  DRAFT_KIND,
+  resolveBadge,
+  badgeLabel,
+  BADGE_DOMAIN,
+} from '../src/lib/config/status-badges';
 
-// `resolveBadge` falls through to `{ label: value, tone: 'muted' }` for a value
-// it does not know, which is the right behaviour for genuinely unknown data but
+// `badgeLabel` falls through to the raw value for one `resolveBadge` does not
+// know either, which is the right behaviour for genuinely unknown data but
 // prints the raw enum when a real kind is simply missing from the registry.
 // That is how `reply_dm` and `reply_comment` came to render as literal
 // `reply_dm` on the thread detail page (#258). The registry has to stay in step
@@ -19,9 +24,9 @@ describe('draft kind badge registry', () => {
 
   it('never renders a raw enum value as a label', () => {
     for (const kind of everyKind) {
-      const badge = resolveBadge('draft-kind', kind);
-      expect(badge.label).not.toBe(kind);
-      expect(badge.label).not.toMatch(/_/);
+      const label = badgeLabel('en', 'draft-kind', kind);
+      expect(label).not.toBe(kind);
+      expect(label).not.toMatch(/_/);
     }
   });
 
@@ -35,9 +40,8 @@ describe('draft kind badge registry', () => {
   });
 
   it('still degrades gracefully for a value it has never seen', () => {
-    const badge = resolveBadge('draft-kind', 'carrier_pigeon');
-    expect(badge.label).toBe('carrier_pigeon');
-    expect(badge.tone).toBe('muted');
+    expect(badgeLabel('en', 'draft-kind', 'carrier_pigeon')).toBe('carrier_pigeon');
+    expect(resolveBadge('draft-kind', 'carrier_pigeon').tone).toBe('muted');
   });
 
   it('exposes draft-kind through the domain registry the components use', () => {

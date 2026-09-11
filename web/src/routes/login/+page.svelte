@@ -7,8 +7,11 @@
 	import { toast } from 'svelte-sonner';
 	import Seo from '$lib/components/Seo.svelte';
 	import { TONE_TEXT_CLASS } from '$lib/config/status-badges';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	let { data }: { data: { authOn: boolean; firstUser: boolean } } = $props();
+
+	const locale = $derived($page.data.locale as Locale);
 
 	let username = $state('');
 	let password = $state('');
@@ -24,7 +27,11 @@
 				body: JSON.stringify({ username, password }),
 			});
 			if (!res.ok) {
-				toast.error(data.firstUser ? 'Could not create user' : 'Invalid credentials');
+				toast.error(
+					data.firstUser
+						? t(locale, 'login.error-create-failed')
+						: t(locale, 'login.error-invalid-credentials'),
+				);
 				return;
 			}
 			const next = $page.url.searchParams.get('next') || '/';
@@ -36,53 +43,56 @@
 </script>
 
 <Seo
-	title={data.authOn ? 'Sign in' : 'Authentication disabled'}
-	description="Sign in to Pitchbox"
+	title={data.authOn ? t(locale, 'login.seo-title') : t(locale, 'auth.disabled-seo-title')}
+	description={t(locale, 'login.seo-description')}
 />
 
 <div class="min-h-screen flex items-center justify-center bg-background p-6">
 	<Card.Root class="w-full max-w-sm">
 		{#if !data.authOn}
 			<Card.Header>
-				<Card.Title>Authentication is disabled</Card.Title>
+				<Card.Title>{t(locale, 'auth.disabled-title')}</Card.Title>
 				<p class="text-xs {TONE_TEXT_CLASS.amber}">
-					This instance runs with PITCHBOX_AUTH off, so there is no account to sign in to. Set
-					PITCHBOX_AUTH=on in your environment to enable sign-in.
+					{t(locale, 'login.disabled-body')}
 				</p>
 			</Card.Header>
 			<Card.Content>
-				<Button href="/" variant="outline" class="w-full">Go to Pitchbox</Button>
+				<Button href="/" variant="outline" class="w-full">{t(locale, 'auth.go-to-app')}</Button>
 			</Card.Content>
 		{:else}
 			<Card.Header>
-				<Card.Title>{data.firstUser ? 'Create the first user' : 'Sign in to Pitchbox'}</Card.Title>
+				<Card.Title
+					>{data.firstUser
+						? t(locale, 'login.create-first-user-title')
+						: t(locale, 'login.sign-in-title')}</Card.Title
+				>
 				{#if data.firstUser}
 					<p class="text-xs text-muted-foreground">
-						No user exists yet. The credentials you enter below will create the admin account.
+						{t(locale, 'login.first-user-hint')}
 					</p>
 				{/if}
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-3">
 				<label class="flex flex-col gap-1 text-xs">
-					Username
+					{t(locale, 'login.username-label')}
 					<Input bind:value={username} autocomplete="username" />
 				</label>
 				<label class="flex flex-col gap-1 text-xs">
-					Password
+					{t(locale, 'login.password-label')}
 					<Input type="password" bind:value={password} autocomplete="current-password" />
 				</label>
 				<Button onclick={submit} disabled={busy || !username || password.length < 8}>
-					{data.firstUser ? 'Create' : 'Sign in'}
+					{data.firstUser ? t(locale, 'login.create-button') : t(locale, 'login.sign-in-button')}
 				</Button>
 			{#if !data.firstUser}
 				<p class="text-center text-xs text-muted-foreground">
-					Need an account? <a
+					{t(locale, 'login.need-account')} <a
 						href={`/register?next=${encodeURIComponent($page.url.searchParams.get('next') || '/')}`}
-						class="underline">Create one</a
+						class="underline">{t(locale, 'login.create-account-link')}</a
 					>
 				</p>
 				<p class="text-center text-xs text-muted-foreground">
-					<a href="/reset" class="underline">Forgot your password?</a>
+					<a href="/reset" class="underline">{t(locale, 'login.forgot-password-link')}</a>
 				</p>
 			{/if}
 			</Card.Content>

@@ -1,4 +1,5 @@
 import { registerPresenter, type Presenter, type DraftLike } from '../presenter';
+import { t, type Locale } from '$lib/i18n/index.js';
 
 function subredditOf(d: DraftLike): string | null {
   const md = d.metadata as { subreddit?: unknown } | null;
@@ -13,28 +14,28 @@ const DM_SHAPED = new Set(['dm', 'reply_dm']);
 // Honest, punctuation-free fallback when neither a subreddit nor a recipient
 // is available. Kept per-kind so the label still says something about what
 // the draft is, instead of a bare "Reddit".
-function fallbackLabel(kind: string): string {
+function fallbackLabel(locale: Locale | null | undefined, kind: string): string {
   switch (kind) {
     case 'dm':
-      return 'Reddit DM';
+      return t(locale, 'presenter.reddit.kind.dm');
     case 'reply_dm':
-      return 'Reddit DM reply';
+      return t(locale, 'presenter.reddit.kind.reply_dm');
     case 'post':
-      return 'Reddit post';
+      return t(locale, 'presenter.reddit.kind.post');
     case 'post_comment':
-      return 'Reddit comment';
+      return t(locale, 'presenter.reddit.kind.post_comment');
     case 'comment_reply':
     case 'reply_comment':
-      return 'Reddit reply';
+      return t(locale, 'presenter.reddit.kind.comment_reply');
     default:
-      return 'Reddit draft';
+      return t(locale, 'presenter.reddit.kind.default');
   }
 }
 
 export const redditPresenter: Presenter = {
-  primaryLabel(d) {
+  primaryLabel(locale, d) {
     if (DM_SHAPED.has(d.kind)) {
-      return d.targetUser ? `u/${d.targetUser}` : fallbackLabel(d.kind);
+      return d.targetUser ? `u/${d.targetUser}` : fallbackLabel(locale, d.kind);
     }
     const subreddit = subredditOf(d);
     if (subreddit) return `r/${subreddit}`;
@@ -50,13 +51,13 @@ export const redditPresenter: Presenter = {
       }
       return `u/${d.targetUser}`;
     }
-    return fallbackLabel(d.kind);
+    return fallbackLabel(locale, d.kind);
   },
   userLabel: (handle) => `u/${handle}`,
-  eventLabel(event) {
-    return event === 'armed' ? 'Send clicked on Reddit' : null;
+  eventLabel(locale, event) {
+    return event === 'armed' ? t(locale, 'presenter.reddit.event-armed') : null;
   },
-  replyActionLabel: () => 'Reply on Reddit',
+  replyActionLabel: (locale) => t(locale, 'presenter.reddit.reply-action'),
 };
 
 registerPresenter('reddit', redditPresenter);

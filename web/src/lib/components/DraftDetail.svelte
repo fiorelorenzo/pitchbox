@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Clipboard, Check, Send, ExternalLink, MessageSquare } from '@lucide/svelte';
+	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import { invalidateAll } from '$app/navigation';
 	import { composeHref } from '$lib/utils/compose-url';
@@ -26,6 +27,7 @@
 		DETERMINISTIC_QUALITY_MODEL,
 		type QualityRubric,
 	} from '@pitchbox/shared/quality-bands';
+	import { t, type Locale } from '$lib/i18n/index.js';
 
 	// scoreBand's band names are a shared-package contract (not the design
 	// registry's Tone names) - mirrors DraftListItem's own translation table.
@@ -85,6 +87,8 @@
 		// should open its inline editor. Consumed and reset to null below.
 		editRequestId?: number | null;
 	} = $props();
+
+	const locale = $derived($page.data.locale as Locale);
 
 	type LatestReply = {
 		body: string;
@@ -375,7 +379,7 @@
 	};
 
 	function eventLabel(event: string): string {
-		const fromPresenter = getPresenter(draft?.platformSlug ?? null).eventLabel(event);
+		const fromPresenter = getPresenter(draft?.platformSlug ?? null).eventLabel(locale, event);
 		return fromPresenter ?? GENERIC_EVENT_LABEL[event] ?? event;
 	}
 
@@ -419,7 +423,7 @@
 </script>
 
 {#if draft}
-	{@const primary = getPresenter(draft.platformSlug).primaryLabel(draft)}
+	{@const primary = getPresenter(draft.platformSlug).primaryLabel(locale, draft)}
 	{@const metaSegments = [
 		...(draft.fitScore != null ? [{ key: 'fit', text: `fit ${draft.fitScore}/5`, href: undefined }] : []),
 		{ key: 'run', text: `run #${draft.runId}`, href: `/inbox?run=${draft.runId}` },
@@ -697,7 +701,7 @@
 							class="shrink-0"
 						>
 							<MessageSquare class="size-3.5" />
-							{getPresenter(draft.platformSlug).replyActionLabel()}
+							{getPresenter(draft.platformSlug).replyActionLabel(locale)}
 						</Button>
 					</div>
 					<p class="mt-1 whitespace-pre-wrap text-sm">{latestReply.body}</p>

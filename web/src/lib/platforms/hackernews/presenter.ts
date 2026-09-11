@@ -1,4 +1,5 @@
 import { registerPresenter, type Presenter, type DraftLike } from '../presenter';
+import { t } from '$lib/i18n/index.js';
 
 function storyIdOf(d: DraftLike): string | null {
   const md = d.metadata as { itemId?: unknown; storyId?: unknown } | null;
@@ -8,16 +9,16 @@ function storyIdOf(d: DraftLike): string | null {
 }
 
 export const hackernewsPresenter: Presenter = {
-  primaryLabel(d) {
+  primaryLabel(locale, d) {
     // HN has no DMs - every draft is a comment on a story.
     const id = storyIdOf(d);
-    return id ? `HN #${id}` : 'HN story';
+    return id ? `HN #${id}` : t(locale, 'presenter.hackernews.story-fallback');
   },
   userLabel: (handle) => handle,
-  eventLabel(event) {
-    return event === 'armed' ? 'Send clicked on Hacker News' : null;
+  eventLabel(locale, event) {
+    return event === 'armed' ? t(locale, 'presenter.hackernews.event-armed') : null;
   },
-  replyActionLabel: () => 'Reply on Hacker News',
+  replyActionLabel: (locale) => t(locale, 'presenter.hackernews.reply-action'),
 };
 
 registerPresenter('hackernews', hackernewsPresenter);
