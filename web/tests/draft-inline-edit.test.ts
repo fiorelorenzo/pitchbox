@@ -9,7 +9,7 @@ async function reset() {
   );
 }
 
-async function seed(state: string) {
+async function seed(state: string, overrides: { body?: string; metadata?: unknown } = {}) {
   const db = getDb();
   const [org] = await db
     .select({ id: schema.organizations.id })
@@ -43,9 +43,10 @@ async function seed(state: string) {
       platformId: platform.id,
       accountId: account.id,
       kind: 'dm',
-      body: 'original body',
+      body: overrides.body ?? 'original body',
       targetUser: 'someone',
       state,
+      ...(overrides.metadata !== undefined ? { metadata: overrides.metadata } : {}),
     })
     .returning();
   return { draft };
@@ -101,5 +102,54 @@ describe('PATCH /api/drafts/[id]', () => {
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error).toBe('state_locked');
+  });
+
+  it('rewrites metadata.styleFindings from the edited body, dropping a fixed finding', async () => {
+    const { draft } = await seed('pending_review', {
+      body: 'Hope this helps with your setup.',
+      metadata: {
+        styleFindings: [
+          {
+            ruleId: 'wrapup-closer',
+            message: 'Wrap-up closer: house style bans this as a machine-written tell.',
+            span: 'Hope this helps',
+          },
+        ],
+      },
+    });
+    const res = await PATCH({
+      params: { id: String(draft.id) },
+      request: makeRequest({ body: 'Thanks for reading, see you around.', version: draft.version }),
+      locals: {},
+    } as never);
+    expect(res.status).toBe(200);
+
+    const [fresh] = await getDb()
+      .select()
+      .from(schema.drafts)
+      .where(eq(schema.drafts.id, draft.id));
+    expect(fresh.metadata).toEqual({});
+  });
+
+  it('adds a fresh style finding when the edited body introduces one', async () => {
+    const { draft } = await seed('pending_review', { body: 'A clean line with no tells.' });
+    const res = await PATCH({
+      params: { id: String(draft.id) },
+      request: makeRequest({
+        body: 'At the end of the day, hope this helps.',
+        version: draft.version,
+      }),
+      locals: {},
+    } as never);
+    expect(res.status).toBe(200);
+
+    const [fresh] = await getDb()
+      .select()
+      .from(schema.drafts)
+      .where(eq(schema.drafts.id, draft.id));
+    const findings = (fresh.metadata as { styleFindings?: Array<{ ruleId: string; span: string }> })
+      .styleFindings;
+    expect(findings).toBeDefined();
+    expect(findings?.some((f) => f.ruleId === 'wrapup-closer')).toBe(true);
   });
 });

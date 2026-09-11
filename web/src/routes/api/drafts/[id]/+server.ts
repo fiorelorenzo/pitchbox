@@ -6,6 +6,7 @@ import { updateDraftWithVersion } from '../../../../lib/server/draft-state.js';
 import { emit } from '../../../../lib/server/events.js';
 import { requireOrgId } from '$lib/server/auth.js';
 import { draftBelongsToOrg } from '@pitchbox/shared/orgs';
+import { checkStyle } from '@pitchbox/shared/style-check';
 
 // Inline body edit before approval. Allowed only while the draft is in
 // `proposed` or `pending_review`. Bumps version + sets body_edited and emits a
@@ -39,9 +40,25 @@ export async function PATCH(event: RequestEvent) {
   const expectedVersion = typeof payload.version === 'number' ? payload.version : draft.version;
   const priorBody = draft.body;
 
+  // LOR-222: an edit is not run back through `enforceHouseStyle` (no model
+  // call on this path, by design - see shared/src/style-check.ts), but the
+  // stale findings from the pre-edit body must not linger and point the
+  // reviewer at text that no longer exists. `checkStyle` is pure and cheap,
+  // so it runs unconditionally, same as `drafts:create` does at write time.
+  const newFindings = checkStyle(newBody).map((f) => ({
+    ruleId: f.ruleId,
+    message: f.message,
+    span: f.span,
+  }));
+  const restMetadata: Record<string, unknown> = { ...(draft.metadata as Record<string, unknown>) };
+  delete restMetadata.styleFindings;
+  const newMetadata =
+    newFindings.length > 0 ? { ...restMetadata, styleFindings: newFindings } : restMetadata;
+
   const res = await updateDraftWithVersion(id, expectedVersion, {
     body: newBody,
     bodyEdited: true,
+    metadata: newMetadata,
   });
   if (res.kind === 'conflict') {
     return json(
