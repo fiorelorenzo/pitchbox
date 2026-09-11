@@ -420,7 +420,9 @@ describe('companion/voice actions', () => {
     // both locales renders as the bare key on the page.
     for (const locale of LOCALES) {
       expect(
-        dictionariesForTesting[locale][`companion.voice.import-error.${result.data.importErrorCode}`],
+        dictionariesForTesting[locale][
+          `companion.voice.import-error.${result.data.importErrorCode}`
+        ],
       ).toBeTruthy();
     }
   });
@@ -436,7 +438,9 @@ describe('companion/voice actions', () => {
     expect(result.data.importErrorCode).toBe('missing-basic-archive');
     for (const locale of LOCALES) {
       expect(
-        dictionariesForTesting[locale][`companion.voice.import-error.${result.data.importErrorCode}`],
+        dictionariesForTesting[locale][
+          `companion.voice.import-error.${result.data.importErrorCode}`
+        ],
       ).toBeTruthy();
     }
   });
