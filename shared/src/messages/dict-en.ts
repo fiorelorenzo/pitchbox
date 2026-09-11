@@ -82,4 +82,38 @@ export const en = {
     "You've been invited to join {orgName} on Pitchbox as {role}.\n\n" +
     'Accept the invite: {url}\n\n' +
     "This invite expires on {expiresAt}. If you weren't expecting this, you can ignore this email.",
+
+  // Usage-threshold notifications (LOR-288, `shared/src/usage-notifications.ts`):
+  // a `notifications` row is organization-wide and its readers do not all
+  // share one locale, so these render at read time in the reader's own
+  // locale (`shared/src/notifications.ts`'s `renderNotification`) rather
+  // than once at write time - see docs/design/DECISIONS.md. One key pair
+  // per metered axis rather than one template with an interpolated label,
+  // since the label itself needs translating and `t()`'s interpolation is
+  // flat string substitution, not a nested lookup.
+  'usageNotification.title.runs': '{threshold}% of your agent runs limit',
+  'usageNotification.title.suggestions': '{threshold}% of your assist suggestions limit',
+  'usageNotification.title.projects': '{threshold}% of your projects limit',
+  'usageNotification.title.seats': '{threshold}% of your seats limit',
+  'usageNotification.title.extensionDevices': '{threshold}% of your paired devices limit',
+  'usageNotification.title.costUsd': '{threshold}% of your model spend limit',
+
+  'usageNotification.body.runs':
+    'You have used {usedText} of {limitText} agent runs for the period ending {periodEnd}. ' +
+    'Upgrade your plan from Settings > Billing before it starts refusing requests.',
+  'usageNotification.body.suggestions':
+    'You have used {usedText} of {limitText} assist suggestions for the period ending {periodEnd}. ' +
+    'Upgrade your plan from Settings > Billing before it starts refusing requests.',
+  'usageNotification.body.projects':
+    'You have used {usedText} of {limitText} projects for the period ending {periodEnd}. ' +
+    'Upgrade your plan from Settings > Billing before it starts refusing requests.',
+  'usageNotification.body.seats':
+    'You have used {usedText} of {limitText} seats for the period ending {periodEnd}. ' +
+    'Upgrade your plan from Settings > Billing before it starts refusing requests.',
+  'usageNotification.body.extensionDevices':
+    'You have used {usedText} of {limitText} paired devices for the period ending {periodEnd}. ' +
+    'Upgrade your plan from Settings > Billing before it starts refusing requests.',
+  'usageNotification.body.costUsd':
+    'You have used {usedText} of {limitText} model spend for the period ending {periodEnd}. ' +
+    'Upgrade your plan from Settings > Billing before it starts refusing requests.',
 } satisfies Dict;

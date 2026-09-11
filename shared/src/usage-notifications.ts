@@ -24,6 +24,7 @@ import { schema } from './db/client.js';
 import { notify } from './notifications.js';
 import type { OrgUsageSnapshot, UsageMetric } from './usage.js';
 import type { Period } from './org-quota.js';
+import { t, DEFAULT_LOCALE } from './messages/index.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = PgDatabase<any, any, any>;
@@ -46,15 +47,6 @@ const METERED_AXES = [
   'costUsd',
 ] as const;
 type MeteredAxis = (typeof METERED_AXES)[number];
-
-const AXIS_LABELS: Record<MeteredAxis, string> = {
-  runs: 'agent runs',
-  suggestions: 'assist suggestions',
-  projects: 'projects',
-  seats: 'seats',
-  extensionDevices: 'paired devices',
-  costUsd: 'model spend',
-};
 
 /**
  * At 80% and 100% of any metered axis in `usage`, emit one
@@ -115,7 +107,6 @@ export async function checkUsageThresholds(
     if (existingKeys.has(dedupeKey)) continue;
     existingKeys.add(dedupeKey); // guard against this same loop double-firing
 
-    const label = AXIS_LABELS[axis];
     // costUsd reads as a dollar figure, every other axis as a whole count -
     // both formatted together so the ternary isn't repeated per value.
     const { used: usedText, limit: limitText } =
@@ -127,16 +118,30 @@ export async function checkUsageThresholds(
           };
     const periodEndDate = periodEnd.slice(0, 10);
 
+    // Per-axis keys rather than one template with an interpolated label:
+    // the label itself needs its own translation, and `interpolate()`
+    // only does flat string substitution, so re-resolving a label per
+    // locale inside a shared template would need a second, nested `t()`
+    // call this avoids entirely - the same "dynamic key from a literal
+    // union" shape `dict-en.ts`'s own `api.uploads.reason.*` already
+    // uses. `title`/`body` below stay the `DEFAULT_LOCALE` rendering,
+    // read by the outgoing webhook payload below and by any consumer
+    // that reads the raw columns without going through
+    // `renderNotification`; `payload.i18n*` is what a reader-locale
+    // render (`shared/src/notifications.ts`'s `renderNotification`)
+    // uses instead - see docs/design/DECISIONS.md.
+    const titleKey = `usageNotification.title.${axis}`;
+    const titleParams = { threshold };
+    const bodyKey = `usageNotification.body.${axis}`;
+    const bodyParams = { usedText, limitText, periodEnd: periodEndDate };
+
     await notify(
       db,
       {
         kind: USAGE_THRESHOLD_NOTIFICATION_KIND,
-        title: `${threshold}% of your ${label} limit`,
+        title: t(DEFAULT_LOCALE, titleKey, titleParams),
         severity: threshold >= 100 ? 'warning' : 'info',
-        body:
-          `You have used ${usedText} of ${limitText} ${label} for the period ending ` +
-          `${periodEndDate}. Upgrade your plan from Settings > Billing before it starts ` +
-          `refusing requests.`,
+        body: t(DEFAULT_LOCALE, bodyKey, bodyParams),
         payload: {
           dedupeKey,
           metric: axis,
@@ -144,6 +149,10 @@ export async function checkUsageThresholds(
           used: metric.used,
           limit: metric.limit,
           periodEnd,
+          i18nTitleKey: titleKey,
+          i18nTitleParams: titleParams,
+          i18nBodyKey: bodyKey,
+          i18nBodyParams: bodyParams,
         },
       },
       orgId,

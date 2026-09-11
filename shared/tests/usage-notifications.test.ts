@@ -13,7 +13,7 @@ import {
   checkUsageThresholds,
   USAGE_THRESHOLD_NOTIFICATION_KIND,
 } from '../src/usage-notifications.js';
-import { saveWebhooks } from '../src/notifications.js';
+import { saveWebhooks, renderNotification } from '../src/notifications.js';
 import type { Entitlements } from '../src/plans.js';
 import { getOrgUsage } from '../src/usage.js';
 import type { OrgUsageSnapshot, UsageMetric } from '../src/usage.js';
@@ -214,6 +214,63 @@ describe('checkUsageThresholds: copy and delivery', () => {
       .from(schema.webhookDeliveries)
       .where(eq(schema.webhookDeliveries.organizationId, orgId));
     expect(deliveries).toHaveLength(0);
+  });
+});
+
+describe('checkUsageThresholds: locale rendering (LOR-288)', () => {
+  it("the same row renders in each reader's own locale, English and Italian, with the machine payload untouched", async () => {
+    const orgId = await makeOrg();
+    await checkUsageThresholds(getDb(), orgId, makeUsage({ costUsd: metric(45.5, 50) }), PERIOD_A);
+    const [row] = await thresholdNotificationsFor(orgId);
+
+    // Two readers of the same org, two different `event.locals.locale`
+    // values - exactly the scenario a locale baked in at write time
+    // cannot serve both of.
+    const en = renderNotification(row, 'en');
+    expect(en.title).toBe('80% of your model spend limit');
+    expect(en.body).toContain('model spend');
+    expect(en.body).toContain('$45.50');
+    expect(en.body).toContain('$50.00');
+    expect(en.body).toContain('2026-02-01');
+
+    const it = renderNotification(row, 'it');
+    expect(it.title).toBe('80% del limite di spesa sui modelli');
+    expect(it.body).toContain('spesa sui modelli');
+    expect(it.body).toContain('$45.50');
+    expect(it.body).toContain('$50.00');
+    expect(it.body).toContain('2026-02-01');
+
+    // Rendered in two different locales, not the same fixed sentence.
+    expect(it.title).not.toBe(en.title);
+    expect(it.body).not.toBe(en.body);
+
+    // The machine-readable payload is locale-independent and untouched by
+    // rendering in either language.
+    expect(row.payload).toMatchObject({
+      metric: 'costUsd',
+      threshold: 80,
+      periodEnd: PERIOD_A.end.toISOString(),
+    });
+  });
+
+  it('a legacy row with no i18n key - the pre-LOR-288 shape - renders its stored title/body unchanged in every locale', () => {
+    // Simulates a row written before this change: no i18n* payload keys,
+    // just the raw title/body a reader already saw - renderNotification
+    // must return that unchanged, never a blank or a raw key name.
+    const legacyRow = {
+      title: '80% of your seats limit',
+      body: 'You have used 4 of 5 seats for the period ending 2026-02-01.',
+      payload: { metric: 'seats', threshold: 80, periodEnd: '2026-02-01T00:00:00.000Z' },
+    };
+
+    expect(renderNotification(legacyRow, 'en')).toEqual({
+      title: legacyRow.title,
+      body: legacyRow.body,
+    });
+    expect(renderNotification(legacyRow, 'it')).toEqual({
+      title: legacyRow.title,
+      body: legacyRow.body,
+    });
   });
 });
 

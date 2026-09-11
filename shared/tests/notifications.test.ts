@@ -9,7 +9,9 @@ import {
   markAllRead,
   saveWebhooks,
   loadWebhooks,
+  renderNotification,
 } from '../src/notifications.js';
+import { t, DEFAULT_LOCALE } from '../src/messages/index.js';
 
 async function reset() {
   await getDb().execute(sql`TRUNCATE notifications RESTART IDENTITY CASCADE`);
@@ -85,6 +87,42 @@ describe('shared/notifications', () => {
     await markAllRead(getDb(), orgA);
     expect(await countUnread(getDb(), orgA)).toBe(0);
     expect(await countUnread(getDb(), orgB)).toBe(2);
+  });
+
+  it('renderNotification re-renders a keyed row per reader locale, and returns a legacy row unchanged', async () => {
+    const orgId = await defaultOrgId();
+    // Any kind may adopt the LOR-288 payload convention, not just
+    // checkUsageThresholds's - reusing an existing catalogue key here
+    // keeps this test from depending on usage-notifications' own keys.
+    await notify(
+      getDb(),
+      {
+        kind: 'test.keyed',
+        title: t(DEFAULT_LOCALE, 'api.runner_not_allowed', { runner: 'claude' }),
+        payload: {
+          i18nTitleKey: 'api.runner_not_allowed',
+          i18nTitleParams: { runner: 'claude' },
+        },
+      },
+      orgId,
+    );
+    const [row] = await listRecent(getDb(), orgId);
+
+    // Two readers of this org, two different resolved locales - both
+    // reading the one row that was ever written.
+    expect(renderNotification(row, 'en').title).toBe(
+      'Agent runner "claude" is not available in this deployment\'s edition.',
+    );
+    expect(renderNotification(row, 'it').title).toBe(
+      'Il runner "claude" non è disponibile per questa installazione.',
+    );
+
+    // A legacy row - no i18n* payload key at all - renders its stored
+    // title/body unchanged in every locale, never blanked and never a
+    // raw key name.
+    const legacyRow = { title: 'hello', body: null, payload: {} };
+    expect(renderNotification(legacyRow, 'en')).toEqual({ title: 'hello', body: null });
+    expect(renderNotification(legacyRow, 'it')).toEqual({ title: 'hello', body: null });
   });
 });
 
