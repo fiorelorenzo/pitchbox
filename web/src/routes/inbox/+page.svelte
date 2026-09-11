@@ -708,6 +708,7 @@
 	class="grid grid-cols-1 lg:grid-cols-[360px_1fr] h-[calc(100vh-11rem)] min-h-[28rem] overflow-hidden"
 >
 	<aside
+		aria-label="Draft list"
 		class={[
 			'border-b lg:border-b-0 lg:border-r border-border overflow-auto relative',
 			// On < lg, hide the list when a draft is opened on the small screen.
