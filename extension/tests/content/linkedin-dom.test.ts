@@ -444,8 +444,8 @@ describe('compliance boundary: this module reads the DOM and nothing else', () =
   // #303's scope is the DOM module only; #308 generalises this check across
   // extension/src/ in CI. This local assertion just proves linkedin-dom.ts
   // itself never crosses the line docs/linkedin-integration-design.md draws:
-  // no request toward linkedin.com, no cookie or storage read, no synthetic
-  // interaction.
+  // no request toward linkedin.com, no document.cookie/chrome.cookies/
+  // localStorage/sessionStorage read, no synthetic interaction.
   const source = linkedinDomSource;
 
   it('never calls fetch or XMLHttpRequest', () => {

@@ -12,7 +12,7 @@ So there is nothing on linkedin.com for a Pitchbox server to call or scrape. The
 
 Section 8.2 of LinkedIn's User Agreement prohibits scraping, browser plugins used to scrape, and bots that create, comment on, like or share content on a member's behalf. That is not a technicality Pitchbox works around: it is the reason the LinkedIn integration is shaped the way it is. A restricted Reddit account costs a throwaway handle; a restricted LinkedIn account costs a real professional identity, its connections and its message history. So the rules below are prohibitions, not guidance.
 
-- **No LinkedIn session credential ever leaves the browser.** No `li_at`, no CSRF token, no cookie or storage value read and transmitted anywhere.
+- **No LinkedIn session credential ever leaves the browser.** No `li_at`, no CSRF token, no `document.cookie`, `localStorage`, or `sessionStorage` value read and transmitted anywhere.
 - **No request to linkedin.com is ever initiated by Pitchbox.** The extension reads only the DOM the human's own navigation already rendered: no fetch, no background polling, no voluntary navigation to a LinkedIn URL.
 - **No synthetic interaction.** Pitchbox never calls `.click()` on a LinkedIn control and never dispatches a synthetic submit. It may insert drafted text into a composer the human already opened, and nothing more. The human presses LinkedIn's own button, always.
 - **No server-side automation of linkedin.com.** No Playwright, no headless browser, no stealth stack pointed at LinkedIn, in any edition.

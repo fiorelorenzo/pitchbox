@@ -43,7 +43,7 @@ describe('rule 1: no fetch/XMLHttpRequest/sendBeacon toward linkedin/licdn', () 
   });
 });
 
-describe('rule 2: no cookie/storage read in a LinkedIn content script', () => {
+describe('rule 2: no document.cookie/chrome.cookies/localStorage/sessionStorage read in a LinkedIn content script', () => {
   const manifestPath = path.join(FIXTURES, 'rule2-content-script-storage', 'manifest.config.ts');
 
   it('flags document.cookie in a file the fixture manifest registers as a LinkedIn content script', async () => {
