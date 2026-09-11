@@ -13,6 +13,10 @@
   import Seo from '$lib/components/Seo.svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
+  import { page } from '$app/stores';
+  import { t, type Locale } from '$lib/i18n/index.js';
+
+  const locale = $derived($page.data.locale as Locale);
 
   type PlanId = 'free' | 'solo' | 'growth' | 'scale';
   type OrgPlanRow = {
@@ -48,14 +52,16 @@
         body: JSON.stringify({ orgId: grantOrgId, planId: grantPlanId, reason: grantReason.trim() }),
       });
       if (!res.ok) {
-        toast.error('Could not grant that plan');
+        toast.error(t(locale, 'settings.admin.plan-grants.toast-grant-error'));
         return;
       }
-      toast.success(`${planLabel(grantPlanId)} granted`);
+      toast.success(
+        t(locale, 'settings.admin.plan-grants.toast-grant-success', { plan: planLabel(grantPlanId) }),
+      );
       grantReason = '';
       await invalidateAll();
     } catch {
-      toast.error('Could not grant that plan');
+      toast.error(t(locale, 'settings.admin.plan-grants.toast-grant-error'));
     } finally {
       granting = false;
     }
@@ -74,14 +80,14 @@
         body: JSON.stringify({ orgId: revokeTarget.id }),
       });
       if (!res.ok) {
-        toast.error('Could not revoke that grant');
+        toast.error(t(locale, 'settings.admin.plan-grants.toast-revoke-error'));
         return;
       }
-      toast.success('Grant revoked');
+      toast.success(t(locale, 'settings.admin.plan-grants.toast-revoke-success'));
       revokeTarget = null;
       await invalidateAll();
     } catch {
-      toast.error('Could not revoke that grant');
+      toast.error(t(locale, 'settings.admin.plan-grants.toast-revoke-error'));
     } finally {
       revoking = false;
     }
@@ -89,49 +95,46 @@
 </script>
 
 <Seo
-  title="Settings - Plan grants"
-  description="Grant or revoke a plan on any organization, bypassing Stripe."
+  title={t(locale, 'settings.admin.plan-grants.seo-title')}
+  description={t(locale, 'settings.admin.plan-grants.seo-description')}
 />
 
 <PageContainer size="default">
   <PageHeader
-    title="Plan grants"
-    description="Set or revoke a plan on any organization directly - the self-host fallback and every hand-granted org (mine included) got here without ever touching Stripe."
+    title={t(locale, 'settings.admin.plan-grants.title')}
+    description={t(locale, 'settings.admin.plan-grants.description')}
   />
 
   <Alert.Root class="mb-6">
     <Info class="size-4" />
     <Alert.Description>
-      A grant outranks a live Stripe subscription for that org: checkout, the portal and webhook
-      updates all leave a grant alone until it is revoked here. Revoking never guesses - it lands
-      on the plan a mirrored Stripe subscription names, or Free if there is none.
+      {t(locale, 'settings.admin.plan-grants.info')}
     </Alert.Description>
   </Alert.Root>
 
   <Card.Root class="mt-2 max-w-3xl">
     <Card.Header>
-      <Card.Title>Grant a plan</Card.Title>
+      <Card.Title>{t(locale, 'settings.admin.plan-grants.grant-card-title')}</Card.Title>
       <Card.Description>
-        Written through the same `setOrgPlan` the Stripe webhook itself calls, recorded in the
-        instance audit log with the reason below.
+        {t(locale, 'settings.admin.plan-grants.grant-card-description')}
       </Card.Description>
     </Card.Header>
     <Card.Content class="flex flex-col gap-3 sm:max-w-md">
       <SelectField
         value={grantOrgId}
         options={orgOptions}
-        placeholder="Pick an organization"
+        placeholder={t(locale, 'settings.admin.plan-grants.org-placeholder')}
         onValueChange={(v) => (grantOrgId = v)}
       />
       <SelectField
         value={grantPlanId}
         options={planOptions}
-        placeholder="Pick a plan"
+        placeholder={t(locale, 'settings.admin.plan-grants.plan-placeholder')}
         onValueChange={(v) => (grantPlanId = v)}
       />
       <Textarea
         bind:value={grantReason}
-        placeholder="Why this org is on a grant (kept in the audit log, not shown to the org)"
+        placeholder={t(locale, 'settings.admin.plan-grants.reason-placeholder')}
         rows={2}
       />
       <div>
@@ -140,7 +143,7 @@
           loading={granting}
           onclick={grant}
         >
-          Grant
+          {t(locale, 'settings.admin.plan-grants.grant-button')}
         </Button>
       </div>
     </Card.Content>
@@ -148,20 +151,20 @@
 
   <Card.Root class="mt-8 max-w-4xl">
     <Card.Header>
-      <Card.Title>Organizations</Card.Title>
+      <Card.Title>{t(locale, 'settings.admin.plan-grants.orgs-card-title')}</Card.Title>
       <Card.Description>
-        Every organization on this deployment, its plan, and where that plan came from.
+        {t(locale, 'settings.admin.plan-grants.orgs-card-description')}
       </Card.Description>
     </Card.Header>
     <Card.Content>
       <Table.Root>
         <Table.Header>
           <Table.Row>
-            <Table.Head>Organization</Table.Head>
-            <Table.Head>Plan</Table.Head>
-            <Table.Head>Source</Table.Head>
-            <Table.Head>Stripe customer</Table.Head>
-            <Table.Head class="text-right">Action</Table.Head>
+            <Table.Head>{t(locale, 'settings.admin.plan-grants.column-organization')}</Table.Head>
+            <Table.Head>{t(locale, 'settings.admin.plan-grants.column-plan')}</Table.Head>
+            <Table.Head>{t(locale, 'settings.admin.plan-grants.column-source')}</Table.Head>
+            <Table.Head>{t(locale, 'settings.admin.plan-grants.column-stripe-customer')}</Table.Head>
+            <Table.Head class="text-right">{t(locale, 'settings.admin.plan-grants.column-action')}</Table.Head>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -171,24 +174,26 @@
               <Table.Cell>{planLabel(org.plan)}</Table.Cell>
               <Table.Cell>
                 {#if org.planSource === 'grant'}
-                  <Badge variant="default">Grant</Badge>
+                  <Badge variant="default">{t(locale, 'settings.admin.plan-grants.source-grant')}</Badge>
                 {:else if org.planSource === 'stripe'}
-                  <Badge variant="outline">Stripe</Badge>
+                  <Badge variant="outline">{t(locale, 'settings.admin.plan-grants.source-stripe')}</Badge>
                 {:else}
-                  <Badge variant="outline" class="text-muted-foreground">Default</Badge>
+                  <Badge variant="outline" class="text-muted-foreground"
+                    >{t(locale, 'settings.admin.plan-grants.source-default')}</Badge
+                  >
                 {/if}
               </Table.Cell>
               <Table.Cell>
                 {#if org.stripeCustomerId}
-                  <Badge variant="outline">Yes</Badge>
+                  <Badge variant="outline">{t(locale, 'settings.admin.plan-grants.stripe-yes')}</Badge>
                 {:else}
-                  <span class="text-muted-foreground">None</span>
+                  <span class="text-muted-foreground">{t(locale, 'settings.admin.plan-grants.stripe-none')}</span>
                 {/if}
               </Table.Cell>
               <Table.Cell class="text-right">
                 {#if org.planSource === 'grant'}
                   <Button variant="outline" size="sm" onclick={() => (revokeTarget = org)}>
-                    Revoke
+                    {t(locale, 'settings.admin.plan-grants.revoke-button')}
                   </Button>
                 {/if}
               </Table.Cell>
@@ -203,21 +208,30 @@
 <AlertDialog.Root open={revokeTarget !== null} onOpenChange={(v) => !v && (revokeTarget = null)}>
   <AlertDialog.Content>
     <AlertDialog.Header>
-      <AlertDialog.Title>Revoke the grant on {revokeTarget?.name ?? 'this organization'}?</AlertDialog.Title>
+      <AlertDialog.Title>
+        {t(locale, 'settings.admin.plan-grants.confirm-title', {
+          org: revokeTarget?.name ?? t(locale, 'settings.admin.plan-grants.confirm-fallback-org'),
+        })}
+      </AlertDialog.Title>
       <AlertDialog.Description>
         {#if revokeTarget}
-          This lands the org on
-          {revokeTarget.mirroredSubscriptionPlanId
-            ? `${planLabel(revokeTarget.mirroredSubscriptionPlanId)}, the plan its mirrored Stripe subscription names`
-            : 'Free, since it has no mirrored Stripe subscription'}. Checkout, the portal and the
-          billing page all become reachable again for this org.
+          {@const landing = revokeTarget.mirroredSubscriptionPlanId
+            ? t(locale, 'settings.admin.plan-grants.confirm-landing-mirrored', {
+                plan: planLabel(revokeTarget.mirroredSubscriptionPlanId),
+              })
+            : t(locale, 'settings.admin.plan-grants.confirm-landing-no-mirror')}
+          {t(locale, 'settings.admin.plan-grants.confirm-body', { landing })}
         {/if}
       </AlertDialog.Description>
     </AlertDialog.Header>
     <AlertDialog.Footer>
-      <AlertDialog.Cancel onclick={() => (revokeTarget = null)}>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Cancel onclick={() => (revokeTarget = null)}>
+        {t(locale, 'settings.admin.plan-grants.cancel')}
+      </AlertDialog.Cancel>
       <AlertDialog.Action onclick={confirmRevoke} disabled={revoking}>
-        {revoking ? 'Revoking…' : 'Revoke'}
+        {revoking
+          ? t(locale, 'settings.admin.plan-grants.revoking')
+          : t(locale, 'settings.admin.plan-grants.revoke-button')}
       </AlertDialog.Action>
     </AlertDialog.Footer>
   </AlertDialog.Content>

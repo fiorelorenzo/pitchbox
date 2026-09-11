@@ -10,6 +10,10 @@
   import Seo from '$lib/components/Seo.svelte';
   import { toast } from 'svelte-sonner';
   import { untrack } from 'svelte';
+  import { page } from '$app/stores';
+  import { t, tn, type Locale } from '$lib/i18n/index.js';
+
+  const locale = $derived($page.data.locale as Locale);
 
   type GatewayModel = {
     id: string;
@@ -65,13 +69,19 @@
       });
       if (!res.ok) throw new Error(await res.text());
       const row = data.functions.find((f) => f.fn === fn);
+      const label = row?.label ?? fn;
       toast.success(
         values[fn]?.trim()
-          ? `${row?.label ?? fn} now runs on ${values[fn]}`
-          : `${row?.label ?? fn} is back on the default, ${row?.defaultModelId}`,
+          ? t(locale, 'settings.admin.models.toast-success-custom', { label, modelId: values[fn] })
+          : t(locale, 'settings.admin.models.toast-success-default', {
+              label,
+              modelId: row?.defaultModelId ?? '',
+            }),
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save the model');
+      toast.error(
+        err instanceof Error ? err.message : t(locale, 'settings.admin.models.toast-error-save'),
+      );
     } finally {
       saving = null;
     }
@@ -79,14 +89,14 @@
 </script>
 
 <Seo
-  title="Settings - Model configuration"
-  description="Which model runs which job on this deployment."
+  title={t(locale, 'settings.admin.models.seo-title')}
+  description={t(locale, 'settings.admin.models.seo-description')}
 />
 
 <PageContainer size="default">
   <PageHeader
-    title="Model configuration"
-    description="Which model does which job. A job nobody configured runs on the coded default, so an unset field is a working deployment rather than a broken one."
+    title={t(locale, 'settings.admin.models.title')}
+    description={t(locale, 'settings.admin.models.description')}
   />
 
   {#if data.catalogue.unavailable}
@@ -98,8 +108,7 @@
     <Alert.Root class="mb-4">
       <Info class="size-4" />
       <Alert.Description>
-        {data.catalogue.models.length} models from the AI Gateway. A change applies to the next run,
-        with no restart.
+        {tn(locale, 'settings.admin.models.gateway-info', data.catalogue.models.length)}
       </Alert.Description>
     </Alert.Root>
   {/if}
@@ -116,25 +125,29 @@
             <SelectField
               value={values[row.fn] ?? ''}
               {options}
-              placeholder="Pick a model from the Gateway"
+              placeholder={t(locale, 'settings.admin.models.select-placeholder')}
               onValueChange={(v: string) => (values[row.fn] = v)}
             />
           {/if}
           <Input
             bind:value={values[row.fn]}
             placeholder={row.defaultModelId}
-            aria-label={`Model id for ${row.label}`}
+            aria-label={t(locale, 'settings.admin.models.aria-model-id', { label: row.label })}
           />
           <div class="flex items-center justify-between gap-2">
             <span class="text-xs text-muted-foreground">
               {#if values[row.fn]?.trim()}
-                Default is {row.defaultModelId}. Clear the field to go back to it.
+                {t(locale, 'settings.admin.models.default-note', { modelId: row.defaultModelId })}
               {:else}
-                Running on the default, {row.defaultModelId}.
+                {t(locale, 'settings.admin.models.running-default-note', {
+                  modelId: row.defaultModelId,
+                })}
               {/if}
             </span>
             <Button size="sm" disabled={saving === row.fn} onclick={() => save(row.fn)}>
-              {saving === row.fn ? 'Saving' : 'Save'}
+              {saving === row.fn
+                ? t(locale, 'settings.admin.models.saving')
+                : t(locale, 'settings.admin.models.save')}
             </Button>
           </div>
         </Card.Content>

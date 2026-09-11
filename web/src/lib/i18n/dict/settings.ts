@@ -564,6 +564,114 @@ export const settingsEn = {
   'settings.admin.links.audit-label': 'Audit log',
   'settings.admin.links.audit-description':
     'Who changed instance-wide configuration, when, and from what to what.',
+
+  'settings.admin.audit.seo-title': 'Settings - Instance admin - Audit',
+  'settings.admin.audit.seo-description':
+    'Who changed instance-wide configuration, when, and from what to what.',
+  'settings.admin.audit.title': 'Instance audit log',
+  'settings.admin.audit.description':
+    "Every instance-wide configuration write - not the per-organization audit feed at /audit, which stays scoped to your own organization's drafts and runs.",
+  'settings.admin.audit.column-timestamp': 'Timestamp',
+  'settings.admin.audit.column-actor': 'Actor',
+  'settings.admin.audit.column-key': 'Key',
+  'settings.admin.audit.column-before': 'Before',
+  'settings.admin.audit.column-after': 'After',
+  'settings.admin.audit.empty': 'No instance-wide configuration has been changed yet.',
+
+  'settings.admin.models.seo-title': 'Settings - Model configuration',
+  'settings.admin.models.seo-description': 'Which model runs which job on this deployment.',
+  'settings.admin.models.title': 'Model configuration',
+  'settings.admin.models.description':
+    'Which model does which job. A job nobody configured runs on the coded default, so an unset field is a working deployment rather than a broken one.',
+  'settings.admin.models.gateway-info.one':
+    '{n} model from the AI Gateway. A change applies to the next run, with no restart.',
+  'settings.admin.models.gateway-info.other':
+    '{n} models from the AI Gateway. A change applies to the next run, with no restart.',
+  'settings.admin.models.select-placeholder': 'Pick a model from the Gateway',
+  'settings.admin.models.default-note': 'Default is {modelId}. Clear the field to go back to it.',
+  'settings.admin.models.running-default-note': 'Running on the default, {modelId}.',
+  'settings.admin.models.save': 'Save',
+  'settings.admin.models.saving': 'Saving',
+  'settings.admin.models.aria-model-id': 'Model id for {label}',
+  'settings.admin.models.toast-error-save': 'Could not save the model',
+  'settings.admin.models.toast-success-custom': '{label} now runs on {modelId}',
+  'settings.admin.models.toast-success-default': '{label} is back on the default, {modelId}',
+
+  'settings.admin.plan-grants.seo-title': 'Settings - Plan grants',
+  'settings.admin.plan-grants.seo-description':
+    'Grant or revoke a plan on any organization, bypassing Stripe.',
+  'settings.admin.plan-grants.title': 'Plan grants',
+  'settings.admin.plan-grants.description':
+    'Set or revoke a plan on any organization directly - the self-host fallback and every hand-granted org (mine included) got here without ever touching Stripe.',
+  'settings.admin.plan-grants.info':
+    'A grant outranks a live Stripe subscription for that org: checkout, the portal and webhook updates all leave a grant alone until it is revoked here. Revoking never guesses - it lands on the plan a mirrored Stripe subscription names, or Free if there is none.',
+  'settings.admin.plan-grants.grant-card-title': 'Grant a plan',
+  'settings.admin.plan-grants.grant-card-description':
+    'Written through the same `setOrgPlan` the Stripe webhook itself calls, recorded in the instance audit log with the reason below.',
+  'settings.admin.plan-grants.org-placeholder': 'Pick an organization',
+  'settings.admin.plan-grants.plan-placeholder': 'Pick a plan',
+  'settings.admin.plan-grants.reason-placeholder':
+    'Why this org is on a grant (kept in the audit log, not shown to the org)',
+  'settings.admin.plan-grants.grant-button': 'Grant',
+  'settings.admin.plan-grants.toast-grant-error': 'Could not grant that plan',
+  'settings.admin.plan-grants.toast-grant-success': '{plan} granted',
+  'settings.admin.plan-grants.toast-revoke-error': 'Could not revoke that grant',
+  'settings.admin.plan-grants.toast-revoke-success': 'Grant revoked',
+  'settings.admin.plan-grants.orgs-card-title': 'Organizations',
+  'settings.admin.plan-grants.orgs-card-description':
+    'Every organization on this deployment, its plan, and where that plan came from.',
+  'settings.admin.plan-grants.column-organization': 'Organization',
+  'settings.admin.plan-grants.column-plan': 'Plan',
+  'settings.admin.plan-grants.column-source': 'Source',
+  'settings.admin.plan-grants.column-stripe-customer': 'Stripe customer',
+  'settings.admin.plan-grants.column-action': 'Action',
+  'settings.admin.plan-grants.source-grant': 'Grant',
+  'settings.admin.plan-grants.source-stripe': 'Stripe',
+  'settings.admin.plan-grants.source-default': 'Default',
+  'settings.admin.plan-grants.stripe-yes': 'Yes',
+  'settings.admin.plan-grants.stripe-none': 'None',
+  'settings.admin.plan-grants.revoke-button': 'Revoke',
+  'settings.admin.plan-grants.confirm-title': 'Revoke the grant on {org}?',
+  'settings.admin.plan-grants.confirm-fallback-org': 'this organization',
+  'settings.admin.plan-grants.confirm-body':
+    'This lands the org on {landing}. Checkout, the portal and the billing page all become reachable again for this org.',
+  'settings.admin.plan-grants.confirm-landing-mirrored':
+    '{plan}, the plan its mirrored Stripe subscription names',
+  'settings.admin.plan-grants.confirm-landing-no-mirror':
+    'Free, since it has no mirrored Stripe subscription',
+  'settings.admin.plan-grants.cancel': 'Cancel',
+  'settings.admin.plan-grants.revoking': 'Revoking…',
+
+  'settings.admin.spend-ceiling.seo-title': 'Settings - Spend ceiling',
+  'settings.admin.spend-ceiling.seo-description':
+    'The instance-wide Gateway ceiling and what a self-registered organization starts with.',
+  'settings.admin.spend-ceiling.title': 'Spend ceiling',
+  'settings.admin.spend-ceiling.description':
+    'Opening registration to strangers turns a per-organization cap into an unbounded instance-wide one. These two numbers are the backstop: an instance-wide monthly ceiling summed across every organization, and the caps a self-registered organization starts with, separate from what an invited or manually-provisioned organization gets.',
+  'settings.admin.spend-ceiling.info':
+    "A run refused by the instance ceiling fails with its own reason, distinct from an organization's own budget, so it's clear on which side of the line the money ran out.",
+  'settings.admin.spend-ceiling.instance-card-title': 'Instance-wide monthly ceiling',
+  'settings.admin.spend-ceiling.instance-card-description':
+    'Summed month-to-date Gateway spend across every organization on this deployment. Leave blank for unlimited.',
+  'settings.admin.spend-ceiling.instance-budget-label': 'Monthly ceiling (USD)',
+  'settings.admin.spend-ceiling.instance-budget-placeholder': 'Unlimited',
+  'settings.admin.spend-ceiling.month-to-date-label': 'Month-to-date spend',
+  'settings.admin.spend-ceiling.remaining-label': 'Remaining',
+  'settings.admin.spend-ceiling.unlimited': 'Unlimited',
+  'settings.admin.spend-ceiling.self-reg-card-title': 'Self-registration defaults',
+  'settings.admin.spend-ceiling.self-reg-card-description':
+    "What a stranger who signs up with no invite starts with (`/register`'s no-invite path). Separate from the invited-organization defaults on purpose: raising what a paying or invited tenant gets never raises what a stranger gets.",
+  'settings.admin.spend-ceiling.self-reg-budget-label': 'Monthly run budget (USD)',
+  'settings.admin.spend-ceiling.self-reg-concurrency-label': 'Max concurrent runs',
+  'settings.admin.spend-ceiling.save': 'Save',
+  'settings.admin.spend-ceiling.toast-error-negative': 'Instance ceiling cannot be negative',
+  'settings.admin.spend-ceiling.toast-error-budget':
+    'Self-registration budget must be a positive number',
+  'settings.admin.spend-ceiling.toast-error-concurrency':
+    'Self-registration concurrency must be a positive whole number',
+  'settings.admin.spend-ceiling.toast-error-forbidden': 'You need instance-admin access for that',
+  'settings.admin.spend-ceiling.toast-error-save': 'Could not save',
+  'settings.admin.spend-ceiling.toast-success': 'Spend ceiling saved',
 } satisfies Dict;
 export const settingsIt = {
   'settings.rail.aria-label': 'Sezioni delle impostazioni',
@@ -1138,4 +1246,117 @@ export const settingsIt = {
   'settings.admin.links.audit-label': 'Registro di controllo',
   'settings.admin.links.audit-description':
     'Chi ha cambiato la configurazione a livello di istanza, quando e da cosa a cosa.',
+
+  'settings.admin.audit.seo-title':
+    'Impostazioni - Amministrazione istanza - Registro di controllo',
+  'settings.admin.audit.seo-description':
+    'Chi ha cambiato la configurazione a livello di istanza, quando e da cosa a cosa.',
+  'settings.admin.audit.title': "Registro di controllo dell'istanza",
+  'settings.admin.audit.description':
+    'Ogni scrittura di configurazione a livello di istanza: non il registro di controllo per organizzazione in /audit, che resta limitato alle bozze e ai run della tua organizzazione.',
+  'settings.admin.audit.column-timestamp': 'Data e ora',
+  'settings.admin.audit.column-actor': 'Autore',
+  'settings.admin.audit.column-key': 'Chiave',
+  'settings.admin.audit.column-before': 'Prima',
+  'settings.admin.audit.column-after': 'Dopo',
+  'settings.admin.audit.empty':
+    'Nessuna configurazione a livello di istanza è stata ancora modificata.',
+
+  'settings.admin.models.seo-title': 'Impostazioni - Configurazione modello',
+  'settings.admin.models.seo-description':
+    'Quale modello esegue quale compito in questa installazione.',
+  'settings.admin.models.title': 'Configurazione modello',
+  'settings.admin.models.description':
+    "Quale modello svolge quale compito. Un compito che nessuno ha configurato viene eseguito sul valore predefinito nel codice, quindi un campo vuoto indica un'installazione funzionante, non guasta.",
+  'settings.admin.models.gateway-info.one':
+    '{n} modello dal Gateway AI. Una modifica si applica al prossimo run, senza riavvio.',
+  'settings.admin.models.gateway-info.other':
+    '{n} modelli dal Gateway AI. Una modifica si applica al prossimo run, senza riavvio.',
+  'settings.admin.models.select-placeholder': 'Scegli un modello dal Gateway',
+  'settings.admin.models.default-note': 'Il predefinito è {modelId}. Svuota il campo per tornarci.',
+  'settings.admin.models.running-default-note': 'In esecuzione sul predefinito, {modelId}.',
+  'settings.admin.models.save': 'Salva',
+  'settings.admin.models.saving': 'Salvataggio',
+  'settings.admin.models.aria-model-id': 'ID modello per {label}',
+  'settings.admin.models.toast-error-save': 'Impossibile salvare il modello',
+  'settings.admin.models.toast-success-custom': 'Ora {label} usa {modelId}',
+  'settings.admin.models.toast-success-default': '{label} è tornato al predefinito, {modelId}',
+
+  'settings.admin.plan-grants.seo-title': 'Impostazioni - Concessioni piano',
+  'settings.admin.plan-grants.seo-description':
+    'Concedi o revoca un piano su qualsiasi organizzazione, aggirando Stripe.',
+  'settings.admin.plan-grants.title': 'Concessioni piano',
+  'settings.admin.plan-grants.description':
+    'Imposta o revoca un piano su qualsiasi organizzazione direttamente: il fallback self-host e ogni organizzazione concessa a mano (compresa la mia) sono arrivate qui senza mai passare da Stripe.',
+  'settings.admin.plan-grants.info':
+    "Una concessione prevale su un abbonamento Stripe attivo per quell'organizzazione: checkout, portale e aggiornamenti webhook lasciano intatta una concessione finché non viene revocata qui. La revoca non indovina mai: torna al piano indicato da un abbonamento Stripe rispecchiato, o a Free se non ce n'è uno.",
+  'settings.admin.plan-grants.grant-card-title': 'Concedi un piano',
+  'settings.admin.plan-grants.grant-card-description':
+    "Scritta tramite la stessa `setOrgPlan` chiamata dal webhook Stripe, registrata nel registro di controllo dell'istanza con il motivo qui sotto.",
+  'settings.admin.plan-grants.org-placeholder': "Scegli un'organizzazione",
+  'settings.admin.plan-grants.plan-placeholder': 'Scegli un piano',
+  'settings.admin.plan-grants.reason-placeholder':
+    "Perché questa organizzazione ha una concessione (resta nel registro di controllo, non è visibile all'organizzazione)",
+  'settings.admin.plan-grants.grant-button': 'Concedi',
+  'settings.admin.plan-grants.toast-grant-error': 'Impossibile concedere quel piano',
+  'settings.admin.plan-grants.toast-grant-success': '{plan} concesso',
+  'settings.admin.plan-grants.toast-revoke-error': 'Impossibile revocare quella concessione',
+  'settings.admin.plan-grants.toast-revoke-success': 'Concessione revocata',
+  'settings.admin.plan-grants.orgs-card-title': 'Organizzazioni',
+  'settings.admin.plan-grants.orgs-card-description':
+    'Ogni organizzazione di questa installazione, il suo piano e da dove proviene quel piano.',
+  'settings.admin.plan-grants.column-organization': 'Organizzazione',
+  'settings.admin.plan-grants.column-plan': 'Piano',
+  'settings.admin.plan-grants.column-source': 'Origine',
+  'settings.admin.plan-grants.column-stripe-customer': 'Cliente Stripe',
+  'settings.admin.plan-grants.column-action': 'Azione',
+  'settings.admin.plan-grants.source-grant': 'Concessione',
+  'settings.admin.plan-grants.source-stripe': 'Stripe',
+  'settings.admin.plan-grants.source-default': 'Predefinito',
+  'settings.admin.plan-grants.stripe-yes': 'Sì',
+  'settings.admin.plan-grants.stripe-none': 'Nessuno',
+  'settings.admin.plan-grants.revoke-button': 'Revoca',
+  'settings.admin.plan-grants.confirm-title': 'Revocare la concessione su {org}?',
+  'settings.admin.plan-grants.confirm-fallback-org': 'questa organizzazione',
+  'settings.admin.plan-grants.confirm-body':
+    "Questo riporta l'organizzazione a {landing}. Checkout, portale e pagina di fatturazione tornano di nuovo raggiungibili per questa organizzazione.",
+  'settings.admin.plan-grants.confirm-landing-mirrored':
+    '{plan}, il piano indicato dal suo abbonamento Stripe rispecchiato',
+  'settings.admin.plan-grants.confirm-landing-no-mirror':
+    'Free, poiché non ha un abbonamento Stripe rispecchiato',
+  'settings.admin.plan-grants.cancel': 'Annulla',
+  'settings.admin.plan-grants.revoking': 'Revoca in corso…',
+
+  'settings.admin.spend-ceiling.seo-title': 'Impostazioni - Tetto di spesa',
+  'settings.admin.spend-ceiling.seo-description':
+    "Il tetto Gateway a livello di istanza e i limiti con cui parte un'organizzazione auto-registrata.",
+  'settings.admin.spend-ceiling.title': 'Tetto di spesa',
+  'settings.admin.spend-ceiling.description':
+    "Aprire la registrazione a sconosciuti trasforma un limite per organizzazione in uno illimitato a livello di istanza. Questi due numeri sono la rete di sicurezza: un tetto mensile a livello di istanza sommato su ogni organizzazione, e i limiti con cui parte un'organizzazione auto-registrata, separati da quelli di un'organizzazione invitata o creata manualmente.",
+  'settings.admin.spend-ceiling.info':
+    "Un run rifiutato dal tetto di istanza fallisce con un motivo proprio, distinto dal budget dell'organizzazione, così è chiaro da quale lato si sono esauriti i fondi.",
+  'settings.admin.spend-ceiling.instance-card-title': 'Tetto mensile a livello di istanza',
+  'settings.admin.spend-ceiling.instance-card-description':
+    "Spesa Gateway dall'inizio del mese sommata su ogni organizzazione di questa installazione. Lascia vuoto per illimitato.",
+  'settings.admin.spend-ceiling.instance-budget-label': 'Tetto mensile (USD)',
+  'settings.admin.spend-ceiling.instance-budget-placeholder': 'Illimitato',
+  'settings.admin.spend-ceiling.month-to-date-label': 'Spesa da inizio mese',
+  'settings.admin.spend-ceiling.remaining-label': 'Rimanente',
+  'settings.admin.spend-ceiling.unlimited': 'Illimitato',
+  'settings.admin.spend-ceiling.self-reg-card-title': "Valori predefiniti per l'auto-registrazione",
+  'settings.admin.spend-ceiling.self-reg-card-description':
+    'Con cosa parte uno sconosciuto che si registra senza invito (il percorso senza invito di `/register`). Separato di proposito dai valori predefiniti per organizzazioni invitate: alzare ciò che riceve un cliente pagante o invitato non alza mai ciò che riceve uno sconosciuto.',
+  'settings.admin.spend-ceiling.self-reg-budget-label': 'Budget run mensile (USD)',
+  'settings.admin.spend-ceiling.self-reg-concurrency-label': 'Run simultanei massimi',
+  'settings.admin.spend-ceiling.save': 'Salva',
+  'settings.admin.spend-ceiling.toast-error-negative':
+    'Il tetto di istanza non può essere negativo',
+  'settings.admin.spend-ceiling.toast-error-budget':
+    'Il budget di auto-registrazione deve essere un numero positivo',
+  'settings.admin.spend-ceiling.toast-error-concurrency':
+    'La concorrenza di auto-registrazione deve essere un numero intero positivo',
+  'settings.admin.spend-ceiling.toast-error-forbidden':
+    "Serve l'accesso da amministratore istanza per questo",
+  'settings.admin.spend-ceiling.toast-error-save': 'Impossibile salvare',
+  'settings.admin.spend-ceiling.toast-success': 'Tetto di spesa salvato',
 } satisfies Dict;
