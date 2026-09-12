@@ -17,6 +17,7 @@
 // and the same change while the operator is editing (must NOT clobber the
 // buffer).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import { mount, unmount, flushSync, type ComponentProps } from 'svelte';
 import ProjectOverviewTab from '../src/lib/components/projects/ProjectOverviewTab.svelte';
 import { __page } from './support/app-stores.js';
@@ -70,6 +71,14 @@ function bandText(el: HTMLElement): string {
   return el.textContent ?? '';
 }
 
+function button(el: HTMLElement, label: string): HTMLButtonElement {
+  const found = Array.from(el.querySelectorAll('button')).find(
+    (b) => b.textContent?.trim() === label,
+  );
+  if (!found) throw new Error(`button "${label}" not found`);
+  return found;
+}
+
 beforeEach(() => {
   __page.set({ data: { locale: 'en' } });
   vi.stubGlobal(
@@ -105,30 +114,42 @@ describe('the project description band', () => {
     expect(bandText(el)).not.toContain('The old description, written before the run.');
   });
 
-  it('leaves an in-progress edit alone when the upstream description changes', async () => {
-    const el = render();
-    await vi.waitFor(() => expect(bandText(el)).toContain('The old description'));
-
-    const edit = Array.from(el.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === 'Edit',
-    );
-    if (!edit) throw new Error('Edit button not found');
-    edit.click();
+  it('keeps the operator’s draft on screen after leaving the editor, and saves it', async () => {
+    // The round-trip the first cut of this fix broke: with the *mode* as the
+    // discriminator, Preview (which leaves edit mode in order to render the
+    // text) showed the server's copy instead of the draft, and Save then
+    // persisted that stale copy over what had just been typed.
+    const el = render({ project: { ...project, description: null } });
+    button(el, 'Start from template').click();
     flushSync();
 
+    // Preview: out of the editor, still the draft.
+    button(el, 'Preview').click();
+    flushSync();
+    await vi.waitFor(() => expect(bandText(el)).toContain('Voice & tone'));
+
+    // And an upstream change does not take it away either.
     props.project = { ...project, description: 'A concurrent rewrite.' };
     flushSync();
+    await vi.waitFor(() => expect(bandText(el)).toContain('Voice & tone'));
+    expect(bandText(el)).not.toContain('A concurrent rewrite.');
 
-    // The editor is the buffer's, not the prop's: the operator's text stays.
-    await vi.waitFor(() => expect(bandText(el)).not.toContain('A concurrent rewrite.'));
+    button(el, 'Save').click();
+    const patch = await vi.waitFor(() => {
+      type Init = { method?: string; body?: string };
+      const call = (globalThis.fetch as unknown as Mock).mock.calls.find(
+        ([, init]) => (init as Init | undefined)?.method === 'PATCH',
+      );
+      if (!call) throw new Error('no PATCH yet');
+      return JSON.parse(String((call[1] as Init).body)) as { description: string | null };
+    });
+    expect(patch.description).toContain('Voice & tone');
+    expect(patch.description).not.toBe('A concurrent rewrite.');
   });
 
   it('offers the run action next to the description, unadorned', async () => {
     const el = render();
-    const write = Array.from(el.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === 'Write from sources',
-    );
-    if (!write) throw new Error('"Write from sources" button not found');
+    const write = button(el, 'Write from sources');
     // It used to be the sources card's header button and the only iconed
     // button on the page; both halves of that are the defect.
     expect(write.querySelector('svg')).toBeNull();
@@ -137,10 +158,6 @@ describe('the project description band', () => {
 
   it('disables the run action when no source is active', async () => {
     const el = render({ sources: [] });
-    const write = Array.from(el.querySelectorAll('button')).find(
-      (b) => b.textContent?.trim() === 'Write from sources',
-    );
-    if (!write) throw new Error('"Write from sources" button not found');
-    expect(write.disabled).toBe(true);
+    expect(button(el, 'Write from sources').disabled).toBe(true);
   });
 });

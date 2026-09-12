@@ -27,6 +27,12 @@
   import { getSseManager } from '$lib/realtime/sse';
   import { t, type Locale } from '$lib/i18n/index.js';
 
+  /** Fallback poll while a description run is in flight (see the effect
+   * below). Capped at 20 minutes' worth of ticks so an orphaned `running`
+   * row cannot keep a tab requesting forever. */
+  const POLL_INTERVAL_MS = 10_000;
+  const POLL_MAX_TICKS = 120;
+
   type RunnerMeta = { slug: string; label: string; implemented: boolean };
 
   type Project = {
@@ -109,8 +115,10 @@
 
   // svelte-ignore state_referenced_locally
   let name = $state(project.name);
-  // svelte-ignore state_referenced_locally
-  let description = $state(project.description ?? '');
+  // The operator's unsaved text, or null for "no local edit, follow the
+  // server". Null is what lets a finished run land on screen; a non-null
+  // draft is what survives leaving the editor (Preview) and being saved.
+  let draft = $state<string | null>(null);
   // svelte-ignore state_referenced_locally
   let runner = $state(project.defaultAgentRunner);
   // 'inherit' means both DB columns are null: this project falls back to the
@@ -154,19 +162,24 @@
     runningRunId !== null || extractionRunsState.some((r) => r.status === 'running'),
   );
 
-  // What the band shows. `description` is the edit buffer and nothing else:
-  // while nobody is editing, the band renders `project.description`, so a
-  // finished run lands on screen at the next `invalidateAll()` instead of
-  // waiting for a manual page refresh. It used to be a local `$state` synced
-  // by an effect that only wrote when the local copy was empty, which meant
-  // a project that already had a description kept showing the old text until
-  // the page was reloaded - the description:updated event is the only thing
-  // that wrote it, and that event is lost for good if the SSE stream was
-  // reconnecting (a run takes minutes) or the tab was opened mid-run.
-  const shownDescription = $derived(editingDescription ? description : (project.description ?? ''));
+  // What the band shows: the operator's draft if there is one, otherwise
+  // whatever the server last said. The mode (`editingDescription`) chooses
+  // the editor or a rendered view, never the text - making the mode the
+  // discriminator is what broke Preview, which leaves edit mode precisely in
+  // order to render the draft.
+  //
+  // `description` used to be a local `$state` synced by an effect that only
+  // wrote when the local copy was empty, so a project that already had a
+  // description kept showing the old text until the page was reloaded: the
+  // SSE description:updated event was the only thing that ever wrote it, and
+  // that event is lost for good if the stream was reconnecting (a run takes
+  // minutes) or the tab was opened mid-run.
+  const shownDescription = $derived(draft ?? project.description ?? '');
 
   function startEditing() {
-    description = project.description ?? '';
+    // Seed from the server only when there is nothing local yet: re-entering
+    // the editor must never overwrite text the operator already typed.
+    draft ??= project.description ?? '';
     editingDescription = true;
   }
 
@@ -186,20 +199,41 @@
   // hand. While a run is in flight, poll the cheap runs endpoint and reload
   // the page data as soon as it is no longer running; the SSE path still
   // wins when it works, since it also carries the diff toast.
+  //
+  // Bounded and serialised on purpose: a crashed dispatch can leave a
+  // `running` row behind with nothing to sweep it (unlike
+  // `runProjectInsights`' STALE_MS), and an unbounded 10s loop against a row
+  // that will never change is a worse bug than the stuck spinner it was
+  // meant to fix. A tick that throws is swallowed - the next one retries,
+  // and the conditions this exists for (a restarting server, a dropped
+  // connection) are exactly the ones that make `fetch` reject.
   $effect(() => {
     if (!extractionRunning) return;
+    let inFlight = false;
+    let ticks = 0;
     const timer = setInterval(async () => {
-      const res = await fetch(`/api/projects/${project.id}/runs?limit=5`);
-      if (!res.ok) return;
-      const body = (await res.json().catch(() => null)) as {
-        runs?: Array<{ status: string }>;
-      } | null;
-      if (!body?.runs) return;
-      if (body.runs.some((r) => r.status === 'running')) return;
-      runningRunId = null;
-      await invalidateAll();
-      extractionRunsState = extractionRuns;
-    }, 10_000);
+      if (inFlight) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (++ticks > POLL_MAX_TICKS) {
+        clearInterval(timer);
+        return;
+      }
+      inFlight = true;
+      try {
+        const res = await fetch(`/api/projects/${project.id}/runs?limit=5`);
+        if (!res.ok) return;
+        const body = (await res.json()) as { runs?: Array<{ status: string }> };
+        if (!body?.runs) return;
+        if (body.runs.some((r) => r.status === 'running')) return;
+        runningRunId = null;
+        await invalidateAll();
+        extractionRunsState = extractionRuns;
+      } catch {
+        /* the next tick retries */
+      } finally {
+        inFlight = false;
+      }
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   });
 
@@ -230,6 +264,9 @@
       toast.success(t(locale, 'projects.toast-extraction-started', { runId: body.runId }));
       runningRunId = body.runId as number;
       descriptionAtLaunch = shownDescription;
+      // The run rewrites the description, so the draft cannot stay: it would
+      // mask exactly the text the run is about to produce.
+      draft = null;
       editingDescription = false;
       await invalidateAll();
       extractionRunsState = extractionRuns;
@@ -257,9 +294,9 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name,
-          // What is on screen, which is the edit buffer only while editing:
-          // saving the project's name or runner must not silently write back
-          // a stale description a run has since replaced.
+          // What is on screen: the draft when there is one, the server's
+          // text otherwise. Saving the project's name or runner must not
+          // write back a stale buffer over a description a run just wrote.
           description: shownDescription || null,
           defaultAgentRunner: runner,
           voiceTone: voiceTone === 'inherit' ? null : voiceTone,
@@ -275,6 +312,10 @@
         return;
       }
       toast.success(t(locale, 'projects.toast-saved'));
+      // Persisted, so the draft has nothing left to protect: drop it and let
+      // the band follow the server again.
+      draft = null;
+      editingDescription = false;
       await invalidateAll();
     } finally {
       saving = false;
@@ -317,6 +358,8 @@
         if (runningRunId !== null && payload.runId !== runningRunId) return;
         descriptionBeforeUpdate = descriptionAtLaunch;
         runningRunId = null;
+        // Nothing local may mask what the run just wrote.
+        draft = null;
         await invalidateAll();
         // Wait for Svelte to flush the new props before reading anything off
         // `project`, otherwise this branch races the load.
@@ -410,9 +453,9 @@
   </div>
 
   <div class="flex flex-col gap-2">
-    <div class="flex items-center justify-between gap-2">
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <span class="text-xs">{t(locale, 'projects.description-label')}</span>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
         {#if !extractionRunning && shownDescription && !editingDescription}
           <Button type="button" variant="outline" size="sm" onclick={startEditing}>
             {t(locale, 'projects.edit-button')}
@@ -436,7 +479,7 @@
         >
           {t(locale, 'projects.manage-sources-button')}
         </Button>
-        {#if isAdmin}
+        {#if isAdmin && (shownDescription || extractionRunning || editingDescription)}
           <Button
             type="button"
             size="sm"
@@ -469,7 +512,7 @@
           <Spinner size="sm" />
         </div>
       {:then { default: MarkdownEditor }}
-        <MarkdownEditor value={description} onchange={(v) => (description = v)} height="540px" />
+        <MarkdownEditor value={draft ?? ''} onchange={(v) => (draft = v)} height="540px" />
       {/await}
     {:else if shownDescription}
       <div class="rounded-md border border-border p-3">
@@ -488,7 +531,7 @@
             {t(locale, 'projects.no-description-body')}
           </p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap justify-center gap-2">
           {#if isAdmin && activeSourceCount > 0}
             <Button type="button" size="lg" onclick={writeFromSources} loading={startingRun}>
               {t(locale, 'projects.regenerate-description-button')}
@@ -507,7 +550,7 @@
             variant="outline"
             size="lg"
             onclick={() => {
-              description = DESCRIPTION_SCAFFOLD;
+              draft = DESCRIPTION_SCAFFOLD;
               editingDescription = true;
             }}
           >
@@ -589,6 +632,6 @@
   open={diffOpen}
   onOpenChange={(v) => (diffOpen = v)}
   before={descriptionBeforeUpdate}
-  after={description}
+  after={project.description ?? ''}
 />
 
