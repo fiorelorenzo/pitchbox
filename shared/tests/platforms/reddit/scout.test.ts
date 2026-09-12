@@ -13,6 +13,7 @@ import type { RedditPost, RedditUserAbout } from '../../../src/platforms/reddit/
 
 const searchCalls: SearchOpts[] = [];
 let searchResult: (opts: SearchOpts) => RedditPost[] = () => [];
+let profileFailsFor: string | null = null;
 
 vi.mock('../../../src/platforms/reddit/reddit.js', () => ({
   acquireBrowser: () => undefined,
@@ -22,17 +23,22 @@ vi.mock('../../../src/platforms/reddit/reddit.js', () => ({
     return searchResult(opts);
   },
   browseSubreddit: async () => [],
-  getUserAbout: async (_env: unknown, name: string): Promise<RedditUserAbout> => ({
-    name,
-    id: `t2_${name}`,
-    totalKarma: 500,
-    linkKarma: 200,
-    commentKarma: 300,
-    createdUtc: 1_600_000_000,
-    isSuspended: false,
-    isEmployee: false,
-    acceptsFollowers: true,
-  }),
+  getUserAbout: async (_env: unknown, name: string): Promise<RedditUserAbout> => {
+    if (profileFailsFor === name) {
+      throw new Error(`page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at /user/${name}/`);
+    }
+    return {
+      name,
+      id: `t2_${name}`,
+      totalKarma: 500,
+      linkKarma: 200,
+      commentKarma: 300,
+      createdUtc: 1_600_000_000,
+      isSuspended: false,
+      isEmployee: false,
+      acceptsFollowers: true,
+    };
+  },
   profileUrl: (name: string) => `https://www.reddit.com/user/${name}/`,
 }));
 
@@ -65,6 +71,7 @@ describe('runScout', () => {
   beforeEach(() => {
     searchCalls.length = 0;
     searchResult = () => [];
+    profileFailsFor = null;
   });
 
   it('searches inside each target subreddit, so what it fetches is what it can stage', async () => {
@@ -124,5 +131,21 @@ describe('runScout', () => {
     expect(await call(12)).toBe('day');
     expect(await call(24 * 20)).toBe('month');
     expect(await call(24 * 200)).toBe('year');
+  });
+
+  it('skips a candidate whose profile Reddit refuses, instead of losing the whole run to it', async () => {
+    const { runScout } = await import('../../../src/platforms/reddit/scout.js');
+    searchResult = () => [post('Nutrition', 'blocked'), post('Nutrition', 'ok')];
+    profileFailsFor = 'author_blocked';
+
+    const result = await runScout({
+      profile: { targetSubreddits: ['Nutrition'], topicKeywords: ['food logging'] },
+      contactedHandles: new Set(),
+      blockedHandles: new Set(),
+      now: NOW,
+    });
+
+    expect(result.candidates.map((c) => c.user.name)).toEqual(['author_ok']);
+    expect(result.profileErrors).toBe(1);
   });
 });
