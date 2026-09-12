@@ -123,6 +123,15 @@ export type SearchOpts = {
   sort: string;
   timeframe: string;
   limit: number;
+  /**
+   * Restricts the search to one subreddit. Without it Reddit searches the
+   * whole site, and a caller that only wants a handful of named communities
+   * has to throw away almost everything it fetched: measured 2026-09-12,
+   * "food logging" and "tracking calories" returned 32 posts across 29
+   * subreddits and not one of them was r/Nutrition or r/EatCheapAndHealthy,
+   * so a campaign scoped to those two saw zero candidates (LOR-322).
+   */
+  subreddit?: string;
 };
 
 export type BrowseOpts = {
@@ -167,7 +176,10 @@ export async function browserSearchPosts(env: RedditEnv, opts: SearchOpts): Prom
     sort: opts.sort,
     t: opts.timeframe,
   });
-  const url = `https://www.reddit.com/search/?${qs}`;
+  if (opts.subreddit) qs.set('restrict_sr', '1');
+  const url = opts.subreddit
+    ? `https://www.reddit.com/r/${encodeURIComponent(opts.subreddit)}/search/?${qs}`
+    : `https://www.reddit.com/search/?${qs}`;
   const page = await newPage(env);
   try {
     const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });

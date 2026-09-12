@@ -7,8 +7,8 @@ import {
   profileUrl,
 } from './reddit.js';
 import { loadEnv } from './env.js';
-import { filterCandidates } from './filter.js';
-import type { ScoutCandidate, ScoutProfile } from './types.js';
+import { DEFAULT_MAX_POST_AGE_HOURS, filterCandidates } from './filter.js';
+import type { ScoutCandidate, ScoutProfile, Timeframe } from './types.js';
 
 export interface RunScoutOptions {
   profile: ScoutProfile;
@@ -23,6 +23,21 @@ export interface RunScoutResult {
   candidates: ScoutCandidate[];
   /** Count of candidates dropped for being older than the campaign's recency cap (#338). */
   droppedByAge: number;
+}
+
+/**
+ * The search window Reddit is asked for, derived from the recency cap the
+ * candidates are then filtered against (`DEFAULT_MAX_POST_AGE_HOURS` when
+ * the campaign sets none). The scout used to always ask for a month while
+ * dropping anything older than 72 hours, so a relevance-sorted page of 20
+ * results spent almost its whole budget on posts the filter would discard.
+ */
+function searchTimeframe(maxPostAgeHours: number | null | undefined): Timeframe {
+  const hours = maxPostAgeHours ?? DEFAULT_MAX_POST_AGE_HOURS;
+  if (hours <= 24) return 'day';
+  if (hours <= 24 * 7) return 'week';
+  if (hours <= 24 * 31) return 'month';
+  return 'year';
 }
 
 export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
@@ -42,8 +57,9 @@ export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
       for (const query of queries) {
         const posts = await searchPosts(env, {
           query,
+          subreddit,
           sort: 'relevance',
-          timeframe: 'month',
+          timeframe: searchTimeframe(opts.profile.maxPostAgeHours),
           limit: opts.profile.perSubredditLimit ?? 20,
         });
         for (const post of posts) {

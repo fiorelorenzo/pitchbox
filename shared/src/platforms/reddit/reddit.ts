@@ -25,7 +25,8 @@ import type {
 const BASE = 'https://www.reddit.com';
 
 export async function searchPosts(env: RedditEnv, opts: SearchOpts): Promise<RedditPost[]> {
-  const key = `search:${opts.query}:${opts.sort}:${opts.timeframe}:${opts.limit}`;
+  const scope = opts.subreddit ? opts.subreddit.toLowerCase() : '*';
+  const key = `search:${scope}:${opts.query}:${opts.sort}:${opts.timeframe}:${opts.limit}`;
   const cached = await cacheGet<RedditPost[]>(key);
   if (cached !== null) return cached;
   const posts = await browserSearchPosts(env, opts);
