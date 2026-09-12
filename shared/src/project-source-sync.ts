@@ -36,6 +36,7 @@ import { refreshWebsiteSource, type WebsiteFetch } from './website-source.js';
 import { refreshMastodonAccountSource } from './mastodon-source.js';
 import type { MastodonPublicFetch } from './platforms/mastodon/client.js';
 import { refreshHackernewsAuthorSource, type HackernewsRawFetch } from './hackernews-source.js';
+import { installationTokenForOwner, type GithubAppEnv } from './github-app.js';
 
 export type SyncProjectSourceResult =
   { ok: true; source: ProjectSourceRow } | { ok: false; source: ProjectSourceRow };
@@ -44,6 +45,10 @@ export type SyncOptions = {
   /** Injectable fetch for a GitHub-hosted `git` source - tests substitute a
    * mock so this never actually reaches GitHub. */
   fetchImpl?: GithubFetch;
+  /** Injectable GitHub App credential for a GitHub-hosted `git` source:
+   * `null` forces the anonymous path even where the deployment has one,
+   * `undefined` reads the environment as `installationTokenForOwner` does. */
+  app?: GithubAppEnv | null;
   /** Injectable `git ls-remote` for a `git` source on any other host, so a
    * suite never spawns git or reaches a real remote. */
   gitLsRemoteImpl?: GitLsRemote;
@@ -121,7 +126,7 @@ async function syncGit(
   }
   const parsed = parseRepoUrl(value);
   if (parsed.ok) {
-    return syncGithubRepo(db, organizationId, source, parsed, opts.fetchImpl ?? fetch);
+    return syncGithubRepo(db, organizationId, source, parsed, opts.fetchImpl ?? fetch, opts.app);
   }
   return syncGitRemote(db, organizationId, source, value, opts.gitLsRemoteImpl ?? lsRemoteBranches);
 }
@@ -156,9 +161,23 @@ async function syncGithubRepo(
   source: ProjectSourceRow,
   parsed: { owner: string; repo: string; url: string },
   fetchImpl: GithubFetch,
+  app: GithubAppEnv | null | undefined,
 ): Promise<SyncProjectSourceResult> {
   const base = `${GITHUB_API_BASE}/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}`;
-  const headers = { Accept: 'application/vnd.github+json' };
+
+  // A private repository is invisible to the anonymous API, and GitHub
+  // answers 404 rather than 403 for one, so with no credential this cannot
+  // tell "does not exist" from "not yours to see". When the organization
+  // installed the app on that owner's account, both calls below carry an
+  // installation token instead - resolved by account login, exactly as
+  // `refreshGithubSource` resolves it for the org-wide cache
+  // (github-sources.ts). It also lifts the 60/hour anonymous cap to 5,000.
+  const installation = await installationTokenForOwner(db, organizationId, parsed.owner, {
+    app,
+    fetchImpl,
+  });
+  const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
+  if (installation) headers.Authorization = `token ${installation.token}`;
 
   let repoRes: Response;
   try {
@@ -172,11 +191,20 @@ async function syncGithubRepo(
   }
 
   if (!repoRes.ok) {
+    // The 404 wording differs by credential on purpose, the same way
+    // `refreshGithubSource` splits it: anonymously the fix is to install the
+    // app, authenticated it is to add this repository to what the
+    // installation selected. A rate-limited anonymous call is a 403 carrying
+    // `x-ratelimit-remaining: 0`, which an ordinary 403 does not.
     const reason =
       repoRes.status === 404
-        ? 'repository not found (private or deleted)'
+        ? installation
+          ? "repository not found: it is not in this installation's selected repositories (add it on GitHub, or install the app on all repositories)"
+          : 'repository not found (private or deleted; a private repo needs the GitHub App)'
         : repoRes.status === 403
-          ? 'GitHub API refused the request (403, likely the anonymous rate limit)'
+          ? repoRes.headers.get('x-ratelimit-remaining') === '0'
+            ? 'GitHub anonymous rate limit reached (60 requests/hour per IP); will retry later'
+            : 'GitHub API refused the request (403)'
           : `GitHub API returned ${repoRes.status}`;
     const updated = await updateProjectSource(db, organizationId, source.id, {
       fetchedAt: new Date(),

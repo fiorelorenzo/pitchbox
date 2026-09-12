@@ -11,7 +11,9 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { readFile, readdir, realpath, stat, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ok, fail } from '../lib/output.js';
-import { shallowClone } from '../lib/git-clone.js';
+import { shallowClone, type CloneCredential } from '../lib/git-clone.js';
+import { installationTokenForOwner } from '@pitchbox/shared/github-app';
+import { parseRepoUrl } from '@pitchbox/shared/github-sources';
 
 /**
  * Directories never worth showing an extraction agent: build output, vendored
@@ -102,6 +104,36 @@ async function loadRunContext(run: typeof schema.runs.$inferSelect): Promise<{
  */
 const clonedRoots = new Map<string, Promise<string>>();
 
+/**
+ * The credential a clone of `url` should present, or null for an anonymous
+ * clone.
+ *
+ * A private repository is only clonable with one, and the credential this
+ * deployment may hold is the GitHub App installation the run's organization
+ * granted on that repo owner's account - the same resolution the cached read
+ * does (`shared/src/project-source-sync.ts`), by account login. The token is
+ * minted here, at clone time, and handed straight to `shallowClone`: it never
+ * reaches `runs.params`, which is stored data an operator can read, and it
+ * expires in an hour anyway.
+ */
+async function cloneCredentialFor(
+  run: typeof schema.runs.$inferSelect,
+  url: string,
+): Promise<CloneCredential | null> {
+  const parsed = parseRepoUrl(url);
+  if (!parsed.ok || !run.projectId) return null; // nothing to mint against
+
+  const db = getDb();
+  const [project] = await db
+    .select({ organizationId: schema.projects.organizationId })
+    .from(schema.projects)
+    .where(eq(schema.projects.id, run.projectId));
+  if (!project) return null;
+
+  const installation = await installationTokenForOwner(db, project.organizationId, parsed.owner);
+  return installation ? { username: 'x-access-token', token: installation.token } : null;
+}
+
 async function resolveTreeSourcePath(
   run: typeof schema.runs.$inferSelect,
   source: ProjectSourceRow,
@@ -116,7 +148,8 @@ async function resolveTreeSourcePath(
     if (cached) return cached;
     const path = `/tmp/pitchbox-extract-${run.id}-${source.id}`;
     const cloning = rm(path, { recursive: true, force: true })
-      .then(() => shallowClone(value, path))
+      .then(() => cloneCredentialFor(run, value))
+      .then((credential) => shallowClone(value, path, { credential }))
       .then(() => path);
     clonedRoots.set(key, cloning);
     cloning.catch(() => clonedRoots.delete(key));
