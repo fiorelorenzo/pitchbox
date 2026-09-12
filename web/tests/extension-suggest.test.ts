@@ -125,6 +125,11 @@ async function reset() {
   await getDb().execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
   await getDb().execute(sql`DELETE FROM app_config WHERE key = 'linkedin_assist'`);
   await getDb().execute(sql`DELETE FROM app_config WHERE key = 'runner_configs'`);
+  // LOR-318: the instance-wide `default_runner` row is written by seven
+  // other files and cleared by none, and under cloud edition a leaked
+  // `claude-code` pin makes this file's route refuse to dispatch. Nothing
+  // here wants an operator pin, so clear it rather than inherit one.
+  await getDb().execute(sql`DELETE FROM app_config WHERE key = 'default_runner'`);
   lastOptions = null;
   lastConfig = null;
   cancelCalls = 0;

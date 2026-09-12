@@ -26,6 +26,11 @@ async function reset() {
   await db.execute(
     sql`TRUNCATE drafts, runs, campaigns, accounts, projects RESTART IDENTITY CASCADE`,
   );
+  // LOR-318: the instance-wide `default_runner` row is written by seven
+  // other files and cleared by none, and under cloud edition a leaked
+  // `claude-code` pin makes this file's route refuse to dispatch. Nothing
+  // here wants an operator pin, so clear it rather than inherit one.
+  await db.execute(sql`DELETE FROM app_config WHERE key = 'default_runner'`);
   await db.execute(sql`DELETE FROM organizations WHERE slug != 'default'`);
 }
 
