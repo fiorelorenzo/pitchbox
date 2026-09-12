@@ -32,9 +32,9 @@
 //     the cheapest real upgrade over a bare name and description, and the
 //     material the model needs to pick which project (if any) a suggestion
 //     is actually about;
-//   - repositories: GitHub's public API, read server-side and cached in
-//     `github_sources`. No credential, by decision - a private repo waits for
-//     the optional GitHub App.
+//   - repositories: GitHub's REST API, read server-side and cached in
+//     `github_sources`. Anonymous unless the organization installed the
+//     GitHub App (#390), which is what makes a private repo readable.
 //
 // 2026-09-10 (LOR-181): `loadCompanionContext` stopped taking a
 // `currentProjectId` and `ProjectBrief` stopped carrying `isCurrent`. Which

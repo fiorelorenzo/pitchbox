@@ -1,9 +1,10 @@
-// Public code repositories the companion can talk about (Lorenzo's decision,
-// 2026-09-07): by URL, no credential. The optional GitHub App for private
-// repos is a later issue - this module only ever calls GitHub's anonymous
-// REST API and caches what it read into `github_sources`
-// (shared/src/db/schema.ts), which `assist/context.ts` reads from when it
-// builds a suggestion prompt.
+// Code repositories the companion can talk about. By URL, and anonymously
+// when that is all the deployment has (Lorenzo's decision, 2026-09-07);
+// since #390 a deployment that configured the GitHub App presents the
+// installation token its organization granted, which is what makes a private
+// repository readable - see `refreshGithubSource` below. What is read is
+// cached into `github_sources` (shared/src/db/schema.ts), which
+// `assist/context.ts` reads from when it builds a suggestion prompt.
 //
 // Anonymous REST is capped at 60 requests/hour per calling IP
 // (docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api), and

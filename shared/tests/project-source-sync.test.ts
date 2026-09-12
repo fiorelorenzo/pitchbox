@@ -14,12 +14,17 @@
 // behaviour those refreshers own is already proven against real fixture
 // servers in website-source.test.ts, mastodon-source.test.ts and
 // hackernews-source.test.ts.
-import { randomUUID } from 'node:crypto';
-import { describe, it, expect, afterEach } from 'vitest';
+import { generateKeyPairSync, randomUUID } from 'node:crypto';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { getDb, schema } from '../src/db/client.js';
 import { createProjectSource, getProjectSource } from '../src/project-sources.js';
 import { syncProjectSource } from '../src/project-source-sync.js';
+import {
+  clearInstallationTokenCache,
+  recordInstallation,
+  type GithubAppEnv,
+} from '../src/github-app.js';
 import type { GithubFetch } from '../src/github-sources.js';
 import type { WebsiteFetch } from '../src/website-source.js';
 import type { MastodonPublicFetch } from '../src/platforms/mastodon/client.js';
@@ -181,6 +186,119 @@ describe('syncProjectSource: git', () => {
     });
     expect(result?.ok).toBe(false);
     expect(result?.source.fetchError).toBeTruthy();
+  });
+});
+
+// LOR-320: a repository source on a private GitHub repo. The org-wide
+// companion cache (github-sources.ts) has carried the installation token
+// since #390; this path did not, so a private repo could be added as a
+// project source and then only ever report "not found". What is defended
+// here is that the token reaches both calls, that it is not presented to an
+// owner that never granted one, and that the two 404s stay told apart, since
+// they have different fixes.
+describe('syncProjectSource: git on a private GitHub repository', () => {
+  const PEM = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    .privateKey.export({ type: 'pkcs1', format: 'pem' })
+    .toString();
+  const APP: GithubAppEnv = { appId: '4883602', slug: 'pitchbox-companion', privateKey: PEM };
+
+  type Call = { url: string; auth: string | undefined };
+
+  function githubDouble(opts: { repoStatus?: number } = {}) {
+    const calls: Call[] = [];
+    const impl: GithubFetch = async (url: string, init?: { headers?: Record<string, string> }) => {
+      calls.push({ url, auth: init?.headers?.Authorization });
+      if (url.endsWith('/access_tokens')) {
+        return fakeResponse(200, {
+          token: 'ghs_installation',
+          expires_at: new Date(Date.now() + 3600_000).toISOString(),
+        });
+      }
+      if (url.endsWith('/readme')) return fakeResponse(200, README_JSON('A private thing.'));
+      if (opts.repoStatus && opts.repoStatus !== 200) return fakeResponse(opts.repoStatus, {});
+      return fakeResponse(200, { description: 'A private repo', language: 'TypeScript' });
+    };
+    return { impl, calls };
+  }
+
+  async function install(orgId: number, accountLogin: string, installationId: number) {
+    await recordInstallation(getDb(), orgId, {
+      installationId,
+      accountLogin,
+      accountType: 'User',
+      repositorySelection: 'all',
+      permissions: { contents: 'read', metadata: 'read' },
+    });
+  }
+
+  beforeEach(() => clearInstallationTokenCache());
+
+  it('reads it with the installation token, on the repo call and the README call', async () => {
+    const { orgId, projectId } = await setupOrgAndProject();
+    await install(orgId, 'fiorelorenzo', 160288218);
+    const db = getDb();
+    const created = await createProjectSource(db, orgId, projectId, 'git', {
+      value: 'https://github.com/fiorelorenzo/sazio',
+    });
+
+    const gh = githubDouble();
+    const result = await syncProjectSource(db, orgId, created!.id, {
+      fetchImpl: gh.impl,
+      app: APP,
+    });
+
+    // A private repo 404s on either call without the token, so a
+    // half-authenticated sync would store metadata with no README.
+    const repoCalls = gh.calls.filter((c) => !c.url.endsWith('/access_tokens'));
+    expect(repoCalls).toHaveLength(2);
+    for (const call of repoCalls) expect(call.auth).toBe('token ghs_installation');
+
+    expect(result?.ok).toBe(true);
+    expect(result?.source.fetchError).toBeNull();
+    expect(result?.source.output).toMatchObject({
+      description: 'A private repo',
+      primaryLanguage: 'TypeScript',
+      readmeExcerpt: 'A private thing.',
+    });
+  });
+
+  it("does not present one org's installation on another account's repository", async () => {
+    const { orgId, projectId } = await setupOrgAndProject();
+    await install(orgId, 'fiorelorenzo', 160288219);
+    const db = getDb();
+    const created = await createProjectSource(db, orgId, projectId, 'git', {
+      value: 'https://github.com/someone-else/widget',
+    });
+
+    const gh = githubDouble();
+    await syncProjectSource(db, orgId, created!.id, { fetchImpl: gh.impl, app: APP });
+
+    expect(gh.calls.some((c) => c.url.endsWith('/access_tokens'))).toBe(false);
+    for (const call of gh.calls) expect(call.auth).toBeUndefined();
+  });
+
+  it('says which 404 it is: install the app, or add the repo to the installation', async () => {
+    const anon = await setupOrgAndProject();
+    const db = getDb();
+    const anonSource = await createProjectSource(db, anon.orgId, anon.projectId, 'git', {
+      value: 'https://github.com/stranger/widget',
+    });
+    const anonResult = await syncProjectSource(db, anon.orgId, anonSource!.id, {
+      fetchImpl: githubDouble({ repoStatus: 404 }).impl,
+      app: APP,
+    });
+    expect(anonResult?.source.fetchError).toMatch(/needs the GitHub App/);
+
+    const auth = await setupOrgAndProject();
+    await install(auth.orgId, 'fiorelorenzo', 160288220);
+    const authSource = await createProjectSource(db, auth.orgId, auth.projectId, 'git', {
+      value: 'https://github.com/fiorelorenzo/not-selected',
+    });
+    const authResult = await syncProjectSource(db, auth.orgId, authSource!.id, {
+      fetchImpl: githubDouble({ repoStatus: 404 }).impl,
+      app: APP,
+    });
+    expect(authResult?.source.fetchError).toMatch(/selected repositories/);
   });
 });
 

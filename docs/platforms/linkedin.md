@@ -88,6 +88,12 @@ GitHub allows 60 requests an hour per address. With one configured, a read of
 a repository whose owner has installed it carries an installation token
 instead, which raises that to 5,000 an hour.
 
+The same installation backs a **project's** own sources, not only the
+companion's list: a repository source on a project, and the clone a
+description run makes of it, both present the token of the installation that
+project's organization granted on the repo owner's account. That is what lets
+a project be described from a private repository at all.
+
 Two operational details worth knowing before you debug a repo that will not
 load. Resolution is by **account login**: a token is only ever presented to
 the account that granted it, so a source under an owner nobody installed on
