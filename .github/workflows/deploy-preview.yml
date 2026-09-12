@@ -23,9 +23,18 @@ jobs:
           submodules: false
       - name: Fetch private submodules via deploy keys
         run: git submodule update --init --recursive
+      # `--delete`, or a file removed in a commit lives on in the deploy dir
+      # forever and gets built again: deleting `project-description-refresh.ts`
+      # together with its two routes left those routes behind here, importing a
+      # module that no longer exists, and the image build failed on
+      # `"./project-description-refresh" is not exported` minutes after a green
+      # CI (2026-09-12). Excluded paths are never deleted by rsync, so `.env`,
+      # `node_modules` and `backups/` (the deploy script writes database dumps
+      # and a copy of ENCRYPTION_KEY there, inside the deploy dir) survive.
       - name: Sync source into the preview deploy dir
         run: |
-          rsync -a --exclude '.git' --exclude '.env' --exclude 'node_modules' \
+          rsync -a --delete --exclude '.git' --exclude '.env' --exclude 'node_modules' \
+            --exclude 'backups' \
             ./ /opt/apps/pitchbox-preview/
       - name: Blue-green deploy (preview)
         run: /opt/apps/pitchbox-preview/scripts/deploy.sh preview "main-${{ github.event.workflow_run.head_sha }}"
