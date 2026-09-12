@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   acquireBrowser,
   browseSubreddit,
@@ -9,7 +10,13 @@ import {
 import { loadEnv } from './env.js';
 import { DEFAULT_MAX_POST_AGE_HOURS, filterCandidates } from './filter.js';
 import type { RedditEnv } from './env.js';
-import type { RedditUserAbout, ScoutCandidate, ScoutProfile, Timeframe } from './types.js';
+import type {
+  RedditPost,
+  RedditUserAbout,
+  ScoutCandidate,
+  ScoutProfile,
+  Timeframe,
+} from './types.js';
 
 export interface RunScoutOptions {
   profile: ScoutProfile;
@@ -18,6 +25,13 @@ export interface RunScoutOptions {
   verbose?: boolean;
   /** Injectable clock for deterministic recency tests. Defaults to now. */
   now?: Date;
+  /**
+   * Pause before the single retry a refused listing gets. Reddit's refusals
+   * are transient (the same URLs answered 200 from the same container
+   * seconds later), so waiting is what makes the retry worth having. Tests
+   * pass 0.
+   */
+  retryDelayMs?: number;
 }
 
 export interface RunScoutResult {
@@ -33,6 +47,13 @@ export interface RunScoutResult {
    * reading profiles" are distinguishable.
    */
   profileErrors: number;
+  /**
+   * Count of subreddit listings (a keyword search, or the hot browse) that
+   * Reddit refused twice, and whose posts are therefore missing from this
+   * run. Same reason as `profileErrors`: one refusal used to abort the
+   * scout, losing the subreddits it had already read (LOR-323).
+   */
+  searchErrors: number;
 }
 
 /**
@@ -48,6 +69,13 @@ function searchTimeframe(maxPostAgeHours: number | null | undefined): Timeframe 
   if (hours <= 24 * 7) return 'week';
   if (hours <= 24 * 31) return 'month';
   return 'year';
+}
+
+/** Pause before a refused listing's single retry. */
+const RETRY_DELAY_MS = 3_000;
+
+function sleep(ms: number): Promise<void> {
+  return ms > 0 ? delay(ms) : Promise.resolve();
 }
 
 export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
@@ -73,6 +101,28 @@ export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
       return null;
     }
   };
+  let searchErrors = 0;
+  /**
+   * Reads one subreddit listing, retrying once after a pause and then
+   * giving up on that listing alone. A refusal here is transient and
+   * per-request: during the same preview run Reddit refused
+   * `/r/loseit/search/?...` while the identical URL answered 200 from the
+   * same container moments later, and the throw cost every other subreddit
+   * in the campaign.
+   */
+  const readListing = async (listing: () => Promise<RedditPost[]>): Promise<RedditPost[]> => {
+    try {
+      return await listing();
+    } catch {
+      await sleep(opts.retryDelayMs ?? RETRY_DELAY_MS);
+      try {
+        return await listing();
+      } catch {
+        searchErrors++;
+        return [];
+      }
+    }
+  };
   try {
     const raw: ScoutCandidate[] = [];
     const seen = new Set<string>();
@@ -80,13 +130,15 @@ export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
     for (const subreddit of opts.profile.targetSubreddits) {
       const queries = opts.profile.topicKeywords?.length ? opts.profile.topicKeywords : [''];
       for (const query of queries) {
-        const posts = await searchPosts(env, {
-          query,
-          subreddit,
-          sort: 'relevance',
-          timeframe: searchTimeframe(opts.profile.maxPostAgeHours),
-          limit: opts.profile.perSubredditLimit ?? 20,
-        });
+        const posts = await readListing(() =>
+          searchPosts(env, {
+            query,
+            subreddit,
+            sort: 'relevance',
+            timeframe: searchTimeframe(opts.profile.maxPostAgeHours),
+            limit: opts.profile.perSubredditLimit ?? 20,
+          }),
+        );
         for (const post of posts) {
           if (post.subreddit.toLowerCase() !== subreddit.toLowerCase()) continue;
           if (seen.has(post.id)) continue;
@@ -116,12 +168,14 @@ export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
       }
 
       if (opts.profile.includeHotBrowse) {
-        const hotPosts = await browseSubreddit(env, {
-          subreddit,
-          sort: 'hot',
-          timeframe: 'day',
-          limit: 20,
-        });
+        const hotPosts = await readListing(() =>
+          browseSubreddit(env, {
+            subreddit,
+            sort: 'hot',
+            timeframe: 'day',
+            limit: 20,
+          }),
+        );
         for (const post of hotPosts) {
           if (seen.has(post.id)) continue;
           seen.add(post.id);
@@ -156,7 +210,7 @@ export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
       maxPostAgeHours: opts.profile.maxPostAgeHours,
       now: opts.now,
     });
-    return { ...filtered, profileErrors };
+    return { ...filtered, profileErrors, searchErrors };
   } finally {
     await closeBrowser();
   }

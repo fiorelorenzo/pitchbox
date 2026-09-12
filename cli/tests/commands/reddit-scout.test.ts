@@ -79,7 +79,12 @@ async function seedRun(config: Record<string, unknown>) {
 beforeEach(async () => {
   await reset();
   runScout.mockReset();
-  runScout.mockResolvedValue({ candidates: [], droppedByAge: 0, profileErrors: 0 });
+  runScout.mockResolvedValue({
+    candidates: [],
+    droppedByAge: 0,
+    profileErrors: 0,
+    searchErrors: 0,
+  });
 });
 
 describe('reddit scoutRun', () => {
@@ -134,12 +139,19 @@ describe('reddit scoutRun', () => {
       candidates: [{ user: { name: 'alice' }, post: { permalink: '/r/rpg/1' } }],
       droppedByAge: 2,
       profileErrors: 3,
+      searchErrors: 1,
     });
 
     const { scoutRun } = await import('../../src/commands/reddit.js');
     const result = await scoutRun(runId);
 
-    expect(result).toEqual({ runId, candidatesFetched: 1, droppedByAge: 2, profileErrors: 3 });
+    expect(result).toEqual({
+      runId,
+      candidatesFetched: 1,
+      droppedByAge: 2,
+      profileErrors: 3,
+      searchErrors: 1,
+    });
     const call = runScout.mock.calls[0][0];
     expect([...call.blockedHandles]).toEqual(['spammer']);
     expect([...call.contactedHandles]).toEqual(['already-contacted']);

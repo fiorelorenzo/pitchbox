@@ -24,6 +24,7 @@ export async function scoutRun(
   candidatesFetched: number;
   droppedByAge: number;
   profileErrors: number;
+  searchErrors: number;
 }> {
   const db = getDb();
   const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
@@ -64,7 +65,7 @@ export async function scoutRun(
     );
   const contactedHandles = new Set(contacted.map((c) => c.target));
 
-  const { candidates, droppedByAge, profileErrors } = await runScout({
+  const { candidates, droppedByAge, profileErrors, searchErrors } = await runScout({
     profile,
     contactedHandles,
     blockedHandles,
@@ -77,7 +78,13 @@ export async function scoutRun(
       .values(candidates.map((c) => ({ runId, raw: c as unknown as Record<string, unknown> })));
   }
 
-  return { runId, candidatesFetched: candidates.length, droppedByAge, profileErrors };
+  return {
+    runId,
+    candidatesFetched: candidates.length,
+    droppedByAge,
+    profileErrors,
+    searchErrors,
+  };
 }
 
 // Snapshot a subreddit for the poster playbook: recent top posts of the week

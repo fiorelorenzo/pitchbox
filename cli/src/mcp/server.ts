@@ -304,7 +304,7 @@ export function createPitchboxMcpServer(ctx: PitchboxMcpContext = {}): McpServer
     {
       title: 'Fetch and stage Reddit candidates',
       description:
-        'Fetch Reddit candidates for the run via the campaign profile, apply blocklist + contact-history + recency filters, and stage them. Returns { runId, candidatesFetched, droppedByAge, profileErrors } - profileErrors counts posts skipped because Reddit refused their author profile page, so zero candidates with a high count means blocked, not nothing to answer.',
+        'Fetch Reddit candidates for the run via the campaign profile, apply blocklist + contact-history + recency filters, and stage them. Returns { runId, candidatesFetched, droppedByAge, profileErrors, searchErrors }. The two error counts are posts skipped because Reddit refused their author profile, and subreddit listings Reddit refused twice: zero candidates with either above zero means blocked, not nothing to answer, and is worth saying in the run summary.',
       inputSchema: {
         runId: z
           .number()
