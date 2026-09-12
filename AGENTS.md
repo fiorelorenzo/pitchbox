@@ -305,7 +305,13 @@ workflows aren't reproducible here.** It also runs `pnpm run version:check`
 above only calls out lint/typecheck/test. `deploy-preview.yml` (on every CI
 success on `main`) and `deploy-prod.yml` (on a `v*` tag) both run on
 `[self-hosted, prodbox]` and rsync into `/opt/apps/pitchbox{-preview}/`: nothing
-local reproduces either, so don't report them as verified.
+local reproduces either, so don't report them as verified. That rsync carries
+`--delete` and must keep it: without it a file removed in a commit stayed in
+the deploy dir and was built again, which is how a green CI produced a failed
+preview deploy on 2026-09-12 (two routes left behind, importing a module the
+same commit had deleted). `backups/` stays excluded for the same reason it is
+not deleted: `scripts/deploy.sh` writes database dumps and a copy of
+`ENCRYPTION_KEY` there, inside the deploy dir.
 
 **CI and preflight.** The one required status check on `main` is `ci`, an
 aggregate job that needs every other job in `.github/workflows/ci.yml` and

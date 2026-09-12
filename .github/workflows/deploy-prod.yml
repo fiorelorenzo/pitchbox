@@ -20,9 +20,15 @@ jobs:
           submodules: false
       - name: Fetch private submodules via deploy keys
         run: git submodule update --init --recursive
+      # `--delete` for the same reason as deploy-preview.yml: without it a
+      # file removed in a release still sits in the deploy dir and is built
+      # again. Excluded paths are never deleted, so `.env`, `node_modules`
+      # and `backups/` (database dumps plus a copy of ENCRYPTION_KEY, written
+      # inside the deploy dir by scripts/deploy.sh) survive.
       - name: Sync source into the deploy dir
         run: |
-          rsync -a --exclude '.git' --exclude '.env' --exclude 'node_modules' \
+          rsync -a --delete --exclude '.git' --exclude '.env' --exclude 'node_modules' \
+            --exclude 'backups' \
             ./ /opt/apps/pitchbox/
       - name: Blue-green deploy
         run: /opt/apps/pitchbox/scripts/deploy.sh prod "${GITHUB_REF_NAME}"
