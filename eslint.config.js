@@ -48,6 +48,25 @@ export default [
     },
   },
   {
+    // A `*.svelte.ts`/`*.svelte.js` module is compiled by
+    // vite-plugin-svelte's compile-module pass, so a rune is a real
+    // declaration there rather than an undefined identifier. `.svelte` files
+    // are ignored wholesale above, which is why nothing needed this until the
+    // first rune-bearing module (`web/tests/support/reactive-props.svelte.ts`).
+    files: ['**/*.svelte.{ts,js}'],
+    languageOptions: {
+      globals: {
+        $state: 'readonly',
+        $derived: 'readonly',
+        $effect: 'readonly',
+        $props: 'readonly',
+        $bindable: 'readonly',
+        $inspect: 'readonly',
+        $host: 'readonly',
+      },
+    },
+  },
+  {
     // Extension code runs in the Chrome MV3 sandbox (browser + chrome.* APIs).
     // TypeScript already checks identifiers; disable no-undef so DOM type
     // references (ParentNode, HeadersInit, …) don't trip eslint.

@@ -27,6 +27,12 @@
   import { getSseManager } from '$lib/realtime/sse';
   import { t, type Locale } from '$lib/i18n/index.js';
 
+  /** Fallback poll while a description run is in flight (see the effect
+   * below). Capped at 20 minutes' worth of ticks so an orphaned `running`
+   * row cannot keep a tab requesting forever. */
+  const POLL_INTERVAL_MS = 10_000;
+  const POLL_MAX_TICKS = 120;
+
   type RunnerMeta = { slug: string; label: string; implemented: boolean };
 
   type Project = {
@@ -109,8 +115,10 @@
 
   // svelte-ignore state_referenced_locally
   let name = $state(project.name);
-  // svelte-ignore state_referenced_locally
-  let description = $state(project.description ?? '');
+  // The operator's unsaved text, or null for "no local edit, follow the
+  // server". Null is what lets a finished run land on screen; a non-null
+  // draft is what survives leaving the editor (Preview) and being saved.
+  let draft = $state<string | null>(null);
   // svelte-ignore state_referenced_locally
   let runner = $state(project.defaultAgentRunner);
   // 'inherit' means both DB columns are null: this project falls back to the
@@ -136,6 +144,7 @@
     ...ASSIST_TONES.map((tone) => ({ value: tone, label: VOICE_TONE_LABELS[tone] })),
   ]);
   let saving = $state(false);
+  let startingRun = $state(false);
   let deleteOpen = $state(false);
   let sourcesPanelEl = $state<HTMLDivElement | null>(null);
   // Gates loading the bytemd editor stack: only fetched once the user
@@ -153,38 +162,117 @@
     runningRunId !== null || extractionRunsState.some((r) => r.status === 'running'),
   );
 
-  // Keep the local description in sync with the upstream prop. Two cases this
-  // covers:
-  //   1) Fresh navigation onto a project whose description was populated by a
-  //      prior auto-extract: the $state initializer above runs once and may
-  //      capture an early-mount value of project.description. The effect
-  //      below re-syncs after props settle.
-  //   2) Auto-extract finishes in this tab: after invalidateAll() the prop
-  //      updates; the SSE handler also writes `description` directly, but we
-  //      keep this effect as a safety net so the editor never lags behind
-  //      project.description while no extraction is running.
-  // We only overwrite the local state when the user hasn't started editing
-  // (i.e. local description is empty) - otherwise we'd clobber edits.
-  $effect(() => {
-    const upstream = project.description ?? '';
-    if (!extractionRunning && upstream && !description) {
-      description = upstream;
-    }
-  });
+  // What the band shows: the operator's draft if there is one, otherwise
+  // whatever the server last said. The mode (`editingDescription`) chooses
+  // the editor or a rendered view, never the text - making the mode the
+  // discriminator is what broke Preview, which leaves edit mode precisely in
+  // order to render the draft.
+  //
+  // `description` used to be a local `$state` synced by an effect that only
+  // wrote when the local copy was empty, so a project that already had a
+  // description kept showing the old text until the page was reloaded: the
+  // SSE description:updated event was the only thing that ever wrote it, and
+  // that event is lost for good if the stream was reconnecting (a run takes
+  // minutes) or the tab was opened mid-run.
+  const shownDescription = $derived(draft ?? project.description ?? '');
+
+  function startEditing() {
+    // Seed from the server only when there is nothing local yet: re-entering
+    // the editor must never overwrite text the operator already typed.
+    draft ??= project.description ?? '';
+    editingDescription = true;
+  }
+
+  // Only an active source is read by a run, so the action's availability
+  // follows the same count the server checks in `runProjectExtraction`.
+  const activeSourceCount = $derived(sources.filter((s) => s.active).length);
 
   // Keep the runs table reactive to upstream prop changes (post-invalidate).
   $effect(() => {
     extractionRunsState = extractionRuns;
   });
 
-  // Bubbled up from ProjectSourcesPanel's "Write from sources" - the same
-  // handling ExtractDescriptionDialog's onLaunched used to do before the
-  // dialog was replaced by the sources panel (#432).
-  async function onExtractionLaunched(runId: number) {
-    runningRunId = runId;
-    descriptionAtLaunch = description;
-    await invalidateAll();
-    extractionRunsState = extractionRuns;
+  // A run takes minutes and both events that end it (project:description:updated
+  // and run:finished) arrive over one SSE stream with no replay, so a
+  // reconnect inside that window drops them for good and the page keeps
+  // showing a spinner over the old description until someone reloads by
+  // hand. While a run is in flight, poll the cheap runs endpoint and reload
+  // the page data as soon as it is no longer running; the SSE path still
+  // wins when it works, since it also carries the diff toast.
+  //
+  // Bounded and serialised on purpose: a crashed dispatch can leave a
+  // `running` row behind with nothing to sweep it (unlike
+  // `runProjectInsights`' STALE_MS), and an unbounded 10s loop against a row
+  // that will never change is a worse bug than the stuck spinner it was
+  // meant to fix. A tick that throws is swallowed - the next one retries,
+  // and the conditions this exists for (a restarting server, a dropped
+  // connection) are exactly the ones that make `fetch` reject.
+  $effect(() => {
+    if (!extractionRunning) return;
+    let inFlight = false;
+    let ticks = 0;
+    const timer = setInterval(async () => {
+      if (inFlight) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (++ticks > POLL_MAX_TICKS) {
+        clearInterval(timer);
+        return;
+      }
+      inFlight = true;
+      try {
+        const res = await fetch(`/api/projects/${project.id}/runs?limit=5`);
+        if (!res.ok) return;
+        const body = (await res.json()) as { runs?: Array<{ status: string }> };
+        if (!body?.runs) return;
+        if (body.runs.some((r) => r.status === 'running')) return;
+        runningRunId = null;
+        await invalidateAll();
+        extractionRunsState = extractionRuns;
+      } catch {
+        /* the next tick retries */
+      } finally {
+        inFlight = false;
+      }
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  });
+
+  /**
+   * Starts the description run over the whole active source set. The
+   * endpoint takes no body: it resolves the set itself, so this cannot
+   * disagree with what the agent will read. It lives here, next to the
+   * description it rewrites, rather than in the sources card whose header it
+   * used to sit in as the page's one iconed button.
+   */
+  async function writeFromSources() {
+    startingRun = true;
+    try {
+      const res = await fetch(`/api/projects/${project.id}/runs`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        toast.error(t(locale, 'projects.error-extraction-already-running'));
+        return;
+      }
+      if (body?.error === 'no_sources') {
+        toast.error(t(locale, 'projects.error-no-sources'));
+        return;
+      }
+      if (!res.ok) {
+        toast.error(body?.message ?? t(locale, 'projects.error-extraction-start-failed'));
+        return;
+      }
+      toast.success(t(locale, 'projects.toast-extraction-started', { runId: body.runId }));
+      runningRunId = body.runId as number;
+      descriptionAtLaunch = shownDescription;
+      // The run rewrites the description, so the draft cannot stay: it would
+      // mask exactly the text the run is about to produce.
+      draft = null;
+      editingDescription = false;
+      await invalidateAll();
+      extractionRunsState = extractionRuns;
+    } finally {
+      startingRun = false;
+    }
   }
 
   /** The source set changed, so reload the page data the panel and this
@@ -206,7 +294,10 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name,
-          description: description || null,
+          // What is on screen: the draft when there is one, the server's
+          // text otherwise. Saving the project's name or runner must not
+          // write back a stale buffer over a description a run just wrote.
+          description: shownDescription || null,
           defaultAgentRunner: runner,
           voiceTone: voiceTone === 'inherit' ? null : voiceTone,
           voiceToneNotes: voiceTone === 'inherit' ? null : voiceToneNotes,
@@ -221,6 +312,10 @@
         return;
       }
       toast.success(t(locale, 'projects.toast-saved'));
+      // Persisted, so the draft has nothing left to protect: drop it and let
+      // the band follow the server again.
+      draft = null;
+      editingDescription = false;
       await invalidateAll();
     } finally {
       saving = false;
@@ -263,12 +358,12 @@
         if (runningRunId !== null && payload.runId !== runningRunId) return;
         descriptionBeforeUpdate = descriptionAtLaunch;
         runningRunId = null;
+        // Nothing local may mask what the run just wrote.
+        draft = null;
         await invalidateAll();
-        // Wait for Svelte to flush the new props before reading project.description,
-        // otherwise this branch may race with the load and re-show the empty state.
+        // Wait for Svelte to flush the new props before reading anything off
+        // `project`, otherwise this branch races the load.
         await tick();
-        description = project.description ?? '';
-        editingDescription = true;
         extractionRunsState = extractionRuns;
         toast.success(t(locale, 'projects.toast-description-updated'), {
           action: { label: t(locale, 'projects.view-diff-button'), onClick: () => (diffOpen = true) },
@@ -358,40 +453,45 @@
   </div>
 
   <div class="flex flex-col gap-2">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <span class="text-xs">{t(locale, 'projects.description-label')}</span>
-      {#if description || extractionRunning || editingDescription}
-        <div class="flex gap-2">
-          {#if !extractionRunning && description && !editingDescription}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onclick={() => (editingDescription = true)}
-            >
-              {t(locale, 'projects.edit-button')}
-            </Button>
-          {:else if !extractionRunning && editingDescription}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onclick={() => (editingDescription = false)}
-            >
-              {t(locale, 'projects.preview-button')}
-            </Button>
-          {/if}
+      <div class="flex flex-wrap gap-2">
+        {#if !extractionRunning && shownDescription && !editingDescription}
+          <Button type="button" variant="outline" size="sm" onclick={startEditing}>
+            {t(locale, 'projects.edit-button')}
+          </Button>
+        {:else if !extractionRunning && editingDescription}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onclick={() => sourcesPanelEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            disabled={extractionRunning}
+            onclick={() => (editingDescription = false)}
           >
-            {t(locale, 'projects.manage-sources-button')}
+            {t(locale, 'projects.preview-button')}
           </Button>
-        </div>
-      {/if}
+        {/if}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onclick={() => sourcesPanelEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          disabled={extractionRunning}
+        >
+          {t(locale, 'projects.manage-sources-button')}
+        </Button>
+        {#if isAdmin && (shownDescription || extractionRunning || editingDescription)}
+          <Button
+            type="button"
+            size="sm"
+            onclick={writeFromSources}
+            loading={startingRun}
+            disabled={extractionRunning || activeSourceCount === 0}
+            title={activeSourceCount === 0 ? t(locale, 'projects.error-no-sources') : undefined}
+          >
+            {t(locale, 'projects.regenerate-description-button')}
+          </Button>
+        {/if}
+      </div>
     </div>
     {#if extractionRunning}
       <div
@@ -401,7 +501,7 @@
         <span>{t(locale, 'projects.extraction-running-body')}</span>
       </div>
       <div class="rounded-md border border-border p-3">
-        <Markdown source={description} />
+        <Markdown source={shownDescription} />
       </div>
     {:else if editingDescription}
       {#await import('$lib/components/MarkdownEditor.svelte')}
@@ -412,11 +512,11 @@
           <Spinner size="sm" />
         </div>
       {:then { default: MarkdownEditor }}
-        <MarkdownEditor value={description} onchange={(v) => (description = v)} height="540px" />
+        <MarkdownEditor value={draft ?? ''} onchange={(v) => (draft = v)} height="540px" />
       {/await}
-    {:else if description}
+    {:else if shownDescription}
       <div class="rounded-md border border-border p-3">
-        <Markdown source={description} />
+        <Markdown source={shownDescription} />
       </div>
     {:else}
       <div
@@ -431,20 +531,26 @@
             {t(locale, 'projects.no-description-body')}
           </p>
         </div>
-        <div class="flex gap-2">
-          <Button
-            type="button"
-            size="lg"
-            onclick={() => sourcesPanelEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-          >
-            {t(locale, 'projects.manage-sources-button')}
-          </Button>
+        <div class="flex flex-wrap justify-center gap-2">
+          {#if isAdmin && activeSourceCount > 0}
+            <Button type="button" size="lg" onclick={writeFromSources} loading={startingRun}>
+              {t(locale, 'projects.regenerate-description-button')}
+            </Button>
+          {:else}
+            <Button
+              type="button"
+              size="lg"
+              onclick={() => sourcesPanelEl?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            >
+              {t(locale, 'projects.manage-sources-button')}
+            </Button>
+          {/if}
           <Button
             type="button"
             variant="outline"
             size="lg"
             onclick={() => {
-              description = DESCRIPTION_SCAFFOLD;
+              draft = DESCRIPTION_SCAFFOLD;
               editingDescription = true;
             }}
           >
@@ -461,7 +567,7 @@
       {sources}
       {isAdmin}
       {extractionRunning}
-      {onExtractionLaunched}
+      onWriteFromSources={writeFromSources}
       onSourcesChanged={refreshSources}
     />
   </div>
@@ -526,6 +632,6 @@
   open={diffOpen}
   onOpenChange={(v) => (diffOpen = v)}
   before={descriptionBeforeUpdate}
-  after={description}
+  after={project.description ?? ''}
 />
 
