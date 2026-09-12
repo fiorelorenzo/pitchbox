@@ -440,6 +440,17 @@ agent CLIs to stay lean.
 ## Conventions
 
 - **DB access is centralised in `shared/`.** CLI, web server routes, and daemon all import from `@pitchbox/shared/db` (and subpaths). Never spin up an ad-hoc `pg` client.
+- **A field that mirrors a server value holds a nullable draft, never a copy.**
+  `null` means "no local edit, render the prop"; a string means "the operator
+  typed this". Both alternatives have shipped here and both are silent: a local
+  `$state` seeded once at mount kept showing the old description after a run
+  rewrote it (LOR-317, fixed only by reloading the page), and making the _mode_
+  (`editingDescription`) decide what the band renders broke the other direction -
+  Preview leaves edit mode in order to render what was just typed, so it showed
+  the server's copy and `save()` then persisted it over the edit. The rule that
+  survives both: presence of a draft decides the text, the mode only decides
+  editor-or-rendered, and the draft is cleared where the server becomes the
+  truth again (a successful save, a run starting, a run finishing).
 - **Runner indirection.** Each campaign snapshots its runner at creation, each run snapshots it again. Code that dispatches a run reads the snapshot - do not hardcode `claude-code`.
 - **Platform indirection.** Same for `ReplyReader` - the null reader is the current default for Reddit until a real DM reader lands (M3).
 - **A switch is enforced where the effect happens, not where it is read.** The
