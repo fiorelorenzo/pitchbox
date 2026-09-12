@@ -14,12 +14,17 @@ import type { RedditPost, RedditUserAbout } from '../../../src/platforms/reddit/
 const searchCalls: SearchOpts[] = [];
 let searchResult: (opts: SearchOpts) => RedditPost[] = () => [];
 let profileFailsFor: string | null = null;
+let searchFailsFor: { subreddit: string; times: number } | null = null;
 
 vi.mock('../../../src/platforms/reddit/reddit.js', () => ({
   acquireBrowser: () => undefined,
   closeBrowser: async () => undefined,
   searchPosts: async (_env: unknown, opts: SearchOpts) => {
     searchCalls.push(opts);
+    if (searchFailsFor && searchFailsFor.subreddit === opts.subreddit && searchFailsFor.times > 0) {
+      searchFailsFor.times--;
+      throw new Error(`page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at /r/${opts.subreddit}/`);
+    }
     return searchResult(opts);
   },
   browseSubreddit: async () => [],
@@ -72,6 +77,7 @@ describe('runScout', () => {
     searchCalls.length = 0;
     searchResult = () => [];
     profileFailsFor = null;
+    searchFailsFor = null;
   });
 
   it('searches inside each target subreddit, so what it fetches is what it can stage', async () => {
@@ -147,5 +153,40 @@ describe('runScout', () => {
 
     expect(result.candidates.map((c) => c.user.name)).toEqual(['author_ok']);
     expect(result.profileErrors).toBe(1);
+  });
+
+  it('retries a refused listing once and keeps the subreddits it could read', async () => {
+    const { runScout } = await import('../../../src/platforms/reddit/scout.js');
+    searchResult = (opts) => [post(opts.subreddit ?? 'x', `p_${opts.subreddit}`)];
+    searchFailsFor = { subreddit: 'loseit', times: 1 };
+
+    const result = await runScout({
+      profile: { targetSubreddits: ['loseit', 'CICO'], topicKeywords: ['calories'] },
+      contactedHandles: new Set(),
+      blockedHandles: new Set(),
+      now: NOW,
+      retryDelayMs: 0,
+    });
+
+    expect(searchCalls.map((c) => c.subreddit)).toEqual(['loseit', 'loseit', 'CICO']);
+    expect(result.candidates.map((c) => c.post.subreddit)).toEqual(['loseit', 'CICO']);
+    expect(result.searchErrors).toBe(0);
+  });
+
+  it('gives up on a listing refused twice without losing the rest of the run', async () => {
+    const { runScout } = await import('../../../src/platforms/reddit/scout.js');
+    searchResult = (opts) => [post(opts.subreddit ?? 'x', `p_${opts.subreddit}`)];
+    searchFailsFor = { subreddit: 'loseit', times: 2 };
+
+    const result = await runScout({
+      profile: { targetSubreddits: ['loseit', 'CICO'], topicKeywords: ['calories'] },
+      contactedHandles: new Set(),
+      blockedHandles: new Set(),
+      now: NOW,
+      retryDelayMs: 0,
+    });
+
+    expect(result.candidates.map((c) => c.post.subreddit)).toEqual(['CICO']);
+    expect(result.searchErrors).toBe(1);
   });
 });
