@@ -454,8 +454,6 @@ export const campaignsEn = {
   'projects.preview-button': 'Preview',
   'projects.manage-sources-button': 'Manage sources',
   'projects.regenerate-description-button': 'Write from sources',
-  'projects.regenerate-description-hint':
-    'The agent reads every active source and rewrites this description from what it found.',
   'projects.error-no-sources': 'Add a source first: there is nothing to read yet.',
   'projects.regenerate-now-action': 'Write it now',
   'projects.extraction-running-body':
@@ -1087,8 +1085,6 @@ export const campaignsIt = {
   'projects.preview-button': 'Anteprima',
   'projects.manage-sources-button': 'Gestisci fonti',
   'projects.regenerate-description-button': 'Scrivi dalle fonti',
-  'projects.regenerate-description-hint':
-    "L'agente legge tutte le fonti attive e riscrive questa descrizione con quello che ha trovato.",
   'projects.error-no-sources': "Aggiungi prima una fonte: non c'è ancora niente da leggere.",
   'projects.regenerate-now-action': 'Scrivila adesso',
   'projects.extraction-running-body':

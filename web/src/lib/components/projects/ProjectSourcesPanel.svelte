@@ -42,7 +42,7 @@
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import { relativeTime } from '$lib/utils/time';
   import { toast } from 'svelte-sonner';
-  import { Trash2, RefreshCw, Sparkles } from '@lucide/svelte';
+  import { Trash2, RefreshCw } from '@lucide/svelte';
   import type { ProjectSourceKind } from '@pitchbox/shared/project-sources';
   import { t, type Locale } from '$lib/i18n/index.js';
   import { TONE_TEXT_CLASS } from '$lib/config/status-badges';
@@ -71,9 +71,12 @@
     sources: ProjectSource[];
     isAdmin: boolean;
     /** True while a description run for this project is in flight, so the
-     * one primary action here cannot start a second one. */
+     * toast action below cannot offer to start a second one. */
     extractionRunning: boolean;
-    onExtractionLaunched: (runId: number) => void;
+    /** Starts the description run. Owned by the page, next to the
+     * description it rewrites: this card only offers it on the toast that
+     * follows an add, where the gesture is still unfinished. */
+    onWriteFromSources: () => void | Promise<void>;
     /** Adding or removing a source changes what the next description will
      * be written from, and the page above shows that: it reloads rather
      * than this card holding a second, quietly diverging copy of the set. */
@@ -84,7 +87,7 @@
     sources,
     isAdmin,
     extractionRunning,
-    onExtractionLaunched,
+    onWriteFromSources,
     onSourcesChanged,
   }: Props = $props();
 
@@ -95,11 +98,6 @@
   $effect(() => {
     sourcesState = sources;
   });
-
-  // Only an active source is read by a description run, so the action's
-  // availability follows the same count the server checks rather than the
-  // number of rows on screen.
-  const activeSourceCount = $derived(sourcesState.filter((s) => s.active).length);
 
   const KIND_LABEL = $derived<Record<ProjectSourceKind, string>>({
     folder: t(locale, 'projects.source-kind.folder'),
@@ -175,7 +173,6 @@
   let addValue = $state('');
   let adding = $state(false);
   let syncingId = $state<number | null>(null);
-  let starting = $state(false);
   let removeTarget = $state<ProjectSource | null>(null);
   let removing = $state(false);
 
@@ -204,14 +201,15 @@
       sourcesState = [...sourcesState, body.source as ProjectSource];
       addValue = '';
       // The description the agent would now write differs from the one on
-      // screen, and the action that closes that gap is one click away in
-      // this card's header. Offering it on the toast is what turns "add a
-      // source" into a finished gesture rather than the first of three.
+      // screen, and the action that closes that gap lives in the
+      // description band above. Offering it on the toast is what turns
+      // "add a source" into a finished gesture rather than the first of
+      // three.
       const action = extractionRunning
         ? undefined
         : {
             label: t(locale, 'projects.regenerate-now-action'),
-            onClick: () => void writeFromSources(),
+            onClick: () => void onWriteFromSources(),
           };
       if (isPassivelyFilledLinkedInSource(body.source?.kind)) {
         toast.info(t(locale, 'projects.toast-linkedin-waiting'));
@@ -258,35 +256,6 @@
     }
   }
 
-  /**
-   * Starts the description run over the whole active set. The endpoint
-   * takes no body: it resolves the set itself, so this cannot disagree with
-   * what the agent will read.
-   */
-  async function writeFromSources() {
-    starting = true;
-    try {
-      const res = await fetch(`/api/projects/${projectId}/runs`, { method: 'POST' });
-      const body = await res.json().catch(() => ({}));
-      if (res.status === 409) {
-        toast.error(t(locale, 'projects.error-extraction-already-running'));
-        return;
-      }
-      if (body?.error === 'no_sources') {
-        toast.error(t(locale, 'projects.error-no-sources'));
-        return;
-      }
-      if (!res.ok) {
-        toast.error(body?.message ?? t(locale, 'projects.error-extraction-start-failed'));
-        return;
-      }
-      toast.success(t(locale, 'projects.toast-extraction-started', { runId: body.runId }));
-      onExtractionLaunched(body.runId);
-    } finally {
-      starting = false;
-    }
-  }
-
   async function confirmRemove() {
     if (!removeTarget) return;
     removing = true;
@@ -313,30 +282,11 @@
 </script>
 
 <Card.Root size="sm">
-  <Card.Header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-    <div class="flex min-w-0 flex-col gap-1">
-      <Card.Title class="text-base">{t(locale, 'projects.sources-panel-title')}</Card.Title>
-      <Card.Description class="text-xs">
-        {t(locale, 'projects.sources-panel-description')}
-      </Card.Description>
-    </div>
-    {#if isAdmin}
-      <div class="flex flex-none flex-col items-start gap-1 sm:items-end">
-        <Button
-          type="button"
-          onclick={writeFromSources}
-          loading={starting}
-          disabled={extractionRunning || activeSourceCount === 0}
-          title={activeSourceCount === 0 ? t(locale, 'projects.error-no-sources') : undefined}
-        >
-          <Sparkles class="size-4" />
-          {t(locale, 'projects.regenerate-description-button')}
-        </Button>
-        <span class="max-w-72 text-xs text-muted-foreground sm:text-right">
-          {t(locale, 'projects.regenerate-description-hint')}
-        </span>
-      </div>
-    {/if}
+  <Card.Header>
+    <Card.Title class="text-base">{t(locale, 'projects.sources-panel-title')}</Card.Title>
+    <Card.Description class="text-xs">
+      {t(locale, 'projects.sources-panel-description')}
+    </Card.Description>
   </Card.Header>
   <Card.Content class="flex flex-col gap-4">
     {#if isAdmin}
