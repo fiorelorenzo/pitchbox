@@ -8,7 +8,8 @@ import {
 } from './reddit.js';
 import { loadEnv } from './env.js';
 import { DEFAULT_MAX_POST_AGE_HOURS, filterCandidates } from './filter.js';
-import type { ScoutCandidate, ScoutProfile, Timeframe } from './types.js';
+import type { RedditEnv } from './env.js';
+import type { RedditUserAbout, ScoutCandidate, ScoutProfile, Timeframe } from './types.js';
 
 export interface RunScoutOptions {
   profile: ScoutProfile;
@@ -23,6 +24,15 @@ export interface RunScoutResult {
   candidates: ScoutCandidate[];
   /** Count of candidates dropped for being older than the campaign's recency cap (#338). */
   droppedByAge: number;
+  /**
+   * Count of posts dropped because their author's profile page could not be
+   * read. Reddit answers a profile with a 403/429 often enough that this
+   * used to abort the whole scout: on preview, run 47 found candidates and
+   * staged none of them because one `/user/<name>/` navigation failed
+   * (LOR-322). A run reports the number so "found nothing" and "was blocked
+   * reading profiles" are distinguishable.
+   */
+  profileErrors: number;
 }
 
 /**
@@ -48,6 +58,21 @@ export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
   // actually tears the browser down once every claim has been released -
   // this run's cleanup must not close a browser a sibling run still needs.
   acquireBrowser();
+  let profileErrors = 0;
+  /**
+   * Reads one candidate's profile, turning a failure into a skipped
+   * candidate rather than an aborted run. Reddit serves `/user/<name>/`
+   * behind its own anti-bot checks, so a single 403 there used to throw out
+   * of `runScout` and lose every candidate already collected.
+   */
+  const readAuthor = async (env: RedditEnv, author: string): Promise<RedditUserAbout | null> => {
+    try {
+      return await getUserAbout(env, author);
+    } catch {
+      profileErrors++;
+      return null;
+    }
+  };
   try {
     const raw: ScoutCandidate[] = [];
     const seen = new Set<string>();
@@ -66,7 +91,7 @@ export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
           if (post.subreddit.toLowerCase() !== subreddit.toLowerCase()) continue;
           if (seen.has(post.id)) continue;
           seen.add(post.id);
-          const user = await getUserAbout(env, post.author);
+          const user = await readAuthor(env, post.author);
           if (!user) continue;
           raw.push({
             user: {
@@ -100,7 +125,7 @@ export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
         for (const post of hotPosts) {
           if (seen.has(post.id)) continue;
           seen.add(post.id);
-          const user = await getUserAbout(env, post.author);
+          const user = await readAuthor(env, post.author);
           if (!user) continue;
           raw.push({
             user: {
@@ -125,12 +150,13 @@ export async function runScout(opts: RunScoutOptions): Promise<RunScoutResult> {
       }
     }
 
-    return filterCandidates(raw, {
+    const filtered = filterCandidates(raw, {
       contactedHandles: opts.contactedHandles,
       blockedHandles: opts.blockedHandles,
       maxPostAgeHours: opts.profile.maxPostAgeHours,
       now: opts.now,
     });
+    return { ...filtered, profileErrors };
   } finally {
     await closeBrowser();
   }

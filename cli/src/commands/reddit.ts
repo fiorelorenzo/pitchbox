@@ -19,7 +19,12 @@ import { ok, fail } from '../lib/output.js';
 export async function scoutRun(
   runId: number,
   verbose?: boolean,
-): Promise<{ runId: number; candidatesFetched: number; droppedByAge: number }> {
+): Promise<{
+  runId: number;
+  candidatesFetched: number;
+  droppedByAge: number;
+  profileErrors: number;
+}> {
   const db = getDb();
   const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
   if (!run) throw new Error(`run ${runId} not found`);
@@ -59,7 +64,7 @@ export async function scoutRun(
     );
   const contactedHandles = new Set(contacted.map((c) => c.target));
 
-  const { candidates, droppedByAge } = await runScout({
+  const { candidates, droppedByAge, profileErrors } = await runScout({
     profile,
     contactedHandles,
     blockedHandles,
@@ -72,7 +77,7 @@ export async function scoutRun(
       .values(candidates.map((c) => ({ runId, raw: c as unknown as Record<string, unknown> })));
   }
 
-  return { runId, candidatesFetched: candidates.length, droppedByAge };
+  return { runId, candidatesFetched: candidates.length, droppedByAge, profileErrors };
 }
 
 // Snapshot a subreddit for the poster playbook: recent top posts of the week
