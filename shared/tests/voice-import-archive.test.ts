@@ -141,6 +141,26 @@ describe('parseLinkedinExportBufferWithStats', () => {
     expect(messages).toHaveLength(2);
   });
 
+  it('imports the complete export, whose Shares/Comments carry the member id in their names', () => {
+    // LOR-330: LinkedIn's complete archive writes `Shares_<memberId>.csv`
+    // and `Comments_<memberId>.csv` (measured on the real 2026-09-12
+    // export), alongside a bare `messages.csv`. Matching only the bare
+    // names imported the messages and silently reported zero posts and
+    // zero comments, which is indistinguishable from the "Basic" archive.
+    const buffer = zipOf({
+      'Shares_506219023.csv': SHARES_CSV,
+      'Comments_506219023.csv': COMMENTS_CSV,
+      'messages.csv': MESSAGES_CSV,
+      'Reactions_506219023.csv': 'Date,Type\n2026-04-01,LIKE',
+    });
+    const { items, stats } = parseLinkedinExportBufferWithStats(buffer, 'export.zip');
+    expect(items.filter((i) => i.genre === 'post')).toHaveLength(1);
+    expect(items.filter((i) => i.genre === 'comment')).toHaveLength(1);
+    expect(stats.post.totalRows).toBe(1);
+    expect(stats.comment.totalRows).toBe(1);
+    expect(stats.message.imported).toBe(2);
+  });
+
   it('recognises a bare messages.csv upload by its header', () => {
     const { items, messages, stats } = parseLinkedinExportBufferWithStats(
       Buffer.from(MESSAGES_CSV, 'utf8'),
