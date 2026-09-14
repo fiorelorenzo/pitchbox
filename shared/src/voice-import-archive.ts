@@ -16,9 +16,16 @@ import {
   type CsvParseStats,
 } from './voice-import.js';
 
-const SHARES_ENTRY = /(?:^|\/)shares\.csv$/iu;
-const COMMENTS_ENTRY = /(?:^|\/)comments\.csv$/iu;
-const MESSAGES_ENTRY = /(?:^|\/)messages\.csv$/iu;
+// LinkedIn's own "complete" export suffixes most per-member files with the
+// member id (`Shares_506219023.csv`, `Comments_506219023.csv`), while the
+// smaller "Basic" one writes `messages.csv` bare - so both spellings are
+// the real shape of a real archive, not a tolerance for a renamed file.
+// Measured on Lorenzo's own 2026-09-12 export (LOR-330): matching the bare
+// names alone read that archive's 356 shares and 59 comments as absent and
+// imported nothing, with no error, because `messages.csv` was found.
+const SHARES_ENTRY = /(?:^|\/)shares(?:_\d+)?\.csv$/iu;
+const COMMENTS_ENTRY = /(?:^|\/)comments(?:_\d+)?\.csv$/iu;
+const MESSAGES_ENTRY = /(?:^|\/)messages(?:_\d+)?\.csv$/iu;
 
 function decodeUtf8(buffer: Buffer): string {
   let text = buffer.toString('utf8');
