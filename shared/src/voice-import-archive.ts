@@ -17,12 +17,15 @@ import {
 } from './voice-import.js';
 
 // LinkedIn's own "complete" export suffixes most per-member files with the
-// member id (`Shares_506219023.csv`, `Comments_506219023.csv`), while the
-// smaller "Basic" one writes `messages.csv` bare - so both spellings are
-// the real shape of a real archive, not a tolerance for a renamed file.
-// Measured on Lorenzo's own 2026-09-12 export (LOR-330): matching the bare
-// names alone read that archive's 356 shares and 59 comments as absent and
-// imported nothing, with no error, because `messages.csv` was found.
+// member id (`Shares_506219023.csv`, `Comments_506219023.csv`), while both
+// that archive and the smaller "Basic" one write `messages.csv` bare - so
+// both spellings are the real shape of a real archive, not a tolerance for
+// a renamed file. Measured on Lorenzo's own 2026-09-12 export (LOR-330):
+// matching the bare names alone read that archive's 83 share rows and 45
+// comment rows as absent and imported nothing, with no error, because
+// `messages.csv` was found. Only the first two suffixes have been observed;
+// the third regex is widened for uniformity, so an export that starts
+// suffixing that file too keeps working.
 const SHARES_ENTRY = /(?:^|\/)shares(?:_\d+)?\.csv$/iu;
 const COMMENTS_ENTRY = /(?:^|\/)comments(?:_\d+)?\.csv$/iu;
 const MESSAGES_ENTRY = /(?:^|\/)messages(?:_\d+)?\.csv$/iu;
