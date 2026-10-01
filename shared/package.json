@@ -128,7 +128,7 @@
     "drizzle-orm": "^0.45.2",
     "html-to-text": "^9.0.5",
     "jose": "^6.2.3",
-    "nodemailer": "^10.0.1",
+    "nodemailer": "^10.0.9",
     "pg": "^8.23.0",
     "playwright": "^1.62.1",
     "playwright-extra": "^4.3.6",
