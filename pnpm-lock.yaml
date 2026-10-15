@@ -203,7 +203,7 @@ importers:
         version: 30.0.1
       svelte-check:
         specifier: ^4.7.1
-        version: 4.7.1(@typescript/typescript6@6.0.2)(picomatch@4.0.7)(svelte@5.57.0(@typescript-eslint/types@8.62.1))
+        version: 4.7.1(@typescript/typescript6@6.0.2)(picomatch@4.0.4)(svelte@5.57.0(@typescript-eslint/types@8.62.1))
       typescript:
         specifier: npm:@typescript/typescript6@^6.0.2
         version: '@typescript/typescript6@6.0.2'
@@ -357,8 +357,8 @@ importers:
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
       adm-zip:
-        specifier: ^0.6.0
-        version: 0.6.0
+        specifier: ^0.6.1
+        version: 0.6.1
       ai:
         specifier: ^7.0.93
         version: 7.0.93(zod@4.5.4)
@@ -607,11 +607,11 @@ packages:
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild-kit/esm-loader@2.6.5':
     resolution: {integrity: sha512-FxEMIkJKnodyA1OaCUoEvbYRkoZlLZ4d/eXFu9Fh8CbBBgP5EmZxrfTRyN0qpXZ4vOvqnE5YdRdcrmUUXuU+dA==}
-    deprecated: 'Merged into tsx: https://tsx.is'
+    deprecated: 'Merged into tsx: https://tsx.hirok.io'
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -2091,10 +2091,6 @@ packages:
     resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
     engines: {node: '>=0.4.0'}
     hasBin: true
-
-  adm-zip@0.6.0:
-    resolution: {integrity: sha512-XleryMhbuksdKtofnWZ9Sk+4CUTbms4Mb/EU32SZwToAyZ5RgVos/ki8n+yr0LWHOGKuakbXTuuYNHLQjhddgg==}
-    engines: {node: '>=14.0'}
 
   adm-zip@0.6.1:
     resolution: {integrity: sha512-Xwrja8nx9e5o2N1my4DsKCeKpdrnACyr1wtbPxBDgGzKzKyE9kRtBFA8mWldI+RVlD7CBZNWY/wQ2+ydwOR6kQ==}
@@ -5883,8 +5879,6 @@ snapshots:
 
   acorn@8.18.0: {}
 
-  adm-zip@0.6.0: {}
-
   adm-zip@0.6.1: {}
 
   ai@7.0.93(zod@4.5.4):
@@ -7953,19 +7947,6 @@ snapshots:
       '@sveltejs/load-config': 0.2.0
       chokidar: 4.0.3
       fdir: 6.5.0(picomatch@4.0.4)
-      picocolors: 1.1.1
-      sade: 1.8.1
-      svelte: 5.57.0(@typescript-eslint/types@8.62.1)
-      typescript: '@typescript/typescript6@6.0.2'
-    transitivePeerDependencies:
-      - picomatch
-
-  svelte-check@4.7.1(@typescript/typescript6@6.0.2)(picomatch@4.0.7)(svelte@5.57.0(@typescript-eslint/types@8.62.1)):
-    dependencies:
-      '@jridgewell/trace-mapping': 0.3.31
-      '@sveltejs/load-config': 0.2.0
-      chokidar: 4.0.3
-      fdir: 6.5.0(picomatch@4.0.7)
       picocolors: 1.1.1
       sade: 1.8.1
       svelte: 5.57.0(@typescript-eslint/types@8.62.1)
