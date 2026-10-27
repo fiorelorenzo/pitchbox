@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "tracker": {
+    "kind": "linear",
+    "workspace": "fiorelorenzo",
+    "team": "Lorenzo Fiore",
+    "prefix": "LOR",
+    "language": "English",
+    "contract": "AGENTS.md",
+    "labels": {
+      "type": [
+        "feature",
+        "fix",
+        "refactor",
+        "chore",
+        "docs",
+        "test",
+        "ci",
+        "design",
+        "security",
+        "spike"
+      ],
+      "area": [
+        "area:cli-mcp",
+        "area:cloud",
+        "area:daemon",
+        "area:deploy",
+        "area:docs",
+        "area:extension",
+        "area:playbooks",
+        "area:shared",
+        "area:tests",
+        "area:web"
+      ]
+    }
+  },
+  "github": {
+    "merge": "squash",
+    "required_check": "ci",
+    "review_bots": []
+  },
+  "commits": {
+    "types": [
+      "feat",
+      "fix",
+      "refactor",
+      "perf",
+      "test",
+      "docs",
+      "ci",
+      "chore",
+      "style",
+      "revert",
+      "security",
+      "spike"
+    ],
+    "scope_required": false,
+    "scopes": [
+      "shared",
+      "web",
+      "cli",
+      "daemon",
+      "extension",
+      "playbooks",
+      "tests",
+      "docs",
+      "cloud",
+      "deploy",
+      "scripts",
+      "agents",
+      "billing",
+      "design",
+      "eval",
+      "ci",
+      "repo",
+      "deps",
+      "drafts",
+      "db",
+      "dev",
+      "projects",
+      "mcp",
+      "docker",
+      "auth",
+      "runlog",
+      "quality",
+      "campaigns",
+      "runs",
+      "notifications",
+      "mastodon",
+      "cli-mcp",
+      "settings",
+      "runners",
+      "orgs",
+      "release",
+      "readme",
+      "brand",
+      "security"
+    ]
+  },
+  "pr": {
+    "title_max": 72,
+    "card_line": true,
+    "milestone_card_line": true,
+    "exempt_authors": ["dependabot[bot]", "app/dependabot"],
+    "sections": [
+      { "title": "What this changes", "required": true },
+      { "title": "How I verified it", "required": true },
+      { "title": "Anything a reviewer should look at twice" },
+      { "title": "Screenshots", "required": true }
+    ]
+  },
+  "extras": "docs/agents"
+}

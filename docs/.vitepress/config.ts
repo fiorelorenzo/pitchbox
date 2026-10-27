@@ -16,7 +16,7 @@ export default defineConfig({
   description: 'Self-hosted, human-in-the-loop outreach agent for Reddit (and beyond).',
   cleanUrls: true,
   lastUpdated: true,
-  srcExclude: ['superpowers/**'],
+  srcExclude: ['superpowers/**', 'agents/**'],
   sitemap: { hostname: 'https://docs.pitchbox.app' },
   // Syntax colours are the one set of values that cannot come from our token
   // layer, so they are picked for contrast against it and measured. VitePress

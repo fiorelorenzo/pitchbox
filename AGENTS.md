@@ -163,9 +163,9 @@ matches CI.
 
 Run the full `pnpm run lint`, `pnpm run typecheck`, and `pnpm test` only for
 release-critical changes (migrations, auth, the runner protocol) or when the
-change is genuinely repo-wide. `pnpm test` is also what `preflight` runs
-locally (see "CI and preflight" below) against its own disposable Postgres,
-so a green `preflight` run before you push already covers it.
+change is genuinely repo-wide. `pnpm test` is also what `python3
+.github/kit/bin/preflight` runs locally (see "CI and preflight" below) against its own
+disposable Postgres, so a green preflight run before you push already covers it.
 
 ## Working in a worktree, next to other agents
 
@@ -280,10 +280,10 @@ wider new cell only re-pads the column it widens, not the whole table. Two
 agents in one afternoon (2026-09-10 into 2026-09-11) shipped a PR with this
 exact failure before catching it from a red `ci`, not from their own checks.
 
-That is also why a re-push after such a rebase should not re-run `preflight`
+That is also why a re-push after such a rebase should not re-run preflight
 from scratch: the hook takes about nine minutes, `main` moves inside that
 window, and the tree it validated differs from the previous green run by a
-table row and a comment. Run `preflight` once on the real change, then for a
+table row and a comment. Run preflight once on the real change, then for a
 renumber-only rebase push with `--no-verify` and arm `gh pr merge --squash
 --auto` immediately, which lands the PR the moment `ci` reports rather than
 when you next look. Every push in that loop still gets the full `ci` on GitHub,
@@ -317,12 +317,12 @@ not deleted: `scripts/deploy.sh` writes database dumps and a copy of
 aggregate job that needs every other job in `.github/workflows/ci.yml` and
 treats a `skipped` dependency as passing - that's what lets a docs-only PR go
 green without paying for `quality` or `Tests (Postgres)`. `Tests (Postgres)`
-only runs on `push: main` now; its PR-path replacement is `preflight`
-(`.github/preflight.json`), which runs `pnpm test` locally against a
-disposable Postgres on `127.0.0.1:5490` (`docker-compose.preflight.yml`,
-its own compose project so it can never touch the dev Postgres on 5434).
-Run `preflight` (or let the installed `pre-push` hook run it) before you
-push; `preflight --list` shows what it would run for your current diff.
+only runs on `push: main` now; its PR-path replacement is the preflight run
+(`python3 .github/kit/bin/preflight`, reading `.github/preflight.json`), which runs
+`pnpm test` locally against a disposable Postgres on `127.0.0.1:5490`
+(`docker-compose.preflight.yml`, its own compose project so it can never touch the dev
+Postgres on 5434). Run it (or let the installed `pre-push` hook run it) before you push;
+`python3 .github/kit/bin/preflight --list` shows what it would run for your current diff.
 
 **The trunk's gate only exists because of how concurrency is keyed, and that
 was broken until 2026-09-11.** `ci.yml`'s `concurrency` group used to be
@@ -335,9 +335,9 @@ _successful_ CI `workflow_run`. During a wave of parallel agents, merges land
 every few minutes, so the expensive half ran never, and a PR whose own test job
 had skipped could break `main` with nobody noticing (that happened, #709). The
 trunk now keys its group per commit and does not cancel, so runs queue and
-every commit reaches a conclusion. The repo is public, so all four jobs are on
+every commit reaches a conclusion. The repo is public, so every job is on
 GitHub-hosted runners and the queue costs time rather than money. If you are
-about to add a fifth job or a matrix, that is the constraint to check: the
+about to add another job or a matrix, that is the constraint to check: the
 trunk's cost is now proportional to merges, not to the newest one.
 
 **Merging requires a PR, squash-only, and cleans up after itself.** Two active
@@ -497,29 +497,50 @@ agent CLIs to stay lean.
 - **Security disclosure.** This repo is public with a live prod deploy (`app.pitchbox.app`). Never put unpatched-vulnerability repro detail (steps, `file:line`) in a public issue, PR, or committed doc - file a private GitHub security advisory instead and leave a neutral `[security]` stub issue pointing to it.
 - **English everywhere.** All in-code comments and user-facing UI strings are in English (even when the conversation is in another language). No em dashes in any text - use regular hyphens or colons.
 
-## Pull requests
+## Linear and pull requests: the workflow kit
 
-One shape for every repo of mine: `skill://opening-a-pull-request`. The issue and its
-neighbours before the branch, the branch name Linear renders on the issue, Conventional
-Commits in the first person, the body's four sections from
-`.github/PULL_REQUEST_TEMPLATE.md` (Screenshots is never deleted), an independent review
-applied in a second commit, and the card closed only against evidence. What is true only
-here:
+The procedure for a card and for a pull request is written once, in the workflow kit's
+three skills: `linear-ticket` (the board, field by field, and the API traps),
+`linear-content` (how a card, a comment and a project update are written) and
+`pr-creation` (from the card to the merge). They live in `.agents/skills/`, with a copy
+in `.claude/skills/` for Claude Code, and come from `letsrebase/rebase`
+(`tooling/workflow-kit/`): do not edit them here, a change goes through the kit and
+`kit.py sync`. Their data (team, prefix, labels, commit types and scopes, the PR
+template's sections, merge method) is `.github/workflow.json`. `ci`'s `kit` job runs
+`python3 .github/kit/bin/kit.py check` and, on a pull request,
+`python3 .github/kit/bin/pr_lint.py --github` (title and body against
+`workflow.json`); check yours first with `python3 .github/kit/bin/pr_lint.py --title
+"<title>" --body-file pr-body.md`. A hook refuses a malformed Linear write (dash, `\n`
+escape, `#` heading, long or colon title) before it is sent, in Claude Code
+(`.claude/settings.json`) and in omp (`.omp/hooks/pre/linear-gate.ts`). This
+repository's own PR steps are in `docs/agents/pr-creation.md`; the skill reads it first.
+Where this file and a skill disagree, this file is right.
+
+If your harness does not read skills, the rules in five lines:
+
+- A card exists, is yours and has its neighbours read **before the branch**; the branch
+  is the name Linear renders on the card, in a worktree of its own.
+- Commits are Conventional Commits in the first person, in English, no em dash, and the
+  card is the last line (`LOR-N.`).
+- The PR body follows `.github/PULL_REQUEST_TEMPLATE.md`: What this changes, How I
+  verified it, Anything a reviewer should look at twice, Screenshots (never deleted).
+- Its last line is `Linear: LOR-N.`, and an independent review is applied in a second
+  commit before it opens.
+- Squash merge on a green `ci`; the card closes only against evidence you exercised.
+
+What is true only here:
 
 - **Scopes** for the subject: the workspace names, matching `area:*` on the Linear
   issue - `shared`, `web`, `cli`, `daemon`, `extension`, `playbooks`, `tests`, `docs`,
   `cloud`, `deploy` - and a comma-separated list when a change spans several
-  (`fix(shared,web): ...`).
+  (`fix(shared,web): ...`). `workflow.json` also accepts the other scopes the history used
+  more than once (`drafts`, `db`, `mcp`, `auth`, ...), but a workspace name is the default.
 - **Required check**: the aggregate `ci` context, from the branch ruleset's
-  `required_status_checks`. `preflight` (`.github/preflight.json`) is the local
-  stand-in for the `Tests (Postgres)` job that no longer runs on a PR; run it, or let
-  the installed `pre-push` hook run it, before pushing.
-- **Merge**: `gh pr merge <n> --squash --delete-branch` is the only method the ruleset
-  allows (`allowed_merge_methods: ["squash"]`), and `allow_auto_merge` is on, so arm
-  `gh pr merge <n> --auto --squash --delete-branch` right after opening rather than
-  waiting on `ci` yourself. `delete_branch_on_merge` is also on, so nothing needs
-  deleting by hand; local `main` still needs `git checkout main && git reset --hard
-origin/main` afterward, since it diverges on every squash.
+  `required_status_checks`; the `kit` job is one of its `needs`. Preflight
+  (`.github/preflight.json`) is the local stand-in for the `Tests (Postgres)` job that no
+  longer runs on a PR.
+- **Merge**: squash only, arm auto-merge right after opening. The commands and the
+  cleanup after a merge are in `docs/agents/pr-creation.md`.
 
 ## Design and UI
 
@@ -590,7 +611,7 @@ Current state and future roadmap live in Linear (`linear.app/fiorelorenzo`), not
 
 **A project milestone is what used to be an epic issue.** Epics are not issues in Linear: a milestone costs no issue slot and shows progress natively. Keep a parent issue only for a deliverable that genuinely splits into sub-deliverables within a single agent run's reach. Every issue sits in a project and in a milestone, with no exceptions, and an issue filed in the middle of another issue's run is not exempt.
 
-**Naming, on the board.** Every name starts with a verb and names the work, under 80 characters: an issue title (`Localise the voice import control's file button`), a project, a milestone (`Cut both wizards to three screens`). One clause, or two when the second only names what makes the first visible. No `type(scope):` prefix on a Linear title (commits and PRs keep Conventional Commits), no product prefix or `vN` on a project name, no state word anywhere. An end-state clause reads as a riddle to whoever did not write it. The body fits one screen: at most four bold lead words (`**Observed.**`, `**Needed.**`, and `**Done when.**` as one line, `**Not here.**`, `**Adjacent.**` when they speak), two or three sentences each. A comment is two or three sentences plus the closing evidence bullets; a project update is three sentences.
+**Board names and card text.** Every name starts with a verb and names the work, under 80 characters: an issue title (`Localise the voice import control's file button`), a project, a milestone (`Cut both wizards to three screens`). No `type(scope):` prefix on a Linear title (commits and PRs keep Conventional Commits), no product prefix or `vN` on a project name, no state word anywhere. The body fits one screen, with `**Done when.**` as one line. The shapes are the `linear-content` skill's.
 
 **One issue is one agent run is one PR is one worktree.** That equivalence is load-bearing: it is what makes the worktree removable at the end of a run and the PR reviewable.
 
@@ -598,17 +619,15 @@ Current state and future roadmap live in Linear (`linear.app/fiorelorenzo`), not
 
 - Before you write code for an issue, move it to `In Progress`. If what you are about to do has no issue, create one first, then start.
 - Move it to `Done` only when the change is merged and verified, not when the code is written. Merged but something is still open? Say so in a comment and leave it `In Progress`.
-- The team's statuses are `Backlog`, `Todo`, `In Progress`, `In Review`, `Done`, `Canceled`. `In Review` is where an issue sits while its PR is open.
-
-**Comment when a reader would want to know.** A decision taken, an approach tried and abandoned, a blocker hit, a surprise in the code, a scope change, a finding that invalidates the issue as written. One comment per meaningful turn in the work, not one per commit, and no routine progress narration.
+- The team's statuses are `Backlog`, `Todo`, `In Progress`, `In Review`, `Done`, `Canceled`. `In Review` is where an issue sits while its PR is open: set it by hand when the PR opens and `Done` after the merge, since nothing here relies on Linear's pull-request automation to move a card.
 
 **File the work you discover.** When something real surfaces mid-task or in a conversation with Lorenzo (a bug you noticed on the way, a follow-up the fix implies, an idea worth doing later), open an issue for it instead of silently widening the current change or letting it evaporate. Then say in the current issue that you split it out, with a link.
 
-**Conventions for a new issue.** Match what the workspace already shows, do not invent a parallel style:
+**Conventions for a new issue.** The calls and their order are `linear-ticket`'s; what is this repo's own:
 
-- Title: a verb and the work it does, under 80 characters (§ Naming). The `type(scope):` form belongs to commits and PR titles, not to the card.
 - Labels come from two mutually exclusive groups plus flat labels, set on every issue you file. Group `repo` (`pitchbox`, `sazio`, `canonry`) - use `pitchbox` here, exactly one. Group `type` (`feature`, `fix`, `refactor`, `test`, `chore`, `ci`, `docs`, `design`, `security`, `spike`) - exactly one, since Linear allows only one label per group on an issue. Flat `area:*` labels, one or more, naming the surfaces the change touches: `cli-mcp`, `cloud`, `daemon`, `deploy`, `docs`, `extension`, `playbooks`, `shared`, `tests`, `web`. Add a new `area:*` value only when the surface really is new. Flat `flagship` marks headline work; parallel safety is two labels, `parallel:yes` and `parallel:no`, never a bare `parallel`: one label would conflate "must not run concurrently" with "never assessed", and the absence of both is that third state, assessed at wave time rather than assumed safe.
 - Priority is Linear's native field, not a label: 1 Urgent, 2 High, 3 Medium, 4 Low. Effort is Linear's native estimate field. Set both alongside the project, the milestone and the labels in the same `save_issue` call - an issue missing one of these is a mistake, not an accident of a second call being skipped.
+- Where a skill says a card labelled `parallel` is free to pick up, that is `parallel:yes` here; a card with neither label is assessed at wave time, not assumed safe.
 - Project and milestone: assign the project this work belongs to and, inside it, the milestone (the former epic) it serves. Both, always. A project with no milestone is the defect this repo actually produces: six issues filed on 2026-09-11 carried a project and no milestone, and the wording that used to sit here is what allowed it. If no milestone fits, create one in the project that owns the work rather than leaving the issue loose.
 
 **PRs stay on GitHub.** Linear's in-app PR review is a Business-plan feature this workspace is not on, so review happens on GitHub as before, and Linear links the PR through the branch name.
