@@ -533,7 +533,8 @@ What is true only here:
 - **Scopes** for the subject: the workspace names, matching `area:*` on the Linear
   issue - `shared`, `web`, `cli`, `daemon`, `extension`, `playbooks`, `tests`, `docs`,
   `cloud`, `deploy` - and a comma-separated list when a change spans several
-  (`fix(shared,web): ...`). `workflow.json` lists every scope used in the history.
+  (`fix(shared,web): ...`). `workflow.json` also accepts the other scopes the history used
+  more than once (`drafts`, `db`, `mcp`, `auth`, ...), but a workspace name is the default.
 - **Required check**: the aggregate `ci` context, from the branch ruleset's
   `required_status_checks`; the `kit` job is one of its `needs`. Preflight
   (`.github/preflight.json`) is the local stand-in for the `Tests (Postgres)` job that no
@@ -618,7 +619,7 @@ Current state and future roadmap live in Linear (`linear.app/fiorelorenzo`), not
 
 - Before you write code for an issue, move it to `In Progress`. If what you are about to do has no issue, create one first, then start.
 - Move it to `Done` only when the change is merged and verified, not when the code is written. Merged but something is still open? Say so in a comment and leave it `In Progress`.
-- The team's statuses are `Backlog`, `Todo`, `In Progress`, `In Review`, `Done`, `Canceled`. `In Review` is where an issue sits while its PR is open.
+- The team's statuses are `Backlog`, `Todo`, `In Progress`, `In Review`, `Done`, `Canceled`. `In Review` is where an issue sits while its PR is open: set it by hand when the PR opens and `Done` after the merge, since nothing here relies on Linear's pull-request automation to move a card.
 
 **File the work you discover.** When something real surfaces mid-task or in a conversation with Lorenzo (a bug you noticed on the way, a follow-up the fix implies, an idea worth doing later), open an issue for it instead of silently widening the current change or letting it evaporate. Then say in the current issue that you split it out, with a link.
 
@@ -626,6 +627,7 @@ Current state and future roadmap live in Linear (`linear.app/fiorelorenzo`), not
 
 - Labels come from two mutually exclusive groups plus flat labels, set on every issue you file. Group `repo` (`pitchbox`, `sazio`, `canonry`) - use `pitchbox` here, exactly one. Group `type` (`feature`, `fix`, `refactor`, `test`, `chore`, `ci`, `docs`, `design`, `security`, `spike`) - exactly one, since Linear allows only one label per group on an issue. Flat `area:*` labels, one or more, naming the surfaces the change touches: `cli-mcp`, `cloud`, `daemon`, `deploy`, `docs`, `extension`, `playbooks`, `shared`, `tests`, `web`. Add a new `area:*` value only when the surface really is new. Flat `flagship` marks headline work; parallel safety is two labels, `parallel:yes` and `parallel:no`, never a bare `parallel`: one label would conflate "must not run concurrently" with "never assessed", and the absence of both is that third state, assessed at wave time rather than assumed safe.
 - Priority is Linear's native field, not a label: 1 Urgent, 2 High, 3 Medium, 4 Low. Effort is Linear's native estimate field. Set both alongside the project, the milestone and the labels in the same `save_issue` call - an issue missing one of these is a mistake, not an accident of a second call being skipped.
+- Where a skill says a card labelled `parallel` is free to pick up, that is `parallel:yes` here; a card with neither label is assessed at wave time, not assumed safe.
 - Project and milestone: assign the project this work belongs to and, inside it, the milestone (the former epic) it serves. Both, always. A project with no milestone is the defect this repo actually produces: six issues filed on 2026-09-11 carried a project and no milestone, and the wording that used to sit here is what allowed it. If no milestone fits, create one in the project that owns the work rather than leaving the issue loose.
 
 **PRs stay on GitHub.** Linear's in-app PR review is a Business-plan feature this workspace is not on, so review happens on GitHub as before, and Linear links the PR through the branch name.

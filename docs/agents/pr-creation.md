@@ -25,8 +25,15 @@ worktree", says why.
 The scope in a title is a workspace name, matching the `area:*` label on the card:
 `shared`, `web`, `cli`, `daemon`, `extension`, `playbooks`, `tests`, `docs`, `cloud`,
 `deploy`, and a comma-separated list when a change spans several
-(`fix(shared,web): ...`). `.github/workflow.json` lists every scope the history has used,
-and does not require one: `chore:` and `docs:` with no scope are common here.
+(`fix(shared,web): ...`). `.github/workflow.json` also accepts the other scopes the
+history used more than once (`drafts`, `db`, `mcp`, ...), and does not require one:
+`chore:` and `docs:` with no scope are common here.
+
+## A red `kit` job after editing the title or body
+
+`ci` does not run on `edited`, so `gh pr edit` alone leaves the red `kit` job red. After
+fixing the text, re-run it: `gh run rerun <run id> --failed`. `pr_lint.py` reads the PR
+from the API, so no push is needed.
 
 ## Screenshots
 
