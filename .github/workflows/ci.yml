@@ -20,7 +20,7 @@ on:
 # cancelled, and every preview deploy that day skipped.
 #
 # So the trunk keys its group per commit: runs queue, and every commit gets a
-# conclusion. This repo is public, so all four jobs run on GitHub-hosted
+# conclusion. This repo is public, so every job runs on GitHub-hosted
 # runners with no minute charge, and a wave of merges costs queue time rather
 # than money.
 concurrency:
@@ -144,13 +144,38 @@ jobs:
       - name: Test (vitest, full suite)
         run: pnpm test
 
+  # The workflow kit's copy here matches `.github/kit/manifest.json` (a skill edited
+  # in .claude/skills instead of .agents/skills, a kit file changed without a sync, a
+  # PR template that no longer follows .github/workflow.json), and on a pull request
+  # the title and body follow .github/workflow.json. No paths filter: every PR has a
+  # title. pr_lint reads the PR from the API, so after `gh pr edit` a re-run of the
+  # failed jobs checks the new text. Seconds, no setup: both scripts use the python
+  # standard library only.
+  kit:
+    name: kit · check and PR lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # A job-level block replaces the workflow-level one, so `contents: read` is restated.
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v5
+      - name: The kit's copy is intact
+        run: python3 .github/kit/bin/kit.py check
+      - name: The PR's title and body follow .github/workflow.json
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/kit/bin/pr_lint.py --github
+
   # The single required status check. Never rename it: it is the one context
   # in the ruleset, so the job names above it can change forever without
   # touching a ruleset again.
   ci:
     name: ci
     if: always()
-    needs: [changes, quality, test]
+    needs: [changes, quality, test, kit]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

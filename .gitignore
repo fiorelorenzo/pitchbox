@@ -61,4 +61,5 @@ web/build/
 shared/src/platforms/reddit/cache/
 .claude/*
 !.claude/skills/
+!.claude/settings.json
 daemon/tmp/
